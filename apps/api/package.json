@@ -1,12 +1,19 @@
 {
   "name": "api",
   "scripts": {
-    "dev": "bun run --hot src/index.ts"
+    "dev": "bun run --hot src/index.ts",
+    "generate": "bun x auth@latest generate"
   },
   "dependencies": {
+    "@better-auth/api-key": "^1.6.15",
+    "@better-auth/i18n": "^1.6.15",
+    "@repo/db": "*",
+    "better-auth": "^1.6.15",
+    "dotenv": "^17.4.2",
     "hono": "^4.12.25"
   },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "tsx": "^4.22.4"
   }
 }

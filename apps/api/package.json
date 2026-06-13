@@ -2,18 +2,25 @@
   "name": "api",
   "scripts": {
     "dev": "bun run --hot src/index.ts",
-    "generate": "bun x auth@latest generate"
+    "test": "vitest run",
+    "test:unit": "vitest run src/routes/app/auth/signup/signup.unit.test.ts",
+    "test:e2e": "vitest run src/routes/app/auth/signup/signup.e2e.test.ts"
   },
   "dependencies": {
     "@better-auth/api-key": "^1.6.15",
     "@better-auth/i18n": "^1.6.15",
+    "@effect/sql": "^0.51.1",
+    "@hono/zod-validator": "^0.8.0",
     "@repo/db": "*",
-    "better-auth": "^1.6.15",
+    "better-auth": "1.6.15",
     "dotenv": "^17.4.2",
-    "hono": "^4.12.25"
+    "effect": "^3.21.2",
+    "hono": "^4.12.25",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "tsx": "^4.22.4"
+    "tsx": "^4.22.4",
+    "vitest": "^4.1.0"
   }
 }

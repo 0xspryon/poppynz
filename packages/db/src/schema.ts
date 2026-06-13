@@ -29,6 +29,27 @@ export const user = pgTable("user", {
   phoneNumberVerified: boolean("phone_number_verified"),
 });
 
+export const signupIntent = pgTable(
+  "signup_intent",
+  {
+    id: text("id").primaryKey(),
+    email: text("email").notNull(),
+    role: text("role").notNull(),
+    language: text("language").notNull(),
+    expiresAt: timestamp("expires_at").notNull(),
+    consumedAt: timestamp("consumed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [index("signup_intent_email_idx").on(table.email)],
+);
+
+export const userProfile = pgTable("user_profile", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => user.id, { onDelete: "cascade" }),
+  language: text("language").notNull(),
+});
+
 
 export const session = pgTable(
   "session",

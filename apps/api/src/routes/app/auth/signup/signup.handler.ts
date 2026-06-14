@@ -1,5 +1,5 @@
 import type { SqlError } from "@effect/sql/SqlError";
-import { SignupIntentRepo } from "@repo/db";
+import { SignupIntentRepo, UserRepo } from "@repo/db";
 import { Cause, Context, Data, Effect, Exit, Layer, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../../app-env";
 import { auth } from "../../../../lib/auth";
@@ -13,11 +13,17 @@ export class SignupIntentError extends Data.TaggedError("SignupIntentError")<{
   cause: SqlError;
 }> {}
 
+export class SignupUserLookupError extends Data.TaggedError("SignupUserLookupError")<{
+  cause: SqlError;
+}> {}
+
+export class SignupUserAlreadyExistsError extends Data.TaggedError("SignupUserAlreadyExistsError")<{}> {}
+
 export class SignupAuthError extends Data.TaggedError("SignupAuthError")<{
   cause: unknown;
 }> {}
 
-export type SignupError = SignupIntentError | SignupAuthError;
+export type SignupError = SignupIntentError | SignupUserLookupError | SignupUserAlreadyExistsError | SignupAuthError;
 
 export class SignupService extends Context.Tag("@api/routes/auth/signup/SignupService")<
   SignupService,
@@ -56,8 +62,17 @@ export const makeSignupServiceTest = (implementation: Context.Tag.Service<Signup
 export const requestSignupProgram = (body: SignupInput, headers: Headers, language: SignupLanguage) =>
   Effect.gen(function* () {
     const intentRepo = yield* SignupIntentRepo;
+    const userRepo = yield* UserRepo;
     const signupService = yield* SignupService;
     const email = body.email
+
+    const existingUser = yield* userRepo
+      .findByEmail(email)
+      .pipe(Effect.mapError((cause) => new SignupUserLookupError({ cause })));
+
+    if (existingUser) {
+      return yield* Effect.fail(new SignupUserAlreadyExistsError());
+    }
 
     yield* intentRepo
       .create({
@@ -86,6 +101,28 @@ const signupErrorToResponse = (c: HonoContext<HonoEnv>, error: SignupError) => {
         500,
       );
 
+    case "SignupUserLookupError":
+      return c.json(
+        {
+          error: {
+            code: "SIGNUP_USER_LOOKUP_FAILED" as const,
+            message: "Unable to start signup.",
+          },
+        },
+        500,
+      );
+
+    case "SignupUserAlreadyExistsError":
+      return c.json(
+        {
+          error: {
+            code: "USER_ALREADY_EXISTS" as const,
+            message: "An account already exists for this email.",
+          },
+        },
+        409,
+      );
+
     case "SignupAuthError":
       return c.json(
         {
@@ -111,7 +148,10 @@ const unexpectedErrorResponse = (c: HonoContext<HonoEnv>) =>
   );
 
 const isSignupError = (error: unknown): error is SignupError =>
-  error instanceof SignupIntentError || error instanceof SignupAuthError;
+  error instanceof SignupIntentError ||
+  error instanceof SignupUserLookupError ||
+  error instanceof SignupUserAlreadyExistsError ||
+  error instanceof SignupAuthError;
 
 export async function signupHandler(c: HonoContext<HonoEnv>, body: SignupInput) {
   const headers = c.req.raw.headers

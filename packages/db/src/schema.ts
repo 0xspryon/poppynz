@@ -6,8 +6,11 @@ import {
   boolean,
   integer,
   index,
+  pgEnum,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+
+export const gender = pgEnum("gender", ["male", "female"]);
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -48,6 +51,17 @@ export const userProfile = pgTable("user_profile", {
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   language: text("language").notNull(),
+  firstName: text("first_name"),
+  lastName: text("last_name"),
+  gender: gender("gender"),
+  phoneNumber: text("phone_number"),
+  dateOfBirth: text("date_of_birth"),
+  address: text("address"),
+  city: text("city"),
+  postalCode: text("postal_code"),
+  country: text("country"),
+  stateProvince: text("state_province"),
+  shortBio: text("short_bio"),
 });
 
 

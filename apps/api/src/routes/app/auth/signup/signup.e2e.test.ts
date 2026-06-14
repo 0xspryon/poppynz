@@ -1,8 +1,11 @@
 import { SqlError } from "@effect/sql/SqlError";
 import {
   makeSignupIntentRepoTest,
+  makeSessionRepoTest,
+  makeUserRepoTest,
   makeUserProfileRepoTest,
   type SignupIntent,
+  type User,
   type UserProfile,
 } from "@repo/db";
 import { Effect, Layer, ManagedRuntime } from "effect";
@@ -12,6 +15,7 @@ import {
   applySignupIntentToUserEffect,
   createProfileAndConsumeSignupIntentEffect,
 } from "../../../../lib/auth";
+import { makeAuthServiceTest } from "../../../../lib/effect-auth";
 import {
   makeSignupServiceTest,
   SignupAuthError,
@@ -21,6 +25,7 @@ import {
 const makeApp = (options: {
   create: Parameters<typeof makeSignupIntentRepoTest>[0]["create"];
   sendSignupLink: (input: { email: string; role: SignupRole; headers: Headers }) => Effect.Effect<void, SignupAuthError>;
+  existingUser?: User | null;
 }) => {
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
@@ -38,6 +43,16 @@ const makeApp = (options: {
           ),
       }),
       makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
+      makeUserProfileRepoTest(makeInMemoryUserProfileRepo([])),
+      makeAuthServiceTest({
+        getSession: () => Effect.succeed(null),
+        userHasPermission: () => Effect.succeed(false),
+      }),
+      makeUserRepoTest({
+        findById: () => Effect.succeed(null),
+        findByEmail: () => Effect.succeed(options.existingUser ?? null),
+      }),
+      makeSessionRepoTest({ findById: () => Effect.succeed(null) }),
     ),
   );
 
@@ -57,6 +72,24 @@ const makeSignupIntent = (input: {
   expiresAt: input.expiresAt,
   consumedAt: null,
   createdAt: new Date("2026-06-12T00:00:00.000Z"),
+});
+
+const makeUser = (overrides: Partial<User> = {}): User => ({
+  id: "user-1",
+  name: "Existing User",
+  email: "family@example.com",
+  emailVerified: true,
+  image: null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  isAnonymous: false,
+  role: "service-provider",
+  banned: false,
+  banReason: null,
+  banExpires: null,
+  phoneNumber: null,
+  phoneNumberVerified: null,
+  ...overrides,
 });
 
 const makeInMemorySignupIntentRepo = (intents: Array<SignupIntent>) => ({
@@ -101,11 +134,27 @@ const makeInMemorySignupIntentRepo = (intents: Array<SignupIntent>) => ({
 
 const makeInMemoryUserProfileRepo = (profiles: Array<UserProfile>) => ({
   create: (input: { userId: string; language: string }) => {
-    const profile = { userId: input.userId, language: input.language };
+    const profile = {
+      userId: input.userId,
+      language: input.language,
+      firstName: null,
+      lastName: null,
+      gender: null,
+      phoneNumber: null,
+      dateOfBirth: null,
+      address: null,
+      city: null,
+      postalCode: null,
+      country: null,
+      stateProvince: null,
+      shortBio: null,
+    };
     profiles.push(profile);
 
     return Effect.succeed(profile);
   },
+  findByUserId: () => Effect.succeed(null),
+  updateByUserId: () => Effect.succeed(null),
 });
 
 describe("POST /auth/sign-up", () => {
@@ -193,6 +242,38 @@ describe("POST /auth/sign-up", () => {
     });
   });
 
+  it("returns conflict and does not create a signup intent for an existing user", async () => {
+    const createdIntents: Array<unknown> = [];
+    const sentLinks: Array<unknown> = [];
+    const app = makeApp({
+      existingUser: makeUser(),
+      create: (input) => {
+        createdIntents.push(input);
+        return Effect.succeed(makeSignupIntent(input));
+      },
+      sendSignupLink: (input) => {
+        sentLinks.push(input);
+        return Effect.void;
+      },
+    });
+
+    const res = await app.request("/app/api/v1/auth/sign-up", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "family@example.com", role: "family" }),
+    });
+
+    expect(res.status).toBe(409);
+    expect(await res.json()).toEqual({
+      error: {
+        code: "USER_ALREADY_EXISTS",
+        message: "An account already exists for this email.",
+      },
+    });
+    expect(createdIntents).toEqual([]);
+    expect(sentLinks).toEqual([]);
+  });
+
   it("uses signup intent to assign role, create profile, and consume intent", async () => {
     const intents: Array<SignupIntent> = [];
     const profiles: Array<UserProfile> = [];
@@ -235,7 +316,23 @@ describe("POST /auth/sign-up", () => {
       ),
     );
 
-    expect(profiles).toEqual([{ userId: "user-1", language: "es" }]);
+    expect(profiles).toEqual([
+      {
+        userId: "user-1",
+        language: "es",
+        firstName: null,
+        lastName: null,
+        gender: null,
+        phoneNumber: null,
+        dateOfBirth: null,
+        address: null,
+        city: null,
+        postalCode: null,
+        country: null,
+        stateProvince: null,
+        shortBio: null,
+      },
+    ]);
     expect(intents[0]?.consumedAt).toBeInstanceOf(Date);
   });
 });

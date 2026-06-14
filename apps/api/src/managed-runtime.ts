@@ -1,8 +1,13 @@
-import { SignupIntentRepoDefault } from "@repo/db";
+import { SessionRepoDefault, SignupIntentRepoDefault, UserProfileRepoDefault, UserRepoDefault } from "@repo/db";
 import { Layer } from "effect";
+import { AuthServiceLive } from "./lib/effect-auth";
 import { SignupServiceLive } from "./routes/app/auth/signup/signup.handler";
 
 export const AppLive = Layer.mergeAll(
   SignupIntentRepoDefault,
+  UserProfileRepoDefault,
+  UserRepoDefault,
+  SessionRepoDefault,
   SignupServiceLive,
+  AuthServiceLive,
 );

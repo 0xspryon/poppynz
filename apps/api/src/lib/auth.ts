@@ -2,7 +2,7 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { phoneNumber } from "better-auth/plugins";
 import { magicLink } from "better-auth/plugins";
-import { admin } from "better-auth/plugins";
+import { admin, createAccessControl } from "better-auth/plugins";
 import { apiKey } from "@better-auth/api-key";
 import { organization } from "better-auth/plugins";
 import { i18n } from "@better-auth/i18n";
@@ -22,6 +22,14 @@ export class SignupHookDbError extends Data.TaggedError("SignupHookDbError")<{
 
 const AuthHookLive = Layer.mergeAll(SignupIntentRepoDefault, UserProfileRepoDefault);
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
+
+const appAc = createAccessControl({
+  profile: ["read", "update"],
+});
+
+const profileRole = appAc.newRole({
+  profile: ["read", "update"],
+});
 
 export const applySignupIntentToUserEffect = <TUser extends { email: string }>(user: TUser) =>
   Effect.gen(function* () {
@@ -94,10 +102,16 @@ const runSignupHookEffect = async <A>(exitPromise: Promise<Exit.Exit<A, unknown>
 export const auth = betterAuth({
   appName: "Poppynz",
   emailAndPassword: {
-    enabled: true,
+    enabled: false,
   },
   plugins: [
-    admin(),
+    admin({
+      ac: appAc,
+      roles: {
+        family: profileRole,
+        "service-provider": profileRole,
+      },
+    }),
     openAPI(),
     apiKey(),
     organization(),

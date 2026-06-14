@@ -1,5 +1,5 @@
 import { SqlError } from "@effect/sql/SqlError";
-import { makeSignupIntentRepoTest, type SignupIntent } from "@repo/db";
+import { makeSignupIntentRepoTest, makeUserRepoTest, type SignupIntent, type User } from "@repo/db";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -7,6 +7,7 @@ import {
   requestSignupProgram,
   SignupAuthError,
   SignupIntentError,
+  SignupUserAlreadyExistsError,
   type SignupRole,
 } from "./signup.handler";
 import { signupInputSchema } from './signup.validator'
@@ -27,6 +28,7 @@ const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
 const makeLayer = (options: {
   create: Parameters<typeof makeSignupIntentRepoTest>[0]["create"];
   sendSignupLink: (input: { email: string; role: SignupRole; headers: Headers }) => Effect.Effect<void, SignupAuthError>;
+  existingUser?: User | null;
 }) =>
   Layer.mergeAll(
     makeSignupIntentRepoTest({
@@ -41,8 +43,12 @@ const makeLayer = (options: {
             expiresAt: new Date(),
           }),
         ),
-    }),
-    makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
+      }),
+      makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
+      makeUserRepoTest({
+        findById: () => Effect.succeed(null),
+        findByEmail: () => Effect.succeed(options.existingUser ?? null),
+      }),
   );
 
 const makeSignupIntent = (input: {
@@ -58,6 +64,24 @@ const makeSignupIntent = (input: {
   expiresAt: input.expiresAt,
   consumedAt: null,
   createdAt: new Date("2026-06-12T00:00:00.000Z"),
+});
+
+const makeUser = (overrides: Partial<User> = {}): User => ({
+  id: "user-1",
+  name: "Existing User",
+  email: "provider@example.com",
+  emailVerified: true,
+  image: null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  isAnonymous: false,
+  role: "service-provider",
+  banned: false,
+  banReason: null,
+  banExpires: null,
+  phoneNumber: null,
+  phoneNumberVerified: null,
+  ...overrides,
 });
 
 describe("requestSignupProgram", () => {
@@ -143,6 +167,35 @@ describe("requestSignupProgram", () => {
       role: "service-provider",
       headers,
     });
+  });
+
+  it("does not create a signup intent when user already exists", async () => {
+    const createdIntents: Array<unknown> = [];
+    const sentLinks: Array<unknown> = [];
+    const exit = await Effect.runPromise(
+      requestSignupProgram({ email: "provider@example.com", role: "family" }, new Headers(), "en").pipe(
+        Effect.provide(
+          makeLayer({
+            existingUser: makeUser(),
+            create: (input) => {
+              createdIntents.push(input);
+              return Effect.succeed(makeSignupIntent(input));
+            },
+            sendSignupLink: (input) => {
+              sentLinks.push(input);
+              return Effect.void;
+            },
+          }),
+        ),
+        Effect.exit,
+      ),
+    );
+
+    const failure = getFailure(exit);
+
+    expect(failure).toBeInstanceOf(SignupUserAlreadyExistsError);
+    expect(createdIntents).toEqual([]);
+    expect(sentLinks).toEqual([]);
   });
 
   it("maps signup intent repo failures", async () => {

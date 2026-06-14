@@ -9,7 +9,7 @@ import {
   Principal,
   requirePermissions,
   authErrorToResponse,
-} from "../../../lib/effect-auth";
+} from "@/api/lib/effect-auth";
 import type { ApprovalInput } from "./approval.validator";
 
 export class ApprovalUserLookupError extends Data.TaggedError("ApprovalUserLookupError")<{

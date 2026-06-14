@@ -6,6 +6,7 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "format": "prettier --write .",
+    "setup:worktree": "bash scripts/setup-worktree.sh",
     "check-types": "turbo run check-types"
   },
   "devDependencies": {

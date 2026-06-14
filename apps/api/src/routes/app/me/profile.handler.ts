@@ -15,7 +15,7 @@ import {
   Principal,
   requirePermissions,
   authErrorToResponse,
-} from "../../../lib/effect-auth";
+} from "@/api/lib/effect-auth";
 import type { ProfileUpdateInput } from "./profile.validator";
 
 export class ProfileRepoError extends Data.TaggedError("ProfileRepoError")<{

@@ -1,12 +1,17 @@
 import { SqlError } from "@effect/sql/SqlError";
 import {
+  makeApprovalRepoTest,
+  makeKycDocumentRepoTest,
   makeSignupIntentRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
   makeUserProfileRepoTest,
+  type Approval,
+  type ApprovalDecisionInput,
   type SignupIntent,
   type User,
   type UserProfile,
+  DBNotFoundError,
 } from "@repo/db";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
@@ -44,15 +49,27 @@ const makeApp = (options: {
       }),
       makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
       makeUserProfileRepoTest(makeInMemoryUserProfileRepo([])),
+      makeApprovalRepoTest(makeInMemoryApprovalRepo([])),
+      makeKycDocumentRepoTest({
+        findByUserId: () => Effect.succeed([]),
+        approveSubmittedByUserId: () => Effect.succeed([]),
+      }),
       makeAuthServiceTest({
         getSession: () => Effect.succeed(null),
         userHasPermission: () => Effect.succeed(false),
       }),
       makeUserRepoTest({
-        findById: () => Effect.succeed(null),
-        findByEmail: () => Effect.succeed(options.existingUser ?? null),
+        findById: () => Effect.fail(new DBNotFoundError({ value: '', entity: ''})),
+        findByEmail: () => {
+          if (options.existingUser) { return Effect.succeed(options.existingUser)}
+          return Effect.fail(new DBNotFoundError({ value: '', entity: ''}))
+        },
       }),
-      makeSessionRepoTest({ findById: () => Effect.succeed(null) }),
+      makeSessionRepoTest({
+        findById: () => Effect.fail(
+          new DBNotFoundError({ value: '', entity: ''})
+        )
+      }),
     ),
   );
 
@@ -90,6 +107,42 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   phoneNumber: null,
   phoneNumberVerified: null,
   ...overrides,
+});
+
+const makeApproval = (input: ApprovalDecisionInput, overrides: Partial<Approval> = {}): Approval => ({
+  id: `approval-${input.userId}-${input.type}`,
+  userId: input.userId,
+  type: input.type,
+  status: input.status,
+  approvedBy: input.approvedBy,
+  reason: input.reason ?? null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  ...overrides,
+});
+
+const makeInMemoryApprovalRepo = (approvals: Array<Approval>) => ({
+  findByUserIdAndType: (userId: string, type: Approval["type"]) => {
+    const approval = approvals.find((approval) => approval.userId === userId && approval.type === type);
+
+    return approval
+      ? Effect.succeed(approval)
+      : Effect.fail(new DBNotFoundError({ entity: "approval", value: userId }));
+  },
+  upsertDecision: (input: ApprovalDecisionInput) => {
+    const existingIndex = approvals.findIndex(
+      (approval) => approval.userId === input.userId && approval.type === input.type,
+    );
+    const approval = makeApproval(input);
+
+    if (existingIndex >= 0) {
+      approvals[existingIndex] = { ...approvals[existingIndex], ...approval };
+      return Effect.succeed(approvals[existingIndex]);
+    }
+
+    approvals.push(approval);
+    return Effect.succeed(approval);
+  },
 });
 
 const makeInMemorySignupIntentRepo = (intents: Array<SignupIntent>) => ({
@@ -153,8 +206,8 @@ const makeInMemoryUserProfileRepo = (profiles: Array<UserProfile>) => ({
 
     return Effect.succeed(profile);
   },
-  findByUserId: () => Effect.succeed(null),
-  updateByUserId: () => Effect.succeed(null),
+  findByUserId: () => Effect.fail(new DBNotFoundError({ value: '', entity: ''})),
+  updateByUserId: () => Effect.fail(new DBNotFoundError({ value: '', entity: ''})),
 });
 
 describe("POST /auth/sign-up", () => {
@@ -191,13 +244,21 @@ describe("POST /auth/sign-up", () => {
       body: JSON.stringify({ email: "not-an-email", role: "family" }),
     });
 
+    const body = await res.json();
+
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
+    expect(body).toMatchObject({
       error: {
         code: "INVALID_SIGNUP_INPUT",
         message: "A valid email and role are required.",
       },
     });
+    expect(body.error.issues).toEqual([
+      expect.objectContaining({
+        path: ["email"],
+        code: "invalid_format",
+      }),
+    ]);
   });
 
   it("returns a safe signup intent failure response", async () => {
@@ -277,8 +338,10 @@ describe("POST /auth/sign-up", () => {
   it("uses signup intent to assign role, create profile, and consume intent", async () => {
     const intents: Array<SignupIntent> = [];
     const profiles: Array<UserProfile> = [];
+    const approvals: Array<Approval> = [];
     const signupIntentRepo = makeInMemorySignupIntentRepo(intents);
     const userProfileRepo = makeInMemoryUserProfileRepo(profiles);
+    const approvalRepo = makeInMemoryApprovalRepo(approvals);
     const app = makeApp({
       create: signupIntentRepo.create,
       sendSignupLink: () => Effect.void,
@@ -286,6 +349,7 @@ describe("POST /auth/sign-up", () => {
     const hookLayer = Layer.mergeAll(
       makeSignupIntentRepoTest(signupIntentRepo),
       makeUserProfileRepoTest(userProfileRepo),
+      makeApprovalRepoTest(approvalRepo),
     );
 
     const res = await app.request("/app/api/v1/auth/sign-up", {
@@ -333,6 +397,49 @@ describe("POST /auth/sign-up", () => {
         shortBio: null,
       },
     ]);
+    expect(approvals).toEqual([]);
     expect(intents[0]?.consumedAt).toBeInstanceOf(Date);
+  });
+
+  it("auto-approves family signups when the profile is created", async () => {
+    const intents: Array<SignupIntent> = [];
+    const profiles: Array<UserProfile> = [];
+    const approvals: Array<Approval> = [];
+    const signupIntentRepo = makeInMemorySignupIntentRepo(intents);
+    const userProfileRepo = makeInMemoryUserProfileRepo(profiles);
+    const approvalRepo = makeInMemoryApprovalRepo(approvals);
+    const app = makeApp({
+      create: signupIntentRepo.create,
+      sendSignupLink: () => Effect.void,
+    });
+    const hookLayer = Layer.mergeAll(
+      makeSignupIntentRepoTest(signupIntentRepo),
+      makeUserProfileRepoTest(userProfileRepo),
+      makeApprovalRepoTest(approvalRepo),
+    );
+
+    const res = await app.request("/app/api/v1/auth/sign-up", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept-Language": "en" },
+      body: JSON.stringify({ email: "Family@Example.com", role: "family" }),
+    });
+
+    expect(res.status).toBe(200);
+
+    await Effect.runPromise(
+      createProfileAndConsumeSignupIntentEffect({ id: "user-1", email: "family@example.com" }).pipe(
+        Effect.provide(hookLayer),
+      ),
+    );
+
+    expect(approvals).toEqual([
+      expect.objectContaining({
+        userId: "user-1",
+        type: "family",
+        status: "approved",
+        approvedBy: null,
+        reason: "Automatically approved",
+      }),
+    ]);
   });
 });

@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -8,9 +8,24 @@ import {
   index,
   pgEnum,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 export const gender = pgEnum("gender", ["male", "female"]);
+export const approvalType = pgEnum("approval_type", ["service-provider", "family"]);
+export const approvalStatus = pgEnum("approval_status", ["approved", "rejected"]);
+export const kycDocumentType = pgEnum("kyc_document_type", [
+  "government-id",
+  "vulnerable-sector-check",
+  "first-aid-certification",
+  "driving-license",
+]);
+export const kycDocumentStatus = pgEnum("kyc_document_status", [
+  "missing",
+  "uploaded",
+  "approved",
+  "rejected",
+]);
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -35,7 +50,7 @@ export const user = pgTable("user", {
 export const signupIntent = pgTable(
   "signup_intent",
   {
-    id: text("id").primaryKey(),
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
     email: text("email").notNull(),
     role: text("role").notNull(),
     language: text("language").notNull(),
@@ -63,6 +78,53 @@ export const userProfile = pgTable("user_profile", {
   stateProvince: text("state_province"),
   shortBio: text("short_bio"),
 });
+
+export const approval = pgTable(
+  "approvals",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    type: approvalType("type").notNull(),
+    status: approvalStatus("status").notNull(),
+    approvedBy: text("approved_by").references(() => user.id, { onDelete: "set null" }),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("approvals_user_id_idx").on(table.userId),
+    uniqueIndex("approvals_user_id_type_uidx").on(table.userId, table.type),
+  ],
+);
+
+export const kycDocument = pgTable(
+  "kyc_documents",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    type: kycDocumentType("type").notNull(),
+    filename: text("filename"),
+    fileKey: text("file_key"),
+    status: kycDocumentStatus("status").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("kyc_documents_user_id_idx").on(table.userId),
+    uniqueIndex("kyc_documents_user_id_type_uidx").on(table.userId, table.type),
+  ],
+);
 
 
 export const session = pgTable(
@@ -218,6 +280,26 @@ export const userRelations = relations(user, ({ many }) => ({
   accounts: many(account),
   members: many(member),
   invitations: many(invitation),
+  approvals: many(approval),
+  kycDocuments: many(kycDocument),
+}));
+
+export const approvalRelations = relations(approval, ({ one }) => ({
+  user: one(user, {
+    fields: [approval.userId],
+    references: [user.id],
+  }),
+  approver: one(user, {
+    fields: [approval.approvedBy],
+    references: [user.id],
+  }),
+}));
+
+export const kycDocumentRelations = relations(kycDocument, ({ one }) => ({
+  user: one(user, {
+    fields: [kycDocument.userId],
+    references: [user.id],
+  }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

@@ -8,6 +8,8 @@ import { organization } from "better-auth/plugins";
 import { i18n } from "@better-auth/i18n";
 import { openAPI } from "better-auth/plugins";
 import {
+  ApprovalRepo,
+  ApprovalRepoDefault,
   db,
   SignupIntentRepo,
   SignupIntentRepoDefault,
@@ -20,14 +22,24 @@ export class SignupHookDbError extends Data.TaggedError("SignupHookDbError")<{
   cause: unknown;
 }> {}
 
-const AuthHookLive = Layer.mergeAll(SignupIntentRepoDefault, UserProfileRepoDefault);
+const AuthHookLive = Layer.mergeAll(
+  SignupIntentRepoDefault,
+  UserProfileRepoDefault,
+  ApprovalRepoDefault
+);
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
 
 const appAc = createAccessControl({
+  approval: ["create"],
   profile: ["read", "update"],
 });
 
 const profileRole = appAc.newRole({
+  profile: ["read", "update"],
+});
+
+const adminRole = appAc.newRole({
+  approval: ["create"],
   profile: ["read", "update"],
 });
 
@@ -52,6 +64,7 @@ export const createProfileAndConsumeSignupIntentEffect = (user: { id: string; em
   Effect.gen(function* () {
     const signupIntentRepo = yield* SignupIntentRepo;
     const userProfileRepo = yield* UserProfileRepo;
+    const approvalRepo = yield* ApprovalRepo;
     const intent = yield* signupIntentRepo
       .findValidByEmail(user.email)
       .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })));
@@ -60,9 +73,29 @@ export const createProfileAndConsumeSignupIntentEffect = (user: { id: string; em
       return;
     }
 
-    yield* userProfileRepo
-      .create({ userId: user.id, language: intent.language })
-      .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })));
+
+    if (intent.role === "family") {
+      yield* Effect.all([
+        approvalRepo
+          .upsertDecision({
+            userId: user.id,
+            type: "family",
+            status: "approved",
+            approvedBy: null,
+            reason: "Automatically approved",
+          })
+          .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause }))),
+        userProfileRepo
+          .create({ userId: user.id, language: intent.language })
+          .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })))
+      ],
+        { concurrency: 'unbounded' }
+      )
+    } else {
+      yield* userProfileRepo
+        .create({ userId: user.id, language: intent.language })
+        .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })));
+    }
 
     yield* signupIntentRepo
       .consumeByEmail(user.email)
@@ -108,6 +141,7 @@ export const auth = betterAuth({
     admin({
       ac: appAc,
       roles: {
+        admin: adminRole,
         family: profileRole,
         "service-provider": profileRole,
       },

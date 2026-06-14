@@ -17,6 +17,7 @@ export const signupValidator = zValidator("json", signupInputSchema, (result, c)
         error: {
           code: "INVALID_SIGNUP_INPUT" as const,
           message: "A valid email and role are required.",
+          issues: result.error.issues,
         },
       },
       400,

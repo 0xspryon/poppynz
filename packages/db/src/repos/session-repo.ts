@@ -2,7 +2,7 @@ import * as PgDrizzle from "@effect/sql-drizzle/Pg";
 import type { SqlError } from "@effect/sql/SqlError";
 import { eq, InferSelectModel } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { DrizzleLive } from "../effect-db";
+import { DrizzleLive, DBNotFoundError } from "../effect-db";
 import { session } from "../schema";
 
 export type Session = InferSelectModel<typeof session>;
@@ -10,7 +10,7 @@ export type Session = InferSelectModel<typeof session>;
 export class SessionRepo extends Context.Tag("@repo/db/SessionRepo")<
   SessionRepo,
   {
-    findById: (id: string) => Effect.Effect<Session | null, SqlError>;
+    findById: (id: string) => Effect.Effect<Session, SqlError | DBNotFoundError>;
   }
 >() {}
 
@@ -26,7 +26,18 @@ export const SessionRepoLive = Layer.effect(
           .from(session)
           .where(eq(session.id, id))
           .limit(1)
-          .pipe(Effect.map((rows) => rows[0] ?? null)),
+          .pipe(
+            Effect.flatMap(
+              (rows) => {
+                if (rows[0]) {
+                  return Effect.succeed(rows[0])
+                }
+                return Effect.fail(
+                  new DBNotFoundError({ entity: 'session', value: id })
+                )
+              }
+            )
+          ),
     };
   }),
 );

@@ -1,13 +1,20 @@
 import type { SqlError } from "@effect/sql/SqlError";
-import { SafeUserProfile, UserProfileRepo } from "@repo/db";
+import {
+ Approval,
+ ApprovalRepo,
+ KycDocument,
+ KycDocumentRepo,
+ SafeUserProfile,
+ UserProfileRepo,
+} from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../app-env";
 import {
-  AuthError,
   authenticate,
   isAuthError,
   Principal,
   requirePermissions,
+  authErrorToResponse,
 } from "../../../lib/effect-auth";
 import type { ProfileUpdateInput } from "./profile.validator";
 
@@ -19,10 +26,34 @@ export class ProfileNotFoundError extends Data.TaggedError("ProfileNotFoundError
 
 export type ProfileError = ProfileRepoError | ProfileNotFoundError;
 
-const toProfileResponse = (profile: SafeUserProfile) => ({
+type ProfileApprovalType = "family" | "service-provider";
+
+const toProfileApprovalType = (role: string | null): ProfileApprovalType | null =>
+  role === "family" || role === "service-provider" ? role : null;
+
+const toApprovalSummary = (type: ProfileApprovalType, approval: Approval | null) => ({
+  type,
+  status: approval?.status ?? "pending",
+  reason: approval?.reason ?? null,
+});
+
+const toKycDocumentResponse = (document: KycDocument) => ({
+  id: document.id,
+  type: document.type,
+  filename: document.filename,
+  status: document.status,
+  reason: document.reason,
+});
+
+const toProfileResponse = (
+  profile: SafeUserProfile,
+  approval: ReturnType<typeof toApprovalSummary> | null,
+  kycDocuments: Array<KycDocument>,
+) => ({
   userId: profile.userId,
   email: profile.email,
   role: profile.role,
+  approval,
   language: profile.language,
   firstName: profile.firstName,
   lastName: profile.lastName,
@@ -35,37 +66,72 @@ const toProfileResponse = (profile: SafeUserProfile) => ({
   country: profile.country,
   stateProvince: profile.stateProvince,
   shortBio: profile.shortBio,
+  ...(
+    profile.role === "service-provider"
+    ? { kycDocuments: kycDocuments.map(toKycDocumentResponse) }
+    : {}
+  ),
 });
 
-export const getProfileProgram = (principal: Principal) =>
+const buildProfileResponse = (profile: SafeUserProfile) =>
   Effect.gen(function* () {
-    const profileRepo = yield* UserProfileRepo;
+    const approvalRepo = yield* ApprovalRepo;
+    const kycDocumentRepo = yield* KycDocumentRepo;
+    const approvalType = toProfileApprovalType(profile.role);
+    const approval = approvalType
+      ? yield* approvalRepo
+        .findByUserIdAndType(profile.userId, approvalType)
+        .pipe(
+          Effect.catchTags({
+            DBNotFoundError: () => Effect.succeed(null),
+            SqlError: (cause) => Effect.fail(new ProfileRepoError({ cause }))
+          })
+        )
+      : null;
+    const kycDocuments = profile.role === "service-provider"
+      ? yield* kycDocumentRepo
+        .findByUserId(profile.userId)
+        .pipe(Effect.mapError((cause) => new ProfileRepoError({ cause })))
+      : [];
 
-    const profile = yield* profileRepo
-      .findByUserId(principal.user.id)
-      .pipe(Effect.mapError((cause) => new ProfileRepoError({ cause })));
-
-    if (!profile) {
-      return yield* Effect.fail(new ProfileNotFoundError());
-    }
-
-    return toProfileResponse(profile);
+    return toProfileResponse(
+      profile,
+      approvalType ? toApprovalSummary(approvalType, approval) : null,
+      kycDocuments,
+    );
   });
+
+export const getProfileProgram = (principal: Principal) =>
+  UserProfileRepo.pipe(
+    Effect.flatMap(
+      (profileRepo) =>
+        profileRepo
+          .findByUserId(principal.user.id)
+          .pipe(
+            Effect.catchTags({
+              DBNotFoundError: () => Effect.fail(new ProfileNotFoundError()),
+              SqlError: (cause) => Effect.fail(new ProfileRepoError({ cause }))
+            }),
+            Effect.flatMap(buildProfileResponse)
+          )
+    )
+  )
 
 export const updateProfileProgram = (principal: Principal, input: ProfileUpdateInput) =>
-  Effect.gen(function* () {
-    const profileRepo = yield* UserProfileRepo;
-
-    const profile = yield* profileRepo
-      .updateByUserId(principal.user.id, input)
-      .pipe(Effect.mapError((cause) => new ProfileRepoError({ cause })));
-
-    if (!profile) {
-      return yield* Effect.fail(new ProfileNotFoundError());
-    }
-
-    return toProfileResponse(profile);
-  });
+  UserProfileRepo.pipe(
+    Effect.flatMap(
+      (profileRepo) =>
+        profileRepo
+          .updateByUserId(principal.user.id, input)
+          .pipe(
+            Effect.catchTags({
+              DBNotFoundError: () => Effect.fail(new ProfileNotFoundError()),
+              SqlError: (cause) => Effect.fail(new ProfileRepoError({ cause }))
+            }),
+            Effect.flatMap(buildProfileResponse)
+          )
+    )
+  )
 
 const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) => {
   switch (error._tag) {
@@ -88,51 +154,6 @@ const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) =>
           },
         },
         404,
-      );
-  }
-};
-
-const authErrorToResponse = (c: HonoContext<HonoEnv>, error: AuthError) => {
-  switch (error._tag) {
-    case "UnauthorizedError":
-      return c.json(
-        {
-          error: {
-            code: "UNAUTHORIZED" as const,
-            message: "Authentication is required.",
-          },
-        },
-        401,
-      );
-    case "ForbiddenError":
-      return c.json(
-        {
-          error: {
-            code: "FORBIDDEN" as const,
-            message: "You do not have permission to access this resource.",
-          },
-        },
-        403,
-      );
-    case "AuthProviderError":
-      return c.json(
-        {
-          error: {
-            code: "AUTH_PROVIDER_FAILED" as const,
-            message: "Unable to verify authentication.",
-          },
-        },
-        500,
-      );
-    case "AuthEntityLookupError":
-      return c.json(
-        {
-          error: {
-            code: "AUTH_ENTITY_LOOKUP_FAILED" as const,
-            message: "Unable to verify authentication.",
-          },
-        },
-        500,
       );
   }
 };

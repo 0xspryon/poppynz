@@ -2,7 +2,7 @@ import * as PgDrizzle from "@effect/sql-drizzle/Pg";
 import type { SqlError } from "@effect/sql/SqlError";
 import { eq, InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
-import { DrizzleLive } from "../effect-db";
+import { DrizzleLive, DBNotFoundError } from "../effect-db";
 import { user, userProfile } from "../schema";
 
 export type UserProfile = InferSelectModel<typeof userProfile>;
@@ -32,8 +32,8 @@ export class UserProfileRepo extends Context.Tag("@repo/db/UserProfileRepo")<
   UserProfileRepo,
   {
     create: (input: { userId: string; language: string }) => Effect.Effect<UserProfile, SqlError>;
-    findByUserId: (userId: string) => Effect.Effect<SafeUserProfile | null, SqlError>;
-    updateByUserId: (userId: string, input: UserProfileUpdate) => Effect.Effect<SafeUserProfile | null, SqlError>;
+    findByUserId: (userId: string) => Effect.Effect<SafeUserProfile, SqlError | DBNotFoundError>;
+    updateByUserId: (userId: string, input: UserProfileUpdate) => Effect.Effect<SafeUserProfile, SqlError| DBNotFoundError>;
   }
 >() {}
 
@@ -64,10 +64,13 @@ export const UserProfileRepoLive = Layer.effect(
           .where(eq(userProfile.userId, userId))
           .limit(1)
           .pipe(
-            Effect.map((rows) => {
+            Effect.flatMap((rows) => {
               const row = rows[0];
 
-              return row ? { ...row.profile, email: row.email, role: row.role } : null;
+              if (row) {
+                return Effect.succeed({ ...row.profile, email: row.email, role: row.role })
+               }
+               return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }))
             }),
           ),
       updateByUserId: (userId, input) =>
@@ -85,10 +88,15 @@ export const UserProfileRepoLive = Layer.effect(
                 .where(eq(userProfile.userId, userId))
                 .limit(1),
             ),
-            Effect.map((rows) => {
+            Effect.flatMap((rows) => {
               const row = rows[0];
 
-              return row ? { ...row.profile, email: row.email, role: row.role } : null;
+              if (row) {
+                return Effect.succeed({
+                  ...row.profile, email: row.email, role: row.role
+                })
+              }
+              return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }))
             }),
           ),
     };

@@ -68,7 +68,10 @@ export const requestSignupProgram = (body: SignupInput, headers: Headers, langua
 
     const existingUser = yield* userRepo
       .findByEmail(email)
-      .pipe(Effect.mapError((cause) => new SignupUserLookupError({ cause })));
+      .pipe(
+        Effect.catchTag("DBNotFoundError", () => Effect.succeed(null)),
+        Effect.mapError((cause) => new SignupUserLookupError({ cause })),
+      );
 
     if (existingUser) {
       return yield* Effect.fail(new SignupUserAlreadyExistsError());

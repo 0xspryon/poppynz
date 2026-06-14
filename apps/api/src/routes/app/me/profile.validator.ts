@@ -26,6 +26,7 @@ export const profileUpdateValidator = zValidator("json", profileUpdateSchema, (r
         error: {
           code: "INVALID_PROFILE_INPUT" as const,
           message: "Profile update contains invalid or unsupported fields.",
+          issues: result.error.issues,
         },
       },
       400,

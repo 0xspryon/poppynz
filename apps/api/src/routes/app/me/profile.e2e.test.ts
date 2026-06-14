@@ -1,14 +1,20 @@
 import {
+  makeApprovalRepoTest,
+  makeKycDocumentRepoTest,
   makeSignupIntentRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
   makeUserProfileRepoTest,
+  type Approval,
+  type ApprovalDecisionInput,
+  type KycDocument,
   type SafeUserProfile,
   type Session,
   type SignupIntent,
   type User,
   type UserProfile,
   type UserProfileUpdate,
+  DBNotFoundError,
 } from "@repo/db";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
@@ -63,6 +69,31 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   ...overrides,
 });
 
+const makeApproval = (overrides: Partial<Approval> = {}): Approval => ({
+  id: "approval-1",
+  userId: "user-1",
+  type: "family",
+  status: "approved",
+  approvedBy: null,
+  reason: "Automatically approved",
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  ...overrides,
+});
+
+const makeKycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
+  id: "kyc-document-1",
+  userId: "user-1",
+  type: "government-id",
+  filename: "government-id.pdf",
+  fileKey: "private/government-id.pdf",
+  status: "uploaded",
+  reason: null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  ...overrides,
+});
+
 const makeSession = (overrides: Partial<Session> = {}): Session => ({
   id: "session-1",
   expiresAt: new Date("2026-06-13T00:00:00.000Z"),
@@ -83,12 +114,20 @@ const makeApp = (options: {
   user?: User | null;
   session?: Session | null;
   profile: SafeUserProfile;
+  approval?: Approval | null;
+  kycDocuments?: Array<KycDocument>;
   onUpdate?: (input: UserProfileUpdate) => void;
   onPermissionCheck?: (permissions: Permissions) => void;
 }) => {
   let profile = options.profile;
   const user = options.user === undefined ? makeUser({ id: profile.userId, email: profile.email, role: profile.role }) : options.user;
   const session = options.session === undefined ? makeSession({ userId: profile.userId }) : options.session;
+  const approval = options.approval === undefined
+    ? profile.role === "family"
+      ? makeApproval({ userId: profile.userId, type: "family" })
+      : null
+    : options.approval;
+  const kycDocuments = options.kycDocuments ?? [];
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       makeSignupIntentRepoTest({
@@ -108,22 +147,57 @@ const makeApp = (options: {
         },
       }),
       makeUserRepoTest({
-        findById: (id: string) => Effect.succeed(user?.id === id ? user : null),
-        findByEmail: (email: string) => Effect.succeed(user?.email === email.toLowerCase() ? user : null),
+        findById: (id: string) => {
+          if (user?.id === id) { return Effect.succeed(user) }
+          return Effect.fail(new DBNotFoundError({ entity: 'user', value: user?.id ?? '' }))
+        },
+        findByEmail: (email: string) => {
+          if (user?.email === email.toLowerCase()) { return Effect.succeed(user) }
+          return Effect.fail(new DBNotFoundError({ value: email, entity: 'user' }))
+        },
       }),
       makeSessionRepoTest({
-        findById: (id: string) => Effect.succeed(session?.id === id ? session : null),
+        findById: (id: string) => {
+          if (session?.id === id) { return Effect.succeed(session) }
+          return Effect.fail(new DBNotFoundError({ value: id, entity: 'session' }))
+        },
       }),
       makeUserProfileRepoTest({
         create: (input: { userId: string; language: string }) =>
           Effect.succeed({ ...makeProfile(), userId: input.userId, language: input.language } as UserProfile),
-        findByUserId: (userId: string) => Effect.succeed(profile.userId === userId ? profile : null),
+        findByUserId: (userId: string) => {
+          if (profile.userId === userId) { return Effect.succeed(profile) }
+          return Effect.fail(new DBNotFoundError({ value: userId, entity: 'user' }))
+        },
         updateByUserId: (userId: string, input: UserProfileUpdate) => {
           options.onUpdate?.(input);
           profile = { ...profile, ...input };
-
-          return Effect.succeed(profile.userId === userId ? profile : null);
+          if (profile.userId === userId) {
+            return Effect.succeed(profile);
+          }
+          return Effect.fail(new DBNotFoundError({ value: userId, entity: 'user' }))
         },
+      }),
+      makeApprovalRepoTest({
+        findByUserIdAndType: (userId: string, type: Approval["type"]) => {
+          if (approval?.userId === userId && approval.type === type) {
+            return Effect.succeed(approval)
+          }
+          return Effect.fail(new DBNotFoundError({ value: userId, entity: 'user' }))
+        },
+        upsertDecision: (input: ApprovalDecisionInput) =>
+          Effect.succeed(makeApproval({
+            userId: input.userId,
+            type: input.type,
+            status: input.status,
+            approvedBy: input.approvedBy,
+            reason: input.reason ?? null,
+          })),
+      }),
+      makeKycDocumentRepoTest({
+        findByUserId: (userId: string) =>
+          Effect.succeed(kycDocuments.filter((document) => document.userId === userId)),
+        approveSubmittedByUserId: () => Effect.succeed([]),
       }),
     ),
   );
@@ -180,6 +254,11 @@ describe("/me/profile", () => {
       userId: "user-1",
       email: "mom_helper@poppynz.com",
       role: "family",
+      approval: {
+        type: "family",
+        status: "approved",
+        reason: "Automatically approved",
+      },
       language: "en",
       firstName: "Springfield",
       lastName: "Mom Helper",
@@ -205,6 +284,13 @@ describe("/me/profile", () => {
       authSession: { user: { id: "user-1" }, session: { id: "session-1" } },
       user: makeUser({ role: "service-provider" }),
       profile: makeProfile({ role: "service-provider" }),
+      kycDocuments: [
+        makeKycDocument({
+          type: "government-id",
+          filename: "government-id.pdf",
+          status: "uploaded",
+        }),
+      ],
     });
 
     const res = await app.request("/app/api/v1/me/profile");
@@ -212,6 +298,44 @@ describe("/me/profile", () => {
 
     expect(res.status).toBe(200);
     expect(body.role).toBe("service-provider");
+    expect(body.approval).toEqual({
+      type: "service-provider",
+      status: "pending",
+      reason: null,
+    });
+    expect(body.kycDocuments).toEqual([
+      {
+        id: "kyc-document-1",
+        type: "government-id",
+        filename: "government-id.pdf",
+        status: "uploaded",
+        reason: null,
+      },
+    ]);
+    expect(body.kycDocuments[0]).not.toHaveProperty("fileKey");
+  });
+
+  it("returns rejected approval state and reason", async () => {
+    const app = makeApp({
+      authSession: { user: { id: "user-1" }, session: { id: "session-1" } },
+      user: makeUser({ role: "service-provider" }),
+      profile: makeProfile({ role: "service-provider" }),
+      approval: makeApproval({
+        type: "service-provider",
+        status: "rejected",
+        reason: "Documents are incomplete.",
+      }),
+    });
+
+    const res = await app.request("/app/api/v1/me/profile");
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body.approval).toEqual({
+      type: "service-provider",
+      status: "rejected",
+      reason: "Documents are incomplete.",
+    });
   });
 
   it("does not update email through PATCH", async () => {
@@ -228,13 +352,21 @@ describe("/me/profile", () => {
       body: JSON.stringify({ email: "new@example.com", firstName: "Updated" }),
     });
 
+    const body = await res.json();
+
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
+    expect(body).toMatchObject({
       error: {
         code: "INVALID_PROFILE_INPUT",
         message: "Profile update contains invalid or unsupported fields.",
       },
     });
+    expect(body.error.issues).toEqual([
+      expect.objectContaining({
+        code: "unrecognized_keys",
+        keys: ["email"],
+      }),
+    ]);
     expect(updates).toEqual([]);
   });
 
@@ -252,13 +384,21 @@ describe("/me/profile", () => {
       body: JSON.stringify({ gender: "other" }),
     });
 
+    const body = await res.json();
+
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
+    expect(body).toMatchObject({
       error: {
         code: "INVALID_PROFILE_INPUT",
         message: "Profile update contains invalid or unsupported fields.",
       },
     });
+    expect(body.error.issues).toEqual([
+      expect.objectContaining({
+        code: "invalid_value",
+        path: ["gender"],
+      }),
+    ]);
     expect(updates).toEqual([]);
   });
 });

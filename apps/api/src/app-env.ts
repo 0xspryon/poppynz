@@ -1,4 +1,4 @@
-import type { SessionRepo, SignupIntentRepo, UserProfileRepo, UserRepo } from "@repo/db";
+import type { ApprovalRepo, KycDocumentRepo, SessionRepo, SignupIntentRepo, UserProfileRepo, UserRepo } from "@repo/db";
 import type { SqlError } from "@effect/sql/SqlError";
 import type { ConfigError } from "effect/ConfigError";
 import type { ManagedRuntime } from "effect";
@@ -6,7 +6,15 @@ import type { SignupService } from "./routes/app/auth/signup/signup.handler";
 import type { AuthService } from "./lib/effect-auth";
 import { Env, Handler } from "hono";
 
-export type AppServices = SignupIntentRepo | SignupService | UserProfileRepo | UserRepo | SessionRepo | AuthService;
+export type AppServices =
+  | SignupIntentRepo
+  | SignupService
+  | UserProfileRepo
+  | UserRepo
+  | SessionRepo
+  | ApprovalRepo
+  | KycDocumentRepo
+  | AuthService;
 
 // @continue-here : evaluate the need for having errors in the runtime type?
 // Isn't it expected that, I should handle all these errors

@@ -2,6 +2,7 @@ import type { SqlError } from "@effect/sql/SqlError";
 import { Session, SessionRepo, User, UserRepo } from "@repo/db";
 import { Context, Data, Effect, Layer } from "effect";
 import { auth } from "./auth";
+import { HonoContext, HonoEnv } from "../app-env";
 
 export type AuthSession = {
   user: {
@@ -87,14 +88,20 @@ export const authenticate = (headers: Headers) =>
 
     const user = yield* userRepo
       .findById(authSession.user.id)
-      .pipe(Effect.mapError((cause) => new AuthEntityLookupError({ cause })));
+      .pipe(
+        Effect.catchTags({
+          SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
+          DBNotFoundError: () => Effect.fail(new UnauthorizedError())
+        })
+      );
     const session = yield* sessionRepo
       .findById(authSession.session.id)
-      .pipe(Effect.mapError((cause) => new AuthEntityLookupError({ cause })));
-
-    if (!user || !session) {
-      return yield* Effect.fail(new UnauthorizedError());
-    }
+      .pipe(
+        Effect.catchTags({
+          SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
+          DBNotFoundError: () => Effect.fail(new UnauthorizedError())
+        })
+      );
 
     return { user, session };
   });
@@ -118,3 +125,48 @@ export const isAuthError = (error: unknown): error is AuthError =>
   error instanceof AuthEntityLookupError ||
   error instanceof UnauthorizedError ||
   error instanceof ForbiddenError;
+
+export const authErrorToResponse = (c: HonoContext<HonoEnv>, error: AuthError) => {
+  switch (error._tag) {
+    case "UnauthorizedError":
+      return c.json(
+        {
+          error: {
+            code: "UNAUTHORIZED" as const,
+            message: "Authentication is required.",
+          },
+        },
+        401,
+      );
+    case "ForbiddenError":
+      return c.json(
+        {
+          error: {
+            code: "FORBIDDEN" as const,
+            message: "You do not have permission to access this resource.",
+          },
+        },
+        403,
+      );
+    case "AuthProviderError":
+      return c.json(
+        {
+          error: {
+            code: "AUTH_PROVIDER_FAILED" as const,
+            message: "Unable to verify authentication.",
+          },
+        },
+        500,
+      );
+    case "AuthEntityLookupError":
+      return c.json(
+        {
+          error: {
+            code: "AUTH_ENTITY_LOOKUP_FAILED" as const,
+            message: "Unable to verify authentication.",
+          },
+        },
+        500,
+      );
+  }
+};

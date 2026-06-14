@@ -1,5 +1,5 @@
 import { SqlError } from "@effect/sql/SqlError";
-import { makeSignupIntentRepoTest, makeUserRepoTest, type SignupIntent, type User } from "@repo/db";
+import { DBNotFoundError, makeSignupIntentRepoTest, makeUserRepoTest, type SignupIntent, type User } from "@repo/db";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -46,8 +46,11 @@ const makeLayer = (options: {
       }),
       makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
       makeUserRepoTest({
-        findById: () => Effect.succeed(null),
-        findByEmail: () => Effect.succeed(options.existingUser ?? null),
+        findById: (id: string) => Effect.fail(new DBNotFoundError({ entity: "user", value: id })),
+        findByEmail: (email: string) =>
+          options.existingUser
+            ? Effect.succeed(options.existingUser)
+            : Effect.fail(new DBNotFoundError({ entity: "user", value: email.toLowerCase() })),
       }),
   );
 

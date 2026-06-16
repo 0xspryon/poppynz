@@ -1,5 +1,5 @@
 import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlError } from "@effect/sql/SqlError";
 import { and, eq, InferSelectModel } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { DrizzleLive, DBNotFoundError } from "../effect-db";
@@ -79,3 +79,8 @@ export const ApprovalRepoDefault = ApprovalRepoLive.pipe(Layer.provide(DrizzleLi
 
 export const makeApprovalRepoTest = (implementation: Context.Tag.Service<ApprovalRepo>) =>
   Layer.succeed(ApprovalRepo, implementation);
+
+export const EmptyApprovalRepoTest = makeApprovalRepoTest({
+  findByUserIdAndType: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: '' })),
+  upsertDecision: (_: ApprovalDecisionInput) => Effect.fail(new SqlError({ cause: '', message: ''})),
+})

@@ -59,6 +59,10 @@ export const SignupServiceLive = Layer.succeed(SignupService, {
 export const makeSignupServiceTest = (implementation: Context.Tag.Service<SignupService>) =>
   Layer.succeed(SignupService, implementation);
 
+export const EmptySignupServiceTest = makeSignupServiceTest({
+  sendSignupLink: (_: { email: string; role: SignupRole; headers: Headers }) => Effect.void,
+})
+
 export const requestSignupProgram = (body: SignupInput, headers: Headers, language: SignupLanguage) =>
   Effect.gen(function* () {
     const intentRepo = yield* SignupIntentRepo;

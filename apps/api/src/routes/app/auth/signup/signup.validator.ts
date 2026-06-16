@@ -1,14 +1,22 @@
 import { z } from "zod";
-import { validRoles } from "../../../../lib/constants";
+import { validRoles } from "@/api/lib/constants";
 import { zValidator } from "@hono/zod-validator";
+import punycode from 'ts-punycode'
 
 export const signupInputSchema = z.object({
-  email: z.string().trim().email().transform((email) => email.toLowerCase()),
+  email: z
+    .email()
+    .trim()
+    .transform(
+      (email) => email.toLowerCase()
+    ).refine(
+      // This is to protect against punycode attacks
+      (email) => punycode.toASCII(email)
+    ),
   role: z.enum(validRoles),
 });
 
 export type SignupInput = z.infer<typeof signupInputSchema>;
-
 
 export const signupValidator = zValidator("json", signupInputSchema, (result, c) => {
   if (!result.success) {

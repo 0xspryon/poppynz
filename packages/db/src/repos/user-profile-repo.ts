@@ -1,5 +1,5 @@
 import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
+import { SqlError } from "@effect/sql/SqlError";
 import { eq, InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { DrizzleLive, DBNotFoundError } from "../effect-db";
@@ -107,3 +107,9 @@ export const UserProfileRepoDefault = UserProfileRepoLive.pipe(Layer.provide(Dri
 
 export const makeUserProfileRepoTest = (implementation: Context.Tag.Service<UserProfileRepo>) =>
   Layer.succeed(UserProfileRepo, implementation);
+
+export const EmptyUserProfileRepoTest = makeUserProfileRepoTest({
+  create: () => Effect.fail(new SqlError({ cause: '', message: ''})),
+  findByUserId: () => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: '' })),
+  updateByUserId: () => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: '' })),
+})

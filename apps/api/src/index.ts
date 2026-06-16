@@ -6,6 +6,7 @@ import { auth } from "./lib/auth";
 import { appRoutes } from "./routes/app/index";
 import { requestId } from "hono/request-id";
 import { AppLive } from "./managed-runtime";
+import { ensureInitialAppState } from "./startup";
 
 export const createApp = (runtime: AppRuntime = ManagedRuntime.make(AppLive)) => {
   const app = new Hono<BaseAppEnv>()
@@ -46,4 +47,10 @@ export const createApp = (runtime: AppRuntime = ManagedRuntime.make(AppLive)) =>
   return app;
 };
 
-export default createApp();
+const runtime = ManagedRuntime.make(AppLive);
+
+if (process.env.NODE_ENV !== "test") {
+  await runtime.runPromise(ensureInitialAppState);
+}
+
+export default createApp(runtime);

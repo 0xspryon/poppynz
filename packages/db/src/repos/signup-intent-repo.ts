@@ -75,3 +75,18 @@ export const SignupIntentRepoDefault = SignupIntentRepoLive.pipe(Layer.provide(D
 
 export const makeSignupIntentRepoTest = (implementation: Context.Tag.Service<SignupIntentRepo>) =>
   Layer.succeed(SignupIntentRepo, implementation);
+
+const dummySignupIntent = {
+  id: "signup-intent-1",
+  email: "user@example.com",
+  role: "family",
+  language: "en",
+  expiresAt: new Date(),
+  consumedAt: null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+}
+export const EmptySignupIntentRepoTest = makeSignupIntentRepoTest({
+  create: () => Effect.succeed(dummySignupIntent),
+  findValidByEmail: () => Effect.succeed(null),
+  consumeByEmail: () => Effect.succeed(dummySignupIntent),
+})

@@ -12,10 +12,13 @@
     "@effect/sql": "^0.51.1",
     "@hono/zod-validator": "^0.8.0",
     "@repo/db": "*",
+    "@repo/env": "*",
+    "@repo/objs": "*",
     "better-auth": "1.6.15",
     "dotenv": "^17.4.2",
     "effect": "^3.21.2",
     "hono": "^4.12.25",
+    "ts-punycode": "^0.1.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {

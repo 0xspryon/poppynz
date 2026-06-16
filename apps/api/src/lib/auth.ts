@@ -2,11 +2,12 @@ import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { phoneNumber } from "better-auth/plugins";
 import { magicLink } from "better-auth/plugins";
-import { admin, createAccessControl } from "better-auth/plugins";
+import { admin } from "better-auth/plugins";
 import { apiKey } from "@better-auth/api-key";
 import { organization } from "better-auth/plugins";
 import { i18n } from "@better-auth/i18n";
 import { openAPI } from "better-auth/plugins";
+import { roles, appAc } from './auth-roles'
 import {
   ApprovalRepo,
   ApprovalRepoDefault,
@@ -28,20 +29,6 @@ const AuthHookLive = Layer.mergeAll(
   ApprovalRepoDefault
 );
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
-
-const appAc = createAccessControl({
-  approval: ["create"],
-  profile: ["read", "update"],
-});
-
-const profileRole = appAc.newRole({
-  profile: ["read", "update"],
-});
-
-const adminRole = appAc.newRole({
-  approval: ["create"],
-  profile: ["read", "update"],
-});
 
 export const applySignupIntentToUserEffect = <TUser extends { email: string }>(user: TUser) =>
   Effect.gen(function* () {
@@ -140,11 +127,7 @@ export const auth = betterAuth({
   plugins: [
     admin({
       ac: appAc,
-      roles: {
-        admin: adminRole,
-        family: profileRole,
-        "service-provider": profileRole,
-      },
+      roles,
     }),
     openAPI(),
     apiKey(),

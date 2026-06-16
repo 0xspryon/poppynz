@@ -51,3 +51,8 @@ export const KycDocumentRepoDefault = KycDocumentRepoLive.pipe(Layer.provide(Dri
 
 export const makeKycDocumentRepoTest = (implementation: Context.Tag.Service<KycDocumentRepo>) =>
   Layer.succeed(KycDocumentRepo, implementation);
+
+export const EmptyKycDocumentRepoTest = makeKycDocumentRepoTest({
+  findByUserId: () => Effect.succeed([]),
+  approveSubmittedByUserId: () => Effect.succeed([]),
+})

@@ -3,6 +3,7 @@ import { Session, SessionRepo, User, UserRepo } from "@repo/db";
 import { Context, Data, Effect, Layer } from "effect";
 import { auth } from "./auth";
 import { HonoContext, HonoEnv } from "../app-env";
+import { isSupportedRole, Role } from "./auth-roles";
 
 export type AuthSession = {
   user: {
@@ -14,7 +15,7 @@ export type AuthSession = {
 };
 
 export type Principal = {
-  user: User;
+  user: Omit<User, 'role'> & { role: Role | null};
   session: Session;
 };
 
@@ -86,27 +87,31 @@ export const authenticate = (headers: Headers) =>
       return yield* Effect.fail(new UnauthorizedError());
     }
 
-    const user = yield* userRepo
-      .findById(authSession.user.id)
-      .pipe(
-        Effect.catchTags({
-          SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
-          DBNotFoundError: () => Effect.fail(new UnauthorizedError())
-        })
-      );
-    const session = yield* sessionRepo
-      .findById(authSession.session.id)
-      .pipe(
-        Effect.catchTags({
-          SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
-          DBNotFoundError: () => Effect.fail(new UnauthorizedError())
-        })
-      );
-
+    const [user, session] = yield* Effect.all(
+      [
+        userRepo
+          .findById(authSession.user.id)
+          .pipe(
+            Effect.catchTags({
+              SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
+              DBNotFoundError: () => Effect.fail(new UnauthorizedError())
+            })
+          ),
+        sessionRepo
+          .findById(authSession.session.id)
+          .pipe(
+            Effect.catchTags({
+              SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
+              DBNotFoundError: () => Effect.fail(new UnauthorizedError())
+            })
+          )
+      ],
+      { concurrency: 'unbounded' },
+    );
     return { user, session };
   });
 
-export const requirePermissions = (headers: Headers, permissions: Permissions) => (principal: Principal) =>
+export const requirePermissions = (headers: Headers, permissions: Permissions) => (principal: {user: User, session: Session}) =>
   Effect.gen(function* () {
     const authService = yield* AuthService;
     const allowed = yield* authService.userHasPermission(headers, permissions);
@@ -114,8 +119,12 @@ export const requirePermissions = (headers: Headers, permissions: Permissions) =
     if (!allowed) {
       return yield* Effect.fail(new ForbiddenError());
     }
-
-    return principal;
+    const role = principal.user.role
+    if (role && !isSupportedRole(role)
+    ) {
+      yield* Effect.fail(new ForbiddenError())
+    }
+    return principal as Principal;
   });
 
 export type AuthError = AuthProviderError | AuthEntityLookupError | UnauthorizedError | ForbiddenError;

@@ -1,11 +1,6 @@
 import { defineConfig } from 'drizzle-kit'
-// import dotenv from 'dotenv'
-// dotenv.config()
 
-const url = process.env.DATABASE_URL
-if (!url) {
-	throw new Error('DATABASE_URL env var not defined')
-}
+const url = process.env.DATABASE_URL ?? ''
 
 export default defineConfig({
 	out: './src/migrations',

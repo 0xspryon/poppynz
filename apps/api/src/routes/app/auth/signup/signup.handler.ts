@@ -63,23 +63,27 @@ export const EmptySignupServiceTest = makeSignupServiceTest({
   sendSignupLink: (_: { email: string; role: SignupRole; headers: Headers }) => Effect.void,
 })
 
-export const requestSignupProgram = (body: SignupInput, headers: Headers, language: SignupLanguage) =>
+const ensureSignupUserDoesNotExist = (email: string) =>
   Effect.gen(function* () {
-    const intentRepo = yield* SignupIntentRepo;
     const userRepo = yield* UserRepo;
-    const signupService = yield* SignupService;
-    const email = body.email
 
-    const existingUser = yield* userRepo
-      .findByEmail(email)
-      .pipe(
-        Effect.catchTag("DBNotFoundError", () => Effect.succeed(null)),
-        Effect.mapError((cause) => new SignupUserLookupError({ cause })),
-      );
+    const existingUser = yield* userRepo.findByEmail(email).pipe(
+      Effect.catchTag("DBNotFoundError", () => Effect.succeed(null)),
+      Effect.mapError((cause) => new SignupUserLookupError({ cause })),
+    );
 
     if (existingUser) {
       return yield* Effect.fail(new SignupUserAlreadyExistsError());
     }
+  });
+
+export const requestSignupProgram = (body: SignupInput, headers: Headers, language: SignupLanguage) =>
+  Effect.gen(function* () {
+    const intentRepo = yield* SignupIntentRepo;
+    const signupService = yield* SignupService;
+    const email = body.email
+
+    yield* ensureSignupUserDoesNotExist(email);
 
     yield* intentRepo
       .create({

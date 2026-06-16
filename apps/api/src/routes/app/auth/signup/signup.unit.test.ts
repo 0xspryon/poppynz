@@ -8,6 +8,7 @@ import {
   SignupAuthError,
   SignupIntentError,
   SignupUserAlreadyExistsError,
+  SignupUserLookupError,
   type SignupRole,
 } from "./signup.handler";
 import { signupInputSchema } from './signup.validator'
@@ -218,6 +219,51 @@ describe("requestSignupProgram", () => {
     const failure = getFailure(exit);
 
     expect(failure).toBeInstanceOf(SignupUserAlreadyExistsError);
+    expect(createdIntents).toEqual([]);
+    expect(sentLinks).toEqual([]);
+  });
+
+  it("does not create a signup intent or send email when user lookup fails", async () => {
+    const sqlError = new SqlError({ message: "db down" });
+    const createdIntents: Array<unknown> = [];
+    const sentLinks: Array<unknown> = [];
+    const exit = await Effect.runPromise(
+      requestSignupProgram({ email: "provider@example.com", role: "family" }, new Headers(), "en").pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            makeSignupIntentRepoTest({
+              create: (input) => {
+                createdIntents.push(input);
+                return Effect.succeed(makeSignupIntent(input));
+              },
+              findValidByEmail: () => Effect.succeed(null),
+              consumeByEmail: () => Effect.succeed(makeSignupIntent({
+                email: "user@example.com",
+                role: "family",
+                language: "en",
+                expiresAt: new Date(),
+              })),
+            }),
+            makeSignupServiceTest({
+              sendSignupLink: (input) => {
+                sentLinks.push(input);
+                return Effect.void;
+              },
+            }),
+            makeUserRepoTest({
+              findById: (id: string) => Effect.fail(new DBNotFoundError({ entity: "user", value: id })),
+              findByEmail: () => Effect.fail(sqlError),
+            }),
+          ),
+        ),
+        Effect.exit,
+      ),
+    );
+
+    const failure = getFailure(exit);
+
+    expect(failure).toBeInstanceOf(SignupUserLookupError);
+    expect(failure.cause).toBe(sqlError);
     expect(createdIntents).toEqual([]);
     expect(sentLinks).toEqual([]);
   });

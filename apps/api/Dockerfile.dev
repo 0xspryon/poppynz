@@ -4,4 +4,4 @@ WORKDIR /usr/src/app
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "bun install --frozen-lockfile && bun --cwd apps/api run dev"]
+CMD ["sh", "-c", "bun install --frozen-lockfile && bun --cwd /usr/src/app/apps/api dev"]

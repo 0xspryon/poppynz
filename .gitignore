@@ -11,6 +11,10 @@ coverage
 # svelte
 .svelte-kit
 
+# docker
+postgres_data/
+redis/
+
 # misc
 .DS_Store
 *.pem

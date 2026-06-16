@@ -1,4 +1,4 @@
-name: 'bewified_dev'
+name: 'poppynz_dev'
 services:
   api:
     container_name: api
@@ -7,7 +7,10 @@ services:
       dockerfile: ./apps/api/Dockerfile.dev
     restart: unless-stopped
     working_dir: /usr/src/app
+    command: sh -c "bun install --frozen-lockfile && bun --cwd /usr/src/app/apps/api dev"
     env_file: "./apps/api/src/.env.dev"
+    environment:
+      RUSTFS_ENDPOINT: http://rustfs:9000
     volumes:
       - .:/usr/src/app
       - bun_node_modules:/usr/src/app/node_modules
@@ -42,41 +45,6 @@ services:
       postgres:
         condition: service_healthy
 
-  # redis:
-  #   container_name: redis
-  #   image: redis:latest
-  #   restart: always
-  #   command: >
-  #     redis-server --port 6379 --appendonly yes
-  #   volumes:
-  #     - ./redis_volume:/data
-  #   networks:
-  #     - app-net
-  #   ports:
-  #     - '127.0.0.1:6379:6379'
-  #   expose:
-  #     - '6379'
-
-  # queuedash:
-  #   container_name: queuedash
-  #   build:
-  #     context: .
-  #     dockerfile: ./apps/queuedash_config_generator/Dockerfile.prod
-  #     args:
-  #       - QUEUE_REDIS_URI=redis://redis:6379/5
-  #   env_file:
-  #     - ./apps/queuedash_config_generator/.env
-  #   restart: always
-  #   depends_on:
-  #     - redis
-  #   environment:
-  #     QUEUES_CONFIG_FILE_PATH: /app/config/config.json
-  #     QUEUE_REDIS_URI: redis://redis:6379/5
-  #   networks:
-  #     - app-net
-  #   ports:
-  #     - '127.0.0.1:3010:3000'
-
   postgres:
     container_name: postgres
     image: postgres:18.1-alpine3.23
@@ -96,9 +64,7 @@ services:
     networks:
       - app-net
     ports:
-      - '127.0.0.1:5432:5432'
-    # expose:
-    #   - '5432'
+      - 5432:5432
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U ${DB_USER} -d ${DB_NAME}']
       interval: 10s
@@ -130,6 +96,7 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
+      - RUSTFS_UNSAFE_BYPASS_DISK_CHECK=true
       - RUSTFS_VOLUMES=/data/rustfs{0...3}
       - RUSTFS_ADDRESS=0.0.0.0:9000
       - RUSTFS_CONSOLE_ADDRESS=0.0.0.0:9001

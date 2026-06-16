@@ -1,5 +1,5 @@
 {
-  "id": "202caedb-3a2f-4b4c-9601-b57c6b470eaa",
+  "id": "957ce679-7eef-4d8e-ba31-0427d19e913f",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -329,9 +329,10 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "uuidv7()"
         },
         "user_id": {
           "name": "user_id",
@@ -579,9 +580,10 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "uuidv7()"
         },
         "user_id": {
           "name": "user_id",
@@ -988,9 +990,10 @@
       "columns": {
         "id": {
           "name": "id",
-          "type": "text",
+          "type": "uuid",
           "primaryKey": true,
-          "notNull": true
+          "notNull": true,
+          "default": "uuidv7()"
         },
         "email": {
           "name": "email",

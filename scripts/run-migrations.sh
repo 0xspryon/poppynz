@@ -7,7 +7,7 @@ attempt=1
 
 run_migrations() {
 	printf 'Running app_db migrations\n'
-	pnpm --filter @repo/db db:migrate
+	bun --filter @repo/db db:migrate
 }
 
 while [ "$attempt" -le "$max_attempts" ]; do

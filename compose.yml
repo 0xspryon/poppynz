@@ -1,5 +1,47 @@
 name: 'bewified_dev'
 services:
+  api:
+    container_name: api
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile.dev
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    env_file: "./apps/api/.env"
+    volumes:
+      - .:/usr/src/app
+      - bun_node_modules:/usr/src/app/node_modules
+    networks:
+      - app-net
+    ports:
+      - '127.0.0.1:3000:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rustfs:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+
+  migrations:
+    container_name: migrations
+    build:
+      context: .
+      dockerfile: ./Dockerfile.migrations.dev
+    restart: 'no'
+    working_dir: /usr/src/app
+    env_file: "./apps/api/.env"
+    # environment:
+    #   - DATABASE_URL=postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
+    volumes:
+      - .:/usr/src/app
+      - bun_node_modules:/usr/src/app/node_modules
+    networks:
+      - app-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   # redis:
   #   container_name: redis
   #   image: redis:latest
@@ -124,6 +166,7 @@ services:
 
 volumes:
   # redis_volume:
+  bun_node_modules:
   postgres_data:
   docker-entrypoint.sh:
   rustfs_data_0:

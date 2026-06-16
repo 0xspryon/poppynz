@@ -134,9 +134,13 @@ describe("requestSignupProgram", () => {
   });
 
   it("validates signup input with zod", () => {
-    const valid = signupInputSchema.parse({ email: " Provider@Example.com ", role: "service-provider" });
+    const valid = signupInputSchema.parse(
+      { email: " Provider@Example.com ", role: "service-provider" }
+    );
 
-    expect(valid).toEqual({ email: "provider@example.com", role: "service-provider" });
+    expect(valid).toEqual(
+      { email: "provider@example.com", role: "service-provider" }
+    );
 
     const invalidInputs = [
       { role: "family" },
@@ -148,13 +152,28 @@ describe("requestSignupProgram", () => {
       expect(signupInputSchema.safeParse(input).success).toBe(false);
     }
   });
+  it("protects against punycode emails", () => {
+    const valid = signupInputSchema.parse(
+      { email: " user@münchen.de ", role: 'service-provider' }
+    );
+
+    expect(valid).toEqual({ email: "user@xn--mnchen-3ya.de" });
+  });
 
   it("calls sendSignupLink during signup", async () => {
     const headers = new Headers({ "x-test-header": "test-value" });
-    const sendSignupLink = vi.fn((_: { email: string; role: SignupRole; headers: Headers }) => Effect.void);
+    const sendSignupLink = vi.fn(
+      (_: { email: string; role: SignupRole; headers: Headers }) => Effect.void
+    );
 
     await Effect.runPromise(
-      requestSignupProgram(signupInputSchema.parse({ email: "Provider@Example.com", role: "service-provider" }), headers, "en").pipe(
+      requestSignupProgram(
+        signupInputSchema.parse(
+          { email: "Provider@Example.com", role: "service-provider" }
+        ),
+        headers,
+        "en"
+      ).pipe(
         Effect.provide(
           makeLayer({
             create: (input) => Effect.succeed(makeSignupIntent(input)),

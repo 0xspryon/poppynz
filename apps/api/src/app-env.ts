@@ -3,12 +3,14 @@ import type { ObjectStorage, ObjectStorageFailure } from "@repo/objs";
 import type { SqlError } from "@effect/sql/SqlError";
 import type { ConfigError } from "effect/ConfigError";
 import type { ManagedRuntime } from "effect";
+import type { SigninService } from "./routes/app/auth/signin/signin.handler";
 import type { SignupService } from "./routes/app/auth/signup/signup.handler";
 import type { AuthService } from "./lib/effect-auth";
 import { Env, Handler } from "hono";
 
 export type AppServices =
   | SignupIntentRepo
+  | SigninService
   | SignupService
   | UserProfileRepo
   | UserRepo

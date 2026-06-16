@@ -16,6 +16,7 @@ import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createApp } from "../../../index";
 import { makeAuthServiceTest, type AuthSession } from "../../../lib/effect-auth";
+import { EmptySigninServiceTest } from "../auth/signin/signin.handler";
 import { EmptySignupServiceTest, type SignupRole } from "../auth/signup/signup.handler";
 
 const makeUser = (overrides: Partial<User> = {}): User => ({
@@ -66,6 +67,7 @@ const makeApp = (options: {
         userHasPermission: () => Effect.succeed(true),
       }),
       EmptySignupIntentRepoTest,
+      EmptySigninServiceTest,
       EmptySignupServiceTest,
       makeUserRepoTest({
         findById: (id: string) =>

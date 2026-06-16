@@ -6,12 +6,9 @@ import punycode from 'ts-punycode'
 export const signupInputSchema = z.object({
   email: z
     .email()
-    .trim()
     .transform(
-      (email) => email.toLowerCase()
-    ).refine(
       // This is to protect against punycode attacks
-      (email) => punycode.toASCII(email)
+      (email) => punycode.toASCII(email.toLowerCase())
     ),
   role: z.enum(validRoles),
 });

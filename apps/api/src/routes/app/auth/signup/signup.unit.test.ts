@@ -157,7 +157,9 @@ describe("requestSignupProgram", () => {
       { email: " user@münchen.de ", role: 'service-provider' }
     );
 
-    expect(valid).toEqual({ email: "user@xn--mnchen-3ya.de" });
+    expect(valid).toEqual(
+      { email: "user@xn--mnchen-3ya.de", role: 'service-provider' }
+    );
   });
 
   it("calls sendSignupLink during signup", async () => {

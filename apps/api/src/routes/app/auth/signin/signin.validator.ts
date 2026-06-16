@@ -4,11 +4,13 @@ import punycode from "ts-punycode";
 
 export const signinInputSchema = z.object({
   email: z
-    .email()
+    .string()
+    .trim()
     .transform(
       // This is to protect against punycode attacks
       (email) => punycode.toASCII(email.toLowerCase())
     )
+    .pipe(z.email())
 });
 
 export type SigninInput = z.infer<typeof signinInputSchema>;

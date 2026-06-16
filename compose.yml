@@ -7,7 +7,7 @@ services:
       dockerfile: ./apps/api/Dockerfile.dev
     restart: unless-stopped
     working_dir: /usr/src/app
-    env_file: "./apps/api/.env"
+    env_file: "./apps/api/src/.env.dev"
     volumes:
       - .:/usr/src/app
       - bun_node_modules:/usr/src/app/node_modules
@@ -30,7 +30,7 @@ services:
       dockerfile: ./Dockerfile.migrations.dev
     restart: 'no'
     working_dir: /usr/src/app
-    env_file: "./apps/api/.env"
+    env_file: "./apps/api/src/.env.dev"
     # environment:
     #   - DATABASE_URL=postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
     volumes:

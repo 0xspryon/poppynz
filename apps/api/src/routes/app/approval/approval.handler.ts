@@ -1,16 +1,24 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import { Approval, ApprovalRepo, KycDocumentRepo, UserRepo } from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
-import type { HonoContext, HonoEnv } from "../../../app-env";
+import type { HonoContext, HonoEnv } from "@/api/app-env";
 import {
-  AuthError,
   authenticate,
   isAuthError,
-  Principal,
+  UserAndSession,
   requirePermissions,
   authErrorToResponse,
 } from "@/api/lib/effect-auth";
-import type { ApprovalInput } from "./approval.validator";
+import {
+  approvalJsonError,
+  validateApprovalInput,
+  type ApprovalInput,
+} from "./approval.validator";
+import {
+  isRequestValidationError,
+  parseJsonBody,
+  requestValidationErrorToResponse,
+} from "@/api/lib/schema-validator";
 
 export class ApprovalUserLookupError extends Data.TaggedError("ApprovalUserLookupError")<{
   cause: SqlError;
@@ -44,7 +52,7 @@ const toApprovalResponse = (approval: Approval) => ({
   reason: approval.reason,
 });
 
-export const createApprovalProgram = (principal: Principal, input: ApprovalInput) =>
+export const createApprovalProgram = (userAndSession: UserAndSession, input: ApprovalInput) =>
   Effect.gen(function* () {
     const userRepo = yield* UserRepo;
     const approvalRepo = yield* ApprovalRepo;
@@ -67,7 +75,7 @@ export const createApprovalProgram = (principal: Principal, input: ApprovalInput
         userId: input.userId,
         type: input.type,
         status: input.status,
-        approvedBy: principal.user.id,
+        approvedBy: userAndSession.user.id,
         reason: input.reason ?? null,
       })
       .pipe(Effect.mapError((cause) => new ApprovalRepoError({ cause })));
@@ -145,14 +153,20 @@ const isApprovalError = (error: unknown): error is ApprovalError =>
   error instanceof ApprovalTargetNotFoundError ||
   error instanceof ApprovalTypeMismatchError;
 
-export async function createApprovalHandler(c: HonoContext<HonoEnv>, body: ApprovalInput) {
+export async function createApprovalHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(
-    authenticate(headers).pipe(
-      Effect.flatMap(requirePermissions(headers, { approval: ["create"] })),
-      Effect.flatMap((principal) => createApprovalProgram(principal, body)),
-    ),
+    Effect.gen(function* () {
+      const rawBody = yield* parseJsonBody(c, approvalJsonError);
+      const input = yield* validateApprovalInput(rawBody);
+      const authenticated = yield* authenticate(headers);
+      const userAndSession = yield* requirePermissions(headers, {
+        approval: ["create"],
+      })(authenticated);
+
+      return yield* createApprovalProgram(userAndSession, input);
+    }),
   );
 
   return Exit.match(exit, {
@@ -163,6 +177,10 @@ export async function createApprovalHandler(c: HonoContext<HonoEnv>, body: Appro
       if (Option.isSome(failure)) {
         if (isAuthError(failure.value)) {
           return authErrorToResponse(c, failure.value);
+        }
+
+        if (isRequestValidationError(failure.value)) {
+          return requestValidationErrorToResponse(c, failure.value);
         }
 
         if (isApprovalError(failure.value)) {

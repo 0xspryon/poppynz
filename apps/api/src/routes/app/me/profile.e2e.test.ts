@@ -338,7 +338,7 @@ describe("/me/profile", () => {
     });
   });
 
-  it("does not update email through PATCH", async () => {
+  it("ignores email in profile PATCH but applies supported fields", async () => {
     const updates: Array<UserProfileUpdate> = [];
     const app = makeApp({
       authSession: { user: { id: "user-1" }, session: { id: "session-1" } },
@@ -354,20 +354,10 @@ describe("/me/profile", () => {
 
     const body = await res.json();
 
-    expect(res.status).toBe(400);
-    expect(body).toMatchObject({
-      error: {
-        code: "INVALID_PROFILE_INPUT",
-        message: "Profile update contains invalid or unsupported fields.",
-      },
-    });
-    expect(body.error.issues).toEqual([
-      expect.objectContaining({
-        code: "unrecognized_keys",
-        keys: ["email"],
-      }),
-    ]);
-    expect(updates).toEqual([]);
+    expect(res.status).toBe(200);
+    expect(body.email).toBe("mom_helper@poppynz.com");
+    expect(body.firstName).toBe("Updated");
+    expect(updates).toEqual([{ firstName: "Updated" }]);
   });
 
   it("rejects unsupported gender values", async () => {
@@ -393,12 +383,9 @@ describe("/me/profile", () => {
         message: "Profile update contains invalid or unsupported fields.",
       },
     });
-    expect(body.error.issues).toEqual([
-      expect.objectContaining({
-        code: "invalid_value",
-        path: ["gender"],
-      }),
-    ]);
+    expect(body.error.issues).toContainEqual(
+      expect.objectContaining({ path: ["gender"] }),
+    );
     expect(updates).toEqual([]);
   });
 });

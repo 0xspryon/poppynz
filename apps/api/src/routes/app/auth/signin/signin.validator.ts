@@ -1,31 +1,28 @@
-import { zValidator } from "@hono/zod-validator";
-import { z } from "zod";
+import { Schema } from "effect";
 import punycode from "ts-punycode";
+import { validateInput } from "@/api/lib/schema-validator";
 
-export const signinInputSchema = z.object({
-  email: z
-    .string()
-    .trim()
-    .transform(
-      // This is to protect against punycode attacks
-      (email) => punycode.toASCII(email.toLowerCase())
-    )
-    .pipe(z.email())
+const signinValidationError = {
+  code: "INVALID_SIGNIN_INPUT",
+  message: "A valid email is required.",
+} as const;
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const normalizedEmailSchema = Schema.Trim.pipe(
+  Schema.transform(Schema.String, {
+    decode: (email) => punycode.toASCII(email.toLowerCase()),
+    encode: (email) => email,
+  }),
+  Schema.pattern(emailPattern),
+);
+
+export const signinInputSchema = Schema.Struct({
+  email: normalizedEmailSchema,
 });
 
-export type SigninInput = z.infer<typeof signinInputSchema>;
+export type SigninInput = Schema.Schema.Type<typeof signinInputSchema>;
 
-export const signinValidator = zValidator("json", signinInputSchema, (result, c) => {
-  if (!result.success) {
-    return c.json(
-      {
-        error: {
-          code: "INVALID_SIGNIN_INPUT" as const,
-          message: "A valid email is required.",
-          issues: result.error.issues,
-        },
-      },
-      400,
-    );
-  }
-});
+export const validateSigninInput = validateInput(signinInputSchema, signinValidationError);
+
+export const signinJsonError = signinValidationError;

@@ -3,7 +3,8 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "db:migrate": "bunx drizzle-kit generate"
+    "db:generate:migrations": "bunx drizzle-kit generate",
+    "db:migrate": "bunx drizzle-kit migrate"
   },
   "type": "module",
   "exports": {

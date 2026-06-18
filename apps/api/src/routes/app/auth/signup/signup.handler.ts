@@ -4,7 +4,16 @@ import { Cause, Context, Data, Effect, Exit, Layer, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../../app-env";
 import { auth } from "../../../../lib/auth";
 import { validLanguages, signupIntentTtlMs, validRoles } from "../../../../lib/constants";
-import { SignupInput } from "./signup.validator";
+import {
+  signupValidationError,
+  validateSignupInput,
+  type SignupInput,
+} from "./signup.validator";
+import {
+  isRequestValidationError,
+  parseJsonBody,
+  requestValidationErrorToResponse,
+} from "@/api/lib/schema-validator";
 
 export type SignupRole = (typeof validRoles)[number];
 export type SignupLanguage = (typeof validLanguages)[number];
@@ -164,19 +173,32 @@ const isSignupError = (error: unknown): error is SignupError =>
   error instanceof SignupUserAlreadyExistsError ||
   error instanceof SignupAuthError;
 
-export async function signupHandler(c: HonoContext<HonoEnv>, body: SignupInput) {
+export async function signupHandler(c: HonoContext<HonoEnv>) {
   const headers = c.req.raw.headers
   const runtime = c.get('runtime')
   const language = c.get('language')
-  const exit = await runtime.runPromiseExit(requestSignupProgram(body, headers, language));
+  const exit = await runtime.runPromiseExit(
+    Effect.gen(function* () {
+      const rawBody = yield* parseJsonBody(c, signupValidationError);
+      const input = yield* validateSignupInput(rawBody);
+
+      return yield* requestSignupProgram(input, headers, language);
+    }),
+  );
 
   return Exit.match(exit, {
     onSuccess: (result) => c.json(result),
     onFailure: (cause) => {
       const failure = Cause.failureOption(cause);
 
-      if (Option.isSome(failure) && isSignupError(failure.value)) {
-        return signupErrorToResponse(c, failure.value);
+      if (Option.isSome(failure)) {
+        if (isRequestValidationError(failure.value)) {
+          return requestValidationErrorToResponse(c, failure.value);
+        }
+
+        if (isSignupError(failure.value)) {
+          return signupErrorToResponse(c, failure.value);
+        }
       }
 
       return unexpectedErrorResponse(c);

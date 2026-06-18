@@ -1,35 +1,35 @@
-import { zValidator } from "@hono/zod-validator";
-import { z } from "zod";
+import { Schema } from "effect";
+import { validateInput } from "@/api/lib/schema-validator";
 
-export const profileUpdateSchema = z
-  .object({
-    firstName: z.string().trim().min(1).nullable().optional(),
-    lastName: z.string().trim().min(1).nullable().optional(),
-    gender: z.enum(["male", "female"]).nullable().optional(),
-    phoneNumber: z.string().trim().min(1).nullable().optional(),
-    dateOfBirth: z.string().trim().min(1).nullable().optional(),
-    address: z.string().trim().min(1).nullable().optional(),
-    city: z.string().trim().min(1).nullable().optional(),
-    postalCode: z.string().trim().min(1).nullable().optional(),
-    country: z.string().trim().min(1).nullable().optional(),
-    stateProvince: z.string().trim().min(1).nullable().optional(),
-    shortBio: z.string().trim().nullable().optional(),
-  })
-  .strict();
+const profileUpdateValidationError = {
+  code: "INVALID_PROFILE_INPUT",
+  message: "Profile update contains invalid or unsupported fields.",
+} as const;
 
-export type ProfileUpdateInput = z.infer<typeof profileUpdateSchema>;
+const trimmedNonEmptyString = Schema.Trim.pipe(Schema.nonEmptyString());
+const nullableOptionalNonEmptyString = Schema.optional(
+  Schema.NullOr(trimmedNonEmptyString),
+);
 
-export const profileUpdateValidator = zValidator("json", profileUpdateSchema, (result, c) => {
-  if (!result.success) {
-    return c.json(
-      {
-        error: {
-          code: "INVALID_PROFILE_INPUT" as const,
-          message: "Profile update contains invalid or unsupported fields.",
-          issues: result.error.issues,
-        },
-      },
-      400,
-    );
-  }
+export const profileUpdateSchema = Schema.Struct({
+  firstName: nullableOptionalNonEmptyString,
+  lastName: nullableOptionalNonEmptyString,
+  gender: Schema.optional(Schema.NullOr(Schema.Literal("male", "female"))),
+  phoneNumber: nullableOptionalNonEmptyString,
+  dateOfBirth: nullableOptionalNonEmptyString,
+  address: nullableOptionalNonEmptyString,
+  city: nullableOptionalNonEmptyString,
+  postalCode: nullableOptionalNonEmptyString,
+  country: nullableOptionalNonEmptyString,
+  stateProvince: nullableOptionalNonEmptyString,
+  shortBio: Schema.optional(Schema.NullOr(Schema.Trim)),
 });
+
+export type ProfileUpdateInput = Schema.Schema.Type<typeof profileUpdateSchema>;
+
+export const validateProfileUpdateInput = validateInput(
+  profileUpdateSchema,
+  profileUpdateValidationError,
+);
+
+export const profileUpdateJsonError = profileUpdateValidationError;

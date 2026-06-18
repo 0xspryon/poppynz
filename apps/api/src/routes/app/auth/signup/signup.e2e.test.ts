@@ -254,10 +254,7 @@ describe("POST /auth/sign-up", () => {
       },
     });
     expect(body.error.issues).toEqual([
-      expect.objectContaining({
-        path: ["email"],
-        code: "invalid_format",
-      }),
+      expect.objectContaining({ path: ["email"] }),
     ]);
   });
 

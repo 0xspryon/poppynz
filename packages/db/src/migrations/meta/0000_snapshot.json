@@ -1,12 +1,12 @@
 {
-  "id": "957ce679-7eef-4d8e-ba31-0427d19e913f",
+  "id": "d0b509cc-ff08-4f0f-9952-1453bd9262a0",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
-    "public.account": {
+    "app_db.account": {
       "name": "account",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -110,6 +110,7 @@
           "name": "account_user_id_user_id_fk",
           "tableFrom": "account",
           "tableTo": "user",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "user_id"
           ],
@@ -126,9 +127,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.apikey": {
+    "app_db.apikey": {
       "name": "apikey",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -323,9 +324,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.approvals": {
+    "app_db.approvals": {
       "name": "approvals",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -343,14 +344,14 @@
         "type": {
           "name": "type",
           "type": "approval_type",
-          "typeSchema": "public",
+          "typeSchema": "app_db",
           "primaryKey": false,
           "notNull": true
         },
         "status": {
           "name": "status",
           "type": "approval_status",
-          "typeSchema": "public",
+          "typeSchema": "app_db",
           "primaryKey": false,
           "notNull": true
         },
@@ -424,6 +425,7 @@
           "name": "approvals_user_id_user_id_fk",
           "tableFrom": "approvals",
           "tableTo": "user",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "user_id"
           ],
@@ -437,6 +439,7 @@
           "name": "approvals_approved_by_user_id_fk",
           "tableFrom": "approvals",
           "tableTo": "user",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "approved_by"
           ],
@@ -453,9 +456,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.invitation": {
+    "app_db.invitation": {
       "name": "invitation",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -545,6 +548,7 @@
           "name": "invitation_organization_id_organization_id_fk",
           "tableFrom": "invitation",
           "tableTo": "organization",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "organization_id"
           ],
@@ -558,6 +562,7 @@
           "name": "invitation_inviter_id_user_id_fk",
           "tableFrom": "invitation",
           "tableTo": "user",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "inviter_id"
           ],
@@ -574,9 +579,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.kyc_documents": {
+    "app_db.kyc_documents": {
       "name": "kyc_documents",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -594,7 +599,7 @@
         "type": {
           "name": "type",
           "type": "kyc_document_type",
-          "typeSchema": "public",
+          "typeSchema": "app_db",
           "primaryKey": false,
           "notNull": true
         },
@@ -613,7 +618,7 @@
         "status": {
           "name": "status",
           "type": "kyc_document_status",
-          "typeSchema": "public",
+          "typeSchema": "app_db",
           "primaryKey": false,
           "notNull": true
         },
@@ -681,6 +686,7 @@
           "name": "kyc_documents_user_id_user_id_fk",
           "tableFrom": "kyc_documents",
           "tableTo": "user",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "user_id"
           ],
@@ -697,9 +703,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.member": {
+    "app_db.member": {
       "name": "member",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -770,6 +776,7 @@
           "name": "member_organization_id_organization_id_fk",
           "tableFrom": "member",
           "tableTo": "organization",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "organization_id"
           ],
@@ -783,6 +790,7 @@
           "name": "member_user_id_user_id_fk",
           "tableFrom": "member",
           "tableTo": "user",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "user_id"
           ],
@@ -799,9 +807,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.organization": {
+    "app_db.organization": {
       "name": "organization",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -872,9 +880,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.session": {
+    "app_db.session": {
       "name": "session",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -960,6 +968,7 @@
           "name": "session_user_id_user_id_fk",
           "tableFrom": "session",
           "tableTo": "user",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "user_id"
           ],
@@ -984,9 +993,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.signup_intent": {
+    "app_db.signup_intent": {
       "name": "signup_intent",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -1057,9 +1066,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.user": {
+    "app_db.user": {
       "name": "user",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -1174,9 +1183,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.user_profile": {
+    "app_db.user_profile": {
       "name": "user_profile",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "user_id": {
           "name": "user_id",
@@ -1205,7 +1214,7 @@
         "gender": {
           "name": "gender",
           "type": "gender",
-          "typeSchema": "public",
+          "typeSchema": "app_db",
           "primaryKey": false,
           "notNull": false
         },
@@ -1264,6 +1273,7 @@
           "name": "user_profile_user_id_user_id_fk",
           "tableFrom": "user_profile",
           "tableTo": "user",
+          "schemaTo": "app_db",
           "columnsFrom": [
             "user_id"
           ],
@@ -1280,9 +1290,9 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.verification": {
+    "app_db.verification": {
       "name": "verification",
-      "schema": "",
+      "schema": "app_db",
       "columns": {
         "id": {
           "name": "id",
@@ -1349,33 +1359,33 @@
     }
   },
   "enums": {
-    "public.approval_status": {
+    "app_db.approval_status": {
       "name": "approval_status",
-      "schema": "public",
+      "schema": "app_db",
       "values": [
         "approved",
         "rejected"
       ]
     },
-    "public.approval_type": {
+    "app_db.approval_type": {
       "name": "approval_type",
-      "schema": "public",
+      "schema": "app_db",
       "values": [
         "service-provider",
         "family"
       ]
     },
-    "public.gender": {
+    "app_db.gender": {
       "name": "gender",
-      "schema": "public",
+      "schema": "app_db",
       "values": [
         "male",
         "female"
       ]
     },
-    "public.kyc_document_status": {
+    "app_db.kyc_document_status": {
       "name": "kyc_document_status",
-      "schema": "public",
+      "schema": "app_db",
       "values": [
         "missing",
         "uploaded",
@@ -1383,9 +1393,9 @@
         "rejected"
       ]
     },
-    "public.kyc_document_type": {
+    "app_db.kyc_document_type": {
       "name": "kyc_document_type",
-      "schema": "public",
+      "schema": "app_db",
       "values": [
         "government-id",
         "vulnerable-sector-check",
@@ -1394,7 +1404,9 @@
       ]
     }
   },
-  "schemas": {},
+  "schemas": {
+    "app_db": "app_db"
+  },
   "sequences": {},
   "roles": {},
   "policies": {},

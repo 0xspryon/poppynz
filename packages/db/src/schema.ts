@@ -1,33 +1,34 @@
 import { relations, sql } from "drizzle-orm";
 import {
-  pgTable,
   text,
   timestamp,
   boolean,
   integer,
   index,
-  pgEnum,
+  pgSchema,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
-export const gender = pgEnum("gender", ["male", "female"]);
-export const approvalType = pgEnum("approval_type", ["service-provider", "family"]);
-export const approvalStatus = pgEnum("approval_status", ["approved", "rejected"]);
-export const kycDocumentType = pgEnum("kyc_document_type", [
+export const appDb = pgSchema("app_db");
+
+export const gender = appDb.enum("gender", ["male", "female"]);
+export const approvalType = appDb.enum("approval_type", ["service-provider", "family"]);
+export const approvalStatus = appDb.enum("approval_status", ["approved", "rejected"]);
+export const kycDocumentType = appDb.enum("kyc_document_type", [
   "government-id",
   "vulnerable-sector-check",
   "first-aid-certification",
   "driving-license",
 ]);
-export const kycDocumentStatus = pgEnum("kyc_document_status", [
+export const kycDocumentStatus = appDb.enum("kyc_document_status", [
   "missing",
   "uploaded",
   "approved",
   "rejected",
 ]);
 
-export const user = pgTable("user", {
+export const user = appDb.table("user", {
   id: text("id").primaryKey(),
   name: text("name").notNull(),
   email: text("email").notNull().unique(),
@@ -47,7 +48,7 @@ export const user = pgTable("user", {
   phoneNumberVerified: boolean("phone_number_verified"),
 });
 
-export const signupIntent = pgTable(
+export const signupIntent = appDb.table(
   "signup_intent",
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
@@ -61,7 +62,7 @@ export const signupIntent = pgTable(
   (table) => [index("signup_intent_email_idx").on(table.email)],
 );
 
-export const userProfile = pgTable("user_profile", {
+export const userProfile = appDb.table("user_profile", {
   userId: text("user_id")
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
@@ -79,7 +80,7 @@ export const userProfile = pgTable("user_profile", {
   shortBio: text("short_bio"),
 });
 
-export const approval = pgTable(
+export const approval = appDb.table(
   "approvals",
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
@@ -102,7 +103,7 @@ export const approval = pgTable(
   ],
 );
 
-export const kycDocument = pgTable(
+export const kycDocument = appDb.table(
   "kyc_documents",
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
@@ -127,7 +128,7 @@ export const kycDocument = pgTable(
 );
 
 
-export const session = pgTable(
+export const session = appDb.table(
   "session",
   {
     id: text("id").primaryKey(),
@@ -148,7 +149,7 @@ export const session = pgTable(
   (table) => [index("session_userId_idx").on(table.userId)],
 );
 
-export const account = pgTable(
+export const account = appDb.table(
   "account",
   {
     id: text("id").primaryKey(),
@@ -172,7 +173,7 @@ export const account = pgTable(
   (table) => [index("account_userId_idx").on(table.userId)],
 );
 
-export const verification = pgTable(
+export const verification = appDb.table(
   "verification",
   {
     id: text("id").primaryKey(),
@@ -188,7 +189,7 @@ export const verification = pgTable(
   (table) => [index("verification_identifier_idx").on(table.identifier)],
 );
 
-export const apikey = pgTable(
+export const apikey = appDb.table(
   "apikey",
   {
     id: text("id").primaryKey(),
@@ -221,7 +222,7 @@ export const apikey = pgTable(
   ],
 );
 
-export const organization = pgTable(
+export const organization = appDb.table(
   "organization",
   {
     id: text("id").primaryKey(),
@@ -234,7 +235,7 @@ export const organization = pgTable(
   (table) => [uniqueIndex("organization_slug_uidx").on(table.slug)],
 );
 
-export const member = pgTable(
+export const member = appDb.table(
   "member",
   {
     id: text("id").primaryKey(),
@@ -253,7 +254,7 @@ export const member = pgTable(
   ],
 );
 
-export const invitation = pgTable(
+export const invitation = appDb.table(
   "invitation",
   {
     id: text("id").primaryKey(),

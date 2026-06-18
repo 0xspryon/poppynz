@@ -1,6 +1,6 @@
 import { SqlError } from "@effect/sql/SqlError";
 import { DBNotFoundError, makeSignupIntentRepoTest, makeUserRepoTest, type SignupIntent, type User } from "@repo/db";
-import { Cause, Effect, Exit, Layer, Option } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
   makeSignupServiceTest,
@@ -25,6 +25,9 @@ const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
 
   return failure.value;
 };
+
+const decodeSignupInput = Schema.decodeUnknownSync(signupInputSchema);
+const isSignupInput = Schema.is(signupInputSchema);
 
 const makeLayer = (options: {
   create: Parameters<typeof makeSignupIntentRepoTest>[0]["create"];
@@ -101,7 +104,7 @@ describe("requestSignupProgram", () => {
 
     const result = await Effect.runPromise(
       requestSignupProgram(
-        signupInputSchema.parse({
+        decodeSignupInput({
            email: "Provider@Example.com",
            role: "service-provider"
         }),
@@ -134,8 +137,8 @@ describe("requestSignupProgram", () => {
     expect(sentLinks).toEqual([{ email: "provider@example.com", role: "service-provider" }]);
   });
 
-  it("validates signup input with zod", () => {
-    const valid = signupInputSchema.parse(
+  it("validates signup input with Effect Schema", () => {
+    const valid = decodeSignupInput(
       { email: " Provider@Example.com ", role: "service-provider" }
     );
 
@@ -150,11 +153,11 @@ describe("requestSignupProgram", () => {
     ];
 
     for (const input of invalidInputs) {
-      expect(signupInputSchema.safeParse(input).success).toBe(false);
+      expect(isSignupInput(input)).toBe(false);
     }
   });
   it("protects against punycode emails", () => {
-    const valid = signupInputSchema.parse(
+    const valid = decodeSignupInput(
       { email: " user@münchen.de ", role: 'service-provider' }
     );
 
@@ -171,7 +174,7 @@ describe("requestSignupProgram", () => {
 
     await Effect.runPromise(
       requestSignupProgram(
-        signupInputSchema.parse(
+        decodeSignupInput(
           { email: "Provider@Example.com", role: "service-provider" }
         ),
         headers,

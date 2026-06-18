@@ -1,6 +1,6 @@
 import { SqlError } from "@effect/sql/SqlError";
 import { DBNotFoundError, makeUserRepoTest, type User } from "@repo/db";
-import { Cause, Effect, Exit, Layer, Option } from "effect";
+import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import {
   makeSigninServiceTest,
@@ -23,6 +23,9 @@ const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
 
   return failure.value;
 };
+
+const decodeSigninInput = Schema.decodeUnknownSync(signinInputSchema);
+const isSigninInput = Schema.is(signinInputSchema);
 
 const makeUser = (overrides: Partial<User> = {}): User => ({
   id: "user-1",
@@ -56,16 +59,16 @@ const makeLayer = (options: {
 
 describe("requestSigninProgram", () => {
   it("protects against punycode emails", () => {
-    const valid = signinInputSchema.parse({ email: " user@münchen.de " });
+    const valid = decodeSigninInput({ email: " user@münchen.de " });
 
     expect(valid).toEqual({ email: "user@xn--mnchen-3ya.de" });
   });
-  it("validates signin input with zod", () => {
-    const valid = signinInputSchema.parse({ email: " User@Example.com " });
+  it("validates signin input with Effect Schema", () => {
+    const valid = decodeSigninInput({ email: " User@Example.com " });
 
     expect(valid).toEqual({ email: "user@example.com" });
-    expect(signinInputSchema.safeParse({ email: "not-an-email" }).success).toBe(false);
-    expect(signinInputSchema.safeParse({}).success).toBe(false);
+    expect(isSigninInput({ email: "not-an-email" })).toBe(false);
+    expect(isSigninInput({})).toBe(false);
   });
 
   it("sends a signin link for an existing user", async () => {
@@ -73,7 +76,7 @@ describe("requestSigninProgram", () => {
     const sendSigninLink = vi.fn((_: { email: string; headers: Headers }) => Effect.void);
 
     const result = await Effect.runPromise(
-      requestSigninProgram(signinInputSchema.parse({ email: "User@Example.com" }), headers).pipe(
+      requestSigninProgram(decodeSigninInput({ email: "User@Example.com" }), headers).pipe(
         Effect.provide(
           makeLayer({
             findByEmail: () => Effect.succeed(makeUser()),
@@ -110,12 +113,16 @@ describe("requestSigninProgram", () => {
 
   it("maps user lookup failures", async () => {
     const sqlError = new SqlError({ message: "db down" });
+    const sentLinks: Array<unknown> = [];
     const exit = await Effect.runPromise(
       requestSigninProgram({ email: "user@example.com" }, new Headers()).pipe(
         Effect.provide(
           makeLayer({
             findByEmail: () => Effect.fail(sqlError),
-            sendSigninLink: () => Effect.void,
+            sendSigninLink: (input) => {
+              sentLinks.push(input);
+              return Effect.void;
+            },
           }),
         ),
         Effect.exit,
@@ -126,6 +133,7 @@ describe("requestSigninProgram", () => {
 
     expect(failure).toBeInstanceOf(SigninUserLookupError);
     expect(failure.cause).toBe(sqlError);
+    expect(sentLinks).toEqual([]);
   });
 
   it("maps magic-link failures", async () => {

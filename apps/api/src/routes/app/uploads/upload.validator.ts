@@ -1,36 +1,37 @@
-import { zValidator } from "@hono/zod-validator";
-import { z } from "zod";
+import { Schema } from "effect";
 import { validKycDocumentTypes } from "../../../lib/constants";
+import { validateInput } from "@/api/lib/schema-validator";
 
-const baseUploadInputSchema = z.object({
-  fileName: z.string().trim().min(1).max(255),
-  contentType: z.string().trim().min(1).max(120),
-  sizeBytes: z.number().int().positive(),
-});
+const uploadPresignValidationError = {
+  code: "INVALID_UPLOAD_PRESIGN_INPUT",
+  message: "Upload request contains invalid or unsupported fields.",
+} as const;
 
-export const uploadPresignInputSchema = z.discriminatedUnion("target", [
-  baseUploadInputSchema.extend({
-    target: z.literal("kyc-document"),
-    documentType: z.enum(validKycDocumentTypes),
+const trimmedNonEmptyString = Schema.Trim.pipe(Schema.nonEmptyString());
+
+const baseUploadInputFields = {
+  fileName: trimmedNonEmptyString.pipe(Schema.maxLength(255)),
+  contentType: trimmedNonEmptyString.pipe(Schema.maxLength(120)),
+  sizeBytes: Schema.Number.pipe(Schema.int(), Schema.positive()),
+};
+
+export const uploadPresignInputSchema = Schema.Union(
+  Schema.Struct({
+    ...baseUploadInputFields,
+    target: Schema.Literal("kyc-document"),
+    documentType: Schema.Literal(...validKycDocumentTypes),
   }),
-  baseUploadInputSchema.extend({
-    target: z.literal("public-profile-picture"),
+  Schema.Struct({
+    ...baseUploadInputFields,
+    target: Schema.Literal("public-profile-picture"),
   }),
-]);
+);
 
-export type UploadPresignInput = z.infer<typeof uploadPresignInputSchema>;
+export type UploadPresignInput = Schema.Schema.Type<typeof uploadPresignInputSchema>;
 
-export const uploadPresignValidator = zValidator("json", uploadPresignInputSchema, (result, c) => {
-  if (!result.success) {
-    return c.json(
-      {
-        error: {
-          code: "INVALID_UPLOAD_PRESIGN_INPUT" as const,
-          message: "Upload request contains invalid or unsupported fields.",
-          issues: result.error.issues,
-        },
-      },
-      400,
-    );
-  }
-});
+export const validateUploadPresignInput = validateInput(
+  uploadPresignInputSchema,
+  uploadPresignValidationError,
+);
+
+export const uploadPresignJsonError = uploadPresignValidationError;

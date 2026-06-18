@@ -8,10 +8,19 @@ import {
  authenticate,
  isAuthError,
  requirePermissions,
- type Principal
+ type UserAndSession
 } from "@/api/lib/effect-auth";
-import type { UploadPresignInput } from "./upload.validator";
+import {
+  uploadPresignJsonError,
+  validateUploadPresignInput,
+  type UploadPresignInput,
+} from "./upload.validator";
 import { isSupportedRole, Roles } from "@/api/lib/auth-roles";
+import {
+  isRequestValidationError,
+  parseJsonBody,
+  requestValidationErrorToResponse,
+} from "@/api/lib/schema-validator";
 
 const uploadUrlTtlSeconds = 10 * 60;
 const maxKycDocumentSizeBytes = 10 * 1024 * 1024;
@@ -82,17 +91,17 @@ const buildObjectKey = (userId: string, input: UploadPresignInput) => {
   return `users/${userId}/public/profile-pictures/${uploadId}-${safeName}`;
 };
 
-export const createUploadPresignProgram = (principal: Principal, input: UploadPresignInput) =>
+export const createUploadPresignProgram = (userAndSession: UserAndSession, input: UploadPresignInput) =>
   Effect.gen(function* () {
     const objectStorage = yield* ObjectStorage;
     const buckets = yield* objectBucketsConfig.pipe(
       Effect.mapError((cause) => new UploadConfigError({ cause })),
     );
 
-    yield* validateUploadInput(principal.user.role, input);
+    yield* validateUploadInput(userAndSession.user.role, input);
 
     const bucket = input.target === "kyc-document" ? buckets.kycBucket : buckets.publicBucket;
-    const fileKey = buildObjectKey(principal.user.id, input);
+    const fileKey = buildObjectKey(userAndSession.user.id, input);
     const presignedUrl = yield* objectStorage
       .createPresignedPutUrl({
         bucket,
@@ -170,6 +179,10 @@ const exitToResponse = <TUpload>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TUploa
           return authErrorToResponse(c, failure.value);
         }
 
+        if (isRequestValidationError(failure.value)) {
+          return requestValidationErrorToResponse(c, failure.value);
+        }
+
         if (isUploadError(failure.value)) {
           return uploadErrorToResponse(c, failure.value);
         }
@@ -179,16 +192,20 @@ const exitToResponse = <TUpload>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TUploa
     },
   });
 
-export async function createUploadPresignHandler(c: HonoContext<HonoEnv>, body: UploadPresignInput) {
+export async function createUploadPresignHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(
-    authenticate(headers).pipe(
-      Effect.flatMap(requirePermissions(headers, { profile: ["update"] })),
-      Effect.flatMap(
-        (principal) => createUploadPresignProgram(principal, body)
-      ),
-    ),
+    Effect.gen(function* () {
+      const rawBody = yield* parseJsonBody(c, uploadPresignJsonError);
+      const input = yield* validateUploadPresignInput(rawBody);
+      const authenticated = yield* authenticate(headers);
+      const userAndSession = yield* requirePermissions(headers, {
+        profile: ["update"],
+      })(authenticated);
+
+      return yield* createUploadPresignProgram(userAndSession, input);
+    }),
   );
 
   return exitToResponse(c, exit);

@@ -14,7 +14,7 @@ export type AuthSession = {
   };
 };
 
-export type Principal = {
+export type UserAndSession = {
   user: Omit<User, 'role'> & { role: Role | null};
   session: Session;
 };
@@ -111,7 +111,7 @@ export const authenticate = (headers: Headers) =>
     return { user, session };
   });
 
-export const requirePermissions = (headers: Headers, permissions: Permissions) => (principal: {user: User, session: Session}) =>
+export const requirePermissions = (headers: Headers, permissions: Permissions) => (userAndSession: {user: User, session: Session}) =>
   Effect.gen(function* () {
     const authService = yield* AuthService;
     const allowed = yield* authService.userHasPermission(headers, permissions);
@@ -119,12 +119,12 @@ export const requirePermissions = (headers: Headers, permissions: Permissions) =
     if (!allowed) {
       return yield* Effect.fail(new ForbiddenError());
     }
-    const role = principal.user.role
+    const role = userAndSession.user.role
     if (role && !isSupportedRole(role)
     ) {
       yield* Effect.fail(new ForbiddenError())
     }
-    return principal as Principal;
+    return userAndSession as UserAndSession;
   });
 
 export type AuthError = AuthProviderError | AuthEntityLookupError | UnauthorizedError | ForbiddenError;

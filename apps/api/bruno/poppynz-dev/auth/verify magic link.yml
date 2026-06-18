@@ -1,0 +1,28 @@
+info:
+  name: verify magic link
+  type: http
+  seq: 2
+
+http:
+  method: GET
+  url: http://localhost:3000/api/auth/magic-link/verify?token=sOOxSjScpCFYEdjITTVJKvylcHfuPMPI&callbackURL=%2Fonboarding&newUserCallbackURL=%2Fservice-provider%2Fonboarding&errorCallbackURL=%2Fauth%2Fsign-up%2Ferror
+  params:
+    - name: token
+      value: sOOxSjScpCFYEdjITTVJKvylcHfuPMPI
+      type: query
+    - name: callbackURL
+      value: "%2Fonboarding"
+      type: query
+    - name: newUserCallbackURL
+      value: "%2Fservice-provider%2Fonboarding"
+      type: query
+    - name: errorCallbackURL
+      value: "%2Fauth%2Fsign-up%2Ferror"
+      type: query
+  auth: inherit
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

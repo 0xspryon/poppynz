@@ -12,11 +12,20 @@ import type { HonoContext, HonoEnv } from "../../../app-env";
 import {
   authenticate,
   isAuthError,
-  Principal,
+  UserAndSession,
   requirePermissions,
   authErrorToResponse,
 } from "@/api/lib/effect-auth";
-import type { ProfileUpdateInput } from "./profile.validator";
+import {
+  profileUpdateJsonError,
+  validateProfileUpdateInput,
+  type ProfileUpdateInput,
+} from "./profile.validator";
+import {
+  isRequestValidationError,
+  parseJsonBody,
+  requestValidationErrorToResponse,
+} from "@/api/lib/schema-validator";
 
 export class ProfileRepoError extends Data.TaggedError("ProfileRepoError")<{
   cause: SqlError;
@@ -101,12 +110,12 @@ const buildProfileResponse = (profile: SafeUserProfile) =>
     );
   });
 
-export const getProfileProgram = (principal: Principal) =>
+export const getProfileProgram = (userAndSession: UserAndSession) =>
   UserProfileRepo.pipe(
     Effect.flatMap(
       (profileRepo) =>
         profileRepo
-          .findByUserId(principal.user.id)
+          .findByUserId(userAndSession.user.id)
           .pipe(
             Effect.catchTags({
               DBNotFoundError: () => Effect.fail(new ProfileNotFoundError()),
@@ -117,12 +126,12 @@ export const getProfileProgram = (principal: Principal) =>
     )
   )
 
-export const updateProfileProgram = (principal: Principal, input: ProfileUpdateInput) =>
+export const updateProfileProgram = (userAndSession: UserAndSession, input: ProfileUpdateInput) =>
   UserProfileRepo.pipe(
     Effect.flatMap(
       (profileRepo) =>
         profileRepo
-          .updateByUserId(principal.user.id, input)
+          .updateByUserId(userAndSession.user.id, input)
           .pipe(
             Effect.catchTags({
               DBNotFoundError: () => Effect.fail(new ProfileNotFoundError()),
@@ -183,6 +192,10 @@ const exitToResponse = <TProfile>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TProf
           return authErrorToResponse(c, failure.value);
         }
 
+        if (isRequestValidationError(failure.value)) {
+          return requestValidationErrorToResponse(c, failure.value);
+        }
+
         if (isProfileError(failure.value)) {
           return profileErrorToResponse(c, failure.value);
         }
@@ -196,23 +209,33 @@ export async function getProfileHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(
-    authenticate(headers).pipe(
-      Effect.flatMap(requirePermissions(headers, { profile: ["read"] })),
-      Effect.flatMap(getProfileProgram),
-    ),
+    Effect.gen(function* () {
+      const authenticated = yield* authenticate(headers);
+      const userAndSession = yield* requirePermissions(headers, {
+        profile: ["read"],
+      })(authenticated);
+
+      return yield* getProfileProgram(userAndSession);
+    }),
   );
 
   return exitToResponse(c, exit);
 }
 
-export async function updateProfileHandler(c: HonoContext<HonoEnv>, body: ProfileUpdateInput) {
+export async function updateProfileHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(
-    authenticate(headers).pipe(
-      Effect.flatMap(requirePermissions(headers, { profile: ["update"] })),
-      Effect.flatMap((principal) => updateProfileProgram(principal, body)),
-    ),
+    Effect.gen(function* () {
+      const rawBody = yield* parseJsonBody(c, profileUpdateJsonError);
+      const input = yield* validateProfileUpdateInput(rawBody);
+      const authenticated = yield* authenticate(headers);
+      const userAndSession = yield* requirePermissions(headers, {
+        profile: ["update"],
+      })(authenticated);
+
+      return yield* updateProfileProgram(userAndSession, input);
+    }),
   );
 
   return exitToResponse(c, exit);

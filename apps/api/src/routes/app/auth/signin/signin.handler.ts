@@ -3,7 +3,16 @@ import { UserRepo } from "@repo/db";
 import { Cause, Context, Data, Effect, Exit, Layer, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../../app-env";
 import { auth } from "../../../../lib/auth";
-import type { SigninInput } from "./signin.validator";
+import {
+  signinJsonError,
+  validateSigninInput,
+  type SigninInput,
+} from "./signin.validator";
+import {
+  isRequestValidationError,
+  parseJsonBody,
+  requestValidationErrorToResponse,
+} from "@/api/lib/schema-validator";
 
 export class SigninUserLookupError extends Data.TaggedError("SigninUserLookupError")<{
   cause: SqlError;
@@ -48,11 +57,9 @@ export const EmptySigninServiceTest = makeSigninServiceTest({
   sendSigninLink: (_: { email: string; headers: Headers }) => Effect.void,
 });
 
-export const requestSigninProgram = (body: SigninInput, headers: Headers) =>
+const ensureSigninUserExists = (email: string) =>
   Effect.gen(function* () {
     const userRepo = yield* UserRepo;
-    const signinService = yield* SigninService;
-    const email = body.email;
 
     yield* userRepo.findByEmail(email).pipe(
       Effect.catchTags({
@@ -60,6 +67,14 @@ export const requestSigninProgram = (body: SigninInput, headers: Headers) =>
         SqlError: (cause) => Effect.fail(new SigninUserLookupError({ cause })),
       }),
     );
+  });
+
+export const requestSigninProgram = (body: SigninInput, headers: Headers) =>
+  Effect.gen(function* () {
+    const signinService = yield* SigninService;
+    const email = body.email;
+
+    yield* ensureSigninUserExists(email);
 
     yield* signinService.sendSigninLink({ email, headers });
 
@@ -121,18 +136,31 @@ const exitToResponse = <TResult>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TResul
     onFailure: (cause) => {
       const failure = Cause.failureOption(cause);
 
-      if (Option.isSome(failure) && isSigninError(failure.value)) {
-        return signinErrorToResponse(c, failure.value);
+      if (Option.isSome(failure)) {
+        if (isRequestValidationError(failure.value)) {
+          return requestValidationErrorToResponse(c, failure.value);
+        }
+
+        if (isSigninError(failure.value)) {
+          return signinErrorToResponse(c, failure.value);
+        }
       }
 
       return unexpectedErrorResponse(c);
     },
   });
 
-export async function signinHandler(c: HonoContext<HonoEnv>, body: SigninInput) {
+export async function signinHandler(c: HonoContext<HonoEnv>) {
   const headers = c.req.raw.headers;
   const runtime = c.get("runtime");
-  const exit = await runtime.runPromiseExit(requestSigninProgram(body, headers));
+  const exit = await runtime.runPromiseExit(
+    Effect.gen(function* () {
+      const rawBody = yield* parseJsonBody(c, signinJsonError);
+      const input = yield* validateSigninInput(rawBody);
+
+      return yield* requestSigninProgram(input, headers);
+    }),
+  );
 
   return exitToResponse(c, exit);
 }

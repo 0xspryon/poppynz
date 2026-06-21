@@ -17,8 +17,8 @@
     "apps/api": {
       "name": "api",
       "dependencies": {
-        "@better-auth/api-key": "^1.6.15",
-        "@better-auth/i18n": "^1.6.15",
+        "@better-auth/api-key": "1.6.15",
+        "@better-auth/i18n": "1.6.15",
         "@effect/sql": "^0.51.1",
         "@repo/db": "*",
         "@repo/env": "*",

@@ -5,8 +5,8 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 
 if [[ "$#" -eq 0 ]]; then
-  printf 'Usage: pnpm setup:worktree <git worktree add args...>\n' >&2
-  printf 'Example: pnpm setup:worktree -b feature/foo ../feature/foo develop \n' >&2
+  printf 'Usage: bun setup:worktree <git worktree add args...>\n' >&2
+  printf 'Example: bun setup:worktree -b feature/foo ../feature/foo develop \n' >&2
   exit 1
 fi
 
@@ -73,22 +73,13 @@ link_api_env() {
 copy_env "$ROOT_DIR/.env" "$new_worktree/.env"
 copy_env "$ROOT_DIR/apps/api/.env" "$new_worktree/apps/api/.env"
 copy_env "$ROOT_DIR/apps/web/.env" "$new_worktree/apps/web/.env"
-copy_env "$ROOT_DIR/apps/captive-portal/.env" "$new_worktree/apps/captive-portal/.env"
 
 link_api_env "$new_worktree/packages/db/.env"
-link_api_env "$new_worktree/packages/freeradius-db/.env"
-link_api_env "$new_worktree/apps/portal-api/.env"
-link_api_env "$new_worktree/apps/queuedash_config_generator/.env"
-link_api_env "$new_worktree/apps/radacct-simulator/.env"
-link_api_env "$new_worktree/apps/worker/.env"
+# link_api_env "$new_worktree/apps/worker/.env"
 
 (
   cd "$new_worktree"
-  pnpm install
-  pnpm build:packages
-  pnpm install
-  pnpm --filter @repo/portal-api build
-  pnpm --filter @repo/api build
+  bun install
 )
 
 printf 'Worktree setup complete: %s\n' "$new_worktree"

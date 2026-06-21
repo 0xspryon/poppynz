@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     working_dir: /usr/src/app
     command: sh -c "bun install --frozen-lockfile && bun --cwd /usr/src/app/apps/api dev"
-    env_file: "./apps/api/src/.env.dev"
+    env_file: "./apps/api/src/.env"
     environment:
       RUSTFS_ENDPOINT: http://rustfs:9000
     volumes:
@@ -33,7 +33,7 @@ services:
       dockerfile: ./Dockerfile.migrations.dev
     restart: 'no'
     working_dir: /usr/src/app
-    env_file: "./apps/api/src/.env.dev"
+    env_file: "./apps/api/src/.env"
     # environment:
     #   - DATABASE_URL=postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
     volumes:

@@ -1,29 +1,29 @@
 import { objectBucketsConfig } from "@repo/env";
+import { KycDocumentTypeRepo } from "@repo/db";
 import { ObjectStorage, ObjectStorageError } from "@repo/objs";
 import type { ConfigError } from "effect/ConfigError";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import {
- authErrorToResponse,
- authenticate,
- isAuthError,
- requirePermissions,
- type UserAndSession
+  authErrorToResponse,
+  authenticate,
+  handleNever,
+  requirePermissions,
+  type UserAndSession
 } from "@/api/lib/effect-auth";
 import {
   uploadPresignJsonError,
   validateUploadPresignInput,
   type UploadPresignInput,
 } from "./upload.validator";
-import { isSupportedRole, Roles } from "@/api/lib/auth-roles";
+import { Roles } from "@/api/lib/auth-roles";
 import {
-  isRequestValidationError,
   parseJsonBody,
   requestValidationErrorToResponse,
 } from "@/api/lib/schema-validator";
 
 const uploadUrlTtlSeconds = 10 * 60;
-const maxKycDocumentSizeBytes = 10 * 1024 * 1024;
+const maxKycDocumentSizeBytes = 50 * 1024 * 1024;
 const maxPublicImageSizeBytes = 5 * 1024 * 1024;
 const allowedKycContentTypes = new Set([
   "application/pdf", "image/jpeg",
@@ -35,17 +35,15 @@ const allowedPublicImageContentTypes = new Set([
 
 export class UploadConfigError extends Data.TaggedError("UploadConfigError")<{
   cause: ConfigError;
-}> {}
+}> { }
 
 export class UploadValidationError extends Data.TaggedError("UploadValidationError")<{
   message: string;
-}> {}
+}> { }
 
 export class UploadStorageError extends Data.TaggedError("UploadStorageError")<{
   cause: ObjectStorageError;
-}> {}
-
-export type UploadError = UploadConfigError | UploadValidationError | UploadStorageError;
+}> { }
 
 const sanitizeFileName = (fileName: string) => {
   const normalized = fileName.trim().replace(/[^a-zA-Z0-9._-]/gm, "-").replace(/-+/g, "-");
@@ -54,10 +52,19 @@ const sanitizeFileName = (fileName: string) => {
 };
 
 const validateUploadInput = (userRole: Roles | null, input: UploadPresignInput) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     if (input.target === "kyc-document") {
       if (userRole !== "service-provider") {
         return yield* Effect.fail(new UploadValidationError({ message: "Only service providers can upload KYC documents." }));
+      }
+
+      const documentTypeRepo = yield* KycDocumentTypeRepo;
+      const documentType = yield* documentTypeRepo.findActiveById(input.documentTypeId).pipe(
+        Effect.mapError(() => new UploadValidationError({ message: "KYC document type was not found." })),
+      );
+
+      if (documentType.appliesToRole !== userRole) {
+        return yield* Effect.fail(new UploadValidationError({ message: "KYC document type is not available for this role." }));
       }
 
       if (!allowedKycContentTypes.has(input.contentType)) {
@@ -85,14 +92,14 @@ const buildObjectKey = (userId: string, input: UploadPresignInput) => {
   const uploadId = crypto.randomUUID();
 
   if (input.target === "kyc-document") {
-    return `users/${userId}/kyc/${input.documentType}/${uploadId}-${safeName}`;
+    return `users/${userId}/kyc/${input.documentTypeId}/${uploadId}-${safeName}`;
   }
 
   return `users/${userId}/public/profile-pictures/${uploadId}-${safeName}`;
 };
 
 export const createUploadPresignProgram = (userAndSession: UserAndSession, input: UploadPresignInput) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const objectStorage = yield* ObjectStorage;
     const buckets = yield* objectBucketsConfig.pipe(
       Effect.mapError((cause) => new UploadConfigError({ cause })),
@@ -118,6 +125,8 @@ export const createUploadPresignProgram = (userAndSession: UserAndSession, input
       expiresAt: presignedUrl.expiresAt.toISOString(),
     };
   });
+
+export type UploadError = Effect.Effect.Error<ReturnType<typeof createUploadPresignProgram>>;
 
 const uploadErrorToResponse = (c: HonoContext<HonoEnv>, error: UploadError) => {
   switch (error._tag) {
@@ -151,6 +160,8 @@ const uploadErrorToResponse = (c: HonoContext<HonoEnv>, error: UploadError) => {
         },
         500,
       );
+    default:
+      return handleNever(c, error);
   }
 };
 
@@ -165,27 +176,47 @@ const unexpectedErrorResponse = (c: HonoContext<HonoEnv>) =>
     500,
   );
 
-const isUploadError = (error: unknown): error is UploadError =>
-  error instanceof UploadConfigError || error instanceof UploadValidationError || error instanceof UploadStorageError;
+export const createUploadPresignRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function*() {
+    const rawBody = yield* parseJsonBody(c, uploadPresignJsonError);
+    const input = yield* validateUploadPresignInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(
+      headers,
+      { profile: ["update"] },
+    )(authenticated);
 
-const exitToResponse = <TUpload>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TUpload, unknown>) =>
+    return yield* createUploadPresignProgram(userAndSession, input);
+  });
+
+export type UploadRouteError = Effect.Effect.Error<ReturnType<typeof createUploadPresignRouteProgram>>;
+
+const uploadRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: UploadRouteError) => {
+  switch (error._tag) {
+    case "UnauthorizedError":
+    case "ForbiddenError":
+    case "AuthProviderError":
+    case "AuthEntityLookupError":
+      return authErrorToResponse(c, error);
+    case "RequestValidationError":
+      return requestValidationErrorToResponse(c, error);
+    case "UploadConfigError":
+    case "UploadValidationError":
+    case "UploadStorageError":
+      return uploadErrorToResponse(c, error);
+    default:
+      return handleNever(c, error);
+  }
+};
+
+const exitToResponse = <TUpload>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TUpload, UploadRouteError>) =>
   Exit.match(exit, {
     onSuccess: (upload) => c.json(upload),
     onFailure: (cause) => {
       const failure = Cause.failureOption(cause);
 
       if (Option.isSome(failure)) {
-        if (isAuthError(failure.value)) {
-          return authErrorToResponse(c, failure.value);
-        }
-
-        if (isRequestValidationError(failure.value)) {
-          return requestValidationErrorToResponse(c, failure.value);
-        }
-
-        if (isUploadError(failure.value)) {
-          return uploadErrorToResponse(c, failure.value);
-        }
+        return uploadRouteErrorToResponse(c, failure.value);
       }
 
       return unexpectedErrorResponse(c);
@@ -196,16 +227,7 @@ export async function createUploadPresignHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(
-    Effect.gen(function* () {
-      const rawBody = yield* parseJsonBody(c, uploadPresignJsonError);
-      const input = yield* validateUploadPresignInput(rawBody);
-      const authenticated = yield* authenticate(headers);
-      const userAndSession = yield* requirePermissions(headers, {
-        profile: ["update"],
-      })(authenticated);
-
-      return yield* createUploadPresignProgram(userAndSession, input);
-    }),
+    createUploadPresignRouteProgram(c, headers),
   );
 
   return exitToResponse(c, exit);

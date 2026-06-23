@@ -32,8 +32,6 @@ export class SignupAuthError extends Data.TaggedError("SignupAuthError")<{
   cause: unknown;
 }> {}
 
-export type SignupError = SignupIntentError | SignupUserLookupError | SignupUserAlreadyExistsError | SignupAuthError;
-
 export class SignupService extends Context.Tag("@api/routes/auth/signup/SignupService")<
   SignupService,
   {
@@ -107,6 +105,8 @@ export const requestSignupProgram = (body: SignupInput, headers: Headers, langua
 
     return { ok: true };
   });
+
+export type SignupError = Effect.Effect.Error<ReturnType<typeof requestSignupProgram>>;
 
 const signupErrorToResponse = (c: HonoContext<HonoEnv>, error: SignupError) => {
   switch (error._tag) {

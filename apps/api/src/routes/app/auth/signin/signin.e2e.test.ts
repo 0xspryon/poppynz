@@ -1,6 +1,9 @@
 import {
   EmptyApprovalRepoTest,
+  EmptyApprovalRequestRepoTest,
   EmptyKycDocumentRepoTest,
+  EmptyKycDocumentTypeRepoTest,
+  EmptyServiceOfferedRepoTest,
   EmptySignupIntentRepoTest,
   EmptyUserProfileRepoTest,
   DBNotFoundError,
@@ -45,7 +48,10 @@ const makeApp = (options: {
       makeSigninServiceTest({ sendSigninLink: options.sendSigninLink ?? (() => Effect.void) }),
       EmptyUserProfileRepoTest,
       EmptyApprovalRepoTest,
+      EmptyApprovalRequestRepoTest,
       EmptyKycDocumentRepoTest,
+      EmptyKycDocumentTypeRepoTest,
+      EmptyServiceOfferedRepoTest,
       makeAuthServiceTest({
         getSession: () => Effect.succeed(null),
         userHasPermission: () => Effect.succeed(false),

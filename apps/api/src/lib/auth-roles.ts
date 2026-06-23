@@ -1,17 +1,28 @@
 import { createAccessControl } from "better-auth/plugins";
 
 export const appAc = createAccessControl({
-  approval: ["create"],
+  approval: ["write"],
+  approvalRequest: ["read", "write"],
+  kycDocument: ["read", "write"],
+  kycDocumentType: ["read", "write"],
   profile: ["read", "update"],
+  serviceOffered: ["read", "write"],
 });
 
 export const profileRole = appAc.newRole({
   profile: ["read", "update"],
+  approvalRequest: ["write"],
+  kycDocument: ["write"],
+  serviceOffered: ["read", "write"],
 });
 
 export const adminRole = appAc.newRole({
-  approval: ["create"],
+  approval: ["write"],
+  approvalRequest: ["read", "write"],
+  kycDocument: ["read", "write"],
+  kycDocumentType: ["read", "write"],
   profile: ["read", "update"],
+  serviceOffered: ["read", "write"],
 });
 
 export const roles = {

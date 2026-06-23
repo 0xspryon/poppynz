@@ -1,20 +1,25 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import {
- Approval,
- ApprovalRepo,
- KycDocument,
- KycDocumentRepo,
- SafeUserProfile,
- UserProfileRepo,
+  Approval,
+  ApprovalRepo,
+  ApprovalRequest,
+  ApprovalRequestRepo,
+  KycDocument,
+  KycDocumentRepo,
+  KycDocumentTypeRepo,
+  SafeUserProfile,
+  ServiceOffered,
+  ServiceOfferedRepo,
+  UserProfileRepo,
 } from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../app-env";
 import {
   authenticate,
-  isAuthError,
   UserAndSession,
   requirePermissions,
   authErrorToResponse,
+  handleNever,
 } from "@/api/lib/effect-auth";
 import {
   profileUpdateJsonError,
@@ -22,47 +27,64 @@ import {
   type ProfileUpdateInput,
 } from "./profile.validator";
 import {
-  isRequestValidationError,
   parseJsonBody,
   requestValidationErrorToResponse,
 } from "@/api/lib/schema-validator";
 
 export class ProfileRepoError extends Data.TaggedError("ProfileRepoError")<{
   cause: SqlError;
-}> {}
+}> { }
 
-export class ProfileNotFoundError extends Data.TaggedError("ProfileNotFoundError")<{}> {}
+export class ProfileNotFoundError extends Data.TaggedError("ProfileNotFoundError")<{}> { }
 
-export type ProfileError = ProfileRepoError | ProfileNotFoundError;
+const toApprovalSummary = (approval: Approval | null) => approval
+  ? {
+    id: approval.id,
+    approvalRequestId: approval.approvalRequestId,
+    expiresAt: approval.expiresAt.toISOString(),
+  }
+  : null;
 
-type ProfileApprovalType = "family" | "service-provider";
-
-const toProfileApprovalType = (role: string | null): ProfileApprovalType | null =>
-  role === "family" || role === "service-provider" ? role : null;
-
-const toApprovalSummary = (type: ProfileApprovalType, approval: Approval | null) => ({
-  type,
-  status: approval?.status ?? "pending",
-  reason: approval?.reason ?? null,
-});
+const toApprovalRequestSummary = (request: ApprovalRequest | null) => request
+  ? {
+    id: request.id,
+    status: request.status,
+    reason: request.reason,
+    reviewedAt: request.reviewedAt?.toISOString() ?? null,
+  }
+  : null;
 
 const toKycDocumentResponse = (document: KycDocument) => ({
   id: document.id,
-  type: document.type,
+  documentTypeId: document.documentTypeId,
   filename: document.filename,
+  expiryDate: document.expiryDate?.toISOString() ?? null,
   status: document.status,
   reason: document.reason,
 });
 
+const toServiceOfferedResponse = (service: ServiceOffered) => ({
+  id: service.id,
+  name: service.name,
+  description: service.description,
+  hourlyRateCents: service.hourlyRateCents,
+  currency: service.currency,
+});
+
 const toProfileResponse = (
   profile: SafeUserProfile,
-  approval: ReturnType<typeof toApprovalSummary> | null,
+  approval: ReturnType<typeof toApprovalSummary>,
+  latestApprovalRequest: ReturnType<typeof toApprovalRequestSummary>,
   kycDocuments: Array<KycDocument>,
+  servicesOffered: Array<ServiceOffered>,
+  missingRequiredDocuments: Array<{ documentTypeId: string; name: string }>,
+  optionalDocumentTypes: Array<{ id: string; name: string }>,
 ) => ({
   userId: profile.userId,
   email: profile.email,
   role: profile.role,
   approval,
+  latestApprovalRequest,
   language: profile.language,
   firstName: profile.firstName,
   lastName: profile.lastName,
@@ -77,19 +99,40 @@ const toProfileResponse = (
   shortBio: profile.shortBio,
   ...(
     profile.role === "service-provider"
-    ? { kycDocuments: kycDocuments.map(toKycDocumentResponse) }
-    : {}
+      ? {
+        kycDocuments: kycDocuments.map(toKycDocumentResponse),
+        missingRequiredDocuments,
+        optionalDocumentTypes,
+        servicesOffered: servicesOffered.map(toServiceOfferedResponse),
+        warnings: {
+          missingRequiredDocuments,
+          missingServicesOffered: servicesOffered.length === 0,
+        },
+      }
+      : {}
   ),
 });
 
 const buildProfileResponse = (profile: SafeUserProfile) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const approvalRepo = yield* ApprovalRepo;
+    const approvalRequestRepo = yield* ApprovalRequestRepo;
     const kycDocumentRepo = yield* KycDocumentRepo;
-    const approvalType = toProfileApprovalType(profile.role);
-    const approval = approvalType
+    const kycDocumentTypeRepo = yield* KycDocumentTypeRepo;
+    const serviceOfferedRepo = yield* ServiceOfferedRepo;
+    const approval = profile.role === "service-provider"
       ? yield* approvalRepo
-        .findByUserIdAndType(profile.userId, approvalType)
+        .findCurrentByUserId(profile.userId)
+        .pipe(
+          Effect.catchTags({
+            DBNotFoundError: () => Effect.succeed(null),
+            SqlError: (cause) => Effect.fail(new ProfileRepoError({ cause }))
+          })
+        )
+      : null;
+    const latestApprovalRequest = profile.role === "service-provider"
+      ? yield* approvalRequestRepo
+        .findLatestByUserId(profile.userId)
         .pipe(
           Effect.catchTags({
             DBNotFoundError: () => Effect.succeed(null),
@@ -102,11 +145,28 @@ const buildProfileResponse = (profile: SafeUserProfile) =>
         .findByUserId(profile.userId)
         .pipe(Effect.mapError((cause) => new ProfileRepoError({ cause })))
       : [];
+    const [documentTypes, servicesOffered] = profile.role === "service-provider"
+      ? yield* Effect.all([
+        kycDocumentTypeRepo.listActive().pipe(Effect.mapError((cause) => new ProfileRepoError({ cause }))),
+        serviceOfferedRepo.listByUserId(profile.userId).pipe(Effect.mapError((cause) => new ProfileRepoError({ cause }))),
+      ], { concurrency: "unbounded" })
+      : [[], []];
+    const submittedDocumentTypeIds = new Set(kycDocuments.map((document) => document.documentTypeId));
+    const missingRequiredDocuments = documentTypes
+      .filter((type) => type.appliesToRole === "service-provider" && !type.isOptional && !submittedDocumentTypeIds.has(type.id))
+      .map((type) => ({ documentTypeId: type.id, name: type.name }));
+    const optionalDocumentTypes = documentTypes
+      .filter((type) => type.appliesToRole === "service-provider" && type.isOptional)
+      .map((type) => ({ id: type.id, name: type.name }));
 
     return toProfileResponse(
       profile,
-      approvalType ? toApprovalSummary(approvalType, approval) : null,
+      toApprovalSummary(approval),
+      toApprovalRequestSummary(latestApprovalRequest),
       kycDocuments,
+      servicesOffered,
+      missingRequiredDocuments,
+      optionalDocumentTypes,
     );
   });
 
@@ -142,6 +202,10 @@ export const updateProfileProgram = (userAndSession: UserAndSession, input: Prof
     )
   )
 
+export type ProfileError =
+  | Effect.Effect.Error<ReturnType<typeof getProfileProgram>>
+  | Effect.Effect.Error<ReturnType<typeof updateProfileProgram>>;
+
 const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) => {
   switch (error._tag) {
     case "ProfileRepoError":
@@ -164,6 +228,8 @@ const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) =>
         },
         404,
       );
+    default:
+      return handleNever(c, error);
   }
 };
 
@@ -178,27 +244,57 @@ const unexpectedErrorResponse = (c: HonoContext<HonoEnv>) =>
     500,
   );
 
-const isProfileError = (error: unknown): error is ProfileError =>
-  error instanceof ProfileRepoError || error instanceof ProfileNotFoundError;
+export const getProfileRouteProgram = (headers: Headers) =>
+  Effect.gen(function*() {
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, {
+      profile: ["read"],
+    })(authenticated);
 
-const exitToResponse = <TProfile>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TProfile, unknown>) =>
+    return yield* getProfileProgram(userAndSession);
+  });
+
+export const updateProfileRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function*() {
+    const rawBody = yield* parseJsonBody(c, profileUpdateJsonError);
+    const input = yield* validateProfileUpdateInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, {
+      profile: ["update"],
+    })(authenticated);
+
+    return yield* updateProfileProgram(userAndSession, input);
+  });
+
+export type ProfileRouteError =
+  | Effect.Effect.Error<ReturnType<typeof getProfileRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof updateProfileRouteProgram>>;
+
+const profileRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileRouteError) => {
+  switch (error._tag) {
+    case "UnauthorizedError":
+    case "ForbiddenError":
+    case "AuthProviderError":
+    case "AuthEntityLookupError":
+      return authErrorToResponse(c, error);
+    case "RequestValidationError":
+      return requestValidationErrorToResponse(c, error);
+    case "ProfileRepoError":
+    case "ProfileNotFoundError":
+      return profileErrorToResponse(c, error);
+    default:
+      return handleNever(c, error);
+  }
+};
+
+const exitToResponse = <TProfile>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TProfile, ProfileRouteError>) =>
   Exit.match(exit, {
     onSuccess: (profile) => c.json(profile),
     onFailure: (cause) => {
       const failure = Cause.failureOption(cause);
 
       if (Option.isSome(failure)) {
-        if (isAuthError(failure.value)) {
-          return authErrorToResponse(c, failure.value);
-        }
-
-        if (isRequestValidationError(failure.value)) {
-          return requestValidationErrorToResponse(c, failure.value);
-        }
-
-        if (isProfileError(failure.value)) {
-          return profileErrorToResponse(c, failure.value);
-        }
+        return profileRouteErrorToResponse(c, failure.value);
       }
 
       return unexpectedErrorResponse(c);
@@ -209,14 +305,7 @@ export async function getProfileHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(
-    Effect.gen(function* () {
-      const authenticated = yield* authenticate(headers);
-      const userAndSession = yield* requirePermissions(headers, {
-        profile: ["read"],
-      })(authenticated);
-
-      return yield* getProfileProgram(userAndSession);
-    }),
+    getProfileRouteProgram(headers),
   );
 
   return exitToResponse(c, exit);
@@ -226,16 +315,7 @@ export async function updateProfileHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(
-    Effect.gen(function* () {
-      const rawBody = yield* parseJsonBody(c, profileUpdateJsonError);
-      const input = yield* validateProfileUpdateInput(rawBody);
-      const authenticated = yield* authenticate(headers);
-      const userAndSession = yield* requirePermissions(headers, {
-        profile: ["update"],
-      })(authenticated);
-
-      return yield* updateProfileProgram(userAndSession, input);
-    }),
+    updateProfileRouteProgram(c, headers),
   );
 
   return exitToResponse(c, exit);

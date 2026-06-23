@@ -1,76 +1,65 @@
 import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import { SqlError } from "@effect/sql/SqlError";
-import { and, eq, InferSelectModel } from "drizzle-orm";
+import type { SqlError } from "@effect/sql/SqlError";
+import { and, desc, eq, gt, InferInsertModel, InferSelectModel } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { DrizzleLive, DBNotFoundError } from "../effect-db";
 import { approval } from "../schema";
-import { effect } from "effect/Layer";
 
 export type Approval = InferSelectModel<typeof approval>;
-export type ApprovalType = Approval["type"];
-export type ApprovalStatus = Approval["status"];
+export type NewApproval = InferInsertModel<typeof approval>;
 
-export type ApprovalDecisionInput = {
-  userId: string;
-  type: ApprovalType;
-  status: ApprovalStatus;
-  approvedBy: string | null;
-  reason?: string | null;
-};
+export type ApprovalCreateInput = Pick<
+  NewApproval,
+  'userId'
+  | 'approvalRequestId'
+  | 'approvedBy'
+  | 'status'
+  | 'expiresAt'
+>;
 
 export class ApprovalRepo extends Context.Tag("@repo/db/ApprovalRepo")<
   ApprovalRepo,
   {
-    findByUserIdAndType: (userId: string, type: ApprovalType) => Effect.Effect<Approval, SqlError | DBNotFoundError>;
-    upsertDecision: (input: ApprovalDecisionInput) => Effect.Effect<Approval, SqlError>;
+    create: (input: ApprovalCreateInput) => Effect.Effect<Approval, SqlError>;
+    findCurrentByUserId: (userId: string) => Effect.Effect<Approval, SqlError | DBNotFoundError>;
   }
->() {}
+>() { }
 
 export const ApprovalRepoLive = Layer.effect(
   ApprovalRepo,
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const db = yield* PgDrizzle.PgDrizzle;
 
     return {
-      findByUserIdAndType: (userId, type) =>
+      create: (input) =>
+        db
+          .insert(approval)
+          .values(input)
+          .returning()
+          .pipe(Effect.map((rows) => rows[0])),
+      findCurrentByUserId: (userId) =>
         db
           .select()
           .from(approval)
-          .where(and(eq(approval.userId, userId), eq(approval.type, type)))
+          .where(
+            and(
+              eq(approval.userId, userId),
+              eq(approval.status, 'approved'),
+            )
+          )
+          .orderBy(desc(approval.expiresAt))
           .limit(1)
           .pipe(
-            Effect.flatMap(
-              (rows) => {
-                if (rows[0]) {
-                  return Effect.succeed(rows[0])
-                }
-                return Effect.fail(
-                  new DBNotFoundError({ entity: 'approval', value: userId})
-                )
+            Effect.flatMap((rows) => {
+              const row = rows.find((approval) => approval.expiresAt > new Date()) ?? rows[0];
+
+              if (row) {
+                return Effect.succeed(row);
               }
-            )
+
+              return Effect.fail(new DBNotFoundError({ entity: "approval", value: userId }));
+            }),
           ),
-      upsertDecision: (input) =>
-        db
-          .insert(approval)
-          .values({
-            userId: input.userId,
-            type: input.type,
-            status: input.status,
-            approvedBy: input.approvedBy,
-            reason: input.reason ?? null,
-          })
-          .onConflictDoUpdate({
-            target: [approval.userId, approval.type],
-            set: {
-              status: input.status,
-              approvedBy: input.approvedBy,
-              reason: input.reason ?? null,
-              updatedAt: new Date(),
-            },
-          })
-          .returning()
-          .pipe(Effect.map((rows) => rows[0])),
     };
   }),
 );
@@ -81,6 +70,6 @@ export const makeApprovalRepoTest = (implementation: Context.Tag.Service<Approva
   Layer.succeed(ApprovalRepo, implementation);
 
 export const EmptyApprovalRepoTest = makeApprovalRepoTest({
-  findByUserIdAndType: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: '' })),
-  upsertDecision: (_: ApprovalDecisionInput) => Effect.fail(new SqlError({ cause: '', message: ''})),
-})
+  create: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: "" }) as never),
+  findCurrentByUserId: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: "" })),
+});

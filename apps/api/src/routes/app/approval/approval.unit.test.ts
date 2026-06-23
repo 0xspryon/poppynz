@@ -1,0 +1,224 @@
+import {
+  DBNotFoundError,
+  makeApprovalRepoTest,
+  makeApprovalRequestRepoTest,
+  type Approval,
+  type ApprovalCreateInput,
+  type ApprovalRequest,
+} from "@repo/db";
+import { SqlError } from "@effect/sql/SqlError";
+import { Cause, Effect, Exit, Layer, Option } from "effect";
+import { describe, expect, it } from "vitest";
+import {
+  ApprovalRepoError,
+  ApprovalRequestMismatchError,
+  ApprovalRequestNotFoundError,
+  createApprovalProgram,
+} from "./approval.handler";
+import type { UserAndSession } from "@/api/lib/effect-auth";
+
+const userAndSession: UserAndSession = {
+  user: {
+    id: "admin-1",
+    name: "Admin User",
+    email: "admin@example.com",
+    emailVerified: true,
+    image: null,
+    createdAt: new Date("2026-06-12T00:00:00.000Z"),
+    updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+    isAnonymous: false,
+    role: "admin",
+    banned: false,
+    banReason: null,
+    banExpires: null,
+    phoneNumber: null,
+    phoneNumberVerified: null,
+  },
+  session: {
+    id: "session-1",
+    expiresAt: new Date("2026-06-13T00:00:00.000Z"),
+    token: "session-token",
+    createdAt: new Date("2026-06-12T00:00:00.000Z"),
+    updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+    ipAddress: null,
+    userAgent: null,
+    userId: "admin-1",
+    impersonatedBy: null,
+    activeOrganizationId: null,
+  },
+};
+
+const input = {
+  userId: "provider-1",
+  approvalRequestId: "request-1",
+  expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+};
+
+const makeApprovalRequest = (overrides: Partial<ApprovalRequest> = {}): ApprovalRequest => ({
+  id: "request-1",
+  userId: "provider-1",
+  status: "submitted",
+  reviewedBy: null,
+  reviewedAt: null,
+  reason: null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  ...overrides,
+});
+
+const makeApproval = (approvalInput: ApprovalCreateInput, overrides: Partial<Approval> = {}): Approval => ({
+  id: "approval-1",
+  userId: approvalInput.userId,
+  approvalRequestId: approvalInput.approvalRequestId,
+  status: "approved",
+  reason: null,
+  approvedBy: approvalInput.approvedBy,
+  expiresAt: approvalInput.expiresAt,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  ...overrides,
+});
+
+const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
+  if (!Exit.isFailure(exit)) {
+    throw new Error("Expected effect to fail");
+  }
+
+  const failure = Cause.failureOption(exit.cause);
+  if (Option.isNone(failure)) {
+    throw new Error("Expected typed failure");
+  }
+
+  return failure.value;
+};
+
+const makeLayer = (options: {
+  approvalRequest?: ApprovalRequest;
+  approvalRequestError?: DBNotFoundError | SqlError;
+  createApprovalError?: SqlError;
+  markApprovedError?: DBNotFoundError | SqlError;
+  onCreateApproval?: (input: ApprovalCreateInput) => void;
+  onMarkApproved?: (id: string, reviewedBy: string) => void;
+} = {}) =>
+  Layer.mergeAll(
+    makeApprovalRepoTest({
+      create: (approvalInput) => {
+        options.onCreateApproval?.(approvalInput);
+        return options.createApprovalError
+          ? Effect.fail(options.createApprovalError)
+          : Effect.succeed(makeApproval(approvalInput));
+      },
+      findCurrentByUserId: (userId) =>
+        Effect.fail(new DBNotFoundError({ entity: "approval", value: userId })),
+    }),
+    makeApprovalRequestRepoTest({
+      createSubmitted: (userId) => Effect.succeed(makeApprovalRequest({ userId })),
+      list: () => Effect.succeed([]),
+      findById: (id) => {
+        if (options.approvalRequestError) return Effect.fail(options.approvalRequestError);
+        return id === "request-1"
+          ? Effect.succeed(options.approvalRequest ?? makeApprovalRequest())
+          : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id }));
+      },
+      findSubmittedByUserId: (userId) =>
+        Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: userId })),
+      findLatestByUserId: (userId) =>
+        Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: userId })),
+      markApproved: (id, reviewedBy) => {
+        options.onMarkApproved?.(id, reviewedBy);
+        return options.markApprovedError
+          ? Effect.fail(options.markApprovedError)
+          : Effect.succeed(makeApprovalRequest({ id, reviewedBy, status: "approved" }));
+      },
+      reject: (id, reviewedBy, reason) =>
+        Effect.succeed(makeApprovalRequest({ id, reviewedBy, reason, status: "rejected" })),
+    }),
+  );
+
+describe("createApprovalProgram", () => {
+  it("creates an approval and marks the request approved", async () => {
+    const createdApprovals: Array<ApprovalCreateInput> = [];
+    const markedApproved: Array<{ id: string; reviewedBy: string }> = [];
+
+    const result = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(
+          makeLayer({
+            onCreateApproval: (approvalInput) => createdApprovals.push(approvalInput),
+            onMarkApproved: (id, reviewedBy) => markedApproved.push({ id, reviewedBy }),
+          }),
+        ),
+      ),
+    );
+
+    expect(result).toEqual({
+      id: "approval-1",
+      userId: "provider-1",
+      approvalRequestId: "request-1",
+      approvedBy: "admin-1",
+      expiresAt: "2027-01-01T00:00:00.000Z",
+    });
+    expect(createdApprovals).toEqual([
+      {
+        userId: "provider-1",
+        approvalRequestId: "request-1",
+        status: "approved",
+        approvedBy: "admin-1",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      },
+    ]);
+    expect(markedApproved).toEqual([{ id: "request-1", reviewedBy: "admin-1" }]);
+  });
+
+  it("translates missing approval request to ApprovalRequestNotFoundError", async () => {
+    const exit = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(
+          makeLayer({
+            approvalRequestError: new DBNotFoundError({ entity: "approvalRequest", value: "request-1" }),
+          }),
+        ),
+        Effect.exit,
+      ),
+    );
+
+    expect(getFailure(exit)).toBeInstanceOf(ApprovalRequestNotFoundError);
+  });
+
+  it("fails when approval request belongs to another user", async () => {
+    const exit = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(makeLayer({ approvalRequest: makeApprovalRequest({ userId: "other-user" }) })),
+        Effect.exit,
+      ),
+    );
+
+    expect(getFailure(exit)).toBeInstanceOf(ApprovalRequestMismatchError);
+  });
+
+  it("translates approval create SQL failures to ApprovalRepoError", async () => {
+    const exit = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(makeLayer({ createApprovalError: new SqlError({ message: "db down" }) })),
+        Effect.exit,
+      ),
+    );
+
+    expect(getFailure(exit)).toBeInstanceOf(ApprovalRepoError);
+  });
+
+  it("translates mark-approved not-found failures to ApprovalRequestNotFoundError", async () => {
+    const exit = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(
+          makeLayer({
+            markApprovedError: new DBNotFoundError({ entity: "approvalRequest", value: "request-1" }),
+          }),
+        ),
+        Effect.exit,
+      ),
+    );
+
+    expect(getFailure(exit)).toBeInstanceOf(ApprovalRequestNotFoundError);
+  });
+});

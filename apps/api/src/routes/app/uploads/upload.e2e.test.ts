@@ -1,14 +1,16 @@
 import {
   EmptyApprovalRepoTest,
+  EmptyApprovalRequestRepoTest,
   EmptyKycDocumentRepoTest,
+  EmptyServiceOfferedRepoTest,
   EmptyUserProfileRepoTest,
   EmptySignupIntentRepoTest,
   DBNotFoundError,
+  makeKycDocumentTypeRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
-  type ApprovalDecisionInput,
+  type KycDocumentType,
   type Session,
-  type SignupIntent,
   type User,
 } from "@repo/db";
 import { makeObjectStorageTest, type PresignedPutInput } from "@repo/objs";
@@ -51,6 +53,18 @@ const makeSession = (overrides: Partial<Session> = {}): Session => ({
   ...overrides,
 });
 
+const makeDocumentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType => ({
+  id: "document-type-1",
+  name: "Government ID",
+  appliesToRole: "service-provider",
+  isOptional: false,
+  requiresExpiryDate: true,
+  deletedAt: null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  ...overrides,
+});
+
 const makeApp = (options: {
   authSession?: AuthSession | null;
   user?: User;
@@ -84,7 +98,18 @@ const makeApp = (options: {
       }),
       EmptyUserProfileRepoTest,
       EmptyApprovalRepoTest,
+      EmptyApprovalRequestRepoTest,
       EmptyKycDocumentRepoTest,
+      EmptyServiceOfferedRepoTest,
+      makeKycDocumentTypeRepoTest({
+        listActive: () => Effect.succeed([makeDocumentType()]),
+        findActiveById: (id) => id === "document-type-1"
+          ? Effect.succeed(makeDocumentType())
+          : Effect.fail(new DBNotFoundError({ entity: "kycDocumentType", value: id })),
+        create: () => Effect.succeed(makeDocumentType()),
+        update: () => Effect.succeed(makeDocumentType()),
+        softDelete: () => Effect.succeed(makeDocumentType({ deletedAt: new Date() })),
+      }),
       makeObjectStorageTest({
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
@@ -122,7 +147,7 @@ describe("/uploads/presigned-url", () => {
       method: "POST",
       body: JSON.stringify({
         target: "kyc-document",
-        documentType: "government-id",
+        documentTypeId: "document-type-1",
         fileName: "Government ID.pdf",
         contentType: "application/pdf",
         sizeBytes: 1234,
@@ -133,12 +158,12 @@ describe("/uploads/presigned-url", () => {
 
     expect(res.status).toBe(200);
     expect(body.bucket).toBe("kyc-documents");
-    expect(body.fileKey).toBe("users/user-1/kyc/government-id/up-lo-ad-id-dummy-Government-ID.pdf");
+    expect(body.fileKey).toBe("users/user-1/kyc/document-type-1/up-lo-ad-id-dummy-Government-ID.pdf");
     expect(body.uploadUrl).toContain("https://uploads.example.com/kyc-documents/");
     expect(body.expiresAt).toBe("2026-06-12T00:10:00.000Z");
     expect(presignInput).toEqual({
       bucket: "kyc-documents",
-      key: "users/user-1/kyc/government-id/up-lo-ad-id-dummy-Government-ID.pdf",
+      key: "users/user-1/kyc/document-type-1/up-lo-ad-id-dummy-Government-ID.pdf",
       contentType: "application/pdf",
       expiresInSeconds: 600,
     });
@@ -171,7 +196,7 @@ describe("/uploads/presigned-url", () => {
       method: "POST",
       body: JSON.stringify({
         target: "kyc-document",
-        documentType: "government-id",
+        documentTypeId: "document-type-1",
         fileName: "id.pdf",
         contentType: "application/pdf",
         sizeBytes: 1234,

@@ -13,17 +13,11 @@ import {
 export const appDb = pgSchema("app_db");
 
 export const gender = appDb.enum("gender", ["male", "female"]);
-export const approvalType = appDb.enum("approval_type", ["service-provider", "family"]);
+export const accessControlRole = appDb.enum("access_control_role", ["family", "service-provider", "admin"]);
+export const approvalRequestStatus = appDb.enum("approval_request_status", ["submitted", "approved", "rejected"]);
 export const approvalStatus = appDb.enum("approval_status", ["approved", "rejected"]);
-export const kycDocumentType = appDb.enum("kyc_document_type", [
-  "government-id",
-  "vulnerable-sector-check",
-  "first-aid-certification",
-  "driving-license",
-]);
 export const kycDocumentStatus = appDb.enum("kyc_document_status", [
-  "missing",
-  "uploaded",
+  "submitted",
   "approved",
   "rejected",
 ]);
@@ -80,16 +74,34 @@ export const userProfile = appDb.table("user_profile", {
   shortBio: text("short_bio"),
 });
 
-export const approval = appDb.table(
-  "approvals",
+export const kycDocumentType = appDb.table(
+  "kyc_document_types",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    name: text("name").notNull(),
+    appliesToRole: accessControlRole("applies_to_role").default("service-provider").notNull(),
+    isOptional: boolean("is_optional").default(false).notNull(),
+    requiresExpiryDate: boolean("requires_expiry_date").default(false).notNull(),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [index("kyc_document_types_deleted_at_idx").on(table.deletedAt)],
+);
+
+export const approvalRequest = appDb.table(
+  "approval_requests",
   {
     id: uuid("id").primaryKey().default(sql`uuidv7()`),
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    type: approvalType("type").notNull(),
-    status: approvalStatus("status").notNull(),
-    approvedBy: text("approved_by").references(() => user.id, { onDelete: "set null" }),
+    status: approvalRequestStatus("status").notNull(),
+    reviewedBy: text("reviewed_by").references(() => user.id, { onDelete: "set null" }),
+    reviewedAt: timestamp("reviewed_at"),
     reason: text("reason"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -98,8 +110,36 @@ export const approval = appDb.table(
       .notNull(),
   },
   (table) => [
+    index("approval_requests_user_id_idx").on(table.userId),
+    index("approval_requests_status_idx").on(table.status),
+  ],
+);
+
+export const approval = appDb.table(
+  "approvals",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    approvalRequestId: uuid("approval_request_id")
+      .notNull()
+      .references(() => approvalRequest.id, { onDelete: "restrict" }),
+    approvedBy: text("approved_by")
+      .notNull()
+      .references(() => user.id, { onDelete: "restrict" }),
+    status: approvalStatus("status").notNull().default('rejected'),
+    reason: text('reason'),
+    expiresAt: timestamp("expires_at").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
     index("approvals_user_id_idx").on(table.userId),
-    uniqueIndex("approvals_user_id_type_uidx").on(table.userId, table.type),
+    index("approvals_request_id_idx").on(table.approvalRequestId),
   ],
 );
 
@@ -110,11 +150,15 @@ export const kycDocument = appDb.table(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
-    type: kycDocumentType("type").notNull(),
+    documentTypeId: uuid("document_type_id")
+      .notNull()
+      .references(() => kycDocumentType.id, { onDelete: "restrict" }),
     filename: text("filename"),
     fileKey: text("file_key"),
+    expiryDate: timestamp("expiry_date"),
     status: kycDocumentStatus("status").notNull(),
     reason: text("reason"),
+    deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -123,7 +167,32 @@ export const kycDocument = appDb.table(
   },
   (table) => [
     index("kyc_documents_user_id_idx").on(table.userId),
-    uniqueIndex("kyc_documents_user_id_type_uidx").on(table.userId, table.type),
+    index("kyc_documents_document_type_id_idx").on(table.documentTypeId),
+    uniqueIndex("kyc_documents_user_id_document_type_uidx").on(table.userId, table.documentTypeId),
+  ],
+);
+
+export const serviceOffered = appDb.table(
+  "services_offered",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    description: text("description"),
+    hourlyRateCents: integer("hourly_rate_cents").notNull(),
+    currency: text("currency").default("CAD").notNull(),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("services_offered_user_id_idx").on(table.userId),
+    index("services_offered_deleted_at_idx").on(table.deletedAt),
   ],
 );
 
@@ -282,7 +351,21 @@ export const userRelations = relations(user, ({ many }) => ({
   members: many(member),
   invitations: many(invitation),
   approvals: many(approval),
+  approvalRequests: many(approvalRequest),
   kycDocuments: many(kycDocument),
+  servicesOffered: many(serviceOffered),
+}));
+
+export const approvalRequestRelations = relations(approvalRequest, ({ one, many }) => ({
+  user: one(user, {
+    fields: [approvalRequest.userId],
+    references: [user.id],
+  }),
+  reviewer: one(user, {
+    fields: [approvalRequest.reviewedBy],
+    references: [user.id],
+  }),
+  approvals: many(approval),
 }));
 
 export const approvalRelations = relations(approval, ({ one }) => ({
@@ -294,11 +377,30 @@ export const approvalRelations = relations(approval, ({ one }) => ({
     fields: [approval.approvedBy],
     references: [user.id],
   }),
+  approvalRequest: one(approvalRequest, {
+    fields: [approval.approvalRequestId],
+    references: [approvalRequest.id],
+  }),
 }));
 
 export const kycDocumentRelations = relations(kycDocument, ({ one }) => ({
   user: one(user, {
     fields: [kycDocument.userId],
+    references: [user.id],
+  }),
+  documentType: one(kycDocumentType, {
+    fields: [kycDocument.documentTypeId],
+    references: [kycDocumentType.id],
+  }),
+}));
+
+export const kycDocumentTypeRelations = relations(kycDocumentType, ({ many }) => ({
+  documents: many(kycDocument),
+}));
+
+export const serviceOfferedRelations = relations(serviceOffered, ({ one }) => ({
+  user: one(user, {
+    fields: [serviceOffered.userId],
     references: [user.id],
   }),
 }));

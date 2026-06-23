@@ -15,7 +15,7 @@ export type AuthSession = {
 };
 
 export type UserAndSession = {
-  user: Omit<User, 'role'> & { role: Role | null};
+  user: Omit<User, 'role'> & { role: Role | null };
   session: Session;
 };
 
@@ -23,15 +23,15 @@ export type Permissions = Record<string, Array<string>>;
 
 export class AuthProviderError extends Data.TaggedError("AuthProviderError")<{
   cause: unknown;
-}> {}
+}> { }
 
 export class AuthEntityLookupError extends Data.TaggedError("AuthEntityLookupError")<{
   cause: SqlError;
-}> {}
+}> { }
 
-export class UnauthorizedError extends Data.TaggedError("UnauthorizedError")<{}> {}
+export class UnauthorizedError extends Data.TaggedError("UnauthorizedError")<{}> { }
 
-export class ForbiddenError extends Data.TaggedError("ForbiddenError")<{}> {}
+export class ForbiddenError extends Data.TaggedError("ForbiddenError")<{}> { }
 
 export class AuthService extends Context.Tag("@api/lib/AuthService")<
   AuthService,
@@ -42,7 +42,7 @@ export class AuthService extends Context.Tag("@api/lib/AuthService")<
       permissions: Permissions,
     ) => Effect.Effect<boolean, AuthProviderError>;
   }
->() {}
+>() { }
 
 export const AuthServiceLive = Layer.succeed(AuthService, {
   getSession: (headers) =>
@@ -53,9 +53,9 @@ export const AuthServiceLive = Layer.succeed(AuthService, {
       Effect.map((session) =>
         session
           ? {
-              user: { id: session.user.id },
-              session: { id: session.session.id },
-            }
+            user: { id: session.user.id },
+            session: { id: session.session.id },
+          }
           : null,
       ),
     ),
@@ -77,7 +77,7 @@ export const makeAuthServiceTest = (implementation: Context.Tag.Service<AuthServ
   Layer.succeed(AuthService, implementation);
 
 export const authenticate = (headers: Headers) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const authService = yield* AuthService;
     const userRepo = yield* UserRepo;
     const sessionRepo = yield* SessionRepo;
@@ -111,8 +111,8 @@ export const authenticate = (headers: Headers) =>
     return { user, session };
   });
 
-export const requirePermissions = (headers: Headers, permissions: Permissions) => (userAndSession: {user: User, session: Session}) =>
-  Effect.gen(function* () {
+export const requirePermissions = (headers: Headers, permissions: Permissions) => (userAndSession: { user: User, session: Session }) =>
+  Effect.gen(function*() {
     const authService = yield* AuthService;
     const allowed = yield* authService.userHasPermission(headers, permissions);
 
@@ -127,13 +127,17 @@ export const requirePermissions = (headers: Headers, permissions: Permissions) =
     return userAndSession as UserAndSession;
   });
 
-export type AuthError = AuthProviderError | AuthEntityLookupError | UnauthorizedError | ForbiddenError;
+export type AuthError = Effect.Effect.Error<ReturnType<typeof authenticate>> | Effect.Effect.Error<ReturnType<ReturnType<typeof requirePermissions>>>;
 
 export const isAuthError = (error: unknown): error is AuthError =>
   error instanceof AuthProviderError ||
   error instanceof AuthEntityLookupError ||
   error instanceof UnauthorizedError ||
   error instanceof ForbiddenError;
+
+export function handleNever(c: HonoContext<HonoEnv>, _: never) {
+  return c.json({ error: { code: 'INTERNAL_SERVER_ERROR' as const, message: 'internal server error' } }, 500)
+}
 
 export const authErrorToResponse = (c: HonoContext<HonoEnv>, error: AuthError) => {
   switch (error._tag) {
@@ -177,5 +181,6 @@ export const authErrorToResponse = (c: HonoContext<HonoEnv>, error: AuthError) =
         },
         500,
       );
+    default: return handleNever(c, error)
   }
 };

@@ -1,5 +1,4 @@
 import { Schema } from "effect";
-import { validKycDocumentTypes } from "../../../lib/constants";
 import { validateInput } from "@/api/lib/schema-validator";
 
 const uploadPresignValidationError = {
@@ -19,7 +18,7 @@ export const uploadPresignInputSchema = Schema.Union(
   Schema.Struct({
     ...baseUploadInputFields,
     target: Schema.Literal("kyc-document"),
-    documentType: Schema.Literal(...validKycDocumentTypes),
+    documentTypeId: trimmedNonEmptyString,
   }),
   Schema.Struct({
     ...baseUploadInputFields,

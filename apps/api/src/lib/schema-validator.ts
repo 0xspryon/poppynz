@@ -15,7 +15,7 @@ export class RequestValidationError extends Data.TaggedError("RequestValidationE
   code: string;
   message: string;
   issues: Array<ValidationIssue>;
-}> {}
+}> { }
 
 const toPath = (path: ReadonlyArray<PropertyKey>) =>
   path.flatMap((key) => (typeof key === "string" || typeof key === "number" ? [key] : []));
@@ -38,22 +38,26 @@ export const parseJsonBody = (c: HonoContext<HonoEnv>, config: ValidationErrorCo
       }),
   });
 
+/**
+ * Validates the input per the provided schema and if there's validation error,
+ * it yields a RequestValidationError type response
+ */
 export const validateInput =
   <A, I, R>(schema: Schema.Schema<A, I, R>, config: ValidationErrorConfig) =>
-  (input: unknown) =>
-    Schema.decodeUnknown(schema, {
-      errors: "all",
-      onExcessProperty: "ignore",
-    })(input).pipe(
-      Effect.mapError(
-        (error) =>
-          new RequestValidationError({
-            code: config.code,
-            message: config.message,
-            issues: formatParseIssues(error),
-          }),
-      ),
-    );
+    (input: unknown) =>
+      Schema.decodeUnknown(schema, {
+        errors: "all",
+        onExcessProperty: "ignore",
+      })(input).pipe(
+        Effect.mapError(
+          (error) =>
+            new RequestValidationError({
+              code: config.code,
+              message: config.message,
+              issues: formatParseIssues(error),
+            }),
+        ),
+      );
 
 export const isRequestValidationError = (error: unknown): error is RequestValidationError =>
   error instanceof RequestValidationError;

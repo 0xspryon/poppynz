@@ -8,6 +8,13 @@
       "when": 1781639121643,
       "tag": "0000_slim_meteorite",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1782000000000,
+      "tag": "0001_service_provider_onboarding_api",
+      "breakpoints": true
     }
   ]
 }

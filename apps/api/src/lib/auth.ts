@@ -9,8 +9,6 @@ import { i18n } from "@better-auth/i18n";
 import { openAPI } from "better-auth/plugins";
 import { roles, appAc } from './auth-roles'
 import {
-  ApprovalRepo,
-  ApprovalRepoDefault,
   db,
   SignupIntentRepo,
   SignupIntentRepoDefault,
@@ -26,7 +24,6 @@ export class SignupHookDbError extends Data.TaggedError("SignupHookDbError")<{
 const AuthHookLive = Layer.mergeAll(
   SignupIntentRepoDefault,
   UserProfileRepoDefault,
-  ApprovalRepoDefault
 );
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
 
@@ -51,7 +48,6 @@ export const createProfileAndConsumeSignupIntentEffect = (user: { id: string; em
   Effect.gen(function* () {
     const signupIntentRepo = yield* SignupIntentRepo;
     const userProfileRepo = yield* UserProfileRepo;
-    const approvalRepo = yield* ApprovalRepo;
     const intent = yield* signupIntentRepo
       .findValidByEmail(user.email)
       .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })));
@@ -60,29 +56,9 @@ export const createProfileAndConsumeSignupIntentEffect = (user: { id: string; em
       return;
     }
 
-
-    if (intent.role === "family") {
-      yield* Effect.all([
-        approvalRepo
-          .upsertDecision({
-            userId: user.id,
-            type: "family",
-            status: "approved",
-            approvedBy: null,
-            reason: "Automatically approved",
-          })
-          .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause }))),
-        userProfileRepo
-          .create({ userId: user.id, language: intent.language })
-          .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })))
-      ],
-        { concurrency: 'unbounded' }
-      )
-    } else {
-      yield* userProfileRepo
-        .create({ userId: user.id, language: intent.language })
-        .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })));
-    }
+    yield* userProfileRepo
+      .create({ userId: user.id, language: intent.language })
+      .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })));
 
     yield* signupIntentRepo
       .consumeByEmail(user.email)

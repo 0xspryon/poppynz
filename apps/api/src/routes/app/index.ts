@@ -5,10 +5,20 @@ import { HonoEnv } from '../../app-env';
 import { profileRoute } from './me/profile';
 import { approvalRoute } from './approval/approval';
 import { uploadRoute } from './uploads/upload';
+import { servicesOfferedRoute } from './me/services-offered';
+import { kycDocsRoute } from './kyc-docs/kyc-docs';
+import { approvalRequestsRoute } from './approval-requests/approval-requests';
+import { adminApprovalRequestsRoute } from './admin/approval-requests';
+import { adminKycDocsRoute } from './admin/kyc-docs';
 
 export const appRoutes = new Hono<HonoEnv>()
 .route('/auth', signupRoute)
 .route('/auth', signinRoute)
 .route('/me/profile', profileRoute)
-.route('/approval', approvalRoute)
+.route('/me/services-offered', servicesOfferedRoute)
+.route('/kyc-docs', kycDocsRoute)
+.route('/approval-requests', approvalRequestsRoute)
+.route('/approvals', approvalRoute)
+.route('/admin/approval-requests', adminApprovalRequestsRoute)
+.route('/admin/kyc-docs', adminKycDocsRoute)
 .route('/uploads', uploadRoute)

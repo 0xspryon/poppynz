@@ -1,5 +1,4 @@
 import { Schema } from "effect";
-import { validApprovalStatuses, validApprovalTypes } from "@/api/lib/constants";
 import { validateInput } from "@/api/lib/schema-validator";
 
 const approvalValidationError = {
@@ -9,27 +8,28 @@ const approvalValidationError = {
 
 const trimmedNonEmptyString = Schema.Trim.pipe(Schema.nonEmptyString());
 
-export const approvalInputSchema = Schema.Struct({
-  userId: trimmedNonEmptyString,
-  type: Schema.Literal(...validApprovalTypes),
-  status: Schema.Literal(...validApprovalStatuses),
-  reason: Schema.optional(Schema.NullOr(trimmedNonEmptyString)),
-}).pipe(
-  Schema.filter((approval) => {
-    if (approval.status === "rejected" && !approval.reason) {
+const approvalExpirySchema = trimmedNonEmptyString.pipe(
+  Schema.transform(Schema.DateFromSelf, {
+    decode: (value) => new Date(value),
+    encode: (value) => value.toISOString(),
+  }),
+  Schema.filter((date) => {
+    if (Number.isNaN(date.getTime()) || date <= new Date()) {
       return {
-        path: ["reason"],
-        message: "A rejection reason is required.",
+        path: ["expiresAt"],
+        message: "Approval expiry date must be a valid future date.",
       };
     }
   }),
 );
 
-export type ApprovalInput = Schema.Schema.Type<typeof approvalInputSchema>;
+export const approvalCreateInputSchema = Schema.Struct({
+  userId: trimmedNonEmptyString,
+  approvalRequestId: trimmedNonEmptyString,
+  expiresAt: approvalExpirySchema,
+});
 
-export const validateApprovalInput = validateInput(
-  approvalInputSchema,
-  approvalValidationError,
-);
+export type ApprovalInput = Schema.Schema.Type<typeof approvalCreateInputSchema>;
 
+export const validateApprovalInput = validateInput(approvalCreateInputSchema, approvalValidationError);
 export const approvalJsonError = approvalValidationError;

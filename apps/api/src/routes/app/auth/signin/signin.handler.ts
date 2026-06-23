@@ -24,8 +24,6 @@ export class SigninAuthError extends Data.TaggedError("SigninAuthError")<{
   cause: unknown;
 }> {}
 
-export type SigninError = SigninUserLookupError | SigninUserNotFoundError | SigninAuthError;
-
 export class SigninService extends Context.Tag("@api/routes/auth/signin/SigninService")<
   SigninService,
   {
@@ -80,6 +78,8 @@ export const requestSigninProgram = (body: SigninInput, headers: Headers) =>
 
     return { ok: true };
   });
+
+export type SigninError = Effect.Effect.Error<ReturnType<typeof requestSigninProgram>>;
 
 const signinErrorToResponse = (c: HonoContext<HonoEnv>, error: SigninError) => {
   switch (error._tag) {

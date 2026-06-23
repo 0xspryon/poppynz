@@ -1,7 +1,15 @@
-import type { ApprovalRepo, KycDocumentRepo, SessionRepo, SignupIntentRepo, UserProfileRepo, UserRepo } from "@repo/db";
-import type { ObjectStorage, ObjectStorageFailure } from "@repo/objs";
-import type { SqlError } from "@effect/sql/SqlError";
-import type { ConfigError } from "effect/ConfigError";
+import type {
+  ApprovalRepo,
+  ApprovalRequestRepo,
+  KycDocumentRepo,
+  KycDocumentTypeRepo,
+  ServiceOfferedRepo,
+  SessionRepo,
+  SignupIntentRepo,
+  UserProfileRepo,
+  UserRepo,
+} from "@repo/db";
+import type { ObjectStorage } from "@repo/objs";
 import type { ManagedRuntime } from "effect";
 import type { SigninService } from "./routes/app/auth/signin/signin.handler";
 import type { SignupService } from "./routes/app/auth/signup/signup.handler";
@@ -16,17 +24,16 @@ export type AppServices =
   | UserRepo
   | SessionRepo
   | ApprovalRepo
+  | ApprovalRequestRepo
   | KycDocumentRepo
+  | KycDocumentTypeRepo
+  | ServiceOfferedRepo
   | ObjectStorage
   | AuthService;
 
-// @continue-here : evaluate the need for having errors in the runtime type?
-// Isn't it expected that, I should handle all these errors
 export type AppRuntime = ManagedRuntime.ManagedRuntime<
   AppServices,
-  ConfigError
-  | SqlError
-  | ObjectStorageFailure
+  never
 >;
 
 export type BaseAppEnv = {

@@ -1,19 +1,21 @@
 import { SqlError } from "@effect/sql/SqlError";
 import {
-  makeApprovalRepoTest,
+  EmptyApprovalRepoTest,
+  EmptyApprovalRequestRepoTest,
   makeKycDocumentRepoTest,
+  EmptyKycDocumentTypeRepoTest,
+  EmptyServiceOfferedRepoTest,
   makeSignupIntentRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
   makeUserProfileRepoTest,
-  type Approval,
-  type ApprovalDecisionInput,
   type SignupIntent,
   type User,
   type UserProfile,
   DBNotFoundError,
 } from "@repo/db";
 import { Effect, Layer, ManagedRuntime } from "effect";
+import { makeObjectStorageTest } from "@repo/objs";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../../../index";
 import {
@@ -21,6 +23,7 @@ import {
   createProfileAndConsumeSignupIntentEffect,
 } from "../../../../lib/auth";
 import { makeAuthServiceTest } from "../../../../lib/effect-auth";
+import { EmptySigninServiceTest } from "../signin/signin.handler";
 import {
   makeSignupServiceTest,
   SignupAuthError,
@@ -47,11 +50,24 @@ const makeApp = (options: {
             }),
           ),
       }),
+      EmptySigninServiceTest,
       makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
       makeUserProfileRepoTest(makeInMemoryUserProfileRepo([])),
-      makeApprovalRepoTest(makeInMemoryApprovalRepo([])),
+      EmptyApprovalRepoTest,
+      EmptyApprovalRequestRepoTest,
+      EmptyKycDocumentTypeRepoTest,
+      EmptyServiceOfferedRepoTest,
+      makeObjectStorageTest({
+        ensureBucketExists: () => Effect.void,
+        ensurePublicReadBucket: () => Effect.void,
+        createPresignedPutUrl: () => Effect.succeed({ uploadUrl: "https://example.com", expiresAt: new Date() }),
+      }),
       makeKycDocumentRepoTest({
+        findByIdWithType: () => Effect.fail(new DBNotFoundError({ entity: "kycDocument", value: "" })),
         findByUserId: () => Effect.succeed([]),
+        findByUserIdWithTypes: () => Effect.succeed([]),
+        submit: () => Effect.fail(new DBNotFoundError({ entity: "kycDocument", value: "" }) as never),
+        updateExpiryDate: () => Effect.fail(new DBNotFoundError({ entity: "kycDocument", value: "" })),
         approveSubmittedByUserId: () => Effect.succeed([]),
       }),
       makeAuthServiceTest({
@@ -107,42 +123,6 @@ const makeUser = (overrides: Partial<User> = {}): User => ({
   phoneNumber: null,
   phoneNumberVerified: null,
   ...overrides,
-});
-
-const makeApproval = (input: ApprovalDecisionInput, overrides: Partial<Approval> = {}): Approval => ({
-  id: `approval-${input.userId}-${input.type}`,
-  userId: input.userId,
-  type: input.type,
-  status: input.status,
-  approvedBy: input.approvedBy,
-  reason: input.reason ?? null,
-  createdAt: new Date("2026-06-12T00:00:00.000Z"),
-  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
-  ...overrides,
-});
-
-const makeInMemoryApprovalRepo = (approvals: Array<Approval>) => ({
-  findByUserIdAndType: (userId: string, type: Approval["type"]) => {
-    const approval = approvals.find((approval) => approval.userId === userId && approval.type === type);
-
-    return approval
-      ? Effect.succeed(approval)
-      : Effect.fail(new DBNotFoundError({ entity: "approval", value: userId }));
-  },
-  upsertDecision: (input: ApprovalDecisionInput) => {
-    const existingIndex = approvals.findIndex(
-      (approval) => approval.userId === input.userId && approval.type === input.type,
-    );
-    const approval = makeApproval(input);
-
-    if (existingIndex >= 0) {
-      approvals[existingIndex] = { ...approvals[existingIndex], ...approval };
-      return Effect.succeed(approvals[existingIndex]);
-    }
-
-    approvals.push(approval);
-    return Effect.succeed(approval);
-  },
 });
 
 const makeInMemorySignupIntentRepo = (intents: Array<SignupIntent>) => ({
@@ -335,10 +315,8 @@ describe("POST /auth/sign-up", () => {
   it("uses signup intent to assign role, create profile, and consume intent", async () => {
     const intents: Array<SignupIntent> = [];
     const profiles: Array<UserProfile> = [];
-    const approvals: Array<Approval> = [];
     const signupIntentRepo = makeInMemorySignupIntentRepo(intents);
     const userProfileRepo = makeInMemoryUserProfileRepo(profiles);
-    const approvalRepo = makeInMemoryApprovalRepo(approvals);
     const app = makeApp({
       create: signupIntentRepo.create,
       sendSignupLink: () => Effect.void,
@@ -346,7 +324,6 @@ describe("POST /auth/sign-up", () => {
     const hookLayer = Layer.mergeAll(
       makeSignupIntentRepoTest(signupIntentRepo),
       makeUserProfileRepoTest(userProfileRepo),
-      makeApprovalRepoTest(approvalRepo),
     );
 
     const res = await app.request("/app/api/v1/auth/sign-up", {
@@ -394,17 +371,14 @@ describe("POST /auth/sign-up", () => {
         shortBio: null,
       },
     ]);
-    expect(approvals).toEqual([]);
     expect(intents[0]?.consumedAt).toBeInstanceOf(Date);
   });
 
-  it("auto-approves family signups when the profile is created", async () => {
+  it("creates family profiles without creating approvals", async () => {
     const intents: Array<SignupIntent> = [];
     const profiles: Array<UserProfile> = [];
-    const approvals: Array<Approval> = [];
     const signupIntentRepo = makeInMemorySignupIntentRepo(intents);
     const userProfileRepo = makeInMemoryUserProfileRepo(profiles);
-    const approvalRepo = makeInMemoryApprovalRepo(approvals);
     const app = makeApp({
       create: signupIntentRepo.create,
       sendSignupLink: () => Effect.void,
@@ -412,7 +386,6 @@ describe("POST /auth/sign-up", () => {
     const hookLayer = Layer.mergeAll(
       makeSignupIntentRepoTest(signupIntentRepo),
       makeUserProfileRepoTest(userProfileRepo),
-      makeApprovalRepoTest(approvalRepo),
     );
 
     const res = await app.request("/app/api/v1/auth/sign-up", {
@@ -429,14 +402,7 @@ describe("POST /auth/sign-up", () => {
       ),
     );
 
-    expect(approvals).toEqual([
-      expect.objectContaining({
-        userId: "user-1",
-        type: "family",
-        status: "approved",
-        approvedBy: null,
-        reason: "Automatically approved",
-      }),
-    ]);
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0]?.userId).toBe("user-1");
   });
 });

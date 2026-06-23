@@ -1,8 +1,9 @@
-import { ServiceOfferedRepo } from "@repo/db";
+import type { SqlError } from "@effect/sql/SqlError";
+import { DBNotFoundError, ServiceOfferedRepo } from "@repo/db";
 import { Cause, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
-import { authErrorToResponse, authenticate, isAuthError, requirePermissions } from "@/api/lib/effect-auth";
-import { isRequestValidationError, parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
+import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
+import { parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import {
   serviceOfferedJsonError,
   validateServiceOfferedCreateInput,
@@ -78,6 +79,34 @@ export type ServiceOfferedRouteError =
   | Effect.Effect.Error<ReturnType<typeof updateServiceOfferedRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof deleteServiceOfferedRouteProgram>>;
 
+const repoErrorToResponse = (c: HonoContext<HonoEnv>, error: SqlError | DBNotFoundError) => {
+  switch (error._tag) {
+    case "DBNotFoundError":
+      return c.json({ error: { code: "SERVICE_OFFERED_NOT_FOUND" as const, message: "Service offered was not found." } }, 404);
+    case "SqlError":
+      return c.json({ error: { code: "SERVICE_OFFERED_REPO_ERROR" as const, message: "Unable to process service offered request." } }, 500);
+    default:
+      return handleNever(c, error);
+  }
+};
+
+const serviceOfferedErrorToResponse = (c: HonoContext<HonoEnv>, error: ServiceOfferedRouteError) => {
+  switch (error._tag) {
+    case "UnauthorizedError":
+    case "ForbiddenError":
+    case "AuthProviderError":
+    case "AuthEntityLookupError":
+      return authErrorToResponse(c, error);
+    case "RequestValidationError":
+      return requestValidationErrorToResponse(c, error);
+    case "DBNotFoundError":
+    case "SqlError":
+      return repoErrorToResponse(c, error);
+    default:
+      return handleNever(c, error);
+  }
+};
+
 const exitToResponse = <T>(c: HonoContext<HonoEnv>, exit: Exit.Exit<T, ServiceOfferedRouteError>) =>
   Exit.match(exit, {
     onSuccess: (value) => c.json(value),
@@ -85,8 +114,7 @@ const exitToResponse = <T>(c: HonoContext<HonoEnv>, exit: Exit.Exit<T, ServiceOf
       const failure = Cause.failureOption(cause);
 
       if (Option.isSome(failure)) {
-        if (isAuthError(failure.value)) return authErrorToResponse(c, failure.value);
-        if (isRequestValidationError(failure.value)) return requestValidationErrorToResponse(c, failure.value);
+        return serviceOfferedErrorToResponse(c, failure.value);
       }
 
       return unexpected(c);

@@ -6,18 +6,21 @@ import {
   makeKycDocumentTypeRepoTest,
   makeServiceOfferedRepoTest,
   makeSessionRepoTest,
+  makeUserProfileRepoTest,
   makeUserRepoTest,
   type ApprovalRequest,
   type KycDocument,
   type KycDocumentType,
+  type SafeUserProfile,
   type ServiceOffered,
   type Session,
   type User,
+  type UserProfile,
 } from "@repo/db";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { makeAuthServiceTest } from "@/api/lib/effect-auth";
-import { createApprovalRequestRouteProgram } from "./approval-requests.handler";
+import { createApprovalRequestRouteProgram, getAdminApprovalRequestRouteProgram, listAdminApprovalRequestsRouteProgram, rejectAdminApprovalRequestRouteProgram } from "./approval-requests.handler";
 
 const user = (overrides: Partial<User> = {}): User => ({
   id: "provider-1",
@@ -103,6 +106,27 @@ const serviceOffered = (overrides: Partial<ServiceOffered> = {}): ServiceOffered
   ...overrides,
 });
 
+const profile = (overrides: Partial<SafeUserProfile> = {}): SafeUserProfile => ({
+  userId: "provider-1",
+  email: "provider@example.com",
+  role: "service-provider",
+  language: "en",
+  firstName: "Provider",
+  lastName: "User",
+  gender: "female",
+  phoneNumber: "555-0101",
+  dateOfBirth: "1980-05-21",
+  address: "123 Main Street",
+  city: "Toronto",
+  postalCode: "M5H 1A1",
+  country: "Canada",
+  stateProvince: "Ontario",
+  shortBio: "Provider profile",
+  ...overrides,
+});
+
+const contextWithJson = (body: unknown) => ({ req: { json: async () => body } }) as any;
+
 const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
   if (!Exit.isFailure(exit)) throw new Error("Expected effect to fail");
   const failure = Cause.failureOption(exit.cause);
@@ -114,10 +138,14 @@ const makeLayer = (options: {
   user?: User;
   existingSubmitted?: ApprovalRequest | null;
   createSubmittedError?: SqlError;
+  hasPermission?: boolean;
+  approvalRequests?: Array<ApprovalRequest>;
+  profile?: SafeUserProfile;
   documentTypes?: Array<KycDocumentType>;
   documents?: Array<KycDocument>;
   services?: Array<ServiceOffered>;
   onCreateSubmitted?: (userId: string) => void;
+  onReject?: (id: string, reviewedBy: string, reason: string) => void;
 } = {}) => {
   const currentUser = options.user ?? user();
   const currentSession = session({ userId: currentUser.id });
@@ -130,15 +158,22 @@ const makeLayer = (options: {
           ? Effect.fail(options.createSubmittedError)
           : Effect.succeed(approvalRequest({ id: "request-created", userId }));
       },
-      list: () => Effect.succeed([]),
-      findById: (id) => Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id })),
+      list: () => Effect.succeed(options.approvalRequests ?? []),
+      findById: (id) => {
+        const request = (options.approvalRequests ?? [approvalRequest()]).find((item) => item.id === id);
+        return request ? Effect.succeed(request) : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id }));
+      },
       findSubmittedByUserId: (userId) =>
         options.existingSubmitted === null || options.existingSubmitted === undefined
           ? Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: userId }))
           : Effect.succeed(options.existingSubmitted),
       findLatestByUserId: (userId) => Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: userId })),
       markApproved: (id) => Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id })),
-      reject: (id) => Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id })),
+      reject: (id, reviewedBy, reason) => {
+        options.onReject?.(id, reviewedBy, reason);
+        const request = (options.approvalRequests ?? [approvalRequest()]).find((item) => item.id === id);
+        return request ? Effect.succeed({ ...request, status: "rejected", reviewedBy, reviewedAt: new Date("2026-06-13T00:00:00.000Z"), reason }) : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id }));
+      },
     }),
     makeKycDocumentTypeRepoTest({
       listActive: () => Effect.succeed(options.documentTypes ?? [documentType()]),
@@ -161,9 +196,14 @@ const makeLayer = (options: {
       updateByIdForUser: (id) => Effect.fail(new DBNotFoundError({ entity: "serviceOffered", value: id })),
       softDeleteByIdForUser: (id) => Effect.fail(new DBNotFoundError({ entity: "serviceOffered", value: id })),
     }),
+    makeUserProfileRepoTest({
+      create: (input: { userId: string; language: string }) => Effect.succeed({ ...profile(), userId: input.userId, language: input.language } as UserProfile),
+      findByUserId: (userId) => userId === (options.profile ?? profile()).userId ? Effect.succeed(options.profile ?? profile()) : Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId })),
+      updateByUserId: (userId) => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId })),
+    }),
     makeAuthServiceTest({
       getSession: () => Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
-      userHasPermission: () => Effect.succeed(true),
+      userHasPermission: () => Effect.succeed(options.hasPermission ?? true),
     }),
     makeUserRepoTest({
       findById: (id) => id === currentUser.id ? Effect.succeed(currentUser) : Effect.fail(new DBNotFoundError({ entity: "user", value: id })),
@@ -240,5 +280,71 @@ describe("createApprovalRequestRouteProgram", () => {
     );
 
     expect(getFailure(exit)).toBeInstanceOf(SqlError);
+  });
+});
+
+describe("admin approval request review route programs", () => {
+  it("lists approval requests", async () => {
+    const requests = [approvalRequest({ id: "request-1" }), approvalRequest({ id: "request-2", status: "rejected", reason: "Missing docs" })];
+
+    const result = await Effect.runPromise(
+      listAdminApprovalRequestsRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ user: user({ id: "admin-1", role: "admin" }), approvalRequests: requests })),
+      ),
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ id: "request-1", status: "submitted" });
+  });
+
+  it("returns an approval request review packet", async () => {
+    const result = await Effect.runPromise(
+      getAdminApprovalRequestRouteProgram(new Headers(), "request-1").pipe(
+        Effect.provide(makeLayer({ user: user({ id: "admin-1", role: "admin" }), documents: [], services: [] })),
+      ),
+    );
+
+    expect(result.approvalRequest).toMatchObject({ id: "request-1", status: "submitted" });
+    expect(result.user).toEqual({ id: "provider-1", email: "provider@example.com", role: "service-provider" });
+    expect(result.missingRequiredDocuments).toEqual([expect.objectContaining({ id: "document-type-1", name: "Identity document" })]);
+    expect(result.warnings).toEqual({
+      missingRequiredDocuments: [{ documentTypeId: "document-type-1", name: "Identity document" }],
+      missingServicesOffered: true,
+    });
+  });
+
+  it("rejects an approval request with reason", async () => {
+    const rejected: Array<{ id: string; reviewedBy: string; reason: string }> = [];
+
+    const result = await Effect.runPromise(
+      rejectAdminApprovalRequestRouteProgram(contextWithJson({ reason: "Missing required documents." }), new Headers(), "request-1").pipe(
+        Effect.provide(makeLayer({ user: user({ id: "admin-1", role: "admin" }), onReject: (id, reviewedBy, reason) => rejected.push({ id, reviewedBy, reason }) })),
+      ),
+    );
+
+    expect(result).toMatchObject({ id: "request-1", status: "rejected", reviewedBy: "admin-1", reason: "Missing required documents." });
+    expect(rejected).toEqual([{ id: "request-1", reviewedBy: "admin-1", reason: "Missing required documents." }]);
+  });
+
+  it("rejects admin review access without approval-request permission", async () => {
+    const exit = await Effect.runPromise(
+      listAdminApprovalRequestsRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ user: user({ id: "admin-1", role: "admin" }), hasPermission: false })),
+        Effect.exit,
+      ),
+    );
+
+    expect(getFailure(exit)._tag).toBe("ForbiddenError");
+  });
+
+  it("reject route requires a reason", async () => {
+    const exit = await Effect.runPromise(
+      rejectAdminApprovalRequestRouteProgram(contextWithJson({ reason: "" }), new Headers(), "request-1").pipe(
+        Effect.provide(makeLayer({ user: user({ id: "admin-1", role: "admin" }) })),
+        Effect.exit,
+      ),
+    );
+
+    expect(getFailure(exit)._tag).toBe("RequestValidationError");
   });
 });

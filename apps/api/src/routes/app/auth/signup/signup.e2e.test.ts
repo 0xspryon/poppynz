@@ -14,6 +14,7 @@ import {
   type UserProfile,
   DBNotFoundError,
 } from "@repo/db";
+import { makeGooglePlacesTest } from "@repo/google";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { makeObjectStorageTest } from "@repo/objs";
 import { describe, expect, it } from "vitest";
@@ -52,6 +53,7 @@ const makeApp = (options: {
       }),
       EmptySigninServiceTest,
       makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
+      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used") }),
       makeUserProfileRepoTest(makeInMemoryUserProfileRepo([])),
       EmptyApprovalRepoTest,
       EmptyApprovalRequestRepoTest,
@@ -181,6 +183,9 @@ const makeInMemoryUserProfileRepo = (profiles: Array<UserProfile>) => ({
       country: null,
       stateProvince: null,
       shortBio: null,
+      googlePlaceId: null,
+      latitude: null,
+      longitude: null,
     };
     profiles.push(profile);
 
@@ -188,6 +193,7 @@ const makeInMemoryUserProfileRepo = (profiles: Array<UserProfile>) => ({
   },
   findByUserId: () => Effect.fail(new DBNotFoundError({ value: '', entity: ''})),
   updateByUserId: () => Effect.fail(new DBNotFoundError({ value: '', entity: ''})),
+  updateLocationByUserId: () => Effect.fail(new DBNotFoundError({ value: '', entity: ''})),
 });
 
 describe("POST /auth/sign-up", () => {
@@ -369,6 +375,9 @@ describe("POST /auth/sign-up", () => {
         country: null,
         stateProvince: null,
         shortBio: null,
+        googlePlaceId: null,
+        latitude: null,
+        longitude: null,
       },
     ]);
     expect(intents[0]?.consumedAt).toBeInstanceOf(Date);

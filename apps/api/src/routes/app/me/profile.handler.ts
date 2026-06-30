@@ -12,6 +12,7 @@ import {
   ServiceOfferedRepo,
   UserProfileRepo,
 } from "@repo/db";
+import { GooglePlaces } from "@repo/google";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../app-env";
 import {
@@ -24,7 +25,9 @@ import {
 import {
   profileUpdateJsonError,
   validateProfileUpdateInput,
+  validateProfileLocationUpdateInput,
   type ProfileUpdateInput,
+  type ProfileLocationUpdateInput,
 } from "./profile.validator";
 import {
   parseJsonBody,
@@ -97,6 +100,7 @@ const toProfileResponse = (
   country: profile.country,
   stateProvince: profile.stateProvince,
   shortBio: profile.shortBio,
+  googlePlaceId: profile.googlePlaceId,
   ...(
     profile.role === "service-provider"
       ? {
@@ -202,9 +206,36 @@ export const updateProfileProgram = (userAndSession: UserAndSession, input: Prof
     )
   )
 
+export const updateProfileLocationProgram = (userAndSession: UserAndSession, input: ProfileLocationUpdateInput) =>
+  Effect.gen(function*() {
+    const profileRepo = yield* UserProfileRepo;
+    const googlePlaces = yield* GooglePlaces;
+    const location = yield* googlePlaces.lookupPlaceById(input.googlePlaceId);
+    const profile = yield* profileRepo
+      .updateLocationByUserId(userAndSession.user.id, {
+        googlePlaceId: location.googlePlaceId,
+        latitude: location.latitude,
+        longitude: location.longitude,
+        address: location.formattedAddress,
+        city: location.city,
+        postalCode: location.postalCode,
+        country: location.countryCode ?? location.country,
+        stateProvince: location.stateProvinceCode ?? location.stateProvince,
+      })
+      .pipe(
+        Effect.catchTags({
+          DBNotFoundError: () => Effect.fail(new ProfileNotFoundError()),
+          SqlError: (cause) => Effect.fail(new ProfileRepoError({ cause }))
+        }),
+      );
+
+    return yield* buildProfileResponse(profile);
+  });
+
 export type ProfileError =
   | Effect.Effect.Error<ReturnType<typeof getProfileProgram>>
-  | Effect.Effect.Error<ReturnType<typeof updateProfileProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof updateProfileProgram>>
+  | Effect.Effect.Error<ReturnType<typeof updateProfileLocationProgram>>;
 
 const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) => {
   switch (error._tag) {
@@ -227,6 +258,21 @@ const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) =>
           },
         },
         404,
+      );
+    case "GooglePlaceNotFoundError":
+      return c.json(
+        { error: { code: "GOOGLE_PLACE_NOT_FOUND" as const, message: "Google place was not found." } },
+        404,
+      );
+    case "GooglePlaceInvalidError":
+      return c.json(
+        { error: { code: "GOOGLE_PLACE_INVALID" as const, message: error.message } },
+        422,
+      );
+    case "GooglePlacesError":
+      return c.json(
+        { error: { code: "GOOGLE_PLACES_LOOKUP_FAILED" as const, message: "Unable to look up Google place." } },
+        502,
       );
     default:
       return handleNever(c, error);
@@ -266,9 +312,22 @@ export const updateProfileRouteProgram = (c: HonoContext<HonoEnv>, headers: Head
     return yield* updateProfileProgram(userAndSession, input);
   });
 
+export const updateProfileLocationRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function*() {
+    const rawBody = yield* parseJsonBody(c, profileUpdateJsonError);
+    const input = yield* validateProfileLocationUpdateInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, {
+      profile: ["update"],
+    })(authenticated);
+
+    return yield* updateProfileLocationProgram(userAndSession, input);
+  });
+
 export type ProfileRouteError =
   | Effect.Effect.Error<ReturnType<typeof getProfileRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof updateProfileRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof updateProfileRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof updateProfileLocationRouteProgram>>;
 
 const profileRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileRouteError) => {
   switch (error._tag) {
@@ -282,6 +341,21 @@ const profileRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileRout
     case "ProfileRepoError":
     case "ProfileNotFoundError":
       return profileErrorToResponse(c, error);
+    case "GooglePlaceNotFoundError":
+      return c.json(
+        { error: { code: "GOOGLE_PLACE_NOT_FOUND" as const, message: "Google place was not found." } },
+        404,
+      );
+    case "GooglePlaceInvalidError":
+      return c.json(
+        { error: { code: "GOOGLE_PLACE_INVALID" as const, message: error.message } },
+        422,
+      );
+    case "GooglePlacesError":
+      return c.json(
+        { error: { code: "GOOGLE_PLACES_LOOKUP_FAILED" as const, message: "Unable to look up Google place." } },
+        502,
+      );
     default:
       return handleNever(c, error);
   }
@@ -316,6 +390,16 @@ export async function updateProfileHandler(c: HonoContext<HonoEnv>) {
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(
     updateProfileRouteProgram(c, headers),
+  );
+
+  return exitToResponse(c, exit);
+}
+
+export async function updateProfileLocationHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get("runtime");
+  const headers = c.req.raw.headers;
+  const exit = await runtime.runPromiseExit(
+    updateProfileLocationRouteProgram(c, headers),
   );
 
   return exitToResponse(c, exit);

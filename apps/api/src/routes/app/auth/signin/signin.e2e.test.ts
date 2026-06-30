@@ -11,6 +11,7 @@ import {
   makeUserRepoTest,
   type User,
 } from "@repo/db";
+import { makeGooglePlacesTest } from "@repo/google";
 import { makeObjectStorageTest } from "@repo/objs";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { describe, expect, it } from "vitest";
@@ -52,6 +53,7 @@ const makeApp = (options: {
       EmptyKycDocumentRepoTest,
       EmptyKycDocumentTypeRepoTest,
       EmptyServiceOfferedRepoTest,
+      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used") }),
       makeAuthServiceTest({
         getSession: () => Effect.succeed(null),
         userHasPermission: () => Effect.succeed(false),

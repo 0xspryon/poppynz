@@ -17,3 +17,7 @@ export const objectStorageConfig = Config.all({
   rustfs: rustfsConfig,
   buckets: objectBucketsConfig,
 });
+
+export const googleMapsConfig = Config.all({
+  apiKey: Config.string("GOOGLE_MAPS_API_KEY"),
+});

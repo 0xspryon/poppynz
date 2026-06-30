@@ -12,6 +12,7 @@
     "@effect/sql": "^0.51.1",
     "@repo/db": "*",
     "@repo/env": "*",
+    "@repo/google": "*",
     "@repo/objs": "*",
     "better-auth": "1.6.15",
     "dotenv": "^17.4.2",

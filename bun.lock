@@ -22,6 +22,7 @@
         "@effect/sql": "^0.51.1",
         "@repo/db": "*",
         "@repo/env": "*",
+        "@repo/google": "*",
         "@repo/objs": "*",
         "better-auth": "1.6.15",
         "dotenv": "^17.4.2",
@@ -120,6 +121,14 @@
         "eslint-plugin-svelte": "^3.16.0",
         "globals": "^17.4.0",
         "typescript-eslint": "^8.57.1",
+      },
+    },
+    "packages/google": {
+      "name": "@repo/google",
+      "version": "0.0.0",
+      "dependencies": {
+        "@repo/env": "*",
+        "effect": "^3.21.2",
       },
     },
     "packages/objs": {
@@ -485,6 +494,8 @@
     "@repo/env": ["@repo/env@workspace:packages/env"],
 
     "@repo/eslint-config": ["@repo/eslint-config@workspace:packages/eslint-config"],
+
+    "@repo/google": ["@repo/google@workspace:packages/google"],
 
     "@repo/objs": ["@repo/objs@workspace:packages/objs"],
 

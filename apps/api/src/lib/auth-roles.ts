@@ -9,7 +9,14 @@ export const appAc = createAccessControl({
   serviceOffered: ["read", "write"],
 });
 
-export const profileRole = appAc.newRole({
+export const familyRole = appAc.newRole({
+  profile: ["read", "update"],
+  approvalRequest: ["write"],
+  kycDocument: ["write"],
+  serviceOffered: ["read", "write"],
+});
+
+export const spRole = appAc.newRole({
   profile: ["read", "update"],
   approvalRequest: ["write"],
   kycDocument: ["write"],
@@ -27,8 +34,8 @@ export const adminRole = appAc.newRole({
 
 export const roles = {
   admin: adminRole,
-  family: profileRole,
-  "service-provider": profileRole,
+  family: familyRole,
+  "service-provider": spRole,
 };
 
 export type Role = keyof typeof roles;

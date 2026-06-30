@@ -13,6 +13,7 @@ import {
   type Session,
   type User,
 } from "@repo/db";
+import { makeGooglePlacesTest } from "@repo/google";
 import { makeObjectStorageTest, type PresignedPutInput } from "@repo/objs";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -101,6 +102,7 @@ const makeApp = (options: {
       EmptyApprovalRequestRepoTest,
       EmptyKycDocumentRepoTest,
       EmptyServiceOfferedRepoTest,
+      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used") }),
       makeKycDocumentTypeRepoTest({
         listActive: () => Effect.succeed([makeDocumentType()]),
         findActiveById: (id) => id === "document-type-1"

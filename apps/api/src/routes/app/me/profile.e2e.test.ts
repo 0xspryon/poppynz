@@ -19,8 +19,10 @@ import {
   type Session,
   type User,
   type UserProfile,
+  type UserProfileLocationUpdate,
   type UserProfileUpdate,
 } from "@repo/db";
+import { makeGooglePlacesTest } from "@repo/google";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { makeObjectStorageTest } from "@repo/objs";
 import { describe, expect, it } from "vitest";
@@ -45,6 +47,9 @@ const makeProfile = (overrides: Partial<SafeUserProfile> = {}): SafeUserProfile 
   country: "Canada",
   stateProvince: "Ontario",
   shortBio: "Mom helper profile",
+  googlePlaceId: null,
+  latitude: null,
+  longitude: null,
   ...overrides,
 });
 
@@ -157,6 +162,7 @@ const makeApp = (options: {
   kycDocuments?: Array<KycDocument>;
   servicesOffered?: Array<ServiceOffered>;
   onUpdate?: (input: UserProfileUpdate) => void;
+  onLocationUpdate?: (input: UserProfileLocationUpdate) => void;
   onPermissionCheck?: (permissions: Permissions) => void;
 } = {}) => {
   let profile = options.profile ?? makeProfile();
@@ -194,6 +200,25 @@ const makeApp = (options: {
           profile = { ...profile, ...input };
           return profile.userId === userId ? Effect.succeed(profile) : Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId }));
         },
+        updateLocationByUserId: (userId, input) => {
+          options.onLocationUpdate?.(input);
+          profile = { ...profile, ...input };
+          return profile.userId === userId ? Effect.succeed(profile) : Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId }));
+        },
+      }),
+      makeGooglePlacesTest({
+        lookupPlaceById: (placeId) => Effect.succeed({
+          googlePlaceId: placeId,
+          formattedAddress: "123 Main St, Toronto, ON, Canada",
+          city: "Toronto",
+          stateProvince: "Ontario",
+          stateProvinceCode: "ON",
+          country: "Canada",
+          countryCode: "CA",
+          postalCode: "M5H 1A1",
+          latitude: 43.6532,
+          longitude: -79.3832,
+        }),
       }),
       makeApprovalRepoTest({
         create: (input: ApprovalCreateInput) => Effect.succeed(makeApproval(input)),
@@ -311,5 +336,23 @@ describe("/me/profile", () => {
     expect(body.email).toBe("provider@example.com");
     expect(body.firstName).toBe("Updated");
     expect(updates).toEqual([{ firstName: "Updated" }]);
+  });
+
+  it("updates location from a Google place id", async () => {
+    const updates: Array<UserProfileLocationUpdate> = [];
+    const app = makeApp({ onLocationUpdate: (input) => updates.push(input) });
+
+    const res = await app.request("/app/api/v1/me/profile/location", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ googlePlaceId: "place-1" }),
+    });
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).toMatchObject({ googlePlaceId: "place-1" });
+    expect(body).not.toHaveProperty("latitude");
+    expect(body).not.toHaveProperty("longitude");
+    expect(updates).toEqual([expect.objectContaining({ googlePlaceId: "place-1", latitude: 43.6532, longitude: -79.3832 })]);
   });
 });

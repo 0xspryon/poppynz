@@ -23,6 +23,11 @@ export type UserProfileUpdate = Partial<
     | "shortBio"
   >
 >;
+export type UserProfileLocationUpdate = Pick<
+  UserProfile,
+  "googlePlaceId" | "latitude" | "longitude"
+> &
+  Partial<Pick<UserProfile, "address" | "city" | "postalCode" | "country" | "stateProvince">>;
 export type SafeUserProfile = UserProfile & {
   email: string;
   role: string | null;
@@ -34,6 +39,7 @@ export class UserProfileRepo extends Context.Tag("@repo/db/UserProfileRepo")<
     create: (input: { userId: string; language: string }) => Effect.Effect<UserProfile, SqlError>;
     findByUserId: (userId: string) => Effect.Effect<SafeUserProfile, SqlError | DBNotFoundError>;
     updateByUserId: (userId: string, input: UserProfileUpdate) => Effect.Effect<SafeUserProfile, SqlError| DBNotFoundError>;
+    updateLocationByUserId: (userId: string, input: UserProfileLocationUpdate) => Effect.Effect<SafeUserProfile, SqlError | DBNotFoundError>;
   }
 >() {}
 
@@ -99,6 +105,32 @@ export const UserProfileRepoLive = Layer.effect(
               return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }))
             }),
           ),
+      updateLocationByUserId: (userId, input) =>
+        db
+          .update(userProfile)
+          .set(input)
+          .where(eq(userProfile.userId, userId))
+          .returning()
+          .pipe(
+            Effect.flatMap(() =>
+              db
+                .select({ profile: userProfile, email: user.email, role: user.role })
+                .from(userProfile)
+                .innerJoin(user, eq(userProfile.userId, user.id))
+                .where(eq(userProfile.userId, userId))
+                .limit(1),
+            ),
+            Effect.flatMap((rows) => {
+              const row = rows[0];
+
+              if (row) {
+                return Effect.succeed({
+                  ...row.profile, email: row.email, role: row.role
+                })
+              }
+              return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }))
+            }),
+          ),
     };
   }),
 );
@@ -112,4 +144,5 @@ export const EmptyUserProfileRepoTest = makeUserProfileRepoTest({
   create: () => Effect.fail(new SqlError({ cause: '', message: ''})),
   findByUserId: () => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: '' })),
   updateByUserId: () => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: '' })),
+  updateLocationByUserId: () => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: '' })),
 })

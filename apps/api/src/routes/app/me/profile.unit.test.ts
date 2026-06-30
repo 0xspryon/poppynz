@@ -15,12 +15,14 @@ import {
   type SafeUserProfile,
   type ServiceOffered,
   type UserProfile,
+  type UserProfileLocationUpdate,
   type UserProfileUpdate,
 } from "@repo/db";
+import { makeGooglePlacesTest, type GooglePlaceLocation } from "@repo/google";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import type { UserAndSession } from "@/api/lib/effect-auth";
-import { getProfileProgram, ProfileNotFoundError, ProfileRepoError, updateProfileProgram } from "./profile.handler";
+import { getProfileProgram, ProfileNotFoundError, ProfileRepoError, updateProfileLocationProgram, updateProfileProgram } from "./profile.handler";
 
 const userAndSession: UserAndSession = {
   user: {
@@ -69,6 +71,23 @@ const profile = (overrides: Partial<SafeUserProfile> = {}): SafeUserProfile => (
   country: "Canada",
   stateProvince: "Ontario",
   shortBio: "Provider profile",
+  googlePlaceId: null,
+  latitude: null,
+  longitude: null,
+  ...overrides,
+});
+
+const googleLocation = (overrides: Partial<GooglePlaceLocation> = {}): GooglePlaceLocation => ({
+  googlePlaceId: "place-1",
+  formattedAddress: "123 Main St, Toronto, ON, Canada",
+  city: "Toronto",
+  stateProvince: "Ontario",
+  stateProvinceCode: "ON",
+  country: "Canada",
+  countryCode: "CA",
+  postalCode: "M5H 1A1",
+  latitude: 43.6532,
+  longitude: -79.3832,
   ...overrides,
 });
 
@@ -153,6 +172,8 @@ const makeLayer = (options: {
   documents?: Array<KycDocument>;
   services?: Array<ServiceOffered>;
   onUpdate?: (input: UserProfileUpdate) => void;
+  onLocationUpdate?: (input: UserProfileLocationUpdate) => void;
+  googleLocation?: GooglePlaceLocation;
 } = {}) => {
   let currentProfile = options.profile === undefined ? profile() : options.profile;
   const documentTypes = options.documentTypes ?? [documentType(), documentType({ id: "optional-doc", name: "Driving License", isOptional: true })];
@@ -166,6 +187,12 @@ const makeLayer = (options: {
       },
       updateByUserId: (userId, input) => {
         options.onUpdate?.(input);
+        if (!currentProfile || currentProfile.userId !== userId) return Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId }));
+        currentProfile = { ...currentProfile, ...input };
+        return Effect.succeed(currentProfile);
+      },
+      updateLocationByUserId: (userId, input) => {
+        options.onLocationUpdate?.(input);
         if (!currentProfile || currentProfile.userId !== userId) return Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId }));
         currentProfile = { ...currentProfile, ...input };
         return Effect.succeed(currentProfile);
@@ -204,6 +231,9 @@ const makeLayer = (options: {
       create: () => Effect.fail(new SqlError({ message: "not used" })),
       updateByIdForUser: (id) => Effect.fail(new DBNotFoundError({ entity: "serviceOffered", value: id })),
       softDeleteByIdForUser: (id) => Effect.fail(new DBNotFoundError({ entity: "serviceOffered", value: id })),
+    }),
+    makeGooglePlacesTest({
+      lookupPlaceById: () => Effect.succeed(options.googleLocation ?? googleLocation()),
     }),
   );
 };
@@ -247,6 +277,31 @@ describe("profile programs", () => {
 
     expect(result.firstName).toBe("Updated");
     expect(updates).toEqual([{ firstName: "Updated" }]);
+  });
+
+  it("updates profile location from a Google place", async () => {
+    const updates: Array<UserProfileLocationUpdate> = [];
+    const result = await Effect.runPromise(
+      updateProfileLocationProgram(userAndSession, { googlePlaceId: "place-1" }).pipe(
+        Effect.provide(makeLayer({ onLocationUpdate: (input) => updates.push(input) })),
+      ),
+    );
+
+    expect(result).toMatchObject({
+      googlePlaceId: "place-1",
+      city: "Toronto",
+      stateProvince: "ON",
+      country: "CA",
+    });
+    expect(result).not.toHaveProperty("latitude");
+    expect(result).not.toHaveProperty("longitude");
+    expect(updates).toEqual([
+      expect.objectContaining({
+        googlePlaceId: "place-1",
+        latitude: 43.6532,
+        longitude: -79.3832,
+      }),
+    ]);
   });
 
   it("translates missing profile to ProfileNotFoundError", async () => {

@@ -15,6 +15,13 @@
       "when": 1782000000000,
       "tag": "0001_service_provider_onboarding_api",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1782864000000,
+      "tag": "0002_user_profile_location",
+      "breakpoints": true
     }
   ]
 }

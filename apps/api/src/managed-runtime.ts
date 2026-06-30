@@ -9,6 +9,7 @@ import {
   UserProfileRepoDefault,
   UserRepoDefault,
 } from "@repo/db";
+import { GooglePlacesLive } from "@repo/google";
 import { ObjectStorageLive } from "@repo/objs";
 import { Layer, ManagedRuntime } from "effect";
 import type { AppRuntime } from "./app-env";
@@ -26,6 +27,7 @@ export const AppLive = Layer.mergeAll(
   KycDocumentRepoDefault,
   KycDocumentTypeRepoDefault,
   ServiceOfferedRepoDefault,
+  GooglePlacesLive,
   ObjectStorageLive,
   SigninServiceLive,
   SignupServiceLive,

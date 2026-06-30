@@ -22,13 +22,23 @@ export const profileUpdateSchema = Schema.Struct({
   postalCode: nullableOptionalNonEmptyString,
   country: nullableOptionalNonEmptyString,
   stateProvince: nullableOptionalNonEmptyString,
-  shortBio: Schema.optional(Schema.NullOr(Schema.Trim)),
+  shortBio: Schema.optional(Schema.NullOr(Schema.Trim.pipe(Schema.maxLength(512)))),
+});
+
+export const profileLocationUpdateSchema = Schema.Struct({
+  googlePlaceId: trimmedNonEmptyString.pipe(Schema.maxLength(512)),
 });
 
 export type ProfileUpdateInput = Schema.Schema.Type<typeof profileUpdateSchema>;
+export type ProfileLocationUpdateInput = Schema.Schema.Type<typeof profileLocationUpdateSchema>;
 
 export const validateProfileUpdateInput = validateInput(
   profileUpdateSchema,
+  profileUpdateValidationError,
+);
+
+export const validateProfileLocationUpdateInput = validateInput(
+  profileLocationUpdateSchema,
   profileUpdateValidationError,
 );
 

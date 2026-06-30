@@ -9,6 +9,7 @@ import type {
   UserProfileRepo,
   UserRepo,
 } from "@repo/db";
+import type { GooglePlaces } from "@repo/google";
 import type { ObjectStorage } from "@repo/objs";
 import type { ManagedRuntime } from "effect";
 import type { SigninService } from "./routes/app/auth/signin/signin.handler";
@@ -28,6 +29,7 @@ export type AppServices =
   | KycDocumentRepo
   | KycDocumentTypeRepo
   | ServiceOfferedRepo
+  | GooglePlaces
   | ObjectStorage
   | AuthService;
 

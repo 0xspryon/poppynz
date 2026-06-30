@@ -122,6 +122,9 @@ const profile = (overrides: Partial<SafeUserProfile> = {}): SafeUserProfile => (
   country: "Canada",
   stateProvince: "Ontario",
   shortBio: "Provider profile",
+  googlePlaceId: null,
+  latitude: null,
+  longitude: null,
   ...overrides,
 });
 
@@ -200,6 +203,7 @@ const makeLayer = (options: {
       create: (input: { userId: string; language: string }) => Effect.succeed({ ...profile(), userId: input.userId, language: input.language } as UserProfile),
       findByUserId: (userId) => userId === (options.profile ?? profile()).userId ? Effect.succeed(options.profile ?? profile()) : Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId })),
       updateByUserId: (userId) => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId })),
+      updateLocationByUserId: (userId) => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId })),
     }),
     makeAuthServiceTest({
       getSession: () => Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),

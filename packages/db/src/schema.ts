@@ -3,6 +3,7 @@ import {
   text,
   timestamp,
   boolean,
+  doublePrecision,
   integer,
   index,
   pgSchema,
@@ -72,6 +73,9 @@ export const userProfile = appDb.table("user_profile", {
   country: text("country"),
   stateProvince: text("state_province"),
   shortBio: text("short_bio"),
+  googlePlaceId: text("google_place_id"),
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
 });
 
 export const kycDocumentType = appDb.table(

@@ -5,8 +5,11 @@ import {
   type Approval,
   type ApprovalCreateInput,
   type ApprovalRequest,
+  makeServiceOfferedRepoTest,
+  makeUserProfileRepoTest,
 } from "@repo/db";
 import { SqlError } from "@effect/sql/SqlError";
+import { makeProviderSearchQueueTest } from "@repo/queue";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import {
@@ -132,6 +135,52 @@ const makeLayer = (options: {
       },
       reject: (id, reviewedBy, reason) =>
         Effect.succeed(makeApprovalRequest({ id, reviewedBy, reason, status: "rejected" })),
+    }),
+    makeUserProfileRepoTest({
+      create: (input) => Effect.succeed({ userId: input.userId, language: input.language } as never),
+      findByUserId: (userId) => Effect.succeed({
+        userId,
+        email: "provider@example.com",
+        role: "service-provider",
+        language: "en",
+        firstName: "Provider",
+        lastName: "User",
+        gender: null,
+        phoneNumber: null,
+        dateOfBirth: null,
+        address: "123 Main Street",
+        city: "Toronto",
+        postalCode: "M5H 1A1",
+        country: "CA",
+        stateProvince: "ON",
+        shortBio: null,
+        googlePlaceId: "place-1",
+        latitude: 43.6532,
+        longitude: -79.3832,
+      }),
+      updateByUserId: (userId) => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId })),
+      updateLocationByUserId: (userId) => Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId })),
+    }),
+    makeServiceOfferedRepoTest({
+      listByUserId: (userId) => Effect.succeed([{
+        id: "service-1",
+        userId,
+        name: "Childcare",
+        description: null,
+        hourlyRateCents: 2500,
+        currency: "CAD",
+        deletedAt: null,
+        createdAt: new Date("2026-06-12T00:00:00.000Z"),
+        updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+      }]),
+      create: () => Effect.fail(new SqlError({ message: "not used" })),
+      updateByIdForUser: (id) => Effect.fail(new DBNotFoundError({ entity: "serviceOffered", value: id })),
+      softDeleteByIdForUser: (id) => Effect.fail(new DBNotFoundError({ entity: "serviceOffered", value: id })),
+    }),
+    makeProviderSearchQueueTest({
+      enqueueReconcile: () => Effect.succeed({ id: "job-1", name: "reconcile-provider" }),
+      enqueueExpiryReconcile: () => Effect.succeed({ id: "job-2", name: "reconcile-provider" }),
+      enqueueReindex: () => Effect.succeed({ id: "job-3", name: "reindex-all-providers" }),
     }),
   );
 

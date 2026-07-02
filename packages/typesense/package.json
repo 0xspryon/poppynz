@@ -1,0 +1,15 @@
+{
+  "name": "@repo/typesense",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@repo/db": "*",
+    "@repo/env": "*",
+    "effect": "^3.21.2",
+    "typesense": "^2.1.0"
+  }
+}

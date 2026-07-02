@@ -3,6 +3,7 @@ import { DBNotFoundError, ServiceOfferedRepo } from "@repo/db";
 import { Cause, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
+import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
 import { parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import {
   serviceOfferedJsonError,
@@ -44,6 +45,7 @@ export const createServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
       hourlyRateCents: input.hourlyRateCents,
       currency: input.currency ?? "CAD",
     });
+    yield* scheduleProviderSearchReconcile(service.userId);
 
     return toResponse(service);
   });
@@ -59,6 +61,7 @@ export const updateServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
       ...input,
       description: input.description === undefined ? undefined : input.description,
     });
+    yield* scheduleProviderSearchReconcile(service.userId);
 
     return toResponse(service);
   });
@@ -69,6 +72,7 @@ export const deleteServiceOfferedRouteProgram = (headers: Headers, serviceId: st
     const userAndSession = yield* requirePermissions(headers, { serviceOffered: ["write"] })(authenticated);
     const repo = yield* ServiceOfferedRepo;
     const service = yield* repo.softDeleteByIdForUser(serviceId, userAndSession.user.id);
+    yield* scheduleProviderSearchReconcile(service.userId);
 
     return toResponse(service);
   });

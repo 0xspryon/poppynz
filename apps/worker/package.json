@@ -1,0 +1,25 @@
+{
+  "name": "worker",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.19.7",
+    "@queuedash/api": "^3.19.0",
+    "@repo/db": "*",
+    "@repo/google": "*",
+    "@repo/objs": "*",
+    "@repo/queue": "*",
+    "@repo/typesense": "*",
+    "bullmq": "^5.66.0",
+    "effect": "^3.21.2",
+    "express": "^5.2.1",
+    "hono": "^4.12.27"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/express": "^5.0.6",
+    "vitest": "^4.1.0"
+  }
+}

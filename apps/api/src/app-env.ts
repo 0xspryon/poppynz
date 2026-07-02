@@ -11,6 +11,8 @@ import type {
 } from "@repo/db";
 import type { GooglePlaces } from "@repo/google";
 import type { ObjectStorage } from "@repo/objs";
+import type { ProviderSearchQueue } from "@repo/queue";
+import type { ProviderSearchIndex } from "@repo/typesense";
 import type { ManagedRuntime } from "effect";
 import type { SigninService } from "./routes/app/auth/signin/signin.handler";
 import type { SignupService } from "./routes/app/auth/signup/signup.handler";
@@ -31,6 +33,8 @@ export type AppServices =
   | ServiceOfferedRepo
   | GooglePlaces
   | ObjectStorage
+  | ProviderSearchQueue
+  | ProviderSearchIndex
   | AuthService;
 
 export type AppRuntime = ManagedRuntime.ManagedRuntime<

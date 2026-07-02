@@ -1,16 +1,17 @@
 import { Hono } from "hono";
 import { languageDetector } from "hono/language";
 import type { BaseAppEnv, AppRuntime } from "./app-env";
+import type { ManagedRuntime } from "effect";
 import { auth } from "./lib/auth";
 import { appRoutes } from "./routes/app/index";
 import { requestId } from "hono/request-id";
 import { makeAppRuntime } from "./managed-runtime";
 import { ensureInitialAppState } from "./startup";
 
-export const createApp = (runtime: AppRuntime = makeAppRuntime()) => {
+export const createApp = (runtime: AppRuntime | ManagedRuntime.ManagedRuntime<any, never> = makeAppRuntime()) => {
   const app = new Hono<BaseAppEnv>()
   .use("*", async (c, next) => {
-    c.set("runtime", runtime);
+    c.set("runtime", runtime as AppRuntime);
     await next();
   })
 	.use('*', requestId())

@@ -11,6 +11,8 @@ import {
 } from "@repo/db";
 import { GooglePlacesLive } from "@repo/google";
 import { ObjectStorageLive } from "@repo/objs";
+import { ProviderSearchQueueLive } from "@repo/queue";
+import { ProviderSearchIndexDefault } from "@repo/typesense";
 import { Layer, ManagedRuntime } from "effect";
 import type { AppRuntime } from "./app-env";
 import { AuthServiceLive } from "./lib/effect-auth";
@@ -29,6 +31,8 @@ export const AppLive = Layer.mergeAll(
   ServiceOfferedRepoDefault,
   GooglePlacesLive,
   ObjectStorageLive,
+  ProviderSearchQueueLive,
+  ProviderSearchIndexDefault,
   SigninServiceLive,
   SignupServiceLive,
   AuthServiceLive,

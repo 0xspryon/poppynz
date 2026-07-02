@@ -11,6 +11,8 @@ services:
     env_file: "./apps/api/src/.env"
     environment:
       RUSTFS_ENDPOINT: http://rustfs:9000
+      TYPESENSE_HOST: typesense
+      REDIS_URL: redis://redis:6379
     volumes:
       - .:/usr/src/app
       - bun_node_modules:/usr/src/app/node_modules
@@ -22,6 +24,40 @@ services:
       postgres:
         condition: service_healthy
       rustfs:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      typesense:
+        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
+
+  worker:
+    container_name: worker
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile.dev
+    restart: unless-stopped
+    working_dir: /usr/src/app
+    command: sh -c "bun install --frozen-lockfile && bun --cwd /usr/src/app/apps/worker dev"
+    env_file: "./apps/api/src/.env"
+    environment:
+      TYPESENSE_HOST: typesense
+      REDIS_URL: redis://redis:6379
+      WORKER_HTTP_PORT: 3001
+    volumes:
+      - .:/usr/src/app
+      - bun_node_modules:/usr/src/app/node_modules
+    networks:
+      - app-net
+    ports:
+      - '127.0.0.1:3001:3001'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      typesense:
         condition: service_healthy
       migrations:
         condition: service_completed_successfully
@@ -131,6 +167,37 @@ services:
       retries: 3
       start_period: 40s
 
+  redis:
+    container_name: redis
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    networks:
+      - app-net
+    ports:
+      - '127.0.0.1:6379:6379'
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  typesense:
+    container_name: typesense
+    image: typesense/typesense:28.0
+    restart: unless-stopped
+    command: '--data-dir /data --api-key=${TYPESENSE_API_KEY:-typesense-dev-key} --enable-cors'
+    volumes:
+      - typesense_data:/data
+    networks:
+      - app-net
+    ports:
+      - '127.0.0.1:8108:8108'
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:8108/health | grep -q ok']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   # redis_volume:
   bun_node_modules:
@@ -141,6 +208,7 @@ volumes:
   rustfs_data_2:
   rustfs_data_3:
   rustfs_logs:
+  typesense_data:
 
 networks:
   app-net:

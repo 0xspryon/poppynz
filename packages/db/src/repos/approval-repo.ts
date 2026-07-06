@@ -45,13 +45,14 @@ export const ApprovalRepoLive = Layer.effect(
             and(
               eq(approval.userId, userId),
               eq(approval.status, 'approved'),
+              gt(approval.expiresAt, new Date()),
             )
           )
           .orderBy(desc(approval.expiresAt))
           .limit(1)
           .pipe(
             Effect.flatMap((rows) => {
-              const row = rows.find((approval) => approval.expiresAt > new Date()) ?? rows[0];
+              const row = rows[0];
 
               if (row) {
                 return Effect.succeed(row);

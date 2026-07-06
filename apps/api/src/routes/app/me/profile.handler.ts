@@ -33,6 +33,7 @@ import {
   parseJsonBody,
   requestValidationErrorToResponse,
 } from "@/api/lib/schema-validator";
+import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
 
 export class ProfileRepoError extends Data.TaggedError("ProfileRepoError")<{
   cause: SqlError;
@@ -309,7 +310,10 @@ export const updateProfileRouteProgram = (c: HonoContext<HonoEnv>, headers: Head
       profile: ["update"],
     })(authenticated);
 
-    return yield* updateProfileProgram(userAndSession, input);
+    const profile = yield* updateProfileProgram(userAndSession, input);
+    yield* scheduleProviderSearchReconcile(profile.userId);
+
+    return profile;
   });
 
 export const updateProfileLocationRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
@@ -321,7 +325,10 @@ export const updateProfileLocationRouteProgram = (c: HonoContext<HonoEnv>, heade
       profile: ["update"],
     })(authenticated);
 
-    return yield* updateProfileLocationProgram(userAndSession, input);
+    const profile = yield* updateProfileLocationProgram(userAndSession, input);
+    yield* scheduleProviderSearchReconcile(profile.userId);
+
+    return profile;
   });
 
 export type ProfileRouteError =

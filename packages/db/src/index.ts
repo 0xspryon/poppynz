@@ -10,3 +10,5 @@ export * from "./repos/kyc-document-repo";
 export * from "./repos/kyc-document-type-repo";
 export * from "./repos/service-offered-repo";
 export * from "./repos/approval-request-repo";
+export * from "./repos/provider-search-repo";
+export * from "./repos/provider-search-outbox-repo";

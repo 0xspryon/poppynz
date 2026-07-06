@@ -1,16 +1,18 @@
-import { ApprovalRepo, ApprovalRequestRepo } from "@repo/db";
+import { ApprovalRepo, ApprovalRequestRepo, DBNotFoundError, ServiceOfferedRepo, UserProfileRepo } from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, isAuthError, requirePermissions, type UserAndSession } from "@/api/lib/effect-auth";
 import { approvalJsonError, validateApprovalInput, type ApprovalInput } from "./approval.validator";
 import { isRequestValidationError, parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import type { SqlError } from "@effect/sql/SqlError";
+import { scheduleProviderSearchApprovalJobs } from "@/api/lib/provider-search-jobs";
 
 export class ApprovalRepoError extends Data.TaggedError("ApprovalRepoError")<{ cause: SqlError }> { }
 export class ApprovalRequestMismatchError extends Data.TaggedError("ApprovalRequestMismatchError")<{}> { }
 export class ApprovalRequestNotFoundError extends Data.TaggedError("ApprovalRequestNotFoundError")<{
   id: string
 }> { }
+export class ApprovalEligibilityError extends Data.TaggedError("ApprovalEligibilityError")<{ message: string }> { }
 
 export const createApprovalProgram = (userAndSession: UserAndSession, input: ApprovalInput) =>
   Effect.gen(function*() {
@@ -27,6 +29,26 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
 
     if (approvalRequest.userId !== input.userId) {
       return yield* Effect.fail(new ApprovalRequestMismatchError());
+    }
+
+    const profileRepo = yield* UserProfileRepo;
+    const serviceRepo = yield* ServiceOfferedRepo;
+    const [profile, services] = yield* Effect.all([
+      profileRepo.findByUserId(input.userId),
+      serviceRepo.listByUserId(input.userId),
+    ], { concurrency: "unbounded" }).pipe(
+      Effect.catchTags({
+        SqlError: (cause) => Effect.fail(new ApprovalRepoError({ cause })),
+        DBNotFoundError: () => Effect.fail(new ApprovalEligibilityError({ message: "Provider profile was not found." })),
+      }),
+    );
+
+    if (typeof profile.latitude !== "number" || typeof profile.longitude !== "number") {
+      return yield* Effect.fail(new ApprovalEligibilityError({ message: "Provider must save a location before approval." }));
+    }
+
+    if (services.length === 0) {
+      return yield* Effect.fail(new ApprovalEligibilityError({ message: "Provider must have at least one active service before approval." }));
     }
 
     const [approval] = yield* Effect.all([
@@ -46,13 +68,17 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
       )
 
     ])
-    return {
+    const response = {
       id: approval.id,
       userId: approval.userId,
       approvalRequestId: approval.approvalRequestId,
       approvedBy: approval.approvedBy,
       expiresAt: approval.expiresAt.toISOString(),
     };
+
+    yield* scheduleProviderSearchApprovalJobs(response.userId, approval.expiresAt);
+
+    return response;
   });
 
 export type ApprovalError = Effect.Effect.Error<ReturnType<typeof createApprovalProgram>>;
@@ -63,6 +89,8 @@ const approvalErrorToResponse = (c: HonoContext<HonoEnv>, error: ApprovalError) 
       return c.json({ error: { code: "APPROVAL_REQUEST_NOT_FOUND" as const, message: "Approval request was not found." } }, 404);
     case "ApprovalRequestMismatchError":
       return c.json({ error: { code: "APPROVAL_REQUEST_MISMATCH" as const, message: "Approval request does not belong to the target user." } }, 400);
+    case "ApprovalEligibilityError":
+      return c.json({ error: { code: "APPROVAL_ELIGIBILITY_FAILED" as const, message: error.message } }, 400);
     case "ApprovalRepoError":
       return c.json({ error: { code: "APPROVAL_FAILED" as const, message: "Unable to create approval." } }, 500);
     default: handleNever(c, error)
@@ -72,7 +100,8 @@ const approvalErrorToResponse = (c: HonoContext<HonoEnv>, error: ApprovalError) 
 const isApprovalError = (error: unknown): error is ApprovalError =>
   error instanceof ApprovalRepoError ||
   error instanceof ApprovalRequestMismatchError ||
-  error instanceof ApprovalRequestNotFoundError;
+  error instanceof ApprovalRequestNotFoundError ||
+  error instanceof ApprovalEligibilityError;
 
 export async function createApprovalHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");

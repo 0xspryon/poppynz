@@ -17,6 +17,7 @@ export const gender = appDb.enum("gender", ["male", "female"]);
 export const accessControlRole = appDb.enum("access_control_role", ["family", "service-provider", "admin"]);
 export const approvalRequestStatus = appDb.enum("approval_request_status", ["submitted", "approved", "rejected"]);
 export const approvalStatus = appDb.enum("approval_status", ["approved", "rejected"]);
+export const providerSearchOutboxStatus = appDb.enum("provider_search_outbox_status", ["pending", "processing", "processed", "failed", "superseded"]);
 export const kycDocumentStatus = appDb.enum("kyc_document_status", [
   "submitted",
   "approved",
@@ -197,6 +198,32 @@ export const serviceOffered = appDb.table(
   (table) => [
     index("services_offered_user_id_idx").on(table.userId),
     index("services_offered_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+export const providerSearchOutbox = appDb.table(
+  "provider_search_outbox",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: providerSearchOutboxStatus("status").default("pending").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    lastError: text("last_error"),
+    processedAt: timestamp("processed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("provider_search_outbox_user_id_idx").on(table.userId),
+    index("provider_search_outbox_status_idx").on(table.status),
+    uniqueIndex("provider_search_outbox_user_unresolved_uidx")
+      .on(table.userId)
+      .where(sql`${table.status} in ('pending', 'processing', 'failed')`),
   ],
 );
 

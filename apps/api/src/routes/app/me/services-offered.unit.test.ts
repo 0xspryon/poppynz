@@ -1,5 +1,7 @@
 import { SqlError } from "@effect/sql/SqlError";
 import { DBNotFoundError, makeServiceOfferedRepoTest, makeSessionRepoTest, makeUserRepoTest, type ServiceOffered, type Session, type User } from "@repo/db";
+import { makeProviderSearchQueueTest } from "@repo/queue";
+import { makeProviderSearchOutboxRepoTest, type ProviderSearchOutbox } from "@repo/db";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
@@ -26,6 +28,17 @@ const service = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
 });
 
 const contextWithJson = (body: unknown) => ({ req: { json: async () => body } }) as HonoContext<HonoEnv>;
+
+const outbox = (userId = "provider-1"): ProviderSearchOutbox => ({
+  id: "outbox-1",
+  userId,
+  status: "pending",
+  attempts: 0,
+  lastError: null,
+  processedAt: null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+});
 
 const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
   if (!Exit.isFailure(exit)) throw new Error("Expected effect to fail");
@@ -55,6 +68,19 @@ const makeLayer = (options: { user?: User; services?: Array<ServiceOffered>; has
       },
       updateByIdForUser: (id) => Effect.succeed(service({ id })),
       softDeleteByIdForUser: (id) => Effect.succeed(service({ id, deletedAt: new Date("2026-06-13T00:00:00.000Z") })),
+    }),
+    makeProviderSearchQueueTest({
+      enqueueReconcile: () => Effect.succeed({ id: "job-1", name: "reconcile-provider" }),
+      enqueueExpiryReconcile: () => Effect.succeed({ id: "job-2", name: "reconcile-provider" }),
+      enqueueReindex: () => Effect.succeed({ id: "job-3", name: "reindex-all-providers" }),
+    }),
+    makeProviderSearchOutboxRepoTest({
+      createPending: (userId) => Effect.succeed(outbox(userId)),
+      listUnresolved: () => Effect.succeed([]),
+      markProcessing: (id) => Effect.succeed(outbox(id)),
+      markProcessed: (id) => Effect.succeed(outbox(id)),
+      markFailed: (id) => Effect.succeed(outbox(id)),
+      markSupersededBefore: () => Effect.succeed(0),
     }),
   );
 };

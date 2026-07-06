@@ -6,6 +6,8 @@ import {
   SessionRepoDefault,
   ServiceOfferedRepoDefault,
   SignupIntentRepoDefault,
+  ProviderSearchOutboxRepoDefault,
+  ProviderSearchRepoDefault,
   UserProfileRepoDefault,
   UserRepoDefault,
 } from "@repo/db";
@@ -29,6 +31,8 @@ export const AppLive = Layer.mergeAll(
   KycDocumentRepoDefault,
   KycDocumentTypeRepoDefault,
   ServiceOfferedRepoDefault,
+  ProviderSearchOutboxRepoDefault,
+  ProviderSearchRepoDefault,
   GooglePlacesLive,
   ObjectStorageLive,
   ProviderSearchQueueLive,

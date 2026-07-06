@@ -32,6 +32,8 @@ export const typesenseConfig = Config.all({
   protocol: Config.string("TYPESENSE_PROTOCOL").pipe(Config.withDefault("http")),
   apiKey: Config.string("TYPESENSE_API_KEY"),
   providerCollection: Config.string("TYPESENSE_PROVIDER_COLLECTION").pipe(Config.withDefault("service_providers")),
+  providerCollectionAlias: Config.string("TYPESENSE_PROVIDER_COLLECTION_ALIAS").pipe(Config.withDefault("service_providers_current")),
+  providerCollectionVersion: Config.string("TYPESENSE_PROVIDER_COLLECTION_VERSION").pipe(Config.withDefault("service_providers_v1")),
 });
 
 export const providerSearchConfig = Config.all({

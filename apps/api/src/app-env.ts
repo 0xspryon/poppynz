@@ -6,6 +6,8 @@ import type {
   ServiceOfferedRepo,
   SessionRepo,
   SignupIntentRepo,
+  ProviderSearchOutboxRepo,
+  ProviderSearchRepo,
   UserProfileRepo,
   UserRepo,
 } from "@repo/db";
@@ -31,6 +33,8 @@ export type AppServices =
   | KycDocumentRepo
   | KycDocumentTypeRepo
   | ServiceOfferedRepo
+  | ProviderSearchOutboxRepo
+  | ProviderSearchRepo
   | GooglePlaces
   | ObjectStorage
   | ProviderSearchQueue

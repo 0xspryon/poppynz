@@ -32,6 +32,7 @@ export type ProviderSearchInput = {
   center?: [number, number];
   minHourlyRateCents?: number;
   maxHourlyRateCents?: number;
+  sort?: "relevance" | "distance" | "price_asc" | "price_desc" | "newest";
   page: number;
   perPage: number;
 };
@@ -169,7 +170,17 @@ const chunksOf = <T>(items: Array<T>, size: number) => {
 
 const filterString = (value: string) => `\`${value.replace(/`/g, "\\`")}\``;
 
-const makeProviderSearchIndex = (config: { host: string; port: number; protocol: string; apiKey: string; providerCollection: string }) => {
+const sortBy = (input: ProviderSearchInput) => {
+  if (input.center && (input.sort === undefined || input.sort === "distance")) return `location(${input.center[0]}, ${input.center[1]}):asc`;
+  switch (input.sort) {
+    case "price_asc": return "minHourlyRateCents:asc";
+    case "price_desc": return "minHourlyRateCents:desc";
+    case "newest": return "updatedAt:desc";
+    default: return undefined;
+  }
+};
+
+const makeProviderSearchIndex = (config: { host: string; port: number; protocol: string; apiKey: string; providerCollection: string; providerCollectionAlias: string; providerCollectionVersion: string }) => {
   const client = new Typesense.Client({
     nodes: [{ host: config.host, port: config.port, protocol: config.protocol }],
     apiKey: config.apiKey,
@@ -178,16 +189,20 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
 
   return Effect.gen(function*() {
     const repo = yield* ProviderSearchRepo;
+    const writeCollection = config.providerCollectionVersion || config.providerCollection;
+    const readCollection = config.providerCollectionAlias || writeCollection;
 
     const ensureCollection = () =>
       Effect.tryPromise({
         try: async () => {
           try {
-            await client.collections(config.providerCollection).retrieve();
+            await client.collections(writeCollection).retrieve();
           } catch (cause) {
             if (!isNotFound(cause)) throw cause;
-            await client.collections().create(collectionSchema(config.providerCollection));
+            await client.collections().create(collectionSchema(writeCollection));
           }
+
+          await client.aliases().upsert(readCollection, { collection_name: writeCollection });
         },
         catch: (cause) => new ProviderSearchIndexError({ operation: "ensureCollection", cause }),
       });
@@ -196,7 +211,7 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
       Effect.tryPromise({
         try: async () => {
           try {
-            await client.collections(config.providerCollection).documents(userId).delete();
+            await client.collections(writeCollection).documents(userId).delete();
           } catch (cause) {
             if (!isNotFound(cause)) throw cause;
           }
@@ -213,7 +228,7 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
 
           for (const chunk of chunksOf(userIds, 250)) {
             const response = await client
-              .collections(config.providerCollection)
+              .collections(writeCollection)
               .documents()
               .delete({
                 filter_by: `id:=[${chunk.map(filterString).join(",")}]`,
@@ -230,7 +245,7 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
 
     const upsertProvider = (document: ProviderSearchDocument) =>
       Effect.tryPromise({
-        try: () => client.collections(config.providerCollection).documents().upsert(document),
+        try: () => client.collections(writeCollection).documents().upsert(document),
         catch: (cause) => new ProviderSearchIndexError({ operation: "upsert", cause }),
       }).pipe(Effect.asVoid);
 
@@ -254,14 +269,15 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
     const searchProviders = (input: ProviderSearchInput) =>
       Effect.tryPromise({
         try: async () => {
-          const response = await client.collections(config.providerCollection).documents().search({
+          const searchParams = {
             q: input.q?.trim() || "*",
             query_by: "displayName,shortBio,services,serviceDescriptions,serviceNamesText,city,stateProvince,country",
             filter_by: buildFilter(input),
             page: input.page,
             per_page: input.perPage,
-            sort_by: input.center ? `location(${input.center[0]}, ${input.center[1]}):asc` : "updatedAt:desc",
-          });
+            ...(sortBy(input) ? { sort_by: sortBy(input) } : {}),
+          };
+          const response = await client.collections(readCollection).documents().search(searchParams);
           const hits = (response.hits ?? []) as Array<{ document: ProviderSearchDocument; geo_distance_meters?: Record<string, number> }>;
 
           return {
@@ -275,7 +291,7 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
     const getProvider = (userId: string) =>
       Effect.tryPromise({
         try: async () => {
-          const document = await client.collections(config.providerCollection).documents(userId).retrieve() as ProviderSearchDocument;
+          const document = await client.collections(readCollection).documents(userId).retrieve() as ProviderSearchDocument;
           if (document.approvalExpiresAt <= Date.now()) throw new DBNotFoundError({ entity: "providerSearchDocument", value: userId });
           return document;
         },
@@ -294,7 +310,7 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
           const perPage = 250;
 
           while (true) {
-            const response = await client.collections(config.providerCollection).documents().search({ q: "*", query_by: "userId", page, per_page: perPage });
+            const response = await client.collections(writeCollection).documents().search({ q: "*", query_by: "userId", page, per_page: perPage });
             const hits = (response.hits ?? []) as Array<{ document: ProviderSearchDocument }>;
             ids.push(...hits.map((hit) => hit.document.userId));
 
@@ -310,6 +326,8 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
     const reindexAllProviders = () =>
       Effect.gen(function*() {
         yield* ensureCollection();
+        // MVP tradeoff: this loads all service-provider IDs and reconciles each provider with
+        // bounded concurrency. For larger datasets, paginate IDs and batch/aggregate DB reads.
         const userIds = yield* repo.listServiceProviderUserIds().pipe(
           Effect.mapError((cause) => new ProviderSearchIndexError({ operation: "reindex", cause })),
         );

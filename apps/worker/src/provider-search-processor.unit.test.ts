@@ -1,6 +1,7 @@
 import { providerSearchJobNames } from "@repo/queue";
 import { makeProviderSearchIndexTest } from "@repo/typesense";
-import { Cause, Effect, Exit, Option } from "effect";
+import { makeProviderSearchOutboxRepoTest, type ProviderSearchOutbox } from "@repo/db";
+import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it, vi } from "vitest";
 import { processProviderSearchJob } from "./provider-search-processor";
 
@@ -11,23 +12,44 @@ const getDieMessage = (exit: Exit.Exit<unknown, unknown>) => {
   return String(die.value);
 };
 
+const outbox = (id = "outbox-1"): ProviderSearchOutbox => ({
+  id,
+  userId: "provider-1",
+  status: "pending",
+  attempts: 0,
+  lastError: null,
+  processedAt: null,
+  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+});
+
 const makeLayer = (options: {
   onReconcile?: (userId: string) => void;
   onReindex?: () => void;
 } = {}) =>
-  makeProviderSearchIndexTest({
-    ensureCollection: () => Effect.void,
-    reconcileProvider: (userId) => {
-      options.onReconcile?.(userId);
-      return Effect.void;
-    },
-    searchProviders: () => Effect.succeed({ providers: [], pagination: { page: 1, perPage: 20, total: 0 } }),
-    getProvider: () => Effect.die("not used"),
-    reindexAllProviders: () => {
-      options.onReindex?.();
-      return Effect.succeed({ indexed: 1, deletedStale: 0 });
-    },
-  });
+  Layer.mergeAll(
+    makeProviderSearchIndexTest({
+      ensureCollection: () => Effect.void,
+      reconcileProvider: (userId) => {
+        options.onReconcile?.(userId);
+        return Effect.void;
+      },
+      searchProviders: () => Effect.succeed({ providers: [], pagination: { page: 1, perPage: 20, total: 0 } }),
+      getProvider: () => Effect.die("not used"),
+      reindexAllProviders: () => {
+        options.onReindex?.();
+        return Effect.succeed({ indexed: 1, deletedStale: 0 });
+      },
+    }),
+    makeProviderSearchOutboxRepoTest({
+      createPending: () => Effect.succeed(outbox()),
+      listUnresolved: () => Effect.succeed([]),
+      markProcessing: (id) => Effect.succeed(outbox(id)),
+      markProcessed: (id) => Effect.succeed(outbox(id)),
+      markFailed: (id) => Effect.succeed(outbox(id)),
+      markSupersededBefore: () => Effect.succeed(0),
+    }),
+  );
 
 describe("processProviderSearchJob", () => {
   it("dispatches reconcile-provider jobs", async () => {
@@ -36,7 +58,7 @@ describe("processProviderSearchJob", () => {
     await Effect.runPromise(
       processProviderSearchJob({
         name: providerSearchJobNames.reconcileProvider,
-        data: { userId: "provider-1" },
+        data: { outboxId: "outbox-1", userId: "provider-1" },
       }).pipe(Effect.provide(makeLayer({ onReconcile }))),
     );
 

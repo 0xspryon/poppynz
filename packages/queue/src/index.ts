@@ -15,7 +15,7 @@ export const providerSearchJobNames = {
   reindexAllProviders: "reindex-all-providers",
 } as const;
 
-export type ReconcileProviderJob = { userId: string };
+export type ReconcileProviderJob = { outboxId: string; userId: string };
 export type ReindexAllProvidersJob = Record<string, never>;
 export type ProviderSearchJobData = ReconcileProviderJob | ReindexAllProvidersJob;
 
@@ -65,8 +65,8 @@ export const makeProviderSearchQueue = (connection: QueueOptions["connection"]) 
 export class ProviderSearchQueue extends Context.Tag("@repo/queue/ProviderSearchQueue")<
   ProviderSearchQueue,
   {
-    enqueueReconcile: (userId: string) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
-    enqueueExpiryReconcile: (userId: string, expiresAt: Date) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
+    enqueueReconcile: (input: ReconcileProviderJob) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
+    enqueueExpiryReconcile: (input: ReconcileProviderJob & { expiresAt: Date }) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
     enqueueReindex: () => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
   }
 >() { }
@@ -75,30 +75,30 @@ export const ProviderSearchQueueLive = Layer.effect(ProviderSearchQueue, redisCo
   const queue = makeProviderSearchQueue(connection);
 
   return {
-    enqueueReconcile: (userId) =>
+    enqueueReconcile: (input) =>
       Effect.tryPromise({
         try: async () => {
           const job = await queue.add(
             providerSearchJobNames.reconcileProvider,
-            { userId },
-            { deduplication: { id: providerSearchReconcileDeduplicationId(userId) } },
+            { outboxId: input.outboxId, userId: input.userId },
+            { deduplication: { id: providerSearchReconcileDeduplicationId(input.userId) } },
           );
 
           return { id: job.id, name: job.name };
         },
         catch: (cause) => new ProviderSearchQueueError({ operation: "enqueueReconcile", cause }),
       }),
-    enqueueExpiryReconcile: (userId, expiresAt) =>
+    enqueueExpiryReconcile: (input) =>
       Effect.tryPromise({
         try: async () => {
           const ONE_MINUTE_MILLIS = 1 * 60 * 1000;
-          const delay = Math.max(ONE_MINUTE_MILLIS, expiresAt.getTime() - Date.now());
+          const delay = Math.max(ONE_MINUTE_MILLIS, input.expiresAt.getTime() - Date.now());
           const job = await queue.add(
             providerSearchJobNames.reconcileProvider,
-            { userId },
+            { outboxId: input.outboxId, userId: input.userId },
             {
               deduplication: {
-                id: providerSearchExpiryJobId(userId, expiresAt)
+                id: providerSearchExpiryJobId(input.userId, input.expiresAt)
               },
               delay
             },

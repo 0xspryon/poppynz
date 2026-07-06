@@ -1,16 +1,18 @@
 import express from "express";
 import { createQueueDashExpressMiddleware } from "@queuedash/api";
 import { Queue, Worker } from "bullmq";
-import { Layer, ManagedRuntime } from "effect";
+import { Effect, Layer, ManagedRuntime } from "effect";
 import { ProviderSearchIndexDefault } from "@repo/typesense";
+import { ProviderSearchOutboxRepo, ProviderSearchOutboxRepoDefault } from "@repo/db";
 import {
   getRedisConnection,
+  providerSearchJobNames,
   providerSearchQueueDefinition,
   queues,
 } from "@repo/queue";
 import { processProviderSearchJob } from "./provider-search-processor";
 
-const WorkerLive = ProviderSearchIndexDefault;
+const WorkerLive = Layer.mergeAll(ProviderSearchIndexDefault, ProviderSearchOutboxRepoDefault);
 const runtime = ManagedRuntime.make(WorkerLive);
 const connection = getRedisConnection();
 
@@ -30,6 +32,29 @@ const queueDashQueues = queues.map((queue) => ({
   displayName: queue.displayName,
   type: queue.type,
 }));
+
+const providerSearchQueue = new Queue(providerSearchQueueDefinition.name, { connection });
+
+const enqueueUnresolvedOutboxRows = async () => {
+  const rows = await runtime.runPromise(
+    ProviderSearchOutboxRepo.pipe(
+      Effect.flatMap((repo) => repo.listUnresolved(1_000)),
+    ),
+  );
+
+  await Promise.all(rows.map((row) =>
+    providerSearchQueue.add(
+      providerSearchJobNames.reconcileProvider,
+      { outboxId: row.id, userId: row.userId },
+      { deduplication: { id: `provider-search-reconcile-${row.userId}` } },
+    ),
+  ));
+};
+
+void enqueueUnresolvedOutboxRows().catch((cause) => {
+  // TODO: log this failure to Sentry once error reporting is wired.
+  console.error(cause);
+});
 
 const app = express();
 
@@ -67,6 +92,7 @@ const server = app.listen(port, () => {
 const shutdown = async () => {
   server.close();
   await providerSearchWorker.close();
+  await providerSearchQueue.close();
   await Promise.all(queueDashQueues.map(({ queue }) => queue.close()));
   await runtime.dispose();
 };

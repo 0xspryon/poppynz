@@ -1,26 +1,9 @@
-import { ProviderSearchIndex } from "@repo/typesense";
-import { UserProfileRepo } from "@repo/db";
-import { Cause, Data, Effect, Exit, Option } from "effect";
+import { ProviderSearchIndex, buildProviderSearchDocument, getProviderSearchMinRadiusKm } from "@repo/typesense";
+import { DBNotFoundError, ProviderSearchRepo, UserProfileRepo } from "@repo/db";
+import { Cause, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
-
-class ProviderSearchRequestValidationError extends Data.TaggedError("ProviderSearchRequestValidationError")<{ message: string }> { }
-
-const numberParam = (value: string | undefined, name: string) => {
-  if (value === undefined || value === "") return Effect.succeed(undefined);
-  const parsed = Number(value);
-  return Number.isFinite(parsed)
-    ? Effect.succeed(parsed)
-    : Effect.fail(new ProviderSearchRequestValidationError({ message: `${name} must be a number.` }));
-};
-
-const integerParam = (value: string | undefined, name: string, defaultValue: number) => {
-  if (value === undefined || value === "") return Effect.succeed(defaultValue);
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0
-    ? Effect.succeed(parsed)
-    : Effect.fail(new ProviderSearchRequestValidationError({ message: `${name} must be a positive integer.` }));
-};
+import { ProviderSearchRequestValidationError, validateProviderSearchQuery } from "./providers.validator";
 
 const publicProvider = (provider: {
   userId: string;
@@ -52,26 +35,41 @@ const publicProvider = (provider: {
   distanceKm: provider.distanceKm,
 });
 
+const publicProviderDetail = (candidate: Parameters<typeof buildProviderSearchDocument>[0]) => {
+  const document = buildProviderSearchDocument(candidate);
+  if (!document) return null;
+
+  return {
+    userId: document.userId,
+    displayName: document.displayName,
+    shortBio: document.shortBio,
+    location: {
+      city: document.city,
+      stateProvince: document.stateProvince,
+      country: document.country,
+    },
+    services: candidate.services
+      .filter((service) => service.deletedAt === null)
+      .map((service) => ({
+        id: service.id,
+        name: service.name,
+        description: service.description,
+        hourlyRateCents: service.hourlyRateCents,
+        currency: service.currency,
+      })),
+  };
+};
+
 export const searchProvidersRouteProgram = (headers: Headers, query: Record<string, string | undefined>) =>
   Effect.gen(function*() {
-    if (query.lat !== undefined || query.lng !== undefined) {
-      return yield* Effect.fail(new ProviderSearchRequestValidationError({ message: "lat and lng query parameters are not supported." }));
-    }
-
+    const input = yield* validateProviderSearchQuery(query);
     const authenticated = yield* authenticate(headers);
     const userAndSession = yield* requirePermissions(headers, { providerSearch: ["read"] })(authenticated);
-    const [page, perPage, radiusKm, minHourlyRateCents, maxHourlyRateCents] = yield* Effect.all([
-      integerParam(query.page, "page", 1),
-      integerParam(query.perPage, "perPage", 20),
-      numberParam(query.radiusKm, "radiusKm"),
-      numberParam(query.minHourlyRateCents, "minHourlyRateCents"),
-      numberParam(query.maxHourlyRateCents, "maxHourlyRateCents"),
-    ]);
-    const minRadiusKm = Number.parseInt(process.env.PROVIDER_SEARCH_MIN_RADIUS_KM ?? "10", 10);
+    const minRadiusKm = yield* getProviderSearchMinRadiusKm.pipe(Effect.orElseSucceed(() => 10));
 
     let center: [number, number] | undefined;
-    if (radiusKm !== undefined) {
-      if (radiusKm < minRadiusKm) {
+    if (input.radiusKm !== undefined) {
+      if (input.radiusKm < minRadiusKm) {
         return yield* Effect.fail(new ProviderSearchRequestValidationError({ message: `radiusKm must be at least ${minRadiusKm}.` }));
       }
 
@@ -85,15 +83,16 @@ export const searchProvidersRouteProgram = (headers: Headers, query: Record<stri
 
     const index = yield* ProviderSearchIndex;
     const result = yield* index.searchProviders({
-      q: query.q,
-      city: query.city,
-      service: query.service,
-      radiusKm,
+      q: input.q,
+      city: input.city,
+      service: input.service,
+      radiusKm: input.radiusKm,
       center,
-      minHourlyRateCents,
-      maxHourlyRateCents,
-      page,
-      perPage,
+      minHourlyRateCents: input.minHourlyRateCents,
+      maxHourlyRateCents: input.maxHourlyRateCents,
+      page: input.page,
+      perPage: input.perPage,
+      sort: input.sort,
     });
 
     return { providers: result.providers.map(publicProvider), pagination: result.pagination };
@@ -103,9 +102,12 @@ export const getProviderRouteProgram = (headers: Headers, userId: string) =>
   Effect.gen(function*() {
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { providerSearch: ["read"] })(authenticated);
-    const index = yield* ProviderSearchIndex;
-    const provider = yield* index.getProvider(userId);
-    return publicProvider(provider);
+    const repo = yield* ProviderSearchRepo;
+    const candidate = yield* repo.findCandidateByUserId(userId);
+    const provider = publicProviderDetail(candidate);
+
+    if (!provider) return yield* Effect.fail(new DBNotFoundError({ entity: "provider", value: userId }));
+    return provider;
   });
 
 type ProvidersRouteError =
@@ -151,6 +153,7 @@ export async function searchProvidersHandler(c: HonoContext<HonoEnv>) {
     radiusKm: c.req.query("radiusKm"),
     minHourlyRateCents: c.req.query("minHourlyRateCents"),
     maxHourlyRateCents: c.req.query("maxHourlyRateCents"),
+    sort: c.req.query("sort"),
     page: c.req.query("page"),
     perPage: c.req.query("perPage"),
     lat: c.req.query("lat"),

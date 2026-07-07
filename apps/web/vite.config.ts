@@ -1,5 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 export default defineConfig({
@@ -8,5 +9,5 @@ export default defineConfig({
 			'@/web': fileURLToPath(new URL('./src', import.meta.url))
 		}
 	},
-	plugins: [sveltekit()]
+	plugins: [tailwindcss(), sveltekit()]
 });

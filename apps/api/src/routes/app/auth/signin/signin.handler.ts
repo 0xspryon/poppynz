@@ -12,6 +12,7 @@ import {
   isRequestValidationError,
   parseJsonBody,
   requestValidationErrorToResponse,
+  type RequestValidationError,
 } from "@/api/lib/schema-validator";
 
 export class SigninUserLookupError extends Data.TaggedError("SigninUserLookupError")<{
@@ -130,7 +131,12 @@ const unexpectedErrorResponse = (c: HonoContext<HonoEnv>) =>
 const isSigninError = (error: unknown): error is SigninError =>
   error instanceof SigninUserLookupError || error instanceof SigninUserNotFoundError || error instanceof SigninAuthError;
 
-const exitToResponse = <TResult>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TResult, unknown>) =>
+// The concrete error union matters: with a generic error parameter here,
+// TypeScript widens the validation error's literal code to `string` when Hono
+// infers the route schema, and the RPC client loses the discriminant.
+type SigninRouteError = SigninError | RequestValidationError<typeof signinJsonError.code>;
+
+const exitToResponse = <TResult>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TResult, SigninRouteError>) =>
   Exit.match(exit, {
     onSuccess: (result) => c.json(result),
     onFailure: (cause) => {

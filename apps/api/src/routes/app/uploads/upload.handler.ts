@@ -16,7 +16,7 @@ import {
   validateUploadPresignInput,
   type UploadPresignInput,
 } from "./upload.validator";
-import { Roles } from "@/api/lib/auth-roles";
+import type { Roles } from "@/api/lib/auth-roles";
 import {
   parseJsonBody,
   requestValidationErrorToResponse,

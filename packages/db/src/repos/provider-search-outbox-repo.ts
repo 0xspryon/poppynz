@@ -1,6 +1,6 @@
 import * as PgDrizzle from "@effect/sql-drizzle/Pg";
 import type { SqlError } from "@effect/sql/SqlError";
-import { and, eq, inArray, InferSelectModel, lte, sql } from "drizzle-orm";
+import { and, eq, inArray, type InferSelectModel, lte, sql } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { DBNotFoundError, DrizzleLive } from "../effect-db";
 import { providerSearchOutbox } from "../schema";

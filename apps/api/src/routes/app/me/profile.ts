@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { HonoEnv } from "../../../app-env";
+import type { HonoEnv } from "../../../app-env";
 import { getProfileHandler, updateProfileHandler, updateProfileLocationHandler } from "./profile.handler";
 
 export const profileRoute = new Hono<HonoEnv>()

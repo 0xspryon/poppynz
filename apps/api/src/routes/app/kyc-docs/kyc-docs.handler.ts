@@ -1,5 +1,5 @@
 import type { SqlError } from "@effect/sql/SqlError";
-import { DBNotFoundError, KycDocumentRepo, KycDocumentType, KycDocument, KycDocumentTypeRepo } from "@repo/db";
+import { DBNotFoundError, KycDocumentRepo, type KycDocumentType, type KycDocument, KycDocumentTypeRepo } from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, isAuthError, requirePermissions } from "@/api/lib/effect-auth";

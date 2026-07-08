@@ -16,9 +16,9 @@ describe('verifyMagicLink', () => {
 		await expect(result).resolves.toEqual({ status: 'expired', destination: '/auth/expired' });
 	});
 
-	it('sends verified users without a pending sign-in to onboarding', async () => {
+	it('sends verified users to the app entry', async () => {
 		const result = verifyMagicLink('demo');
 		await vi.runAllTimersAsync();
-		await expect(result).resolves.toEqual({ status: 'ok', destination: '/onboarding' });
+		await expect(result).resolves.toEqual({ status: 'ok', destination: '/' });
 	});
 });

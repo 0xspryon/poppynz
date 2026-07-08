@@ -10,39 +10,39 @@ import { ensureInitialAppState } from "./startup";
 
 export const createApp = (runtime: AppRuntime | ManagedRuntime.ManagedRuntime<any, never> = makeAppRuntime()) => {
   const app = new Hono<BaseAppEnv>()
-  .use("*", async (c, next) => {
-    c.set("runtime", runtime as AppRuntime);
-    await next();
-  })
-	.use('*', requestId())
-  .use(
-    "*",
-    languageDetector({
-      supportedLanguages: ["en", "es"],
-      fallbackLanguage: "en",
-    }),
-  )
+    .use("*", async (c, next) => {
+      c.set("runtime", runtime as AppRuntime);
+      await next();
+    })
+    .use('*', requestId())
+    .use(
+      "*",
+      languageDetector({
+        supportedLanguages: ["en", "es"],
+        fallbackLanguage: "en",
+      }),
+    )
 
-  .get("/health", (c) => {
-    return c.text("Up!");
-  })
+    .get("/health", (c) => {
+      return c.text("Up!");
+    })
 
-  .all("/api/auth/*", (c) => auth.handler(c.req.raw))
-  .route("/app/api/v1", appRoutes)
+    .all("/api/auth/*", (c) => auth.handler(c.req.raw))
+    .route("/api/v1", appRoutes)
 
-  .onError((error, c) => {
-    console.error(error);
+    .onError((error, c) => {
+      console.error(error);
 
-    return c.json(
-      {
-        error: {
-          code: "INTERNAL_SERVER_ERROR",
-          message: "Unexpected server error.",
+      return c.json(
+        {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Unexpected server error.",
+          },
         },
-      },
-      500,
-    );
-  })
+        500,
+      );
+    })
 
   return app;
 };

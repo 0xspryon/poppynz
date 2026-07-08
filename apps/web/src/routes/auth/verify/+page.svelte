@@ -25,6 +25,6 @@
 	></div>
 	<h2 class="mb-2 font-display text-3xl font-bold text-base-content">Signing you in…</h2>
 	<p class="text-sm leading-relaxed text-base-content-muted">
-		This only takes a moment. You'll land on your dashboard right after.
+		This only takes a moment. You'll be signed in right after.
 	</p>
 </div>

@@ -97,11 +97,7 @@
 		<div class="hidden items-center justify-end gap-3.5 lg:flex">
 			{#if panel.aux}
 				<span class="text-sm text-base-content-muted">{panel.aux.text}</span>
-				<a
-					href={resolve(panel.aux.href)}
-					class="rounded-md border-2 border-secondary bg-base-100 px-5 py-2 text-sm font-semibold
-						text-secondary transition hover:bg-base-300"
-				>
+				<a href={resolve(panel.aux.href)} class="btn btn-sm btn-outline btn-secondary">
 					{panel.aux.cta}
 				</a>
 			{/if}

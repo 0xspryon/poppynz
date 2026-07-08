@@ -4,22 +4,29 @@
  * All colors, radii, shadows and dimensions used in components must come
  * from these tokens — never hard-code hex values or magic numbers in markup.
  *
- * Color naming follows DaisyUI (https://daisyui.com/docs/colors/):
- * role + `-content` for the foreground that sits on that role. Where the
- * locked palette needs more steps than DaisyUI defines, we extend the same
- * pattern (base-400/500/600, *-muted) — extensions are marked below.
+ * Components come from DaisyUI (btn, input, checkbox, badge, …) themed via
+ * the "poppynz" theme below — the theme block is the single place where the
+ * locked palette meets DaisyUI. Prefer DaisyUI defaults over per-instance
+ * overrides; the few global adjustments live at the bottom of this file.
  */
 @import 'tailwindcss';
+/* Built-in themes off: "poppynz" below is the only theme, so the OS
+ * dark-mode preference can't swap the locked palette out. */
+@plugin 'daisyui' {
+	themes: false;
+}
 
-@theme {
+@plugin 'daisyui/theme' {
+	name: 'poppynz';
+	default: true;
+	prefersdark: false;
+	color-scheme: light;
+
 	/* ---- Brand colors ---- */
 	--color-primary: #37b5ff; /* Sky Action — primary interactions ONLY */
 	--color-primary-content: #ffffff;
-	--color-primary-soft: #8fcdff; /* extension: eyebrow/kicker text on secondary panels */
 	--color-secondary: #1a3375; /* Deep Navy — headings, dark panels, secondary buttons */
 	--color-secondary-content: #ffffff;
-	--color-secondary-content-muted: #b9c6e8; /* extension: body text on secondary */
-	--color-secondary-content-faint: #8b9bc9; /* extension: footnotes on secondary */
 	--color-accent: #ea42b9; /* Accent Pink — sparingly, attention/new */
 	--color-accent-content: #ffffff;
 	--color-neutral: #005782; /* Ocean Muted — secondary neutral, icons + labels */
@@ -29,16 +36,7 @@
 	--color-base-100: #ffffff; /* cards, inputs */
 	--color-base-200: #f7f9ff; /* app background */
 	--color-base-300: #ecf4ff; /* hovers, wells */
-	--color-base-400: #e1f0ff; /* extension: icon circles, selected cards */
-	--color-base-500: #d6ebff; /* extension: deeper tint, hover on base-400 */
-	--color-base-600: #cbe6ff; /* extension: deepest sky tint */
 	--color-base-content: #001e30;
-	--color-base-content-muted: #444650; /* extension: secondary body text */
-
-	/* ---- Borders / outlines (extensions — DaisyUI has no border tokens) ---- */
-	--color-outline: #757681; /* strong borders, muted icons */
-	--color-outline-variant: #c5c6d2; /* default input/card borders */
-	--color-card-border: #d6e2f2; /* soft navy-tinted card border */
 
 	/* ---- Status colors ----
 	 * `-content` doubles as the soft chip/badge background: the pairs are
@@ -50,15 +48,39 @@
 	--color-success-content: #e3f4ec;
 	--color-warning: #a5106f; /* attention / missing */
 	--color-warning-content: #fce3f4;
-	--color-warning-border: #f3b6e1; /* extension: border for warning chips */
 	--color-error: #ba1a1a; /* rejected / destructive */
 	--color-error-content: #ffdad6;
+
+	/* ---- DaisyUI shape / effect slots (design: radius 8px, flat, 1.5px borders) ---- */
+	--radius-selector: 0.25rem; /* checkboxes, small tags (4px) */
+	--radius-field: 0.5rem; /* inputs, buttons (8px) */
+	--radius-box: 0.5rem; /* cards, dropdowns (8px) */
+	--size-selector: 0.25rem;
+	--size-field: 0.25rem;
+	--border: 1.5px;
+	--depth: 0; /* flat surfaces, no 3D effect */
+	--noise: 0;
+}
+
+@theme {
+	/* ---- Palette extensions (locked hexes DaisyUI has no slot for) ---- */
+	--color-primary-soft: #8fcdff; /* eyebrow/kicker text on secondary panels */
+	--color-secondary-content-muted: #b9c6e8; /* body text on secondary */
+	--color-secondary-content-faint: #8b9bc9; /* footnotes on secondary */
+	--color-base-400: #e1f0ff; /* icon circles, selected cards */
+	--color-base-500: #d6ebff; /* deeper tint, hover on base-400 */
+	--color-base-600: #cbe6ff; /* deepest sky tint */
+	--color-base-content-muted: #444650; /* secondary body text */
+	--color-outline: #757681; /* strong borders, muted icons */
+	--color-outline-variant: #c5c6d2; /* default input/card borders */
+	--color-card-border: #d6e2f2; /* soft navy-tinted card border */
+	--color-warning-border: #f3b6e1; /* border for warning chips */
 
 	/* ---- Typography ---- */
 	--font-display: 'Hanken Grotesk Variable', 'Hanken Grotesk', system-ui, sans-serif;
 	--font-sans: 'Inter Variable', 'Inter', system-ui, sans-serif;
 
-	/* ---- Shape ---- */
+	/* ---- Shape (for custom, non-DaisyUI markup) ---- */
 	--radius-xs: 0.25rem; /* 4px — small tags */
 	--radius-sm: 0.3125rem; /* 5px — status chips */
 	--radius-md: 0.5rem; /* 8px — buttons, inputs, cards */
@@ -94,4 +116,26 @@
 		font-family: var(--font-display);
 		letter-spacing: -0.02em;
 	}
+}
+
+/*
+ * Global DaisyUI adjustments — the only place we bend DaisyUI toward the
+ * locked design. Keep this list short; never override per instance.
+ */
+
+/* Design: primary CTAs are pills with a sky glow (secondary/outline buttons stay 8px). */
+.btn-primary {
+	border-radius: var(--radius-pill);
+}
+.btn-primary:not(:disabled, [disabled], .btn-disabled) {
+	box-shadow: var(--shadow-primary);
+}
+
+/* Design: form labels are small uppercase ocean-colored kickers. */
+.fieldset-legend {
+	color: var(--color-neutral);
+	font-size: 0.75rem;
+	font-weight: 600;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
 }

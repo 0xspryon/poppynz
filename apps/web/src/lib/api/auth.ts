@@ -16,7 +16,7 @@ export interface PendingAuth {
 	sentAt: number;
 }
 
-export type AuthDestination = '/onboarding' | '/dashboard' | '/auth/expired';
+export type AuthDestination = '/' | '/auth/expired';
 
 export interface VerifyResult {
 	status: 'ok' | 'expired';
@@ -78,8 +78,8 @@ export async function resendMagicLink(): Promise<PendingAuth | null> {
 
 /**
  * Mock verification: the token "expired" simulates a stale link; anything
- * else verifies. New sign-ups land on onboarding, returning users on the
- * dashboard.
+ * else verifies and starts a mock session. Successful verifications land on
+ * the app entry until post-auth destinations exist again.
  */
 export async function verifyMagicLink(token: string): Promise<VerifyResult> {
 	await delay(VERIFY_DELAY_MS);
@@ -87,7 +87,21 @@ export async function verifyMagicLink(token: string): Promise<VerifyResult> {
 		return { status: 'expired', destination: '/auth/expired' };
 	}
 	const pending = getPendingAuth();
-	const destination = pending?.intent === 'sign-in' ? '/dashboard' : '/onboarding';
+	if (browser && pending) {
+		const { getSession, startSession } = await import('./profile');
+		startSession({
+			email: pending.email,
+			// Sign-ins don't carry a role; keep the one from the previous session.
+			role: pending.role ?? getSession()?.role ?? 'family'
+		});
+	}
+	const destination = '/';
 	clearPendingAuth();
 	return { status: 'ok', destination };
+}
+
+export async function signOut(): Promise<void> {
+	if (!browser) return;
+	const { endSession } = await import('./profile');
+	endSession();
 }

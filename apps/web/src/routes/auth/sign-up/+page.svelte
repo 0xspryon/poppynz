@@ -2,9 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { requestMagicLink, type Role } from '$lib/api/auth';
-	import Button from '$lib/components/Button.svelte';
-	import Checkbox from '$lib/components/Checkbox.svelte';
-	import EmailField from '$lib/components/EmailField.svelte';
 	import RoleChooser from '$lib/components/RoleChooser.svelte';
 
 	let role: Role = $state('family');
@@ -40,22 +37,37 @@
 		<RoleChooser bind:value={role} />
 	</div>
 
-	<div class="mb-6">
-		<EmailField bind:value={email} placeholder="johndoe@email.com" />
-	</div>
+	<fieldset class="fieldset mb-6">
+		<legend class="fieldset-legend">Email</legend>
+		<label class="input input-lg w-full">
+			<i class="las la-envelope text-outline" aria-hidden="true"></i>
+			<input
+				type="email"
+				class="grow"
+				placeholder="johndoe@email.com"
+				required
+				autocomplete="email"
+				bind:value={email}
+			/>
+		</label>
+	</fieldset>
 
-	<div class="mb-7">
-		<Checkbox bind:checked={agreed} id="terms">
+	<label class="label mb-7 items-start gap-2.5 text-sm whitespace-normal">
+		<input type="checkbox" class="checkbox checkbox-primary checkbox-sm" bind:checked={agreed} />
+		<span>
 			<!-- Terms & privacy pages don't exist yet — placeholder anchors -->
 			I agree to Poppynz's <a href="#terms" class="font-semibold text-primary">Terms</a> and
 			acknowledge the
 			<a href="#privacy" class="font-semibold text-primary">Privacy Policy</a> (PIPEDA-compliant).
-		</Checkbox>
-	</div>
+		</span>
+	</label>
 
-	<Button type="submit" block loading={submitting} disabled={!canSubmit}>
+	<button type="submit" class="btn btn-lg btn-primary btn-block" disabled={!canSubmit || submitting}>
+		{#if submitting}
+			<span class="loading loading-spinner"></span>
+		{/if}
 		Email me a magic link <i class="las la-arrow-right" aria-hidden="true"></i>
-	</Button>
+	</button>
 
 	<p class="mt-4 flex items-center justify-center gap-2 text-sm text-base-content-muted">
 		<i class="las la-lock text-outline" aria-hidden="true"></i>

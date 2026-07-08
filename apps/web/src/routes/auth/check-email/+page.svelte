@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { getPendingAuth, resendMagicLink, type PendingAuth } from '$lib/api/auth';
-	import Button from '$lib/components/Button.svelte';
 
 	const RESEND_COOLDOWN_S = 60;
 
@@ -35,15 +34,17 @@
 </svelte:head>
 
 <div class="max-w-form lg:my-auto lg:pb-12">
-	<div
-		class="mb-6 flex size-20 items-center justify-center rounded-pill bg-base-400"
-	>
+	<div class="mb-6 flex size-20 items-center justify-center rounded-pill bg-base-400">
 		<i class="las la-envelope text-4xl text-primary" aria-hidden="true"></i>
 	</div>
 
-	<h2 class="mb-2.5 font-display text-3xl font-bold text-base-content lg:text-4xl">Check your inbox</h2>
+	<h2 class="mb-2.5 font-display text-3xl font-bold text-base-content lg:text-4xl">
+		Check your inbox
+	</h2>
 	<p class="mb-1 text-base text-base-content-muted">We sent a secure sign-in link to</p>
-	<p class="mb-6 text-base font-semibold text-secondary">{pending?.email ?? 'your email address'}</p>
+	<p class="mb-6 text-base font-semibold text-secondary">
+		{pending?.email ?? 'your email address'}
+	</p>
 
 	<p
 		class="mb-7 flex max-w-md items-center gap-2.5 rounded-md border border-warning-border
@@ -55,12 +56,18 @@
 
 	<div class="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
 		{#if cooldownLeft > 0}
-			<Button variant="muted" disabled>Resend link in {countdown}</Button>
+			<button class="btn btn-outline" disabled>Resend link in {countdown}</button>
 		{:else}
-			<Button variant="muted" loading={resending} onclick={resend}>Resend link</Button>
+			<button class="btn btn-outline" onclick={resend} disabled={resending}>
+				{#if resending}
+					<span class="loading loading-spinner loading-sm"></span>
+				{/if}
+				Resend link
+			</button>
 		{/if}
 		<p class="text-sm text-base-content-muted">
-			Wrong email? <a href={resolve('/auth/sign-up')} class="font-semibold text-primary">Start over</a>
+			Wrong email?
+			<a href={resolve('/auth/sign-up')} class="font-semibold text-primary">Start over</a>
 		</p>
 	</div>
 
@@ -71,21 +78,17 @@
 
 	<!-- Dev-only stand-in for the real email while the API is mocked -->
 	<div class="mt-10 rounded-lg border-2 border-dashed border-outline-variant p-4">
-		<p class="mb-3 flex items-center gap-2 text-xs font-semibold tracking-widest text-outline uppercase">
+		<p
+			class="mb-3 flex items-center gap-2 text-xs font-semibold tracking-widest text-outline uppercase"
+		>
 			<i class="las la-flask text-base" aria-hidden="true"></i>
 			Mock inbox — dev only
 		</p>
-		<div class="flex flex-wrap gap-3 text-sm font-semibold">
-			<a
-				href="{resolve('/auth/verify')}?token=demo"
-				class="rounded-md bg-base-400 px-4 py-2 text-secondary transition hover:bg-base-500"
-			>
+		<div class="flex flex-wrap gap-3">
+			<a href="{resolve('/auth/verify')}?token=demo" class="btn btn-sm btn-soft btn-secondary">
 				<i class="las la-external-link-alt" aria-hidden="true"></i> Open magic link
 			</a>
-			<a
-				href="{resolve('/auth/verify')}?token=expired"
-				class="rounded-md bg-error-content px-4 py-2 text-error transition hover:brightness-95"
-			>
+			<a href="{resolve('/auth/verify')}?token=expired" class="btn btn-sm btn-soft btn-error">
 				<i class="las la-hourglass-end" aria-hidden="true"></i> Open expired link
 			</a>
 		</div>

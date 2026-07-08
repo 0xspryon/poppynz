@@ -2,8 +2,6 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { requestMagicLink } from '$lib/api/auth';
-	import Button from '$lib/components/Button.svelte';
-	import EmailField from '$lib/components/EmailField.svelte';
 
 	let email = $state('');
 	let submitting = $state(false);
@@ -24,18 +22,34 @@
 </svelte:head>
 
 <form class="max-w-form lg:my-auto lg:pb-16" onsubmit={submit}>
-	<h2 class="mb-2 font-display text-3xl font-bold text-base-content lg:text-4xl">Sign in to Poppynz</h2>
+	<h2 class="mb-2 font-display text-3xl font-bold text-base-content lg:text-4xl">
+		Sign in to Poppynz
+	</h2>
 	<p class="mb-8 text-base text-base-content-muted">
 		We'll email you a secure link — it signs you in with one tap.
 	</p>
 
-	<div class="mb-7">
-		<EmailField bind:value={email} placeholder="priya@khanna.family" />
-	</div>
+	<fieldset class="fieldset mb-7">
+		<legend class="fieldset-legend">Email</legend>
+		<label class="input input-lg w-full">
+			<i class="las la-envelope text-outline" aria-hidden="true"></i>
+			<input
+				type="email"
+				class="grow"
+				placeholder="johndoe@email.com"
+				required
+				autocomplete="email"
+				bind:value={email}
+			/>
+		</label>
+	</fieldset>
 
-	<Button type="submit" block loading={submitting} disabled={!canSubmit}>
+	<button type="submit" class="btn btn-lg btn-primary btn-block" disabled={!canSubmit || submitting}>
+		{#if submitting}
+			<span class="loading loading-spinner"></span>
+		{/if}
 		Email me a magic link <i class="las la-arrow-right" aria-hidden="true"></i>
-	</Button>
+	</button>
 
 	<p class="mt-4 flex items-center justify-center gap-2 text-sm text-base-content-muted">
 		<i class="las la-lock text-outline" aria-hidden="true"></i>

@@ -1,6 +1,6 @@
 import * as PgDrizzle from "@effect/sql-drizzle/Pg";
 import type { SqlError } from "@effect/sql/SqlError";
-import { eq, InferSelectModel } from "drizzle-orm";
+import { eq, type InferSelectModel } from "drizzle-orm";
 import { Context, Effect, Layer, Data } from "effect";
 import { DrizzleLive, DBNotFoundError } from "../effect-db";
 import { user } from "../schema";

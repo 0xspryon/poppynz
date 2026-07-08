@@ -1,13 +1,17 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { requestMagicLink, type Role } from '$lib/api/auth';
+	import { requestSignUpLink, type Role } from '$lib/api/auth';
+	import { matchError } from '$lib/api/client';
 	import RoleChooser from '$lib/components/RoleChooser.svelte';
+
+	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 	let role: Role = $state('family');
 	let email = $state('');
 	let agreed = $state(false);
 	let submitting = $state(false);
+	let errorMessage: string | null = $state(null);
 
 	const canSubmit = $derived(email.includes('@') && agreed);
 
@@ -15,8 +19,22 @@
 		event.preventDefault();
 		if (!canSubmit || submitting) return;
 		submitting = true;
-		await requestMagicLink({ email, role, intent: 'sign-up' });
-		await goto(resolve('/auth/check-email'));
+		errorMessage = null;
+		const result = await requestSignUpLink({ email, role });
+		if (result.ok) {
+			await goto(resolve('/auth/check-email'));
+			return;
+		}
+		errorMessage = matchError(result.error, {
+			USER_ALREADY_EXISTS: () => 'An account already exists for this email — sign in instead.',
+			INVALID_SIGNUP_INPUT: () => "That email address doesn't look right. Check it and try again.",
+			SIGNUP_LINK_FAILED: () => "We couldn't send your magic link. Please try again.",
+			SIGNUP_INTENT_FAILED: () => RETRY_MESSAGE,
+			SIGNUP_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
+			INTERNAL_SERVER_ERROR: () => RETRY_MESSAGE,
+			UNEXPECTED: () => RETRY_MESSAGE
+		});
+		submitting = false;
 	}
 </script>
 
@@ -61,6 +79,17 @@
 			<a href="#privacy" class="font-semibold text-primary">Privacy Policy</a> (PIPEDA-compliant).
 		</span>
 	</label>
+
+	{#if errorMessage}
+		<p
+			class="mb-5 flex items-center gap-2.5 rounded-md border border-error/30 bg-error-content
+				px-4 py-3 text-sm font-medium text-error"
+			role="alert"
+		>
+			<i class="las la-exclamation-circle text-base" aria-hidden="true"></i>
+			{errorMessage}
+		</p>
+	{/if}
 
 	<button type="submit" class="btn btn-lg btn-primary btn-block" disabled={!canSubmit || submitting}>
 		{#if submitting}

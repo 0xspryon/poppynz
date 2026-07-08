@@ -2,10 +2,14 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { getPendingAuth, requestMagicLink } from '$lib/api/auth';
+	import { getPendingAuth, requestSignInLink, requestSignUpLink } from '$lib/api/auth';
+	import { matchError } from '$lib/api/client';
+
+	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 	let email = $state('');
 	let submitting = $state(false);
+	let errorMessage: string | null = $state(null);
 
 	const canSubmit = $derived(email.includes('@'));
 
@@ -17,13 +21,30 @@
 		event.preventDefault();
 		if (!canSubmit || submitting) return;
 		submitting = true;
+		errorMessage = null;
 		const previous = getPendingAuth();
-		await requestMagicLink({
-			email,
-			role: previous?.role,
-			intent: previous?.intent ?? 'sign-in'
+		const result =
+			previous?.intent === 'sign-up' && previous.role
+				? await requestSignUpLink({ email, role: previous.role })
+				: await requestSignInLink({ email });
+		if (result.ok) {
+			await goto(resolve('/auth/check-email'));
+			return;
+		}
+		errorMessage = matchError(result.error, {
+			USER_NOT_FOUND: () => 'No account exists for this email — create one instead.',
+			USER_ALREADY_EXISTS: () => 'Your account already exists — sign in instead.',
+			INVALID_SIGNIN_INPUT: () => "That email address doesn't look right. Check it and try again.",
+			INVALID_SIGNUP_INPUT: () => "That email address doesn't look right. Check it and try again.",
+			SIGNIN_LINK_FAILED: () => "We couldn't send your sign-in link. Please try again.",
+			SIGNUP_LINK_FAILED: () => "We couldn't send your magic link. Please try again.",
+			SIGNIN_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
+			SIGNUP_INTENT_FAILED: () => RETRY_MESSAGE,
+			SIGNUP_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
+			INTERNAL_SERVER_ERROR: () => RETRY_MESSAGE,
+			UNEXPECTED: () => RETRY_MESSAGE
 		});
-		await goto(resolve('/auth/check-email'));
+		submitting = false;
 	}
 </script>
 
@@ -57,6 +78,17 @@
 			/>
 		</label>
 	</fieldset>
+
+	{#if errorMessage}
+		<p
+			class="mb-5 flex items-center gap-2.5 rounded-md border border-error/30 bg-error-content
+				px-4 py-3 text-sm font-medium text-error"
+			role="alert"
+		>
+			<i class="las la-exclamation-circle text-base" aria-hidden="true"></i>
+			{errorMessage}
+		</p>
+	{/if}
 
 	<button type="submit" class="btn btn-lg btn-primary btn-block" disabled={!canSubmit || submitting}>
 		{#if submitting}

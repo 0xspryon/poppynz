@@ -1,10 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { requestMagicLink } from '$lib/api/auth';
+	import { requestSignInLink } from '$lib/api/auth';
+	import { matchError } from '$lib/api/client';
+
+	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 	let email = $state('');
 	let submitting = $state(false);
+	let errorMessage: string | null = $state(null);
 
 	const canSubmit = $derived(email.includes('@'));
 
@@ -12,8 +16,21 @@
 		event.preventDefault();
 		if (!canSubmit || submitting) return;
 		submitting = true;
-		await requestMagicLink({ email, intent: 'sign-in' });
-		await goto(resolve('/auth/check-email'));
+		errorMessage = null;
+		const result = await requestSignInLink({ email });
+		if (result.ok) {
+			await goto(resolve('/auth/check-email'));
+			return;
+		}
+		errorMessage = matchError(result.error, {
+			USER_NOT_FOUND: () => 'No account exists for this email — create one instead.',
+			INVALID_SIGNIN_INPUT: () => "That email address doesn't look right. Check it and try again.",
+			SIGNIN_LINK_FAILED: () => "We couldn't send your sign-in link. Please try again.",
+			SIGNIN_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
+			INTERNAL_SERVER_ERROR: () => RETRY_MESSAGE,
+			UNEXPECTED: () => RETRY_MESSAGE
+		});
+		submitting = false;
 	}
 </script>
 
@@ -43,6 +60,17 @@
 			/>
 		</label>
 	</fieldset>
+
+	{#if errorMessage}
+		<p
+			class="mb-5 flex items-center gap-2.5 rounded-md border border-error/30 bg-error-content
+				px-4 py-3 text-sm font-medium text-error"
+			role="alert"
+		>
+			<i class="las la-exclamation-circle text-base" aria-hidden="true"></i>
+			{errorMessage}
+		</p>
+	{/if}
 
 	<button type="submit" class="btn btn-lg btn-primary btn-block" disabled={!canSubmit || submitting}>
 		{#if submitting}

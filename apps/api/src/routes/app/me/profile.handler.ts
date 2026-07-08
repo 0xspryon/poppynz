@@ -1,14 +1,14 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import {
-  Approval,
+  type Approval,
   ApprovalRepo,
-  ApprovalRequest,
+  type ApprovalRequest,
   ApprovalRequestRepo,
-  KycDocument,
+  type KycDocument,
   KycDocumentRepo,
   KycDocumentTypeRepo,
-  SafeUserProfile,
-  ServiceOffered,
+  type SafeUserProfile,
+  type ServiceOffered,
   ServiceOfferedRepo,
   UserProfileRepo,
 } from "@repo/db";
@@ -17,7 +17,7 @@ import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../app-env";
 import {
   authenticate,
-  UserAndSession,
+  type UserAndSession,
   requirePermissions,
   authErrorToResponse,
   handleNever,

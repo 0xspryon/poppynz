@@ -6,13 +6,15 @@ export type ValidationIssue = {
   message: string;
 };
 
-export type ValidationErrorConfig = {
-  code: string;
+export type ValidationErrorConfig<TCode extends string = string> = {
+  code: TCode;
   message: string;
 };
 
-export class RequestValidationError extends Data.TaggedError("RequestValidationError")<{
-  code: string;
+// Generic over the code so each route's literal error code survives into the
+// route schema (and from there into the RPC client types).
+export class RequestValidationError<TCode extends string = string> extends Data.TaggedError("RequestValidationError")<{
+  code: TCode;
   message: string;
   issues: Array<ValidationIssue>;
 }> { }
@@ -27,7 +29,7 @@ const formatParseIssues = (error: ParseResult.ParseError): Array<ValidationIssue
       message: formatted.message,
     }));
 
-export const parseJsonBody = (c: HonoContext<HonoEnv>, config: ValidationErrorConfig) =>
+export const parseJsonBody = <TCode extends string>(c: HonoContext<HonoEnv>, config: ValidationErrorConfig<TCode>) =>
   Effect.tryPromise({
     try: () => c.req.json() as Promise<unknown>,
     catch: () =>
@@ -43,7 +45,7 @@ export const parseJsonBody = (c: HonoContext<HonoEnv>, config: ValidationErrorCo
  * it yields a RequestValidationError type response
  */
 export const validateInput =
-  <A, I, R>(schema: Schema.Schema<A, I, R>, config: ValidationErrorConfig) =>
+  <A, I, R, TCode extends string>(schema: Schema.Schema<A, I, R>, config: ValidationErrorConfig<TCode>) =>
     (input: unknown) =>
       Schema.decodeUnknown(schema, {
         errors: "all",
@@ -62,9 +64,9 @@ export const validateInput =
 export const isRequestValidationError = (error: unknown): error is RequestValidationError =>
   error instanceof RequestValidationError;
 
-export const requestValidationErrorToResponse = (
+export const requestValidationErrorToResponse = <TCode extends string>(
   c: HonoContext<HonoEnv>,
-  error: RequestValidationError,
+  error: RequestValidationError<TCode>,
 ) =>
   c.json(
     {

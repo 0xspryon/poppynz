@@ -2,12 +2,14 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { getPendingAuth, resendMagicLink, type PendingAuth } from '$lib/api/auth';
+	import { matchError } from '$lib/api/client';
 
 	const RESEND_COOLDOWN_S = 60;
 
 	let pending: PendingAuth | null = $state(getPendingAuth());
 	let now = $state(Date.now());
 	let resending = $state(false);
+	let resendError: string | null = $state(null);
 
 	const cooldownLeft = $derived(
 		pending ? Math.max(0, RESEND_COOLDOWN_S - Math.floor((now - pending.sentAt) / 1000)) : 0
@@ -21,10 +23,33 @@
 		return () => clearInterval(timer);
 	});
 
+	const RETRY_MESSAGE = "We couldn't resend the link. Please try again.";
+
 	async function resend() {
 		if (resending || cooldownLeft > 0) return;
 		resending = true;
-		pending = await resendMagicLink();
+		resendError = null;
+		const result = await resendMagicLink();
+		if (result === null) {
+			// Nothing pending anymore (e.g. storage cleared) — send them back to the start.
+			pending = null;
+		} else if (result.ok) {
+			pending = result.data;
+		} else {
+			resendError = matchError(result.error, {
+				USER_ALREADY_EXISTS: () => 'Your account already exists — sign in instead.',
+				USER_NOT_FOUND: () => 'No account exists for this email anymore — start over below.',
+				INVALID_SIGNUP_INPUT: () => RETRY_MESSAGE,
+				INVALID_SIGNIN_INPUT: () => RETRY_MESSAGE,
+				SIGNUP_INTENT_FAILED: () => RETRY_MESSAGE,
+				SIGNUP_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
+				SIGNUP_LINK_FAILED: () => RETRY_MESSAGE,
+				SIGNIN_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
+				SIGNIN_LINK_FAILED: () => RETRY_MESSAGE,
+				INTERNAL_SERVER_ERROR: () => RETRY_MESSAGE,
+				UNEXPECTED: () => RETRY_MESSAGE
+			});
+		}
 		resending = false;
 	}
 </script>
@@ -70,6 +95,10 @@
 			<a href={resolve('/auth/sign-up')} class="font-semibold text-primary">Start over</a>
 		</p>
 	</div>
+
+	{#if resendError}
+		<p class="mb-5 text-sm font-medium text-error" role="alert">{resendError}</p>
+	{/if}
 
 	<p class="text-sm leading-relaxed text-outline">
 		Nothing arriving? Check your spam folder, or make sure

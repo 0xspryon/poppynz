@@ -7,6 +7,7 @@ import { appRoutes } from "./routes/app/index";
 import { requestId } from "hono/request-id";
 import { makeAppRuntime } from "./managed-runtime";
 import { ensureInitialAppState } from "./startup";
+import { API_BASE_PATH } from "./hc";
 
 export const createApp = (runtime: AppRuntime | ManagedRuntime.ManagedRuntime<any, never> = makeAppRuntime()) => {
   const app = new Hono<BaseAppEnv>()
@@ -28,7 +29,7 @@ export const createApp = (runtime: AppRuntime | ManagedRuntime.ManagedRuntime<an
     })
 
     .all("/api/auth/*", (c) => auth.handler(c.req.raw))
-    .route("/api/v1", appRoutes)
+    .route(API_BASE_PATH, appRoutes)
 
     .onError((error, c) => {
       console.error(error);
@@ -46,6 +47,9 @@ export const createApp = (runtime: AppRuntime | ManagedRuntime.ManagedRuntime<an
 
   return app;
 };
+
+/** Route types for the Hono RPC client (`hc<AppType>`) — import type-only from clients. */
+export type AppType = ReturnType<typeof createApp>;
 
 const runtime = makeAppRuntime();
 

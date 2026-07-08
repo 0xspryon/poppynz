@@ -75,7 +75,7 @@ export const ProviderSearchQueueLive = Layer.effect(ProviderSearchQueue, redisCo
   const queue = makeProviderSearchQueue(connection);
 
   return {
-    enqueueReconcile: (input) =>
+    enqueueReconcile: (input: ReconcileProviderJob) =>
       Effect.tryPromise({
         try: async () => {
           const job = await queue.add(
@@ -88,7 +88,7 @@ export const ProviderSearchQueueLive = Layer.effect(ProviderSearchQueue, redisCo
         },
         catch: (cause) => new ProviderSearchQueueError({ operation: "enqueueReconcile", cause }),
       }),
-    enqueueExpiryReconcile: (input) =>
+    enqueueExpiryReconcile: (input: ReconcileProviderJob & { expiresAt: Date }) =>
       Effect.tryPromise({
         try: async () => {
           const ONE_MINUTE_MILLIS = 1 * 60 * 1000;

@@ -6,7 +6,7 @@
 	import { verifyMagicLink } from '$lib/api/auth';
 
 	onMount(async () => {
-		const token = page.url.searchParams.get('token') ?? 'demo';
+		const token = page.url.searchParams.get('token') ?? '';
 		const result = await verifyMagicLink(token);
 		await goto(resolve(result.destination), { replaceState: true });
 	});

@@ -63,6 +63,7 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
   appliesToRole: "service-provider",
   isOptional: false,
   requiresExpiryDate: true,
+  isFetchable: false,
   deletedAt: null,
   createdAt: new Date("2026-06-12T00:00:00.000Z"),
   updatedAt: new Date("2026-06-12T00:00:00.000Z"),
@@ -167,6 +168,27 @@ describe("KYC route programs", () => {
 
     expect(result).toMatchObject({ name: "Vulnerable Sector Check", appliesToRole: "service-provider", isOptional: false, requiresExpiryDate: true });
     expect(created).toEqual([{ name: "Vulnerable Sector Check", isOptional: false, requiresExpiryDate: true, appliesToRole: "service-provider" }]);
+  });
+
+  it("round-trips the isFetchable flag on create and update", async () => {
+    const created: Array<KycDocumentTypeCreateInput> = [];
+    const result = await Effect.runPromise(
+      createKycDocumentTypeRouteProgram(
+        contextWithJson({ name: "Criminal record check", isOptional: false, requiresExpiryDate: true, isFetchable: true }),
+        new Headers(),
+      ).pipe(Effect.provide(makeLayer({ onCreateType: (input) => created.push(input) }))),
+    );
+    expect(result).toMatchObject({ isFetchable: true });
+    expect(created[0]).toMatchObject({ isFetchable: true });
+
+    const updates: Array<KycDocumentTypeUpdateInput> = [];
+    const updated = await Effect.runPromise(
+      updateKycDocumentTypeRouteProgram(contextWithJson({ isFetchable: true }), new Headers(), "document-type-1").pipe(
+        Effect.provide(makeLayer({ onUpdateType: (input) => updates.push(input) })),
+      ),
+    );
+    expect(updated).toMatchObject({ isFetchable: true });
+    expect(updates).toEqual([{ isFetchable: true }]);
   });
 
   it("rejects document type writes without permission", async () => {

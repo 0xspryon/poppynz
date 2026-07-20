@@ -59,6 +59,7 @@ const makeSession = (overrides: Partial<Session> = {}): Session => ({
 const makeService = (input: ServiceOfferedCreateInput, overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
   id: overrides.id ?? `service-${crypto.randomUUID()}`,
   userId: input.userId,
+  catalogueServiceId: input.catalogueServiceId ?? null,
   name: input.name,
   description: input.description ?? null,
   hourlyRateCents: input.hourlyRateCents,
@@ -71,6 +72,10 @@ const makeService = (input: ServiceOfferedCreateInput, overrides: Partial<Servic
 
 const makeInMemoryServiceRepo = (services: Array<ServiceOffered>) => ({
   listByUserId: (userId: string) => Effect.succeed(services.filter((service) => service.userId === userId && service.deletedAt === null)),
+  findByIdForUser: (id: string, userId: string) => {
+    const service = services.find((service) => service.id === id && service.userId === userId && service.deletedAt === null);
+    return service ? Effect.succeed(service) : Effect.fail(new DBNotFoundError({ entity: "serviceOffered", value: id }));
+  },
   create: (input: ServiceOfferedCreateInput) => {
     const service = makeService(input, { id: "service-1" });
     services.push(service);
@@ -133,7 +138,7 @@ describe("/me/services-offered", () => {
     const services: Array<ServiceOffered> = [];
     const app = makeApp({ services });
 
-    const createRes = await app.request("/app/api/v1/me/services-offered", {
+    const createRes = await app.request("/api/v1/me/services-offered", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "After school babysitting", hourlyRateCents: 2800, currency: "CAD" }),
@@ -142,7 +147,7 @@ describe("/me/services-offered", () => {
     expect(createRes.status).toBe(200);
     expect((await createRes.json()).name).toBe("After school babysitting");
 
-    const listRes = await app.request("/app/api/v1/me/services-offered");
+    const listRes = await app.request("/api/v1/me/services-offered");
     const body = await listRes.json();
 
     expect(listRes.status).toBe(200);
@@ -153,7 +158,7 @@ describe("/me/services-offered", () => {
   it("rejects users without service-offered write permission", async () => {
     const app = makeApp({ user: makeUser({ role: "family" }), hasPermission: false });
 
-    const res = await app.request("/app/api/v1/me/services-offered", {
+    const res = await app.request("/api/v1/me/services-offered", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "After school babysitting", hourlyRateCents: 2800, currency: "CAD" }),
@@ -167,13 +172,13 @@ describe("/me/services-offered", () => {
     const services = [service];
     const app = makeApp({ services });
 
-    const deleteRes = await app.request("/app/api/v1/me/services-offered/service-1", { method: "DELETE" });
+    const deleteRes = await app.request("/api/v1/me/services-offered/service-1", { method: "DELETE" });
     const deleted = await deleteRes.json();
 
     expect(deleteRes.status).toBe(200);
     expect(deleted.deletedAt).toBe("2026-06-12T00:00:00.000Z");
 
-    const listRes = await app.request("/app/api/v1/me/services-offered");
+    const listRes = await app.request("/api/v1/me/services-offered");
     expect(await listRes.json()).toEqual([]);
   });
 });

@@ -207,7 +207,7 @@ describe("POST /auth/sign-up", () => {
       sendSignupLink: () => Effect.void,
     });
 
-    const res = await app.request("/app/api/v1/auth/sign-up", {
+    const res = await app.request("/api/v1/auth/sign-up", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept-Language": "es" },
       body: JSON.stringify({ email: "Provider@Example.com", role: "service-provider" }),
@@ -224,7 +224,7 @@ describe("POST /auth/sign-up", () => {
       sendSignupLink: () => Effect.void,
     });
 
-    const res = await app.request("/app/api/v1/auth/sign-up", {
+    const res = await app.request("/api/v1/auth/sign-up", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "not-an-email", role: "family" }),
@@ -250,7 +250,7 @@ describe("POST /auth/sign-up", () => {
       sendSignupLink: () => Effect.void,
     });
 
-    const res = await app.request("/app/api/v1/auth/sign-up", {
+    const res = await app.request("/api/v1/auth/sign-up", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "family@example.com", role: "family" }),
@@ -271,7 +271,7 @@ describe("POST /auth/sign-up", () => {
       sendSignupLink: () => Effect.fail(new SignupAuthError({ cause: new Error("auth down") })),
     });
 
-    const res = await app.request("/app/api/v1/auth/sign-up", {
+    const res = await app.request("/api/v1/auth/sign-up", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "family@example.com", role: "family" }),
@@ -301,7 +301,7 @@ describe("POST /auth/sign-up", () => {
       },
     });
 
-    const res = await app.request("/app/api/v1/auth/sign-up", {
+    const res = await app.request("/api/v1/auth/sign-up", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "family@example.com", role: "family" }),
@@ -332,7 +332,7 @@ describe("POST /auth/sign-up", () => {
       makeUserProfileRepoTest(userProfileRepo),
     );
 
-    const res = await app.request("/app/api/v1/auth/sign-up", {
+    const res = await app.request("/api/v1/auth/sign-up", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept-Language": "es" },
       body: JSON.stringify({ email: "Provider@Example.com", role: "service-provider" }),
@@ -397,7 +397,7 @@ describe("POST /auth/sign-up", () => {
       makeUserProfileRepoTest(userProfileRepo),
     );
 
-    const res = await app.request("/app/api/v1/auth/sign-up", {
+    const res = await app.request("/api/v1/auth/sign-up", {
       method: "POST",
       headers: { "Content-Type": "application/json", "Accept-Language": "en" },
       body: JSON.stringify({ email: "Family@Example.com", role: "family" }),

@@ -76,6 +76,15 @@
 	--color-card-border: #d6e2f2; /* soft navy-tinted card border */
 	--color-warning-border: #f3b6e1; /* border for warning chips */
 
+	/* ---- Credibled integration accent (scoped: fetchable-document UI only;
+	 * Accent Pink stays the general attention color — see design-system.md) ---- */
+	--color-credibled: #f26e21; /* brand marks, strokes, credibled toggle on-state */
+	--color-credibled-content: #ffffff; /* on solid credibled */
+	--color-credibled-text: #b34e12; /* text on credibled tints */
+	--color-credibled-tint: #fdebe0; /* chip/tint background, progress track */
+	--color-credibled-card: #fffaf6; /* card bg for in-progress checks */
+	--color-credibled-border: #f5c9a8; /* border for credibled cards/chips */
+
 	/* ---- Typography ---- */
 	--font-display: 'Hanken Grotesk Variable', 'Hanken Grotesk', system-ui, sans-serif;
 	--font-sans: 'Inter Variable', 'Inter', system-ui, sans-serif;
@@ -138,4 +147,11 @@
 	font-weight: 600;
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
+}
+
+/* Design: "fetchable via Credibled" toggles use the Credibled orange as their
+ * on-state (all other toggles stay sky). Mirrors DaisyUI's toggle-<color>. */
+.toggle-credibled:checked,
+.toggle-credibled[aria-checked='true'] {
+	--input-color: var(--color-credibled);
 }

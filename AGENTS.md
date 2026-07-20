@@ -24,6 +24,19 @@ These project-specific rules exist to prevent repeat mistakes from prior impleme
 - List/read queries for active records should filter `deletedAt IS NULL` where relevant.
 - Delete handlers/repos should set `deletedAt` and preserve data instead of hard-deleting rows unless explicitly requested.
 
+## Effect Error-Mapping Style
+
+- When adapting repo/infrastructure errors into route-specific errors, pipe the effect through the mapper instead of wrapping the call in it. Preferred:
+
+  ```ts
+  const items = yield* repo.listLive()
+    .pipe((errors) => mapCatalogueRepoError(errors));
+  ```
+
+  over `yield* mapCatalogueRepoError(repo.listLive())`.
+- Rationale: the pipeline reads in data-flow order — the operation first, then how its failures are translated — and keeps the repo call visually prominent rather than nested inside an adapter.
+- Existing wrapped-call sites don't need to be rewritten preemptively; use the piped form for new code and when already touching a line.
+
 ## Authorization Model
 
 - App routes should be governed by permissions, not ad hoc role checks, unless the user explicitly requests role-specific behavior.

@@ -3,6 +3,7 @@ import type {
   ApprovalRequestRepo,
   KycDocumentRepo,
   KycDocumentTypeRepo,
+  ServiceCatalogueRepo,
   ServiceOfferedRepo,
   SessionRepo,
   SignupIntentRepo,
@@ -32,6 +33,7 @@ export type AppServices =
   | ApprovalRequestRepo
   | KycDocumentRepo
   | KycDocumentTypeRepo
+  | ServiceCatalogueRepo
   | ServiceOfferedRepo
   | ProviderSearchOutboxRepo
   | ProviderSearchRepo

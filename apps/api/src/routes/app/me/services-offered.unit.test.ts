@@ -1,12 +1,27 @@
 import { SqlError } from "@effect/sql/SqlError";
-import { DBNotFoundError, makeServiceOfferedRepoTest, makeSessionRepoTest, makeUserRepoTest, type ServiceOffered, type Session, type User } from "@repo/db";
+import {
+  DBNotFoundError,
+  makeServiceCatalogueRepoTest,
+  makeServiceOfferedRepoTest,
+  makeSessionRepoTest,
+  makeUserRepoTest,
+  type ServiceCatalogueItem,
+  type ServiceOffered,
+  type Session,
+  type User,
+} from "@repo/db";
 import { makeProviderSearchQueueTest } from "@repo/queue";
 import { makeProviderSearchOutboxRepoTest, type ProviderSearchOutbox } from "@repo/db";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { makeAuthServiceTest } from "@/api/lib/effect-auth";
-import { createServiceOfferedRouteProgram, deleteServiceOfferedRouteProgram, listServicesOfferedRouteProgram } from "./services-offered.handler";
+import {
+  createServiceOfferedRouteProgram,
+  deleteServiceOfferedRouteProgram,
+  listServicesOfferedRouteProgram,
+  updateServiceOfferedRouteProgram,
+} from "./services-offered.handler";
 
 const user = (overrides: Partial<User> = {}): User => ({
   id: "provider-1", name: "Provider", email: "provider@example.com", emailVerified: true, image: null,
@@ -22,7 +37,14 @@ const session = (): Session => ({
 });
 
 const service = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
-  id: "service-1", userId: "provider-1", name: "Childcare", description: null, hourlyRateCents: 2500, currency: "CAD",
+  id: "service-1", userId: "provider-1", catalogueServiceId: null, name: "Childcare", description: null, hourlyRateCents: 2500, currency: "CAD",
+  createdAt: new Date("2026-06-12T00:00:00.000Z"), updatedAt: new Date("2026-06-12T00:00:00.000Z"), deletedAt: null,
+  ...overrides,
+});
+
+const catalogueItem = (overrides: Partial<ServiceCatalogueItem> = {}): ServiceCatalogueItem => ({
+  id: "0197b3a0-0000-7000-8000-000000000001", name: "Babysitting", category: "Childcare",
+  baseHourlyRateCents: 1800, currency: "CAD", isLive: true,
   createdAt: new Date("2026-06-12T00:00:00.000Z"), updatedAt: new Date("2026-06-12T00:00:00.000Z"), deletedAt: null,
   ...overrides,
 });
@@ -47,10 +69,36 @@ const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
   return failure.value;
 };
 
-const makeLayer = (options: { user?: User; services?: Array<ServiceOffered>; hasPermission?: boolean; createError?: SqlError; onCreate?: (input: { name: string; hourlyRateCents: number }) => void } = {}) => {
+const makeLayer = (options: {
+  user?: User;
+  services?: Array<ServiceOffered>;
+  existingService?: ServiceOffered;
+  catalogueItems?: Array<ServiceCatalogueItem>;
+  hasPermission?: boolean;
+  createError?: SqlError;
+  onCreate?: (input: { name: string; hourlyRateCents: number; catalogueServiceId?: string | null }) => void;
+  onUpdate?: (input: { hourlyRateCents?: number; catalogueServiceId?: string | null }) => void;
+} = {}) => {
   const currentUser = options.user ?? user();
   const currentSession = session();
+  const existingService = options.existingService ?? service();
+  const catalogueItems = options.catalogueItems ?? [];
   return Layer.mergeAll(
+    makeServiceCatalogueRepoTest({
+      listActive: () => Effect.succeed(catalogueItems),
+      listLive: () => Effect.succeed(catalogueItems.filter((item) => item.isLive)),
+      findActiveById: (id) => {
+        const item = catalogueItems.find((candidate) => candidate.id === id && candidate.deletedAt === null);
+        return item ? Effect.succeed(item) : Effect.fail(new DBNotFoundError({ entity: "serviceCatalogueItem", value: id }));
+      },
+      findById: (id) => {
+        const item = catalogueItems.find((candidate) => candidate.id === id);
+        return item ? Effect.succeed(item) : Effect.fail(new DBNotFoundError({ entity: "serviceCatalogueItem", value: id }));
+      },
+      create: () => Effect.fail(new DBNotFoundError({ entity: "serviceCatalogueItem", value: "" }) as never),
+      update: (id) => Effect.fail(new DBNotFoundError({ entity: "serviceCatalogueItem", value: id })),
+      softDelete: (id) => Effect.fail(new DBNotFoundError({ entity: "serviceCatalogueItem", value: id })),
+    }),
     makeAuthServiceTest({
       getSession: () => Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
       userHasPermission: () => Effect.succeed(options.hasPermission ?? true),
@@ -62,11 +110,18 @@ const makeLayer = (options: { user?: User; services?: Array<ServiceOffered>; has
     makeSessionRepoTest({ findById: (id) => id === currentSession.id ? Effect.succeed(currentSession) : Effect.fail(new DBNotFoundError({ entity: "session", value: id })) }),
     makeServiceOfferedRepoTest({
       listByUserId: () => Effect.succeed(options.services ?? [service()]),
+      findByIdForUser: (id, userId) =>
+        existingService.id === id && existingService.userId === userId
+          ? Effect.succeed(existingService)
+          : Effect.fail(new DBNotFoundError({ entity: "serviceOffered", value: id })),
       create: (input) => {
         options.onCreate?.(input);
         return options.createError ? Effect.fail(options.createError) : Effect.succeed(service(input));
       },
-      updateByIdForUser: (id) => Effect.succeed(service({ id })),
+      updateByIdForUser: (id, _userId, input) => {
+        options.onUpdate?.(input);
+        return Effect.succeed(service({ ...existingService, ...input, id }));
+      },
       softDeleteByIdForUser: (id) => Effect.succeed(service({ id, deletedAt: new Date("2026-06-13T00:00:00.000Z") })),
     }),
     makeProviderSearchQueueTest({
@@ -111,5 +166,160 @@ describe("services offered route programs", () => {
   it("soft deletes a service offering", async () => {
     const result = await Effect.runPromise(deleteServiceOfferedRouteProgram(new Headers(), "service-1").pipe(Effect.provide(makeLayer())));
     expect(result).toMatchObject({ id: "service-1", deletedAt: "2026-06-13T00:00:00.000Z" });
+  });
+});
+
+describe("services offered catalogue rules", () => {
+  const liveItem = catalogueItem();
+  const hiddenItem = catalogueItem({ id: "0197b3a0-0000-7000-8000-000000000002", name: "Homework tutoring", category: "Tutoring", baseHourlyRateCents: 2400, isLive: false });
+
+  it("creates a service linked to a live catalogue item at or above the floor", async () => {
+    const created: Array<{ name: string; hourlyRateCents: number; catalogueServiceId?: string | null }> = [];
+    const result = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({ name: "Babysitting", hourlyRateCents: 1800, catalogueServiceId: liveItem.id }),
+        new Headers(),
+      ).pipe(Effect.provide(makeLayer({ catalogueItems: [liveItem], onCreate: (input) => created.push(input) }))),
+    );
+
+    expect(result).toMatchObject({ hourlyRateCents: 1800, catalogueServiceId: liveItem.id });
+    expect(created[0]?.catalogueServiceId).toBe(liveItem.id);
+  });
+
+  it("rejects creating a linked service below the floor", async () => {
+    const exit = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({ name: "Babysitting", hourlyRateCents: 1700, catalogueServiceId: liveItem.id }),
+        new Headers(),
+      ).pipe(Effect.provide(makeLayer({ catalogueItems: [liveItem] })), Effect.exit),
+    );
+    const failure = getFailure(exit);
+    expect(failure._tag).toBe("ServiceRateBelowFloorError");
+    expect(failure).toMatchObject({ floorCents: 1800 });
+  });
+
+  it("rejects creating a service linked to an unknown catalogue item", async () => {
+    const exit = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({ name: "Babysitting", hourlyRateCents: 2000, catalogueServiceId: "0197b3a0-0000-7000-8000-00000000dead" }),
+        new Headers(),
+      ).pipe(Effect.provide(makeLayer({ catalogueItems: [liveItem] })), Effect.exit),
+    );
+    expect(getFailure(exit)._tag).toBe("ServiceCatalogueItemNotFoundError");
+  });
+
+  it("rejects creating a service linked to a hidden catalogue item", async () => {
+    const exit = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({ name: "Homework tutoring", hourlyRateCents: 2400, catalogueServiceId: hiddenItem.id }),
+        new Headers(),
+      ).pipe(Effect.provide(makeLayer({ catalogueItems: [hiddenItem] })), Effect.exit),
+    );
+    expect(getFailure(exit)._tag).toBe("ServiceCatalogueItemHiddenError");
+  });
+
+  it("re-validates the floor when the rate of a linked service is updated", async () => {
+    const existing = service({ catalogueServiceId: liveItem.id, hourlyRateCents: 2000 });
+    const exit = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ hourlyRateCents: 1500 }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [liveItem] })),
+        Effect.exit,
+      ),
+    );
+    expect(getFailure(exit)._tag).toBe("ServiceRateBelowFloorError");
+  });
+
+  it("allows keeping an existing link to a now-hidden item when editing the rate", async () => {
+    const existing = service({ catalogueServiceId: hiddenItem.id, hourlyRateCents: 2400 });
+    const result = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ hourlyRateCents: 2600 }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [hiddenItem] })),
+      ),
+    );
+    expect(result).toMatchObject({ hourlyRateCents: 2600, catalogueServiceId: hiddenItem.id });
+  });
+
+  it("rejects re-linking a service to a hidden catalogue item", async () => {
+    const existing = service({ catalogueServiceId: null, hourlyRateCents: 2600 });
+    const exit = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ catalogueServiceId: hiddenItem.id }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [hiddenItem] })),
+        Effect.exit,
+      ),
+    );
+    expect(getFailure(exit)._tag).toBe("ServiceCatalogueItemHiddenError");
+  });
+
+  it("unlinks a service from the catalogue with an explicit null", async () => {
+    const updates: Array<{ catalogueServiceId?: string | null }> = [];
+    const existing = service({ catalogueServiceId: liveItem.id });
+    const result = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ catalogueServiceId: null }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [liveItem], onUpdate: (input) => updates.push(input) })),
+      ),
+    );
+    expect(updates[0]?.catalogueServiceId).toBeNull();
+    expect(result).toMatchObject({ catalogueServiceId: null });
+  });
+
+  it("allows unlinking and lowering the rate below the old floor in one call", async () => {
+    // Regression: loose equality (== undefined) once conflated explicit null
+    // with "absent", so the removed link's floor was wrongly enforced here.
+    const existing = service({ catalogueServiceId: liveItem.id, hourlyRateCents: 1800 });
+    const result = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ catalogueServiceId: null, hourlyRateCents: 100 }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [liveItem] })),
+      ),
+    );
+    expect(result).toMatchObject({ catalogueServiceId: null, hourlyRateCents: 100 });
+  });
+
+  it("clears the description with an explicit null", async () => {
+    const updates: Array<{ description?: string | null }> = [];
+    const existing = service({ description: "Old blurb" });
+    await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ description: null }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, onUpdate: (input) => updates.push(input) })),
+      ),
+    );
+    expect(updates[0]).toMatchObject({ description: null });
+  });
+
+  it("treats a link to a soft-deleted item like a hidden one when editing the rate", async () => {
+    const deletedItem = catalogueItem({
+      id: "0197b3a0-0000-7000-8000-000000000003",
+      deletedAt: new Date("2026-07-01T00:00:00.000Z"),
+    });
+    const existing = service({ catalogueServiceId: deletedItem.id, hourlyRateCents: 1800 });
+
+    const raised = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ hourlyRateCents: 2000 }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [deletedItem] })),
+      ),
+    );
+    expect(raised).toMatchObject({ hourlyRateCents: 2000, catalogueServiceId: deletedItem.id });
+
+    const lowered = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ hourlyRateCents: 100 }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [deletedItem] })),
+        Effect.exit,
+      ),
+    );
+    expect(getFailure(lowered)._tag).toBe("ServiceRateBelowFloorError");
+  });
+
+  it("rejects linking to a soft-deleted catalogue item", async () => {
+    const deletedItem = catalogueItem({
+      id: "0197b3a0-0000-7000-8000-000000000003",
+      deletedAt: new Date("2026-07-01T00:00:00.000Z"),
+    });
+    const existing = service({ catalogueServiceId: null, hourlyRateCents: 2500 });
+    const exit = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(contextWithJson({ catalogueServiceId: deletedItem.id }), new Headers(), existing.id).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [deletedItem] })),
+        Effect.exit,
+      ),
+    );
+    expect(getFailure(exit)._tag).toBe("ServiceCatalogueItemNotFoundError");
   });
 });

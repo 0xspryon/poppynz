@@ -271,19 +271,19 @@ const makeApp = (options: {
 describe("/me/profile", () => {
   it("returns 401 for unauthenticated requests", async () => {
     const app = makeApp({ authSession: null });
-    const res = await app.request("/app/api/v1/me/profile");
+    const res = await app.request("/api/v1/me/profile");
     expect(res.status).toBe(401);
   });
 
   it("returns 403 when profile read permission is denied", async () => {
     const app = makeApp({ hasPermission: false });
-    const res = await app.request("/app/api/v1/me/profile");
+    const res = await app.request("/api/v1/me/profile");
     expect(res.status).toBe(403);
   });
 
   it("returns service-provider onboarding state", async () => {
     const app = makeApp();
-    const res = await app.request("/app/api/v1/me/profile");
+    const res = await app.request("/api/v1/me/profile");
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -302,7 +302,7 @@ describe("/me/profile", () => {
 
   it("returns missing document and service warnings", async () => {
     const app = makeApp({ kycDocuments: [], servicesOffered: [] });
-    const res = await app.request("/app/api/v1/me/profile");
+    const res = await app.request("/api/v1/me/profile");
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -312,7 +312,7 @@ describe("/me/profile", () => {
 
   it("omits service-provider onboarding state for family users", async () => {
     const app = makeApp({ profile: makeProfile({ role: "family" }), user: makeUser({ role: "family" }) });
-    const res = await app.request("/app/api/v1/me/profile");
+    const res = await app.request("/api/v1/me/profile");
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -325,7 +325,7 @@ describe("/me/profile", () => {
     const updates: Array<UserProfileUpdate> = [];
     const app = makeApp({ onUpdate: (input) => updates.push(input) });
 
-    const res = await app.request("/app/api/v1/me/profile", {
+    const res = await app.request("/api/v1/me/profile", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "new@example.com", firstName: "Updated" }),
@@ -342,7 +342,7 @@ describe("/me/profile", () => {
     const updates: Array<UserProfileLocationUpdate> = [];
     const app = makeApp({ onLocationUpdate: (input) => updates.push(input) });
 
-    const res = await app.request("/app/api/v1/me/profile/location", {
+    const res = await app.request("/api/v1/me/profile/location", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ googlePlaceId: "place-1" }),

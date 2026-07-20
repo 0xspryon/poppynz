@@ -145,7 +145,7 @@ describe("/uploads/presigned-url", () => {
     let presignInput: PresignedPutInput | null = null;
     const app = makeApp({ onPresign: (input) => { presignInput = input; } });
 
-    const res = await app.request("/app/api/v1/uploads/presigned-url", {
+    const res = await app.request("/api/v1/uploads/presigned-url", {
       method: "POST",
       body: JSON.stringify({
         target: "kyc-document",
@@ -174,7 +174,7 @@ describe("/uploads/presigned-url", () => {
   it("returns a presigned URL for public profile pictures", async () => {
     const app = makeApp({ user: makeUser({ role: "family" }) });
 
-    const res = await app.request("/app/api/v1/uploads/presigned-url", {
+    const res = await app.request("/api/v1/uploads/presigned-url", {
       method: "POST",
       body: JSON.stringify({
         target: "public-profile-picture",
@@ -194,7 +194,7 @@ describe("/uploads/presigned-url", () => {
   it("rejects KYC uploads from non-service-provider users", async () => {
     const app = makeApp({ user: makeUser({ role: "family" }) });
 
-    const res = await app.request("/app/api/v1/uploads/presigned-url", {
+    const res = await app.request("/api/v1/uploads/presigned-url", {
       method: "POST",
       body: JSON.stringify({
         target: "kyc-document",
@@ -214,7 +214,7 @@ describe("/uploads/presigned-url", () => {
   it("returns 401 when unauthenticated", async () => {
     const app = makeApp({ authSession: null });
 
-    const res = await app.request("/app/api/v1/uploads/presigned-url", {
+    const res = await app.request("/api/v1/uploads/presigned-url", {
       method: "POST",
       body: JSON.stringify({
         target: "public-profile-picture",

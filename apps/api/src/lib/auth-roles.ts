@@ -7,6 +7,7 @@ export const appAc = createAccessControl({
   kycDocumentType: ["read", "write"],
   profile: ["read", "update"],
   providerSearch: ["read", "reindex"],
+  serviceCatalogue: ["read", "write"],
   serviceOffered: ["read", "write"],
 });
 
@@ -15,6 +16,7 @@ export const familyRole = appAc.newRole({
   providerSearch: ["read"],
   approvalRequest: ["write"],
   kycDocument: ["write"],
+  serviceCatalogue: ["read"],
   serviceOffered: ["read", "write"],
 });
 
@@ -22,6 +24,7 @@ export const spRole = appAc.newRole({
   profile: ["read", "update"],
   approvalRequest: ["write"],
   kycDocument: ["write"],
+  serviceCatalogue: ["read"],
   serviceOffered: ["read", "write"],
 });
 
@@ -32,6 +35,7 @@ export const adminRole = appAc.newRole({
   kycDocumentType: ["read", "write"],
   profile: ["read", "update"],
   providerSearch: ["read", "reindex"],
+  serviceCatalogue: ["read", "write"],
   serviceOffered: ["read", "write"],
 });
 

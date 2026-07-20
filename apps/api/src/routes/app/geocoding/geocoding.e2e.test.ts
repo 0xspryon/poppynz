@@ -108,7 +108,7 @@ const makeApp = (options: { authSession?: AuthSession | null; hasPermission?: bo
 describe("/geocoding/google-place", () => {
   it("returns Google place details for an authenticated user", async () => {
     const app = makeApp();
-    const res = await app.request("/app/api/v1/geocoding/google-place?placeId=place-1");
+    const res = await app.request("/api/v1/geocoding/google-place?placeId=place-1");
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -128,21 +128,21 @@ describe("/geocoding/google-place", () => {
 
   it("returns 401 for unauthenticated users", async () => {
     const app = makeApp({ authSession: null });
-    const res = await app.request("/app/api/v1/geocoding/google-place?placeId=place-1");
+    const res = await app.request("/api/v1/geocoding/google-place?placeId=place-1");
 
     expect(res.status).toBe(401);
   });
 
   it("returns 403 when profile read permission is denied", async () => {
     const app = makeApp({ hasPermission: false });
-    const res = await app.request("/app/api/v1/geocoding/google-place?placeId=place-1");
+    const res = await app.request("/api/v1/geocoding/google-place?placeId=place-1");
 
     expect(res.status).toBe(403);
   });
 
   it("returns 400 when placeId is missing", async () => {
     const app = makeApp();
-    const res = await app.request("/app/api/v1/geocoding/google-place");
+    const res = await app.request("/api/v1/geocoding/google-place");
 
     expect(res.status).toBe(400);
   });

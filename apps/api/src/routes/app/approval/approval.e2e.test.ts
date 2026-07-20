@@ -226,7 +226,7 @@ describe("POST /approvals", () => {
   it("returns 401 for unauthenticated requests", async () => {
     const app = makeApp({ authSession: null });
 
-    const res = await app.request("/app/api/v1/approvals", {
+    const res = await app.request("/api/v1/approvals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: "provider-1", approvalRequestId: "request-1", expiresAt: "2027-01-01" }),
@@ -239,7 +239,7 @@ describe("POST /approvals", () => {
     const permissionChecks: Array<Permissions> = [];
     const app = makeApp({ hasPermission: false, onPermissionCheck: (permissions) => permissionChecks.push(permissions) });
 
-    const res = await app.request("/app/api/v1/approvals", {
+    const res = await app.request("/api/v1/approvals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: "provider-1", approvalRequestId: "request-1", expiresAt: "2027-01-01" }),
@@ -252,7 +252,7 @@ describe("POST /approvals", () => {
   it("rejects missing expiry dates", async () => {
     const app = makeApp();
 
-    const res = await app.request("/app/api/v1/approvals", {
+    const res = await app.request("/api/v1/approvals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: "provider-1", approvalRequestId: "request-1" }),
@@ -265,7 +265,7 @@ describe("POST /approvals", () => {
   it("rejects past expiry dates", async () => {
     const app = makeApp();
 
-    const res = await app.request("/app/api/v1/approvals", {
+    const res = await app.request("/api/v1/approvals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: "provider-1", approvalRequestId: "request-1", expiresAt: "2020-01-01" }),
@@ -278,7 +278,7 @@ describe("POST /approvals", () => {
   it("returns 404 when approval request is missing", async () => {
     const app = makeApp({ requests: [] });
 
-    const res = await app.request("/app/api/v1/approvals", {
+    const res = await app.request("/api/v1/approvals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: "provider-1", approvalRequestId: "missing-request", expiresAt: "2027-01-01" }),
@@ -293,7 +293,7 @@ describe("POST /approvals", () => {
     const requests = [makeApprovalRequest()];
     const app = makeApp({ approvals, requests });
 
-    const res = await app.request("/app/api/v1/approvals", {
+    const res = await app.request("/api/v1/approvals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: "provider-1", approvalRequestId: "request-1", expiresAt: "2027-01-01" }),
@@ -309,7 +309,7 @@ describe("POST /approvals", () => {
   it("rejects mismatched user and approval request", async () => {
     const app = makeApp({ requests: [makeApprovalRequest({ userId: "other-user" })] });
 
-    const res = await app.request("/app/api/v1/approvals", {
+    const res = await app.request("/api/v1/approvals", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: "provider-1", approvalRequestId: "request-1", expiresAt: "2027-01-01" }),

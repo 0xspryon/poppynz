@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { requestSignInLink, requestSignUpLink, verifyMagicLink, type SignInLinkError } from './auth';
 import { matchError, type UnexpectedError } from './client';
 
@@ -144,23 +144,54 @@ describe('matchError', () => {
 });
 
 describe('verifyMagicLink', () => {
-	beforeEach(() => {
-		vi.useFakeTimers();
-	});
-
 	afterEach(() => {
-		vi.useRealTimers();
+		vi.unstubAllGlobals();
 	});
 
-	it('reports expired tokens and points at the recovery screen', async () => {
-		const result = verifyMagicLink('expired');
-		await vi.runAllTimersAsync();
-		await expect(result).resolves.toEqual({ status: 'expired', destination: '/auth/expired' });
+	it('treats a missing token as expired without calling the API', async () => {
+		const fetchMock = vi.fn();
+		vi.stubGlobal('fetch', fetchMock);
+
+		await expect(verifyMagicLink('')).resolves.toEqual({
+			status: 'expired',
+			destination: '/auth/expired'
+		});
+		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
-	it('sends verified users to the app entry', async () => {
-		const result = verifyMagicLink('demo');
-		await vi.runAllTimersAsync();
-		await expect(result).resolves.toEqual({ status: 'ok', destination: '/' });
+	it('verifies the token against better-auth and lands on the app entry', async () => {
+		const fetchMock = vi.fn().mockResolvedValue(
+			new Response(JSON.stringify({ token: 't', user: { email: 'jane@example.com' } }), {
+				status: 200,
+				headers: { 'content-type': 'application/json' }
+			})
+		);
+		vi.stubGlobal('fetch', fetchMock);
+
+		await expect(verifyMagicLink('valid-token')).resolves.toEqual({
+			status: 'ok',
+			destination: '/'
+		});
+		const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+		expect(String(url)).toBe('/api/auth/magic-link/verify?token=valid-token');
+		expect(init.redirect).toBe('manual');
+	});
+
+	it('treats a non-ok verification response (stale token redirect) as expired', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 302 })));
+
+		await expect(verifyMagicLink('stale')).resolves.toEqual({
+			status: 'expired',
+			destination: '/auth/expired'
+		});
+	});
+
+	it('treats a failed request as expired', async () => {
+		vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('fetch failed')));
+
+		await expect(verifyMagicLink('token')).resolves.toEqual({
+			status: 'expired',
+			destination: '/auth/expired'
+		});
 	});
 });

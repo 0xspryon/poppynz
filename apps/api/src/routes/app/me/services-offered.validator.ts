@@ -14,6 +14,7 @@ export const serviceOfferedCreateSchema = Schema.Struct({
   description: optionalDescription,
   hourlyRateCents: Schema.Number.pipe(Schema.int(), Schema.positive()),
   currency: Schema.optional(trimmedNonEmptyString.pipe(Schema.maxLength(3))),
+  catalogueServiceId: Schema.optional(Schema.NullOr(Schema.UUID)),
 });
 
 export const serviceOfferedUpdateSchema = Schema.partial(serviceOfferedCreateSchema);

@@ -1,16 +1,18 @@
 import * as PgDrizzle from "@effect/sql-drizzle/Pg";
 import type { SqlError } from "@effect/sql/SqlError";
-import { eq, type InferInsertModel, type InferSelectModel, isNull } from "drizzle-orm";
+import { and, eq, type InferInsertModel, type InferSelectModel, isNull } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 import { DBNotFoundError, DrizzleLive } from "../effect-db";
 import { kycDocumentType } from "../schema";
 
 export type KycDocumentType = InferSelectModel<typeof kycDocumentType>;
 export type KycDocumentTypeInsert = InferInsertModel<typeof kycDocumentType>;
-export type KycDocumentTypeCreateInput = Pick<KycDocumentTypeInsert, "name" | "isOptional" | "requiresExpiryDate"> & {
+export type KycDocumentTypeCreateInput = Pick<KycDocumentTypeInsert, "name" | "isOptional" | "requiresExpiryDate" | "isFetchable"> & {
   appliesToRole?: KycDocumentType["appliesToRole"];
 };
-export type KycDocumentTypeUpdateInput = Partial<Pick<KycDocumentType, "name" | "isOptional" | "requiresExpiryDate" | "appliesToRole">>;
+export type KycDocumentTypeUpdateInput = Partial<
+  Pick<KycDocumentType, "name" | "isOptional" | "requiresExpiryDate" | "isFetchable" | "appliesToRole">
+>;
 
 export class KycDocumentTypeRepo extends Context.Tag("@repo/db/KycDocumentTypeRepo")<
   KycDocumentTypeRepo,
@@ -41,15 +43,9 @@ export const KycDocumentTypeRepoLive = Layer.effect(
         db
           .select()
           .from(kycDocumentType)
-          .where(eq(kycDocumentType.id, id))
+          .where(and(eq(kycDocumentType.id, id), isNull(kycDocumentType.deletedAt)))
           .limit(1)
-          .pipe(Effect.flatMap((rows) => {
-            const row = rows[0];
-            if (row && row.deletedAt === null) {
-              return Effect.succeed(row);
-            }
-            return Effect.fail(new DBNotFoundError({ entity: "kycDocumentType", value: id }));
-          })),
+          .pipe(Effect.flatMap(oneOrNotFound(id))),
       create: (input) =>
         db
           .insert(kycDocumentType)

@@ -13,6 +13,8 @@ import { adminKycDocsRoute } from './admin/kyc-docs';
 import { geocodingRoute } from './geocoding/geocoding';
 import { providersRoute } from './providers/providers';
 import { adminProviderSearchRoute } from './admin/provider-search';
+import { serviceCatalogueRoute } from './service-catalogue/service-catalogue';
+import { adminServiceCatalogueRoute } from './admin/service-catalogue';
 
 export const appRoutes = new Hono<HonoEnv>()
 .route('/auth', signupRoute)
@@ -25,6 +27,8 @@ export const appRoutes = new Hono<HonoEnv>()
 .route('/admin/approval-requests', adminApprovalRequestsRoute)
 .route('/admin/kyc-docs', adminKycDocsRoute)
 .route('/admin/provider-search', adminProviderSearchRoute)
+.route('/service-catalogue', serviceCatalogueRoute)
+.route('/admin/service-catalogue', adminServiceCatalogueRoute)
 .route('/providers', providersRoute)
 .route('/geocoding', geocodingRoute)
 .route('/uploads', uploadRoute)

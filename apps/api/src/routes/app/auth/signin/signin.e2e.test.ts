@@ -89,7 +89,7 @@ describe("POST /auth/sign-in", () => {
       },
     });
 
-    const res = await app.request("/app/api/v1/auth/sign-in", {
+    const res = await app.request("/api/v1/auth/sign-in", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: " User@Example.com " }),
@@ -104,7 +104,7 @@ describe("POST /auth/sign-in", () => {
   it("returns a safe invalid input response", async () => {
     const app = makeApp();
 
-    const res = await app.request("/app/api/v1/auth/sign-in", {
+    const res = await app.request("/api/v1/auth/sign-in", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "not-an-email" }),
@@ -130,7 +130,7 @@ describe("POST /auth/sign-in", () => {
       },
     });
 
-    const res = await app.request("/app/api/v1/auth/sign-in", {
+    const res = await app.request("/api/v1/auth/sign-in", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "missing@example.com" }),
@@ -151,7 +151,7 @@ describe("POST /auth/sign-in", () => {
       sendSigninLink: () => Effect.fail(new SigninAuthError({ cause: new Error("auth down") })),
     });
 
-    const res = await app.request("/app/api/v1/auth/sign-in", {
+    const res = await app.request("/api/v1/auth/sign-in", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: "user@example.com" }),

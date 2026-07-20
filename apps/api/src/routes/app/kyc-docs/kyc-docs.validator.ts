@@ -18,6 +18,7 @@ export const kycDocumentTypeCreateSchema = Schema.Struct({
   appliesToRole: Schema.optional(Schema.Literal("service-provider")),
   isOptional: Schema.Boolean,
   requiresExpiryDate: Schema.Boolean,
+  isFetchable: Schema.optional(Schema.Boolean),
 });
 
 export const kycDocumentTypeUpdateSchema = Schema.partial(kycDocumentTypeCreateSchema);

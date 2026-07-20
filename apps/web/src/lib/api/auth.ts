@@ -11,7 +11,7 @@ export interface PendingAuth {
   sentAt: number;
 }
 
-export type AuthDestination = '/' | '/auth/expired';
+export type AuthDestination = '/' | '/admin' | '/auth/expired' | '/account';
 
 export interface VerifyResult {
   status: 'ok' | 'expired';
@@ -27,9 +27,6 @@ export type SignInLinkError = ErrorsOf<typeof signInEndpoint>;
 export type ResendLinkError = SignUpLinkError | SignInLinkError;
 
 const STORAGE_KEY = 'poppynz:pending-auth';
-const VERIFY_DELAY_MS = 1600;
-
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function getPendingAuth(): PendingAuth | null {
   if (!browser) return null;
@@ -86,31 +83,46 @@ export async function resendMagicLink(): Promise<ApiResult<PendingAuth, ResendLi
 }
 
 /**
- * Mock verification: the token "expired" simulates a stale link; anything
- * else verifies and starts a mock session. Successful verifications land on
- * the app entry until post-auth destinations exist again.
+ * Verify a magic-link token against better-auth. Without a callbackURL the
+ * endpoint responds with JSON (and sets the session cookie); invalid or
+ * expired tokens redirect, which we treat as "expired". Admins land on the
+ * console; everyone else on the app entry until post-auth homes exist here.
  */
 export async function verifyMagicLink(token: string): Promise<VerifyResult> {
-  await delay(VERIFY_DELAY_MS);
-  if (token === 'expired') {
+  if (!token) {
     return { status: 'expired', destination: '/auth/expired' };
   }
-  const pending = getPendingAuth();
-  if (browser && pending) {
-    const { getSession, startSession } = await import('./profile');
-    startSession({
-      email: pending.email,
-      // Sign-ins don't carry a role; keep the one from the previous session.
-      role: pending.role ?? getSession()?.role ?? 'family'
+  let res: Response;
+  try {
+    res = await fetch(`/api/auth/magic-link/verify?token=${encodeURIComponent(token)}`, {
+      credentials: 'same-origin',
+      redirect: 'manual'
     });
+  } catch {
+    return { status: 'expired', destination: '/auth/expired' };
   }
-  const destination = '/';
+  if (!res.ok) {
+    return { status: 'expired', destination: '/auth/expired' };
+  }
+  const { fetchSession } = await import('./profile');
+  const session = await fetchSession();
   clearPendingAuth();
-  return { status: 'ok', destination };
+  return { status: 'ok', destination: session?.role === 'admin' ? '/admin' : '/account' };
 }
 
 export async function signOut(): Promise<void> {
   if (!browser) return;
+  try {
+    await fetch('/api/auth/sign-out', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'content-type': 'application/json' },
+      body: '{}'
+    });
+  } catch {
+    // The server session may outlive a failed request; the local session
+    // still ends so the UI signs out either way.
+  }
   const { endSession } = await import('./profile');
   endSession();
 }

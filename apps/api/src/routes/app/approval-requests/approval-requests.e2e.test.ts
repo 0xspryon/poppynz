@@ -145,7 +145,7 @@ describe("POST /approval-requests", () => {
     const requests: Array<ApprovalRequest> = [];
     const app = makeApp({ requests });
 
-    const res = await app.request("/app/api/v1/approval-requests", { method: "POST" });
+    const res = await app.request("/api/v1/approval-requests", { method: "POST" });
     const body = await res.json();
 
     expect(res.status).toBe(200);
@@ -156,7 +156,7 @@ describe("POST /approval-requests", () => {
   it("prevents duplicate submitted approval requests", async () => {
     const app = makeApp({ requests: [makeApprovalRequest()] });
 
-    const res = await app.request("/app/api/v1/approval-requests", { method: "POST" });
+    const res = await app.request("/api/v1/approval-requests", { method: "POST" });
     const body = await res.json();
 
     expect(res.status).toBe(409);
@@ -167,7 +167,7 @@ describe("POST /approval-requests", () => {
     const requests = [makeApprovalRequest({ status: "rejected", reason: "Incomplete." })];
     const app = makeApp({ requests });
 
-    const res = await app.request("/app/api/v1/approval-requests", { method: "POST" });
+    const res = await app.request("/api/v1/approval-requests", { method: "POST" });
 
     expect(res.status).toBe(200);
     expect(requests).toHaveLength(2);

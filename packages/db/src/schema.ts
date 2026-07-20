@@ -87,6 +87,7 @@ export const kycDocumentType = appDb.table(
     appliesToRole: accessControlRole("applies_to_role").default("service-provider").notNull(),
     isOptional: boolean("is_optional").default(false).notNull(),
     requiresExpiryDate: boolean("requires_expiry_date").default(false).notNull(),
+    isFetchable: boolean("is_fetchable").default(false).notNull(),
     deletedAt: timestamp("deleted_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
@@ -177,6 +178,31 @@ export const kycDocument = appDb.table(
   ],
 );
 
+// Admin-managed base services providers pick from. `isLive` is catalogue
+// visibility (hidden items stay on existing provider listings but can't be
+// newly added) — deliberately distinct from `deletedAt` soft deletion.
+export const serviceCatalogueItem = appDb.table(
+  "service_catalogue",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    name: text("name").notNull(),
+    category: text("category").notNull(),
+    baseHourlyRateCents: integer("base_hourly_rate_cents").notNull(),
+    currency: text("currency").default("CAD").notNull(),
+    isLive: boolean("is_live").default(true).notNull(),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("service_catalogue_deleted_at_idx").on(table.deletedAt),
+    index("service_catalogue_is_live_idx").on(table.isLive),
+  ],
+);
+
 export const serviceOffered = appDb.table(
   "services_offered",
   {
@@ -184,6 +210,9 @@ export const serviceOffered = appDb.table(
     userId: text("user_id")
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
+    catalogueServiceId: uuid("catalogue_service_id").references(() => serviceCatalogueItem.id, {
+      onDelete: "restrict",
+    }),
     name: text("name").notNull(),
     description: text("description"),
     hourlyRateCents: integer("hourly_rate_cents").notNull(),
@@ -198,6 +227,7 @@ export const serviceOffered = appDb.table(
   (table) => [
     index("services_offered_user_id_idx").on(table.userId),
     index("services_offered_deleted_at_idx").on(table.deletedAt),
+    index("services_offered_catalogue_service_id_idx").on(table.catalogueServiceId),
   ],
 );
 
@@ -434,6 +464,14 @@ export const serviceOfferedRelations = relations(serviceOffered, ({ one }) => ({
     fields: [serviceOffered.userId],
     references: [user.id],
   }),
+  catalogueItem: one(serviceCatalogueItem, {
+    fields: [serviceOffered.catalogueServiceId],
+    references: [serviceCatalogueItem.id],
+  }),
+}));
+
+export const serviceCatalogueItemRelations = relations(serviceCatalogueItem, ({ many }) => ({
+  servicesOffered: many(serviceOffered),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

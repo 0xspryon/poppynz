@@ -3,6 +3,8 @@ import { languageDetector } from "hono/language";
 import type { BaseAppEnv, AppRuntime } from "./app-env";
 import type { ManagedRuntime } from "effect";
 import { auth } from "./lib/auth";
+import { hasMalformedCallbackParam } from "./lib/magic-link-guard";
+import { resolveUiOrigin } from "./lib/ui-origin";
 import { appRoutes } from "./routes/app/index";
 import { requestId } from "hono/request-id";
 import { makeAppRuntime } from "./managed-runtime";
@@ -28,7 +30,18 @@ export const createApp = (runtime: AppRuntime | ManagedRuntime.ManagedRuntime<an
       return c.text("Up!");
     })
 
-    .all("/api/auth/*", (c) => auth.handler(c.req.raw))
+    .all("/api/auth/*", (c) => {
+      // Mangled magic links would otherwise 500 inside better-auth.
+      if (
+        c.req.path.endsWith("/magic-link/verify") &&
+        hasMalformedCallbackParam((key) => c.req.query(key))
+      ) {
+        return c.redirect(
+          `${resolveUiOrigin(c.req.raw.headers)}/auth/sign-in/error?error=INVALID_TOKEN`,
+        );
+      }
+      return auth.handler(c.req.raw);
+    })
     .route(API_BASE_PATH, appRoutes)
 
     .onError((error, c) => {

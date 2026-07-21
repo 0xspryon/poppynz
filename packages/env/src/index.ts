@@ -1,5 +1,17 @@
 import { Config } from "effect";
 
+export const adminAccountConfig = Config.all({
+  adminAccounts: Config.string("adminAccounts").pipe(Config.withDefault('springfield@poppynz.com;kay@poppynz.com')),
+});
+
+// Semicolon-separated UI origins allowed as magic-link callback targets.
+// Defaults cover the dev web (5173) and admin (5174) apps.
+export const trustedOriginsConfig = Config.all({
+  trustedOrigins: Config.string("TRUSTED_ORIGINS").pipe(
+    Config.withDefault("https://poppynz.com;https://app.poppynz.com"),
+  ),
+});
+
 export const rustfsConfig = Config.all({
   endpoint: Config.string("RUSTFS_ENDPOINT"),
   publicEndpoint: Config.string("RUSTFS_PUBLIC_ENDPOINT"),

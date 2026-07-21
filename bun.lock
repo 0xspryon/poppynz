@@ -182,6 +182,20 @@
         "effect": "^3.21.2",
       },
     },
+    "packages/seeder": {
+      "name": "@repo/seeder",
+      "version": "0.0.0",
+      "dependencies": {
+        "@repo/db": "*",
+        "@repo/env": "*",
+        "drizzle-orm": "^0.45.2",
+        "effect": "^3.21.2",
+        "pg": "^8.21.0",
+      },
+      "devDependencies": {
+        "@types/pg": "^8.20.0",
+      },
+    },
     "packages/typescript-config": {
       "name": "@repo/typescript-config",
       "version": "0.0.0",
@@ -573,6 +587,8 @@
     "@repo/objs": ["@repo/objs@workspace:packages/objs"],
 
     "@repo/queue": ["@repo/queue@workspace:packages/queue"],
+
+    "@repo/seeder": ["@repo/seeder@workspace:packages/seeder"],
 
     "@repo/typescript-config": ["@repo/typescript-config@workspace:packages/typescript-config"],
 

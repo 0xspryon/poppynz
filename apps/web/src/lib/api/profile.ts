@@ -11,59 +11,54 @@ import type { Role } from './auth';
 export type SessionRole = Role | 'admin';
 
 export interface MockSession {
-	email: string;
-	role: SessionRole;
+  email: string;
+  role: SessionRole;
 }
 
 const SESSION_KEY = 'poppynz:session';
 
 const isSessionRole = (value: unknown): value is SessionRole =>
-	value === 'family' || value === 'service-provider' || value === 'admin';
+  value === 'family' || value === 'service-provider' || value === 'admin';
 
 /**
  * Ask the API who is signed in (better-auth cookie) and refresh the local
  * cache. Returns null — and clears the cache — when there is no session.
  */
 export async function fetchSession(): Promise<MockSession | null> {
-	if (!browser) return null;
-	try {
-		const res = await fetch('/api/auth/get-session', { credentials: 'same-origin' });
-		if (!res.ok) return getSession();
-		const body = (await res.json()) as { user?: { email?: string; role?: string | null } } | null;
-		const email = body?.user?.email;
-		if (!email) {
-			endSession();
-			return null;
-		}
-		const session: MockSession = {
-			email,
-			role: isSessionRole(body?.user?.role) ? body.user.role : 'family'
-		};
-		startSession(session);
-		return session;
-	} catch {
-		// Network hiccup: keep whatever we knew last rather than logging out.
-		return getSession();
-	}
+  if (!browser) return null;
+  try {
+    const res = await fetch('/api/auth/get-session', { credentials: 'same-origin' });
+    if (!res.ok) return getSession();
+    const body = (await res.json()) as { user?: { email?: string; role?: string | null } } | null;
+    const email = body?.user?.email;
+    if (!email) {
+      endSession();
+      return null;
+    }
+    const session: MockSession = {
+      email,
+      role: isSessionRole(body?.user?.role) ? body.user.role : 'family'
+    };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    return session;
+  } catch {
+    // Network hiccup: keep whatever we knew last rather than logging out.
+    return getSession();
+  }
 }
 
 export function getSession(): MockSession | null {
-	if (!browser) return null;
-	const raw = localStorage.getItem(SESSION_KEY);
-	if (!raw) return null;
-	try {
-		return JSON.parse(raw) as MockSession;
-	} catch {
-		return null;
-	}
-}
-
-export function startSession(session: MockSession): void {
-	if (!browser) return;
-	localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+  if (!browser) return null;
+  const raw = localStorage.getItem(SESSION_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as MockSession;
+  } catch {
+    return null;
+  }
 }
 
 export function endSession(): void {
-	if (!browser) return;
-	localStorage.removeItem(SESSION_KEY);
+  if (!browser) return;
+  localStorage.removeItem(SESSION_KEY);
 }

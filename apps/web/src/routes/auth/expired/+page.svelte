@@ -2,10 +2,19 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { getPendingAuth, requestSignInLink, requestSignUpLink } from '$lib/api/auth';
 	import { matchError } from '$lib/api/client';
 
 	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+
+	// Forwarded by the sign-in/sign-up error routes from better-auth's
+	// errorCallbackURL. INVALID_TOKEN (used or expired link) gets the default
+	// stale-link copy; failed_to_* are server-side failures during verification.
+	const SERVER_FAILURE_CODES = ['failed_to_create_user', 'failed_to_create_session'];
+	const serverFailure = $derived(
+		SERVER_FAILURE_CODES.includes(page.url.searchParams.get('error') ?? '')
+	);
 
 	let email = $state('');
 	let submitting = $state(false);
@@ -49,19 +58,24 @@
 </script>
 
 <svelte:head>
-	<title>Link expired · Poppynz</title>
+	<title>{serverFailure ? 'Sign-in failed' : 'Link expired'} · Poppynz</title>
 </svelte:head>
 
 <form class="max-w-form lg:my-auto lg:pb-12" onsubmit={submit}>
 	<div class="mb-6 flex size-18 items-center justify-center rounded-pill bg-error-content">
-		<i class="las la-clock text-3xl text-error" aria-hidden="true"></i>
+		<i
+			class="las {serverFailure ? 'la-exclamation-circle' : 'la-clock'} text-3xl text-error"
+			aria-hidden="true"
+		></i>
 	</div>
 
 	<h2 class="mb-2.5 font-display text-3xl font-bold text-base-content lg:text-4xl">
-		This link has expired
+		{serverFailure ? 'Something went wrong' : 'This link is no longer valid'}
 	</h2>
 	<p class="mb-7 max-w-md text-base leading-relaxed text-base-content-muted">
-		Sign-in links only work for 5 minutes. Enter your email and we'll send a fresh one right away.
+		{serverFailure
+			? "We couldn't finish signing you in. Enter your email and we'll send you a new link to try again."
+			: "Sign-in links are single-use and only work for 5 minutes. Enter your email and we'll send a fresh one right away."}
 	</p>
 
 	<fieldset class="fieldset mb-4">

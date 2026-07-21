@@ -1,9 +1,8 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
-	import { page } from '$app/state';
 	import { resolve } from '$app/paths';
-	import { fetchSession, getSession, startSession } from '$lib/api/profile';
+	import { fetchSession, getSession } from '$lib/api/profile';
 	import AdminSidebar from '$lib/components/admin/AdminSidebar.svelte';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import type { Snippet } from 'svelte';
@@ -13,21 +12,10 @@
 	}
 
 	let { children }: Props = $props();
-
-	// Session gate: the cached session answers immediately; otherwise ask the
-	// API (better-auth cookie). Dev-only bootstrap: /admin?as=admin seeds a
-	// mock admin session for routing — API calls still need a real cookie.
 	let authorized = $state(false);
 
 	$effect(() => {
 		if (!browser) return;
-		if (import.meta.env.DEV && page.url.searchParams.get('as') === 'admin') {
-			startSession({ email: 'admin@poppynz.dev', role: 'admin' });
-		}
-		if (getSession()?.role === 'admin') {
-			authorized = true;
-			return;
-		}
 		void fetchSession().then((session) => {
 			if (session?.role === 'admin') {
 				authorized = true;
@@ -59,8 +47,7 @@
 				<span class="flex items-center gap-2">
 					<BrandMark />
 					<span
-						class="rounded-sm bg-secondary px-1.5 py-0.5 text-[9px] font-semibold tracking-[0.1em]
-							text-secondary-content uppercase"
+						class="rounded-sm bg-secondary px-1.5 py-0.5 text-[9px] font-semibold tracking-widest text-secondary-content uppercase"
 					>
 						Admin
 					</span>

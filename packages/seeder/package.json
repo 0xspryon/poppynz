@@ -1,0 +1,22 @@
+{
+  "name": "@repo/seeder",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "seed:run": "bun ./src/run.ts",
+    "seed:status": "bun ./src/status.ts",
+    "seed:new": "bun ./src/new.ts",
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@repo/db": "*",
+    "@repo/env": "*",
+    "drizzle-orm": "^0.45.2",
+    "effect": "^3.21.2",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.20.0"
+  }
+}

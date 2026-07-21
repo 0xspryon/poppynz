@@ -3,6 +3,7 @@ import { SignupIntentRepo, UserRepo } from "@repo/db";
 import { Cause, Context, Data, Effect, Exit, Layer, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../../app-env";
 import { auth } from "../../../../lib/auth";
+import { resolveUiOrigin } from "../../../../lib/ui-origin";
 import { validLanguages, signupIntentTtlMs, validRoles } from "../../../../lib/constants";
 import {
   signupValidationError,
@@ -47,13 +48,16 @@ export const SignupServiceLive = Layer.succeed(SignupService, {
   sendSignupLink: ({ email, role, headers }) =>
     Effect.tryPromise({
       try: async () => {
+        const uiOrigin = resolveUiOrigin(headers);
         await auth.api.signInMagicLink({
           body: {
             email,
-            callbackURL: "/onboarding",
+            callbackURL: `${uiOrigin}/onboarding`,
             newUserCallbackURL:
-              role === "service-provider" ? "/service-provider/onboarding" : "/family/onboarding",
-            errorCallbackURL: "/auth/sign-up/error",
+              role === "service-provider"
+                ? `${uiOrigin}/service-provider/onboarding`
+                : `${uiOrigin}/family/onboarding`,
+            errorCallbackURL: `${uiOrigin}/auth/sign-up/error`,
             metadata: { signupRole: role },
           },
           headers,

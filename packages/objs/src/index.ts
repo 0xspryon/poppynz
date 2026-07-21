@@ -1,6 +1,7 @@
 import {
   CreateBucketCommand,
   GetBucketPolicyCommand,
+  GetObjectCommand,
   HeadBucketCommand,
   PutBucketPolicyCommand,
   PutObjectCommand,
@@ -31,13 +32,28 @@ export type PresignedPutResult = {
   expiresAt: Date;
 };
 
+export type PresignedGetInput = {
+  bucket: string;
+  key: string;
+  expiresInSeconds: number;
+  // Forwarded as response-content-disposition so viewers render inline
+  // instead of triggering a download.
+  contentDisposition?: string;
+};
+
+export type PresignedGetResult = {
+  url: string;
+  expiresAt: Date;
+};
+
 export class ObjectStorageError extends Data.TaggedError("ObjectStorageError")<{
   operation:
     | "headBucket"
     | "createBucket"
     | "getBucketPolicy"
     | "putBucketPolicy"
-    | "presignPutObject";
+    | "presignPutObject"
+    | "presignGetObject";
   bucket: string;
   key?: string;
   cause: unknown;
@@ -51,6 +67,7 @@ export class ObjectStorage extends Context.Tag("@repo/objs/ObjectStorage")<
     ensureBucketExists: (bucket: string) => Effect.Effect<void, ObjectStorageError>;
     ensurePublicReadBucket: (bucket: string) => Effect.Effect<void, ObjectStorageError>;
     createPresignedPutUrl: (input: PresignedPutInput) => Effect.Effect<PresignedPutResult, ObjectStorageError>;
+    createPresignedGetUrl: (input: PresignedGetInput) => Effect.Effect<PresignedGetResult, ObjectStorageError>;
   }
 >() {}
 
@@ -192,6 +209,34 @@ const makeObjectStorage = (config: ObjectStorageConfig): Context.Tag.Service<Obj
         catch: (cause) =>
           new ObjectStorageError({
             operation: "presignPutObject",
+            bucket: input.bucket,
+            key: input.key,
+            cause,
+          }),
+      }),
+    createPresignedGetUrl: (input) =>
+      Effect.tryPromise({
+        try: async () => {
+          const url = await getSignedUrl(
+            publicClient,
+            new GetObjectCommand({
+              Bucket: input.bucket,
+              Key: input.key,
+              ...(input.contentDisposition
+                ? { ResponseContentDisposition: input.contentDisposition }
+                : {}),
+            }),
+            { expiresIn: input.expiresInSeconds },
+          );
+
+          return {
+            url,
+            expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000),
+          };
+        },
+        catch: (cause) =>
+          new ObjectStorageError({
+            operation: "presignGetObject",
             bucket: input.bucket,
             key: input.key,
             cause,

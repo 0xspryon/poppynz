@@ -73,6 +73,13 @@ const makeApprovalRequestRepo = (requests: Array<ApprovalRequest>) => ({
     return Effect.succeed(request);
   },
   list: () => Effect.succeed(requests),
+  listWithApplicant: () => Effect.succeed(requests.map((request) => ({ ...request, applicant: { email: "provider@example.com", firstName: "Maria", lastName: "Santos" } }))),
+  countByStatus: () => Effect.succeed({
+    submitted: requests.filter((request) => request.status === "submitted").length,
+    approved: requests.filter((request) => request.status === "approved").length,
+    rejected: requests.filter((request) => request.status === "rejected").length,
+  }),
+  listByUserId: (userId: string) => Effect.succeed(requests.filter((request) => request.userId === userId)),
   findById: (id: string) => {
     const request = requests.find((request) => request.id === id);
     return request ? Effect.succeed(request) : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id }));
@@ -116,11 +123,12 @@ const makeApp = (options: { authSession?: AuthSession | null; user?: User; reque
       EmptyKycDocumentRepoTest,
       EmptyKycDocumentTypeRepoTest,
       EmptyServiceOfferedRepoTest,
-      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used") }),
+      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used"), autocompletePlaces: () => Effect.succeed([]) }),
       makeObjectStorageTest({
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
         createPresignedPutUrl: () => Effect.succeed({ uploadUrl: "https://example.com", expiresAt: new Date() }),
+        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
       }),
       makeApprovalRequestRepoTest(makeApprovalRequestRepo(requests)),
       makeAuthServiceTest({

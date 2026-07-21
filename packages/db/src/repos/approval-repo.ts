@@ -22,6 +22,7 @@ export class ApprovalRepo extends Context.Tag("@repo/db/ApprovalRepo")<
   {
     create: (input: ApprovalCreateInput) => Effect.Effect<Approval, SqlError>;
     findCurrentByUserId: (userId: string) => Effect.Effect<Approval, SqlError | DBNotFoundError>;
+    listByUserId: (userId: string) => Effect.Effect<Array<Approval>, SqlError>;
   }
 >() { }
 
@@ -61,6 +62,12 @@ export const ApprovalRepoLive = Layer.effect(
               return Effect.fail(new DBNotFoundError({ entity: "approval", value: userId }));
             }),
           ),
+      listByUserId: (userId) =>
+        db
+          .select()
+          .from(approval)
+          .where(eq(approval.userId, userId))
+          .orderBy(desc(approval.createdAt)),
     };
   }),
 );
@@ -73,4 +80,5 @@ export const makeApprovalRepoTest = (implementation: Context.Tag.Service<Approva
 export const EmptyApprovalRepoTest = makeApprovalRepoTest({
   create: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: "" }) as never),
   findCurrentByUserId: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: "" })),
+  listByUserId: () => Effect.succeed([]),
 });

@@ -81,6 +81,7 @@ const makeApp = (options: { authSession?: AuthSession | null; hasPermission?: bo
         findById: (id) => id === "session-1" ? Effect.succeed(makeSession({ userId: user.id })) : Effect.fail(new DBNotFoundError({ entity: "session", value: id })),
       }),
       makeGooglePlacesTest({
+        autocompletePlaces: () => Effect.succeed([]),
         lookupPlaceById: (placeId) => Effect.succeed({
           googlePlaceId: placeId,
           formattedAddress: "123 Main St, Toronto, ON, Canada",
@@ -98,6 +99,7 @@ const makeApp = (options: { authSession?: AuthSession | null; hasPermission?: bo
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
         createPresignedPutUrl: () => Effect.succeed({ uploadUrl: "https://example.com", expiresAt: new Date() }),
+        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
       }),
     ),
   );

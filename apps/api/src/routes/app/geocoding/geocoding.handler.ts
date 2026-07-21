@@ -3,7 +3,7 @@ import { Cause, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
 import { requestValidationErrorToResponse } from "@/api/lib/schema-validator";
-import { validateGooglePlaceLookupInput } from "./geocoding.validator";
+import { validateGooglePlaceLookupInput, validatePlaceSuggestionsInput } from "./geocoding.validator";
 
 const unexpected = (c: HonoContext<HonoEnv>) =>
   c.json({ error: { code: "INTERNAL_SERVER_ERROR" as const, message: "Unexpected server error." } }, 500);
@@ -40,7 +40,21 @@ export const lookupGooglePlaceProgram = (headers: Headers, input: unknown) =>
     return toPublicGooglePlaceResponse(place);
   });
 
-export type GeocodingRouteError = Effect.Effect.Error<ReturnType<typeof lookupGooglePlaceProgram>>;
+export const placeSuggestionsProgram = (headers: Headers, input: unknown) =>
+  Effect.gen(function*() {
+    const params = yield* validatePlaceSuggestionsInput(input);
+    const authenticated = yield* authenticate(headers);
+    yield* requirePermissions(headers, { profile: ["read"] })(authenticated);
+    const googlePlaces = yield* GooglePlaces;
+
+    const suggestions = yield* googlePlaces.autocompletePlaces(params.query);
+
+    return { suggestions };
+  });
+
+export type GeocodingRouteError =
+  | Effect.Effect.Error<ReturnType<typeof lookupGooglePlaceProgram>>
+  | Effect.Effect.Error<ReturnType<typeof placeSuggestionsProgram>>;
 
 const geocodingErrorToResponse = (c: HonoContext<HonoEnv>, error: GeocodingRouteError) => {
   switch (error._tag) {
@@ -75,6 +89,17 @@ const exitToResponse = <T>(c: HonoContext<HonoEnv>, exit: Exit.Exit<T, Geocoding
       return unexpected(c);
     },
   });
+
+export async function placeSuggestionsHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get("runtime");
+  const headers = c.req.raw.headers;
+  const query = c.req.query("query");
+  const exit = await runtime.runPromiseExit(
+    placeSuggestionsProgram(headers, { query }),
+  );
+
+  return exitToResponse(c, exit);
+}
 
 export async function lookupGooglePlaceHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");

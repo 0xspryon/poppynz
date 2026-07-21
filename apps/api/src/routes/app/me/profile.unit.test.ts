@@ -201,10 +201,14 @@ const makeLayer = (options: {
     makeApprovalRepoTest({
       create: (input: ApprovalCreateInput) => Effect.succeed(approval(input)),
       findCurrentByUserId: (userId) => options.approval === null ? Effect.fail(new DBNotFoundError({ entity: "approval", value: userId })) : Effect.succeed(options.approval ?? approval({ userId })),
+      listByUserId: () => Effect.succeed([]),
     }),
     makeApprovalRequestRepoTest({
       createSubmitted: (userId) => Effect.succeed(approvalRequest({ userId })),
       list: () => Effect.succeed([]),
+      listWithApplicant: () => Effect.succeed([]),
+      countByStatus: () => Effect.succeed({ submitted: 0, approved: 0, rejected: 0 }),
+      listByUserId: () => Effect.succeed([]),
       findById: (id) => Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id })),
       findSubmittedByUserId: (userId) => Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: userId })),
       findLatestByUserId: (userId) => options.approvalRequest === null ? Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: userId })) : Effect.succeed(options.approvalRequest ?? approvalRequest({ userId })),
@@ -234,6 +238,7 @@ const makeLayer = (options: {
     }),
     makeGooglePlacesTest({
       lookupPlaceById: () => Effect.succeed(options.googleLocation ?? googleLocation()),
+      autocompletePlaces: () => Effect.succeed([]),
     }),
   );
 };

@@ -93,7 +93,8 @@ const approvalErrorToResponse = (c: HonoContext<HonoEnv>, error: ApprovalError) 
       return c.json({ error: { code: "APPROVAL_ELIGIBILITY_FAILED" as const, message: error.message } }, 400);
     case "ApprovalRepoError":
       return c.json({ error: { code: "APPROVAL_FAILED" as const, message: "Unable to create approval." } }, 500);
-    default: handleNever(c, error)
+    default:
+      return handleNever(c, error);
   }
 };
 

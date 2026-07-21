@@ -45,7 +45,7 @@ const ensureItemIsLive = (item: ServiceCatalogueItem) =>
 
 const formatCents = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
-const toResponse = (service: { createdAt: Date; updatedAt: Date; deletedAt: Date | null } & Record<string, unknown>) => ({
+const toResponse = <T extends { createdAt: Date; updatedAt: Date; deletedAt: Date | null }>(service: T) => ({
   ...service,
   createdAt: service.createdAt.toISOString(),
   updatedAt: service.updatedAt.toISOString(),

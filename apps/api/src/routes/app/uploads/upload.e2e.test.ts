@@ -102,7 +102,7 @@ const makeApp = (options: {
       EmptyApprovalRequestRepoTest,
       EmptyKycDocumentRepoTest,
       EmptyServiceOfferedRepoTest,
-      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used") }),
+      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used"), autocompletePlaces: () => Effect.succeed([]) }),
       makeKycDocumentTypeRepoTest({
         listActive: () => Effect.succeed([makeDocumentType()]),
         findActiveById: (id) => id === "document-type-1"
@@ -115,6 +115,7 @@ const makeApp = (options: {
       makeObjectStorageTest({
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
+        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
         createPresignedPutUrl: (input) => {
           options.onPresign?.(input);
 

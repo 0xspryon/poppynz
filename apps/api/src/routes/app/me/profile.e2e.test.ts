@@ -207,6 +207,7 @@ const makeApp = (options: {
         },
       }),
       makeGooglePlacesTest({
+        autocompletePlaces: () => Effect.succeed([]),
         lookupPlaceById: (placeId) => Effect.succeed({
           googlePlaceId: placeId,
           formattedAddress: "123 Main St, Toronto, ON, Canada",
@@ -223,10 +224,14 @@ const makeApp = (options: {
       makeApprovalRepoTest({
         create: (input: ApprovalCreateInput) => Effect.succeed(makeApproval(input)),
         findCurrentByUserId: (userId) => approval?.userId === userId ? Effect.succeed(approval) : Effect.fail(new DBNotFoundError({ entity: "approval", value: userId })),
+        listByUserId: (userId) => Effect.succeed(approval?.userId === userId ? [approval] : []),
       }),
       makeApprovalRequestRepoTest({
         createSubmitted: (userId) => Effect.succeed(makeApprovalRequest({ userId })),
         list: () => Effect.succeed(approvalRequest ? [approvalRequest] : []),
+        listWithApplicant: () => Effect.succeed([]),
+        countByStatus: () => Effect.succeed({ submitted: 0, approved: 0, rejected: 0 }),
+        listByUserId: (userId) => Effect.succeed(approvalRequest?.userId === userId ? [approvalRequest] : []),
         findById: (id) => approvalRequest?.id === id ? Effect.succeed(approvalRequest) : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id })),
         findSubmittedByUserId: (userId) => approvalRequest?.userId === userId && approvalRequest.status === "submitted" ? Effect.succeed(approvalRequest) : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: userId })),
         findLatestByUserId: (userId) => approvalRequest?.userId === userId ? Effect.succeed(approvalRequest) : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: userId })),
@@ -237,6 +242,7 @@ const makeApp = (options: {
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
         createPresignedPutUrl: () => Effect.succeed({ uploadUrl: "https://example.com", expiresAt: new Date() }),
+        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
       }),
       makeKycDocumentTypeRepoTest({
         listActive: () => Effect.succeed(documentTypes.filter((type) => type.deletedAt === null)),

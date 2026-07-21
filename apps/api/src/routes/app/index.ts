@@ -3,6 +3,7 @@ import { signupRoute } from './auth/signup/signup'
 import { signinRoute } from './auth/signin/signin'
 import type { HonoEnv } from '../../app-env';
 import { profileRoute } from './me/profile';
+import { onboardingRoute } from './me/onboarding';
 import { approvalRoute } from './approval/approval';
 import { uploadRoute } from './uploads/upload';
 import { servicesOfferedRoute } from './me/services-offered';
@@ -20,6 +21,7 @@ export const appRoutes = new Hono<HonoEnv>()
 .route('/auth', signupRoute)
 .route('/auth', signinRoute)
 .route('/me/profile', profileRoute)
+.route('/me/onboarding', onboardingRoute)
 .route('/me/services-offered', servicesOfferedRoute)
 .route('/kyc-docs', kycDocsRoute)
 .route('/approval-requests', approvalRequestsRoute)

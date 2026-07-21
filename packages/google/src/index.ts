@@ -14,8 +14,13 @@ export type GooglePlaceLocation = {
   longitude: number;
 };
 
+export type GooglePlaceSuggestion = {
+  placeId: string;
+  description: string;
+};
+
 export class GooglePlacesError extends Data.TaggedError("GooglePlacesError")<{
-  operation: "placeDetails";
+  operation: "placeDetails" | "autocomplete";
   placeId: string;
   cause: unknown;
 }> { }
@@ -35,6 +40,7 @@ export class GooglePlaces extends Context.Tag("@repo/google/GooglePlaces")<
     lookupPlaceById: (
       placeId: string,
     ) => Effect.Effect<GooglePlaceLocation, GooglePlacesError | GooglePlaceNotFoundError | GooglePlaceInvalidError>;
+    autocompletePlaces: (query: string) => Effect.Effect<Array<GooglePlaceSuggestion>, GooglePlacesError>;
   }
 >() { }
 
@@ -116,7 +122,52 @@ const normalizePlaceDetails = (placeId: string, response: PlaceDetailsResponse) 
   });
 };
 
+type AutocompleteResponse = {
+  status: string;
+  error_message?: string;
+  predictions?: Array<{ place_id?: string; description?: string }>;
+};
+
 const makeGooglePlaces = (config: { apiKey: string }): Context.Tag.Service<GooglePlaces> => ({
+  autocompletePlaces: (query) =>
+    Effect.tryPromise({
+      try: async () => {
+        const params = new URLSearchParams({
+          input: query,
+          types: "geocode",
+          key: config.apiKey,
+        });
+        const response = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`);
+
+        if (!response.ok) {
+          throw new GooglePlacesError({
+            operation: "autocomplete",
+            placeId: query,
+            cause: { status: response.status, body: await response.text() },
+          });
+        }
+
+        const body = (await response.json()) as AutocompleteResponse;
+        if (body.status === "ZERO_RESULTS") return [];
+        if (body.status !== "OK") {
+          throw new GooglePlacesError({
+            operation: "autocomplete",
+            placeId: query,
+            cause: body.error_message ?? body.status,
+          });
+        }
+
+        return (body.predictions ?? []).flatMap((prediction) =>
+          prediction.place_id && prediction.description
+            ? [{ placeId: prediction.place_id, description: prediction.description }]
+            : [],
+        );
+      },
+      catch: (cause) =>
+        cause instanceof GooglePlacesError
+          ? cause
+          : new GooglePlacesError({ operation: "autocomplete", placeId: query, cause }),
+    }),
   lookupPlaceById: (placeId) =>
     Effect.gen(function*() {
       const response = yield* Effect.tryPromise({

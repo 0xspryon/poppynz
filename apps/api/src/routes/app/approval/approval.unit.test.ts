@@ -125,10 +125,14 @@ const makeLayer = (options: {
       },
       findCurrentByUserId: (userId) =>
         Effect.fail(new DBNotFoundError({ entity: "approval", value: userId })),
+      listByUserId: () => Effect.succeed([]),
     }),
     makeApprovalRequestRepoTest({
       createSubmitted: (userId) => Effect.succeed(makeApprovalRequest({ userId })),
       list: () => Effect.succeed([]),
+      listWithApplicant: () => Effect.succeed([]),
+      countByStatus: () => Effect.succeed({ submitted: 0, approved: 0, rejected: 0 }),
+      listByUserId: () => Effect.succeed([]),
       findById: (id) => {
         if (options.approvalRequestError) return Effect.fail(options.approvalRequestError);
         return id === "request-1"

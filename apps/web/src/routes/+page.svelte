@@ -5,12 +5,14 @@
 	import { fetchSession, getSession } from '$lib/api/profile';
 
 	// Until there's a public landing page the root only routes: signed-in
-	// admins (e.g. arriving from a magic-link callback) go to the admin area,
-	// everyone else enters the auth flow.
+	// admins and providers go to their consoles, everyone else enters the
+	// auth flow.
 	onMount(async () => {
 		const session = getSession() ?? (await fetchSession());
 		if (session?.role === 'admin') {
 			await goto(resolve('/admin'), { replaceState: true });
+		} else if (session?.role === 'service-provider') {
+			await goto(resolve('/service-provider/dashboard'), { replaceState: true });
 		} else {
 			await goto(resolve('/auth/sign-up'), { replaceState: true });
 		}

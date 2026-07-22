@@ -10,6 +10,9 @@ export type ProviderSearchDocument = {
   firstName: string | null;
   lastName: string | null;
   shortBio: string | null;
+  // Raw rustfs file key of the profile picture — never expose it directly;
+  // the API swaps it for a presigned URL at response time.
+  image?: string;
   city: string;
   stateProvince: string;
   country: string | null;
@@ -98,6 +101,7 @@ export const buildProviderSearchDocument = (candidate: ProviderSearchCandidate):
     firstName: profile.firstName,
     lastName: profile.lastName,
     shortBio: profile.shortBio,
+    ...(profile.image ? { image: profile.image } : {}),
     city: profile.city,
     stateProvince: profile.stateProvince,
     country: profile.country,
@@ -126,6 +130,7 @@ const collectionSchema = (name: string) => ({
     { name: "firstName", type: "string" as const, optional: true },
     { name: "lastName", type: "string" as const, optional: true },
     { name: "shortBio", type: "string" as const, optional: true },
+    { name: "image", type: "string" as const, optional: true, index: false },
     { name: "city", type: "string" as const, facet: true },
     { name: "stateProvince", type: "string" as const, facet: true },
     { name: "country", type: "string" as const, facet: true, optional: true },

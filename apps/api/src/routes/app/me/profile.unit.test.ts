@@ -19,8 +19,9 @@ import {
   type UserProfileUpdate,
 } from "@repo/db";
 import { makeGooglePlacesTest, type GooglePlaceLocation } from "@repo/google";
+import { makeObjectStorageTest, ObjectStorageError } from "@repo/objs";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { UserAndSession } from "@/api/lib/effect-auth";
 import { getProfileProgram, ProfileNotFoundError, ProfileRepoError, updateProfileLocationProgram, updateProfileProgram } from "./profile.handler";
 
@@ -59,6 +60,7 @@ const profile = (overrides: Partial<SafeUserProfile> = {}): SafeUserProfile => (
   userId: "user-1",
   email: "provider@example.com",
   role: "service-provider",
+  image: null,
   language: "en",
   firstName: "Provider",
   lastName: "User",
@@ -174,6 +176,7 @@ const makeLayer = (options: {
   onUpdate?: (input: UserProfileUpdate) => void;
   onLocationUpdate?: (input: UserProfileLocationUpdate) => void;
   googleLocation?: GooglePlaceLocation;
+  imageUrlError?: ObjectStorageError;
 } = {}) => {
   let currentProfile = options.profile === undefined ? profile() : options.profile;
   const documentTypes = options.documentTypes ?? [documentType(), documentType({ id: "optional-doc", name: "Driving License", isOptional: true })];
@@ -241,10 +244,55 @@ const makeLayer = (options: {
       lookupPlaceById: () => Effect.succeed(options.googleLocation ?? googleLocation()),
       autocompletePlaces: () => Effect.succeed([]),
     }),
+    makeObjectStorageTest({
+      ensureBucketExists: () => Effect.void,
+      ensurePublicReadBucket: () => Effect.void,
+      createPresignedPutUrl: () => Effect.fail(new ObjectStorageError({ operation: "presignPutObject", bucket: "unused", cause: "not used" })),
+      createPresignedGetUrl: (input) => options.imageUrlError
+        ? Effect.fail(options.imageUrlError)
+        : Effect.succeed({ url: `https://files.example.com/${input.bucket}/${input.key}?sig=test`, expiresAt: new Date("2026-06-12T00:05:00.000Z") }),
+    }),
   );
 };
 
 describe("profile programs", () => {
+  beforeEach(() => {
+    process.env.OBJS_KYC_BUCKET = "kyc-documents";
+    process.env.OBJS_PUBLIC_BUCKET = "public-assets";
+  });
+
+  it("replaces the stored image key with a presigned URL", async () => {
+    const result = await Effect.runPromise(
+      getProfileProgram(userAndSession).pipe(
+        Effect.provide(makeLayer({ profile: profile({ image: "users/user-1/public/profile-pictures/pic.png" }) })),
+      ),
+    );
+
+    expect(result.image).toBe(
+      "https://files.example.com/public-assets/users/user-1/public/profile-pictures/pic.png?sig=test",
+    );
+  });
+
+  it("returns a null image when no profile picture is stored", async () => {
+    const result = await Effect.runPromise(getProfileProgram(userAndSession).pipe(Effect.provide(makeLayer())));
+
+    expect(result.image).toBeNull();
+  });
+
+  it("translates image presign failures to ProfileImageUrlError", async () => {
+    const exit = await Effect.runPromise(
+      getProfileProgram(userAndSession).pipe(
+        Effect.provide(makeLayer({
+          profile: profile({ image: "users/user-1/public/profile-pictures/pic.png" }),
+          imageUrlError: new ObjectStorageError({ operation: "presignGetObject", bucket: "public-assets", cause: "down" }),
+        })),
+        Effect.exit,
+      ),
+    );
+
+    expect(getFailure(exit)._tag).toBe("ProfileImageUrlError");
+  });
+
   it("returns service-provider onboarding state", async () => {
     const result = await Effect.runPromise(getProfileProgram(userAndSession).pipe(Effect.provide(makeLayer())));
 

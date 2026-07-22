@@ -3,6 +3,7 @@ import { DBNotFoundError, ProviderSearchRepo, UserProfileRepo } from "@repo/db";
 import { Cause, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
+import { presignProfileImageUrl } from "@/api/lib/profile-image";
 import { ProviderSearchRequestValidationError, validateProviderSearchQuery } from "./providers.validator";
 
 const publicProvider = (provider: {
@@ -18,10 +19,11 @@ const publicProvider = (provider: {
   maxHourlyRateCents: number;
   currencies: Array<string>;
   distanceKm?: number;
-}) => ({
+}, imageUrl: string | null) => ({
   userId: provider.userId,
   displayName: provider.displayName,
   shortBio: provider.shortBio,
+  image: imageUrl,
   location: {
     city: provider.city,
     stateProvince: provider.stateProvince,
@@ -35,7 +37,7 @@ const publicProvider = (provider: {
   distanceKm: provider.distanceKm,
 });
 
-const publicProviderDetail = (candidate: Parameters<typeof buildProviderSearchDocument>[0]) => {
+const publicProviderDetail = (candidate: Parameters<typeof buildProviderSearchDocument>[0], imageUrl: string | null) => {
   const document = buildProviderSearchDocument(candidate);
   if (!document) return null;
 
@@ -43,6 +45,7 @@ const publicProviderDetail = (candidate: Parameters<typeof buildProviderSearchDo
     userId: document.userId,
     displayName: document.displayName,
     shortBio: document.shortBio,
+    image: imageUrl,
     location: {
       city: document.city,
       stateProvince: document.stateProvince,
@@ -95,7 +98,16 @@ export const searchProvidersRouteProgram = (headers: Headers, query: Record<stri
       sort: input.sort,
     });
 
-    return { providers: result.providers.map(publicProvider), pagination: result.pagination };
+    const providers = yield* Effect.forEach(
+      result.providers,
+      (provider) =>
+        presignProfileImageUrl(provider.image).pipe(
+          Effect.map((imageUrl) => publicProvider(provider, imageUrl)),
+        ),
+      { concurrency: 5 },
+    );
+
+    return { providers, pagination: result.pagination };
   });
 
 export const getProviderRouteProgram = (headers: Headers, userId: string) =>
@@ -104,7 +116,8 @@ export const getProviderRouteProgram = (headers: Headers, userId: string) =>
     yield* requirePermissions(headers, { providerSearch: ["read"] })(authenticated);
     const repo = yield* ProviderSearchRepo;
     const candidate = yield* repo.findCandidateByUserId(userId);
-    const provider = publicProviderDetail(candidate);
+    const imageUrl = yield* presignProfileImageUrl(candidate.profile.image);
+    const provider = publicProviderDetail(candidate, imageUrl);
 
     if (!provider) return yield* Effect.fail(new DBNotFoundError({ entity: "provider", value: userId }));
     return provider;
@@ -125,6 +138,8 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: ProvidersRouteError) =>
       return c.json({ error: { code: "INVALID_PROVIDER_SEARCH" as const, message: error.message } }, 400);
     case "ProviderSearchIndexError":
       return c.json({ error: { code: "PROVIDER_SEARCH_FAILED" as const, message: "Unable to search providers." } }, 502);
+    case "ProfileImageUrlError":
+      return c.json({ error: { code: "PROVIDER_IMAGE_URL_FAILED" as const, message: "Unable to create a profile image link." } }, 502);
     case "DBNotFoundError":
       return c.json({ error: { code: "PROVIDER_NOT_FOUND" as const, message: "Provider was not found." } }, 404);
     case "SqlError":

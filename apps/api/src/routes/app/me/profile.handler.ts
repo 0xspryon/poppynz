@@ -33,6 +33,7 @@ import {
   parseJsonBody,
   requestValidationErrorToResponse,
 } from "@/api/lib/schema-validator";
+import { presignProfileImageUrl } from "@/api/lib/profile-image";
 import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
 
 export class ProfileRepoError extends Data.TaggedError("ProfileRepoError")<{
@@ -77,6 +78,7 @@ const toServiceOfferedResponse = (service: ServiceOffered) => ({
 
 const toProfileResponse = (
   profile: SafeUserProfile,
+  imageUrl: string | null,
   approval: ReturnType<typeof toApprovalSummary>,
   latestApprovalRequest: ReturnType<typeof toApprovalRequestSummary>,
   kycDocuments: Array<KycDocument>,
@@ -87,6 +89,7 @@ const toProfileResponse = (
   userId: profile.userId,
   email: profile.email,
   role: profile.role,
+  image: imageUrl,
   approval,
   latestApprovalRequest,
   language: profile.language,
@@ -163,9 +166,11 @@ const buildProfileResponse = (profile: SafeUserProfile) =>
     const optionalDocumentTypes = documentTypes
       .filter((type) => type.appliesToRole === "service-provider" && type.isOptional)
       .map((type) => ({ id: type.id, name: type.name }));
+    const imageUrl = yield* presignProfileImageUrl(profile.image);
 
     return toProfileResponse(
       profile,
+      imageUrl,
       toApprovalSummary(approval),
       toApprovalRequestSummary(latestApprovalRequest),
       kycDocuments,
@@ -260,6 +265,11 @@ const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) =>
         },
         404,
       );
+    case "ProfileImageUrlError":
+      return c.json(
+        { error: { code: "PROFILE_IMAGE_URL_FAILED" as const, message: "Unable to create a profile image link." } },
+        502,
+      );
     case "GooglePlaceNotFoundError":
       return c.json(
         { error: { code: "GOOGLE_PLACE_NOT_FOUND" as const, message: "Google place was not found." } },
@@ -347,6 +357,7 @@ const profileRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileRout
       return requestValidationErrorToResponse(c, error);
     case "ProfileRepoError":
     case "ProfileNotFoundError":
+    case "ProfileImageUrlError":
       return profileErrorToResponse(c, error);
     case "GooglePlaceNotFoundError":
       return c.json(

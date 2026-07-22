@@ -1,7 +1,8 @@
 import { DBNotFoundError, makeSessionRepoTest, makeUserProfileRepoTest, makeUserRepoTest, type Session, type User } from "@repo/db";
+import { makeObjectStorageTest, ObjectStorageError } from "@repo/objs";
 import { makeProviderSearchIndexTest, type ProviderSearchDocument } from "@repo/typesense";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { makeAuthServiceTest } from "@/api/lib/effect-auth";
 import { searchProvidersRouteProgram } from "./providers.handler";
 
@@ -36,13 +37,14 @@ const session = (): Session => ({
   activeOrganizationId: null,
 });
 
-const providerDocument = (): ProviderSearchDocument => ({
+const providerDocument = (overrides: Partial<ProviderSearchDocument> = {}): ProviderSearchDocument => ({
   id: "provider-1",
   userId: "provider-1",
   displayName: "Provider User",
   firstName: "Provider",
   lastName: "User",
   shortBio: "Experienced caregiver",
+  image: "users/provider-1/public/profile-pictures/pic.png",
   city: "Toronto",
   stateProvince: "ON",
   country: "CA",
@@ -55,6 +57,7 @@ const providerDocument = (): ProviderSearchDocument => ({
   currencies: ["CAD"],
   approvalExpiresAt: new Date("2027-01-01T00:00:00.000Z").getTime(),
   updatedAt: new Date("2026-06-12T00:00:00.000Z").getTime(),
+  ...overrides,
 });
 
 const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
@@ -64,11 +67,25 @@ const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
   return failure.value;
 };
 
-const makeLayer = (options: { hasPermission?: boolean; hasLocation?: boolean } = {}) => {
+const makeLayer = (options: {
+  hasPermission?: boolean;
+  hasLocation?: boolean;
+  documents?: Array<ProviderSearchDocument>;
+  imageUrlError?: ObjectStorageError;
+} = {}) => {
   const currentUser = user();
   const currentSession = session();
+  const documents = options.documents ?? [providerDocument()];
 
   return Layer.mergeAll(
+    makeObjectStorageTest({
+      ensureBucketExists: () => Effect.void,
+      ensurePublicReadBucket: () => Effect.void,
+      createPresignedPutUrl: () => Effect.fail(new ObjectStorageError({ operation: "presignPutObject", bucket: "unused", cause: "not used" })),
+      createPresignedGetUrl: (input) => options.imageUrlError
+        ? Effect.fail(options.imageUrlError)
+        : Effect.succeed({ url: `https://files.example.com/${input.bucket}/${input.key}?sig=test`, expiresAt: new Date("2026-06-12T00:05:00.000Z") }),
+    }),
     makeAuthServiceTest({
       getSession: () => Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
       userHasPermission: () => Effect.succeed(options.hasPermission ?? true),
@@ -109,13 +126,18 @@ const makeLayer = (options: { hasPermission?: boolean; hasLocation?: boolean } =
       ensureCollection: () => Effect.void,
       reconcileProvider: () => Effect.void,
       reindexAllProviders: () => Effect.succeed({ indexed: 0, deletedStale: 0 }),
-      getProvider: () => Effect.succeed(providerDocument()),
-      searchProviders: () => Effect.succeed({ providers: [providerDocument()], pagination: { page: 1, perPage: 20, total: 1 } }),
+      getProvider: () => Effect.succeed(documents[0] ?? providerDocument()),
+      searchProviders: () => Effect.succeed({ providers: documents, pagination: { page: 1, perPage: 20, total: documents.length } }),
     }),
   );
 };
 
 describe("provider search route program", () => {
+  beforeEach(() => {
+    process.env.OBJS_KYC_BUCKET = "kyc-documents";
+    process.env.OBJS_PUBLIC_BUCKET = "public-assets";
+  });
+
   it("returns public provider search results", async () => {
     const result = await Effect.runPromise(searchProvidersRouteProgram(new Headers(), { q: "childcare" }).pipe(Effect.provide(makeLayer())));
 
@@ -126,6 +148,35 @@ describe("provider search route program", () => {
       }),
     ]);
     expect(result.providers[0]).not.toHaveProperty("location.location");
+  });
+
+  it("replaces the stored image key with a presigned URL", async () => {
+    const result = await Effect.runPromise(searchProvidersRouteProgram(new Headers(), {}).pipe(Effect.provide(makeLayer())));
+
+    expect(result.providers[0]?.image).toBe(
+      "https://files.example.com/public-assets/users/provider-1/public/profile-pictures/pic.png?sig=test",
+    );
+  });
+
+  it("returns a null image for providers without a profile picture", async () => {
+    const result = await Effect.runPromise(
+      searchProvidersRouteProgram(new Headers(), {}).pipe(
+        Effect.provide(makeLayer({ documents: [providerDocument({ image: undefined })] })),
+      ),
+    );
+
+    expect(result.providers[0]?.image).toBeNull();
+  });
+
+  it("translates image presign failures to ProfileImageUrlError", async () => {
+    const exit = await Effect.runPromise(
+      searchProvidersRouteProgram(new Headers(), {}).pipe(
+        Effect.provide(makeLayer({ imageUrlError: new ObjectStorageError({ operation: "presignGetObject", bucket: "public-assets", cause: "down" }) })),
+        Effect.exit,
+      ),
+    );
+
+    expect(getFailure(exit)._tag).toBe("ProfileImageUrlError");
   });
 
   it("rejects lat/lng query parameters", async () => {

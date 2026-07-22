@@ -8,6 +8,7 @@ import { approval, serviceOffered, user, userProfile } from "../schema";
 export type ProviderSearchProfile = InferSelectModel<typeof userProfile> & {
   email: string;
   role: string | null;
+  image: string | null;
 };
 
 export type ProviderSearchApproval = InferSelectModel<typeof approval>;
@@ -34,7 +35,7 @@ export const ProviderSearchRepoLive = Layer.effect(
 
     const findProfile = (userId: string) =>
       db
-        .select({ profile: userProfile, email: user.email, role: user.role })
+        .select({ profile: userProfile, email: user.email, role: user.role, image: user.image })
         .from(userProfile)
         .innerJoin(user, eq(userProfile.userId, user.id))
         .where(eq(userProfile.userId, userId))
@@ -42,7 +43,7 @@ export const ProviderSearchRepoLive = Layer.effect(
         .pipe(
           Effect.flatMap((rows) => {
             const row = rows[0];
-            if (row) return Effect.succeed({ ...row.profile, email: row.email, role: row.role });
+            if (row) return Effect.succeed({ ...row.profile, email: row.email, role: row.role, image: row.image });
             return Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId }));
           }),
         );

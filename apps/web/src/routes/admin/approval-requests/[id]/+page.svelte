@@ -6,6 +6,7 @@
 		getApprovalRequest,
 		getKycDocumentFileUrl,
 		rejectApprovalRequest,
+		revokeApproval,
 		updateKycDocumentExpiry,
 		type ApprovalApproveError,
 		type ApprovalRequestDetail,
@@ -33,6 +34,12 @@
 	let rejectReason = $state('');
 	let rejecting = $state(false);
 	let rejectError = $state('');
+
+	// Revoke dialog (live approval only)
+	let revokeOpen = $state(false);
+	let revokeReason = $state('');
+	let revoking = $state(false);
+	let revokeError = $state('');
 
 	// Fullscreen document viewer
 	let viewer = $state<KycFileView | null>(null);
@@ -192,6 +199,27 @@
 		rejecting = false;
 	}
 
+	async function confirmRevoke(event: SubmitEvent) {
+		event.preventDefault();
+		if (!detail?.currentApproval || revokeReason.trim().length === 0 || revoking) return;
+		revoking = true;
+		revokeError = '';
+		const result = await revokeApproval(detail.currentApproval.id, revokeReason.trim());
+		if (result.ok) {
+			revokeOpen = false;
+			revokeReason = '';
+			await load();
+		} else {
+			revokeError =
+				result.error.code === 'INVALID_APPROVAL_INPUT'
+					? result.error.message
+					: result.error.code === 'APPROVAL_NOT_FOUND'
+						? 'No active approval was found — it may already be revoked or expired.'
+						: RETRY_MESSAGE;
+		}
+		revoking = false;
+	}
+
 	async function openViewer(documentId: string) {
 		viewerLoading = true;
 		viewerError = '';
@@ -297,6 +325,29 @@
 				</div>
 			{/if}
 		</div>
+
+		{#if detail.currentApproval}
+			<div
+				class="mt-4 flex flex-wrap items-center gap-3 rounded-[10px] border border-success-content
+					bg-success-content/40 px-4 py-3"
+			>
+				<i class="las la-user-shield text-lg text-success" aria-hidden="true"></i>
+				<span class="flex-1 text-[13px] font-medium text-success">
+					Currently approved — verified until {formatDate(detail.currentApproval.expiresAt)}
+					(granted {formatDate(detail.currentApproval.grantedAt)}).
+				</span>
+				<button
+					type="button"
+					class="btn btn-outline btn-sm btn-error"
+					onclick={() => {
+						revokeError = '';
+						revokeOpen = true;
+					}}
+				>
+					Revoke approval…
+				</button>
+			</div>
+		{/if}
 
 		{#if detail.approvalRequest.status === 'rejected' && detail.approvalRequest.reason}
 			<p
@@ -615,6 +666,74 @@
 			class="modal-backdrop"
 			aria-label="Close"
 			onclick={() => (rejectOpen = false)}
+		></button>
+	</div>
+{/if}
+
+<!-- Revoke confirm dialog: immediate loss of verified status, reason required -->
+{#if revokeOpen && detail?.currentApproval}
+	<div class="modal modal-open" role="dialog" aria-label="Revoke approval">
+		<form class="modal-box" onsubmit={confirmRevoke}>
+			<h2 class="text-lg font-bold">Revoke {applicantName}'s approval</h2>
+			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
+				This takes effect immediately: the provider loses verified status and is removed from
+				family search. The reason is <b>shown to the provider verbatim</b>.
+			</p>
+
+			<fieldset class="fieldset mt-4">
+				<legend class="fieldset-legend">Reason · required</legend>
+				<textarea
+					class="textarea min-h-24 w-full"
+					maxlength="500"
+					bind:value={revokeReason}
+					placeholder="e.g. Your police clearance was reported invalid. Please upload a valid one and resubmit."
+				></textarea>
+				<div class="flex justify-between text-xs text-outline">
+					<span>Say what's wrong and how they can regain approval.</span>
+					<span>{revokeReason.length} / 500</span>
+				</div>
+			</fieldset>
+
+			<div
+				class="mt-3 flex items-center gap-2.5 rounded-md border border-info-content bg-info-content/40
+					px-3.5 py-2.5"
+			>
+				<i class="las la-info-circle text-base text-info" aria-hidden="true"></i>
+				<span class="text-[12.5px] text-info">
+					Revocation isn't a ban — the provider can fix the issue, resubmit, and be approved again.
+				</span>
+			</div>
+
+			{#if revokeError}
+				<p role="alert" class="mt-3 text-sm font-medium text-error">{revokeError}</p>
+			{/if}
+
+			<div class="modal-action">
+				<button
+					type="button"
+					class="btn btn-ghost"
+					onclick={() => (revokeOpen = false)}
+					disabled={revoking}
+				>
+					Cancel
+				</button>
+				<button
+					type="submit"
+					class="btn btn-error text-error-content"
+					disabled={revokeReason.trim().length === 0 || revoking}
+				>
+					{#if revoking}
+						<span class="loading loading-spinner loading-sm"></span>
+					{/if}
+					Revoke approval
+				</button>
+			</div>
+		</form>
+		<button
+			type="button"
+			class="modal-backdrop"
+			aria-label="Close"
+			onclick={() => (revokeOpen = false)}
 		></button>
 	</div>
 {/if}

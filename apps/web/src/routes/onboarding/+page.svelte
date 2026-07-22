@@ -12,6 +12,8 @@
 			await goto(resolve('/service-provider/dashboard'), { replaceState: true });
 		} else if (session?.role === 'admin') {
 			await goto(resolve('/admin'), { replaceState: true });
+		} else if (session?.role === 'family') {
+			await goto(resolve('/family/profile'), { replaceState: true });
 		} else {
 			await goto(resolve('/'), { replaceState: true });
 		}

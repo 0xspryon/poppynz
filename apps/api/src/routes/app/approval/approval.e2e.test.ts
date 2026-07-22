@@ -133,6 +133,13 @@ const makeInMemoryApprovalRepo = (approvals: Array<Approval>) => ({
     return Effect.succeed(approval);
   },
   listByUserId: (userId: string) => Effect.succeed(approvals.filter((approval) => approval.userId === userId)),
+  revoke: (id: string, reason: string) => {
+    const target = approvals.find((approval) => approval.id === id && approval.status === "approved");
+    if (!target) return Effect.fail(new DBNotFoundError({ entity: "approval", value: id }));
+    target.status = "rejected";
+    target.reason = reason;
+    return Effect.succeed(target);
+  },
   findCurrentByUserId: (userId: string) => {
     const approval = approvals.find((approval) => approval.userId === userId);
     return approval ? Effect.succeed(approval) : Effect.fail(new DBNotFoundError({ entity: "approval", value: userId }));

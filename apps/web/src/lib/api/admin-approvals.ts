@@ -6,6 +6,7 @@ const listEndpoint = apiClient.admin['approval-requests'].$get;
 const detailEndpoint = apiClient.admin['approval-requests'][':id'].$get;
 const rejectEndpoint = apiClient.admin['approval-requests'][':id'].reject.$post;
 const approveEndpoint = apiClient.approvals.$post;
+const revokeEndpoint = apiClient.approvals[':id'].revoke.$post;
 const fileUrlEndpoint = apiClient.admin['kyc-docs'][':id']['file-url'].$get;
 const expiryEndpoint = apiClient.admin['kyc-docs'][':id'].$patch;
 
@@ -21,6 +22,7 @@ export type ApprovalQueueError = ErrorsOf<typeof listEndpoint>;
 export type ApprovalDetailError = ErrorsOf<typeof detailEndpoint>;
 export type ApprovalRejectError = ErrorsOf<typeof rejectEndpoint>;
 export type ApprovalApproveError = ErrorsOf<typeof approveEndpoint>;
+export type ApprovalRevokeError = ErrorsOf<typeof revokeEndpoint>;
 export type KycFileUrlError = ErrorsOf<typeof fileUrlEndpoint>;
 export type KycExpiryUpdateError = ErrorsOf<typeof expiryEndpoint>;
 
@@ -46,6 +48,16 @@ export async function approveRequest(input: {
 	expiresAt: string;
 }) {
 	return call(approveEndpoint({ json: input }));
+}
+
+/** Revoke a live approval before its expiry — the reason is shown to the provider. */
+export async function revokeApproval(approvalId: string, reason: string) {
+	// The API reads the body via parseJsonBody (no hono validator), so the
+	// RPC input type omits `json` — the client still serializes it at runtime.
+	const args = { param: { id: approvalId }, json: { reason } } as unknown as Parameters<
+		typeof revokeEndpoint
+	>[0];
+	return call(revokeEndpoint(args));
 }
 
 export async function getKycDocumentFileUrl(documentId: string) {

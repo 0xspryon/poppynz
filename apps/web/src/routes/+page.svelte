@@ -13,6 +13,8 @@
 			await goto(resolve('/admin'), { replaceState: true });
 		} else if (session?.role === 'service-provider') {
 			await goto(resolve('/service-provider/dashboard'), { replaceState: true });
+		} else if (session?.role === 'family') {
+			await goto(resolve('/family/profile'), { replaceState: true });
 		} else {
 			await goto(resolve('/auth/sign-up'), { replaceState: true });
 		}

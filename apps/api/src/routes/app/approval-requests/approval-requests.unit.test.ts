@@ -16,6 +16,7 @@ import {
   type Session,
   type User,
   type UserProfile,
+  EmptyApprovalRepoTest,
 } from "@repo/db";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
@@ -154,6 +155,7 @@ const makeLayer = (options: {
   const currentSession = session({ userId: currentUser.id });
 
   return Layer.mergeAll(
+    EmptyApprovalRepoTest,
     makeApprovalRequestRepoTest({
       createSubmitted: (userId) => {
         options.onCreateSubmitted?.(userId);

@@ -225,6 +225,7 @@ const makeApp = (options: {
         create: (input: ApprovalCreateInput) => Effect.succeed(makeApproval(input)),
         findCurrentByUserId: (userId) => approval?.userId === userId ? Effect.succeed(approval) : Effect.fail(new DBNotFoundError({ entity: "approval", value: userId })),
         listByUserId: (userId) => Effect.succeed(approval?.userId === userId ? [approval] : []),
+        revoke: (id) => Effect.fail(new DBNotFoundError({ entity: "approval", value: id })),
       }),
       makeApprovalRequestRepoTest({
         createSubmitted: (userId) => Effect.succeed(makeApprovalRequest({ userId })),

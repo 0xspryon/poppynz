@@ -145,8 +145,12 @@ export const getOnboardingHistoryProgram = (userAndSession: UserAndSession) =>
         id: approval.id,
         approvalRequestId: approval.approvalRequestId,
         status: approval.status,
+        reason: approval.reason,
         grantedAt: approval.createdAt.toISOString(),
         expiresAt: approval.expiresAt.toISOString(),
+        // A rejected status on an approval means it was revoked; updatedAt is
+        // when that happened.
+        revokedAt: approval.status === "rejected" ? approval.updatedAt.toISOString() : null,
       })),
     };
   });

@@ -11,7 +11,7 @@ export interface PendingAuth {
   sentAt: number;
 }
 
-export type AuthDestination = '/' | '/admin' | '/auth/expired' | '/service-provider/dashboard';
+export type AuthDestination = '/' | '/admin' | '/auth/expired' | '/service-provider/dashboard' | '/family/profile';
 
 export interface VerifyResult {
   status: 'ok' | 'expired';
@@ -110,6 +110,9 @@ export async function verifyMagicLink(token: string): Promise<VerifyResult> {
   if (session?.role === 'admin') return { status: 'ok', destination: '/admin' };
   if (session?.role === 'service-provider') {
     return { status: 'ok', destination: '/service-provider/dashboard' };
+  }
+  if (session?.role === 'family') {
+    return { status: 'ok', destination: '/family/profile' };
   }
   return { status: 'ok', destination: '/' };
 }

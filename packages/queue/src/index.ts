@@ -15,7 +15,10 @@ export const providerSearchJobNames = {
   reindexAllProviders: "reindex-all-providers",
 } as const;
 
-export type ReconcileProviderJob = { outboxId: string; userId: string };
+// outboxId is null for delayed expiry jobs — the worker creates the outbox
+// row when the job actually fires (an audit row created months ahead of time
+// would just sit unresolved).
+export type ReconcileProviderJob = { outboxId: string | null; userId: string };
 export type ReindexAllProvidersJob = Record<string, never>;
 export type ProviderSearchJobData = ReconcileProviderJob | ReindexAllProvidersJob;
 
@@ -66,7 +69,7 @@ export class ProviderSearchQueue extends Context.Tag("@repo/queue/ProviderSearch
   ProviderSearchQueue,
   {
     enqueueReconcile: (input: ReconcileProviderJob) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
-    enqueueExpiryReconcile: (input: ReconcileProviderJob & { expiresAt: Date }) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
+    enqueueExpiryReconcile: (input: { userId: string; expiresAt: Date }) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
     enqueueReindex: () => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
   }
 >() { }
@@ -88,14 +91,14 @@ export const ProviderSearchQueueLive = Layer.effect(ProviderSearchQueue, redisCo
         },
         catch: (cause) => new ProviderSearchQueueError({ operation: "enqueueReconcile", cause }),
       }),
-    enqueueExpiryReconcile: (input: ReconcileProviderJob & { expiresAt: Date }) =>
+    enqueueExpiryReconcile: (input: { userId: string; expiresAt: Date }) =>
       Effect.tryPromise({
         try: async () => {
           const ONE_MINUTE_MILLIS = 1 * 60 * 1000;
           const delay = Math.max(ONE_MINUTE_MILLIS, input.expiresAt.getTime() - Date.now());
           const job = await queue.add(
             providerSearchJobNames.reconcileProvider,
-            { outboxId: input.outboxId, userId: input.userId },
+            { outboxId: null, userId: input.userId },
             {
               deduplication: {
                 id: providerSearchExpiryJobId(input.userId, input.expiresAt)

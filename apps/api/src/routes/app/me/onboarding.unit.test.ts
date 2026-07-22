@@ -191,6 +191,7 @@ const makeLayer = (options: {
           : Effect.fail(new DBNotFoundError({ entity: "approval", value: userId }));
       },
       listByUserId: (userId) => Effect.succeed(approvals.filter((entry) => entry.userId === userId)),
+      revoke: (id) => Effect.fail(new DBNotFoundError({ entity: "approval", value: id })),
     }),
     makeApprovalRequestRepoTest({
       createSubmitted: (userId) => Effect.succeed(approvalRequest({ userId })),
@@ -315,8 +316,10 @@ describe("getOnboardingHistoryProgram", () => {
       id: "approval-1",
       approvalRequestId: "request-1",
       status: "approved",
+      reason: null,
       grantedAt: "2026-07-06T00:00:00.000Z",
       expiresAt: "2027-07-06T00:00:00.000Z",
+      revokedAt: null,
     }]);
   });
 });

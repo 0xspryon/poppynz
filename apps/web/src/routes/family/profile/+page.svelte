@@ -7,6 +7,6 @@
 </svelte:head>
 
 <ProfileSettings
-	description="Contact details, location & bio — families see this first."
-	bioPlaceholder="Tell families about your experience and what you love helping with."
+	description="Contact details, location & bio — helpers near you are matched by your area."
+	bioPlaceholder="Tell helpers a bit about your family and what you're looking for."
 />

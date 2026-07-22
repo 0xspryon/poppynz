@@ -100,7 +100,17 @@
 				detail: `Reviewed by Poppynz admin · valid until ${formatDate(approval.expiresAt)}`,
 				dot: 'bg-success shadow-[0_0_0_4px] shadow-success-content'
 			});
-			if (new Date(approval.expiresAt).getTime() < now) {
+			if (approval.status === 'rejected' && approval.revokedAt) {
+				list.push({
+					key: `${approval.id}-revoked`,
+					at: approval.revokedAt,
+					title: 'Approval revoked',
+					chip: 'rejected',
+					chipLabel: 'Revoked',
+					reason: approval.reason ?? undefined,
+					dot: 'bg-error'
+				});
+			} else if (new Date(approval.expiresAt).getTime() < now) {
 				list.push({
 					key: `${approval.id}-expired`,
 					at: approval.expiresAt,
@@ -117,6 +127,13 @@
 
 	const approval = $derived(onboarding?.approval ?? null);
 	const latestRequest = $derived(onboarding?.latestApprovalRequest ?? null);
+	// Most recent approval was revoked and nothing newer is pending — show the
+	// revoked hero so the reason is front and center.
+	const revokedApproval = $derived.by(() => {
+		if (approval || latestRequest?.status === 'submitted') return null;
+		const latest = history?.approvals[0];
+		return latest?.status === 'rejected' ? latest : null;
+	});
 	const daysRemaining = $derived(
 		approval ? Math.max(0, Math.floor((new Date(approval.expiresAt).getTime() - Date.now()) / DAY_MS)) : 0
 	);
@@ -192,6 +209,47 @@
 						days. We'll email you.
 					</p>
 				</div>
+			</div>
+		{:else if revokedApproval}
+			<div class="mb-6 rounded-lg border border-error-content bg-base-100 px-6 py-5">
+				<div class="flex flex-wrap items-center gap-4">
+					<span
+						class="flex size-13 shrink-0 items-center justify-center rounded-full bg-error-content"
+					>
+						<i class="las la-user-slash text-2xl text-error" aria-hidden="true"></i>
+					</span>
+					<div class="min-w-0 flex-1">
+						<div class="flex flex-wrap items-center gap-2.5">
+							<span class="font-display text-lg font-bold text-base-content">
+								Approval revoked
+							</span>
+							<StatusChip status="rejected" label="Revoked" />
+						</div>
+						<p class="mt-0.5 text-[13px] text-base-content-muted">
+							Revocation isn't a ban — fix the issue below, then resubmit for review.
+						</p>
+					</div>
+					<button
+						type="button"
+						class="btn btn-primary"
+						disabled={submitting}
+						onclick={() => void submit()}
+					>
+						{#if submitting}
+							<span class="loading loading-spinner loading-sm"></span>
+						{/if}
+						Resubmit for review
+					</button>
+				</div>
+				{#if revokedApproval.reason}
+					<p
+						class="mt-4 max-w-2xl rounded-md border border-error-content bg-error-content/40 px-3.5
+							py-2.5 text-[12.5px] leading-relaxed text-error"
+					>
+						<b>Reason:</b>
+						{revokedApproval.reason}
+					</p>
+				{/if}
 			</div>
 		{:else if latestRequest?.status === 'rejected'}
 			<div

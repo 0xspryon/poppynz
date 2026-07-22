@@ -1,5 +1,5 @@
 import type { SqlError } from "@effect/sql/SqlError";
-import { ApprovalRequestRepo, DBNotFoundError, KycDocumentTypeRepo, UserProfileRepo } from "@repo/db";
+import { ApprovalRepo, ApprovalRequestRepo, DBNotFoundError, KycDocumentTypeRepo, UserProfileRepo } from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
@@ -88,13 +88,24 @@ export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string
     yield* requirePermissions(headers, { approvalRequest: ["read"] })(authenticated);
     const requestRepo = yield* ApprovalRequestRepo;
     const profileRepo = yield* UserProfileRepo;
+    const approvalRepo = yield* ApprovalRepo;
     const request = yield* requestRepo.findById(id);
-    const [profile, { checklist, services, warnings }] = yield* Effect.all([
+    const [profile, { checklist, services, warnings }, currentApproval] = yield* Effect.all([
       profileRepo.findByUserId(request.userId),
       loadProviderChecklist(request.userId),
+      approvalRepo.findCurrentByUserId(request.userId).pipe(
+        Effect.catchTag("DBNotFoundError", () => Effect.succeed(null)),
+      ),
     ], { concurrency: "unbounded" });
     return {
       approvalRequest: toRequestResponse(request),
+      currentApproval: currentApproval
+        ? {
+          id: currentApproval.id,
+          grantedAt: currentApproval.createdAt.toISOString(),
+          expiresAt: currentApproval.expiresAt.toISOString(),
+        }
+        : null,
       user: { id: profile.userId, email: profile.email, role: profile.role },
       profile,
       documents: checklist,

@@ -79,6 +79,26 @@ export const userProfile = appDb.table("user_profile", {
   longitude: doublePrecision("longitude"),
 });
 
+export const referral = appDb.table(
+  "referral",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    referrerUserId: text("referrer_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role").notNull(),
+    referredUserId: text("referred_user_id").references(() => user.id, { onDelete: "set null" }),
+    expiresAt: timestamp("expires_at").notNull(),
+    joinedAt: timestamp("joined_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("referral_referrer_user_id_idx").on(table.referrerUserId),
+    index("referral_email_idx").on(table.email),
+  ],
+);
+
 export const kycDocumentType = appDb.table(
   "kyc_document_types",
   {

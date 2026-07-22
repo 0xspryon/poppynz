@@ -10,7 +10,7 @@ export const signupValidationError = {
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const normalizedEmailSchema = Schema.Trim.pipe(
+export const normalizedEmailSchema = Schema.Trim.pipe(
   Schema.transform(Schema.String, {
     decode: (email) => punycode.toASCII(email.toLowerCase()),
     encode: (email) => email,

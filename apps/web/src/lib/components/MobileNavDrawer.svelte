@@ -11,9 +11,11 @@
 		items: Array<SidebarItem>;
 		email: string;
 		roleLabel: string;
+		/** Pink user-card treatment while an admin impersonates this user (12d). */
+		impersonated?: boolean;
 	}
 
-	let { open, onclose, kicker, items, email, roleLabel }: Props = $props();
+	let { open, onclose, kicker, items, email, roleLabel, impersonated }: Props = $props();
 
 	function onkeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') onclose();
@@ -34,7 +36,7 @@
 			class="absolute inset-y-0 left-0 flex w-[292px] flex-col gap-1 bg-secondary p-4 shadow-panel"
 			aria-label="Navigation"
 		>
-			<SidebarNav {kicker} {items} {email} {roleLabel} onnavigate={onclose} {onclose} />
+			<SidebarNav {kicker} {items} {email} {roleLabel} {impersonated} onnavigate={onclose} {onclose} />
 		</aside>
 	</div>
 {/if}

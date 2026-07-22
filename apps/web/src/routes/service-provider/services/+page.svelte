@@ -10,6 +10,7 @@
 		type ServiceOffered
 	} from '$lib/api/services-offered';
 	import { centsToDollars, dollarsToCents } from '$lib/money';
+	import BrowseServicesDialog from '$lib/components/BrowseServicesDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
@@ -27,9 +28,6 @@
 
 	// Browse-all modal
 	let browseOpen = $state(false);
-	let browseQuery = $state('');
-	let browseCategory = $state<string | null>(null);
-	const browseSelected = new SvelteSet<string>();
 	let browseBusy = $state(false);
 	let browseError = $state('');
 
@@ -60,18 +58,13 @@
 	});
 
 	const linkedCatalogueIds = $derived(
-		new Set(services.map((service) => service.catalogueServiceId).filter(Boolean))
-	);
-	const commonServices = $derived(catalogue.slice(0, COMMON_COUNT));
-	const categories = $derived([...new Set(catalogue.map((item) => item.category))]);
-	const browseItems = $derived(
-		catalogue.filter(
-			(item) =>
-				(browseCategory === null || item.category === browseCategory) &&
-				(browseQuery.trim() === '' ||
-					item.name.toLowerCase().includes(browseQuery.trim().toLowerCase()))
+		new Set(
+			services
+				.map((service) => service.catalogueServiceId)
+				.filter((id): id is string => id !== null)
 		)
 	);
+	const commonServices = $derived(catalogue.slice(0, COMMON_COUNT));
 
 	function floorFor(service: ServiceOffered): number | null {
 		if (!service.catalogueServiceId) return null;
@@ -140,20 +133,11 @@
 		}
 	}
 
-	function toggleBrowse(item: CatalogueItem) {
-		if (linkedCatalogueIds.has(item.id)) return;
-		if (browseSelected.has(item.id)) {
-			browseSelected.delete(item.id);
-		} else {
-			browseSelected.add(item.id);
-		}
-	}
-
-	async function addSelected() {
-		if (browseSelected.size === 0 || browseBusy) return;
+	async function addSelected(ids: Array<string>) {
+		if (ids.length === 0 || browseBusy) return;
 		browseBusy = true;
 		browseError = '';
-		for (const id of browseSelected) {
+		for (const id of ids) {
 			const item = catalogue.find((entry) => entry.id === id);
 			if (!item) continue;
 			const result = await createServiceOffered({
@@ -167,7 +151,6 @@
 				return;
 			}
 		}
-		browseSelected.clear();
 		browseOpen = false;
 		browseBusy = false;
 		await load();
@@ -364,126 +347,15 @@
 	{/if}
 </div>
 
-{#if browseOpen}
-	<div class="modal modal-open" role="dialog" aria-label="All services">
-		<div class="modal-box max-w-2xl p-0">
-			<div class="px-6 pt-5">
-				<div class="flex items-center justify-between">
-					<h2 class="text-lg font-bold">All services</h2>
-					<button
-						type="button"
-						class="btn btn-square btn-ghost btn-sm"
-						aria-label="Close"
-						onclick={() => (browseOpen = false)}
-					>
-						<i class="las la-times text-lg" aria-hidden="true"></i>
-					</button>
-				</div>
-				<p class="mt-0.5 mb-3.5 text-[13px] text-base-content-muted">
-					Select any service to add it — its base rate is the floor for your rate.
-				</p>
-				<label class="input mb-3 w-full">
-					<i class="las la-search text-base text-outline" aria-hidden="true"></i>
-					<input type="search" placeholder="Search services…" bind:value={browseQuery} />
-				</label>
-				<div class="mb-2 flex flex-wrap gap-1.5">
-					<button
-						type="button"
-						class="rounded-pill px-3.5 py-1.5 text-[11.5px] font-semibold
-							{browseCategory === null
-							? 'bg-secondary text-secondary-content'
-							: 'border border-outline-variant bg-base-100 text-base-content-muted'}"
-						onclick={() => (browseCategory = null)}
-					>
-						All · {catalogue.length}
-					</button>
-					{#each categories as category (category)}
-						<button
-							type="button"
-							class="rounded-pill px-3.5 py-1.5 text-[11.5px] font-medium
-								{browseCategory === category
-								? 'bg-secondary font-semibold text-secondary-content'
-								: 'border border-outline-variant bg-base-100 text-base-content-muted'}"
-							onclick={() => (browseCategory = browseCategory === category ? null : category)}
-						>
-							{category}
-						</button>
-					{/each}
-				</div>
-			</div>
-			<div class="max-h-80 overflow-y-auto border-t border-base-300">
-				{#each browseItems as item (item.id)}
-					{@const inList = linkedCatalogueIds.has(item.id)}
-					{@const selected = browseSelected.has(item.id)}
-					<button
-						type="button"
-						class="flex w-full items-center gap-3 border-b border-base-300 px-5 py-3 text-left
-							{selected ? 'bg-base-200' : ''}"
-						onclick={() => toggleBrowse(item)}
-						disabled={inList}
-					>
-						<span
-							class="flex size-5 shrink-0 items-center justify-center rounded-full
-								{inList
-								? 'bg-success'
-								: selected
-									? 'bg-primary'
-									: 'border-[1.5px] border-outline-variant'}"
-						>
-							{#if inList || selected}
-								<i class="las la-check text-xs text-primary-content" aria-hidden="true"></i>
-							{/if}
-						</span>
-						<span class="min-w-0 flex-1">
-							<span class="text-[13.5px] font-semibold {inList ? 'text-outline' : 'text-base-content'}">
-								{item.name}
-							</span>
-							{#if inList}
-								<span class="ml-2 text-[11px] text-success">already in your list</span>
-							{/if}
-						</span>
-						<span class="shrink-0 font-display text-[13.5px] font-bold text-secondary">
-							${centsToDollars(item.baseHourlyRateCents)}<span
-								class="text-[10.5px] font-normal text-outline">/hr</span
-							>
-						</span>
-					</button>
-				{:else}
-					<p class="px-5 py-6 text-sm text-base-content-muted">No services match your search.</p>
-				{/each}
-			</div>
-			<div class="flex items-center justify-between bg-base-200 px-6 py-4">
-				<span class="text-[13px] text-base-content-muted">{browseSelected.size} selected</span>
-				{#if browseError}
-					<p role="alert" class="text-xs font-medium text-error">{browseError}</p>
-				{/if}
-				<div class="flex gap-2.5">
-					<button type="button" class="btn btn-ghost" onclick={() => (browseOpen = false)}>
-						Cancel
-					</button>
-					<button
-						type="button"
-						class="btn btn-primary"
-						disabled={browseSelected.size === 0 || browseBusy}
-						onclick={() => void addSelected()}
-					>
-						{#if browseBusy}
-							<span class="loading loading-spinner loading-sm"></span>
-						{/if}
-						Add {browseSelected.size}
-						{browseSelected.size === 1 ? 'service' : 'services'}
-					</button>
-				</div>
-			</div>
-		</div>
-		<button
-			type="button"
-			class="modal-backdrop"
-			aria-label="Close"
-			onclick={() => (browseOpen = false)}
-		></button>
-	</div>
-{/if}
+<BrowseServicesDialog
+	open={browseOpen}
+	{catalogue}
+	linkedIds={linkedCatalogueIds}
+	busy={browseBusy}
+	error={browseError}
+	onadd={(ids) => void addSelected(ids)}
+	oncancel={() => (browseOpen = false)}
+/>
 
 <ConfirmDialog
 	open={deleting !== null}

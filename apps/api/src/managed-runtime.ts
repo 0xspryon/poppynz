@@ -9,6 +9,8 @@ import {
   SignupIntentRepoDefault,
   ProviderSearchOutboxRepoDefault,
   ProviderSearchRepoDefault,
+  ReferralRepoDefault,
+  UserDirectoryRepoDefault,
   UserProfileRepoDefault,
   UserRepoDefault,
 } from "@repo/db";
@@ -19,6 +21,7 @@ import { ProviderSearchIndexDefault } from "@repo/typesense";
 import { Layer, ManagedRuntime } from "effect";
 import type { AppRuntime } from "./app-env";
 import { AuthServiceLive } from "./lib/effect-auth";
+import { MailerLive } from "./lib/mailer";
 import { SigninServiceLive } from "./routes/app/auth/signin/signin.handler";
 import { SignupServiceLive } from "./routes/app/auth/signup/signup.handler";
 
@@ -35,7 +38,10 @@ export const AppLive = Layer.mergeAll(
   ServiceOfferedRepoDefault,
   ProviderSearchOutboxRepoDefault,
   ProviderSearchRepoDefault,
+  ReferralRepoDefault,
+  UserDirectoryRepoDefault,
   GooglePlacesLive,
+  MailerLive,
   ObjectStorageLive,
   ProviderSearchQueueLive,
   ProviderSearchIndexDefault,

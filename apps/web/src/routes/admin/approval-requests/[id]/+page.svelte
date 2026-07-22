@@ -7,16 +7,18 @@
 		getKycDocumentFileUrl,
 		rejectApprovalRequest,
 		revokeApproval,
-		updateKycDocumentExpiry,
 		type ApprovalApproveError,
 		type ApprovalRequestDetail,
 		type KycFileView
 	} from '$lib/api/admin-approvals';
 	import { centsToDollars } from '$lib/money';
+	import ApproveRequestDialog from '$lib/components/admin/ApproveRequestDialog.svelte';
+	import DocumentViewerDialog from '$lib/components/admin/DocumentViewerDialog.svelte';
+	import RejectRequestDialog from '$lib/components/admin/RejectRequestDialog.svelte';
+	import RevokeApprovalDialog from '$lib/components/admin/RevokeApprovalDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
-	const YEAR_MS = 365 * 24 * 60 * 60 * 1000;
 
 	let detail = $state<ApprovalRequestDetail | null>(null);
 	let loading = $state(true);
@@ -24,20 +26,16 @@
 
 	// Approve dialog
 	let approveOpen = $state(false);
-	let approvePreset = $state<'6m' | '1y' | '2y' | 'custom'>('1y');
-	let approveExpiry = $state('');
 	let approving = $state(false);
 	let approveError = $state('');
 
 	// Reject dialog
 	let rejectOpen = $state(false);
-	let rejectReason = $state('');
 	let rejecting = $state(false);
 	let rejectError = $state('');
 
 	// Revoke dialog (live approval only)
 	let revokeOpen = $state(false);
-	let revokeReason = $state('');
 	let revoking = $state(false);
 	let revokeError = $state('');
 
@@ -45,10 +43,6 @@
 	let viewer = $state<KycFileView | null>(null);
 	let viewerLoading = $state(false);
 	let viewerError = $state('');
-	let viewerExpiry = $state('');
-	let savingExpiry = $state(false);
-	let expiryError = $state('');
-	let expirySaved = $state(false);
 
 	const requestId = $derived(page.params.id ?? '');
 
@@ -125,26 +119,10 @@
 		});
 	}
 
-	function toDateInputValue(date: Date): string {
-		return date.toISOString().slice(0, 10);
-	}
-
-	function setPreset(preset: '6m' | '1y' | '2y' | 'custom') {
-		approvePreset = preset;
-		if (preset === '6m') approveExpiry = toDateInputValue(new Date(Date.now() + YEAR_MS / 2));
-		if (preset === '1y') approveExpiry = toDateInputValue(new Date(Date.now() + YEAR_MS));
-		if (preset === '2y') approveExpiry = toDateInputValue(new Date(Date.now() + 2 * YEAR_MS));
-	}
-
 	function openApprove() {
 		approveError = '';
-		setPreset('1y');
 		approveOpen = true;
 	}
-
-	const approveDateValid = $derived(
-		approveExpiry !== '' && new Date(approveExpiry).getTime() > Date.now()
-	);
 
 	function approveErrorText(error: ApprovalApproveError): string {
 		switch (error.code) {
@@ -160,13 +138,12 @@
 		}
 	}
 
-	async function confirmApprove(event: SubmitEvent) {
-		event.preventDefault();
-		if (!detail || !approveDateValid || approving) return;
+	async function confirmApprove(expiryDate: string) {
+		if (!detail || approving) return;
 		approving = true;
 		approveError = '';
 		// End of the chosen day so the approval spans the full expiry date.
-		const expires = new Date(approveExpiry);
+		const expires = new Date(expiryDate);
 		expires.setHours(23, 59, 59, 999);
 		const result = await approveRequest({
 			userId: detail.approvalRequest.userId,
@@ -182,15 +159,13 @@
 		approving = false;
 	}
 
-	async function confirmReject(event: SubmitEvent) {
-		event.preventDefault();
-		if (rejectReason.trim().length === 0 || rejecting) return;
+	async function confirmReject(reason: string) {
+		if (rejecting) return;
 		rejecting = true;
 		rejectError = '';
-		const result = await rejectApprovalRequest(requestId, rejectReason.trim());
+		const result = await rejectApprovalRequest(requestId, reason);
 		if (result.ok) {
 			rejectOpen = false;
-			rejectReason = '';
 			await load();
 		} else {
 			rejectError =
@@ -199,15 +174,13 @@
 		rejecting = false;
 	}
 
-	async function confirmRevoke(event: SubmitEvent) {
-		event.preventDefault();
-		if (!detail?.currentApproval || revokeReason.trim().length === 0 || revoking) return;
+	async function confirmRevoke(reason: string) {
+		if (!detail?.currentApproval || revoking) return;
 		revoking = true;
 		revokeError = '';
-		const result = await revokeApproval(detail.currentApproval.id, revokeReason.trim());
+		const result = await revokeApproval(detail.currentApproval.id, reason);
 		if (result.ok) {
 			revokeOpen = false;
-			revokeReason = '';
 			await load();
 		} else {
 			revokeError =
@@ -223,14 +196,9 @@
 	async function openViewer(documentId: string) {
 		viewerLoading = true;
 		viewerError = '';
-		expiryError = '';
-		expirySaved = false;
 		const result = await getKycDocumentFileUrl(documentId);
 		if (result.ok) {
 			viewer = result.data;
-			viewerExpiry = result.data.document.expiryDate
-				? result.data.document.expiryDate.slice(0, 10)
-				: '';
 		} else {
 			viewerError =
 				result.error.code === 'KYC_DOCUMENT_FILE_MISSING'
@@ -242,28 +210,6 @@
 
 	function closeViewer() {
 		viewer = null;
-	}
-
-	const viewerIsPdf = $derived(
-		(viewer?.document.filename ?? '').toLowerCase().endsWith('.pdf')
-	);
-
-	async function saveExpiry(event: SubmitEvent) {
-		event.preventDefault();
-		if (!viewer || savingExpiry) return;
-		savingExpiry = true;
-		expiryError = '';
-		expirySaved = false;
-		const iso = viewerExpiry ? new Date(viewerExpiry).toISOString() : null;
-		const result = await updateKycDocumentExpiry(viewer.document.id, iso);
-		if (result.ok) {
-			expirySaved = true;
-			await load();
-		} else {
-			expiryError =
-				result.error.code === 'INVALID_KYC_DOCUMENT' ? result.error.message : RETRY_MESSAGE;
-		}
-		savingExpiry = false;
 	}
 
 	function docChip(status: string): ChipStatus {
@@ -518,325 +464,37 @@
 	{/if}
 </div>
 
-<!-- Approve dialog (8c): explicit expiry required -->
-{#if approveOpen && detail}
-	<div class="modal modal-open" role="dialog" aria-label="Approve application">
-		<form class="modal-box" onsubmit={confirmApprove}>
-			<h2 class="text-lg font-bold">Approve {applicantName}</h2>
-			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				Approvals expire. Choose how long this approval is valid — you must set an explicit date.
-			</p>
+<ApproveRequestDialog
+	open={approveOpen && detail !== null}
+	{applicantName}
+	{warningCount}
+	{warningText}
+	busy={approving}
+	error={approveError}
+	onconfirm={(expiryDate) => void confirmApprove(expiryDate)}
+	oncancel={() => (approveOpen = false)}
+/>
 
-			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">Valid for</legend>
-				<div class="flex gap-2">
-					{#each [{ key: '6m', label: '6 months' }, { key: '1y', label: '1 year' }, { key: '2y', label: '2 years' }, { key: 'custom', label: 'Custom' }] as preset (preset.key)}
-						<button
-							type="button"
-							class="flex-1 rounded-md border-[1.5px] px-2 py-2.5 text-[13px] font-semibold
-								{approvePreset === preset.key
-								? 'border-primary bg-base-400 text-secondary shadow-focus-ring'
-								: 'border-outline-variant bg-base-100 text-base-content-muted'}"
-							onclick={() => setPreset(preset.key as '6m' | '1y' | '2y' | 'custom')}
-						>
-							{preset.label}
-						</button>
-					{/each}
-				</div>
-			</fieldset>
+<RejectRequestDialog
+	open={rejectOpen}
+	busy={rejecting}
+	error={rejectError}
+	onconfirm={(reason) => void confirmReject(reason)}
+	oncancel={() => (rejectOpen = false)}
+/>
 
-			<fieldset class="fieldset mt-3">
-				<legend class="fieldset-legend">Expiry date</legend>
-				<input
-					type="date"
-					class="input w-full"
-					bind:value={approveExpiry}
-					onchange={() => (approvePreset = 'custom')}
-				/>
-				<p class="label text-xs">
-					Must be a future date. The provider sees this date and can be re-approved later.
-				</p>
-			</fieldset>
+<RevokeApprovalDialog
+	open={revokeOpen && detail?.currentApproval != null}
+	{applicantName}
+	busy={revoking}
+	error={revokeError}
+	onconfirm={(reason) => void confirmRevoke(reason)}
+	oncancel={() => (revokeOpen = false)}
+/>
 
-			{#if warningCount > 0}
-				<div
-					class="mt-3 flex items-center gap-2.5 rounded-md border border-warning-border
-						bg-warning-content/40 px-3.5 py-2.5"
-				>
-					<i class="las la-exclamation-circle text-base text-warning" aria-hidden="true"></i>
-					<span class="text-[12.5px] leading-relaxed text-warning">
-						This application has {warningCount}
-						{warningCount === 1 ? 'warning' : 'warnings'} ({warningText}) — warnings don't block
-						approval. Blocking issues (no services, no location) disable approval instead.
-					</span>
-				</div>
-			{/if}
-
-			{#if approveError}
-				<p role="alert" class="mt-3 text-sm font-medium text-error">{approveError}</p>
-			{/if}
-
-			<div class="modal-action">
-				<button
-					type="button"
-					class="btn btn-ghost"
-					onclick={() => (approveOpen = false)}
-					disabled={approving}
-				>
-					Cancel
-				</button>
-				<button type="submit" class="btn btn-primary" disabled={!approveDateValid || approving}>
-					{#if approving}
-						<span class="loading loading-spinner loading-sm"></span>
-					{/if}
-					Approve{approveExpiry ? ` until ${formatDate(approveExpiry)}` : ''}
-				</button>
-			</div>
-		</form>
-		<button
-			type="button"
-			class="modal-backdrop"
-			aria-label="Close"
-			onclick={() => (approveOpen = false)}
-		></button>
-	</div>
-{/if}
-
-<!-- Reject dialog (8c): reason required, shown to the provider verbatim -->
-{#if rejectOpen}
-	<div class="modal modal-open" role="dialog" aria-label="Reject application">
-		<form class="modal-box" onsubmit={confirmReject}>
-			<h2 class="text-lg font-bold">Reject this application</h2>
-			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				The reason is <b>shown to the provider verbatim</b> — write something specific and
-				actionable so they can fix it and resubmit.
-			</p>
-
-			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">Reason · required</legend>
-				<textarea
-					class="textarea min-h-24 w-full"
-					maxlength="500"
-					bind:value={rejectReason}
-					placeholder="e.g. Your police clearance is older than 6 months. Please upload a recent one and resubmit."
-				></textarea>
-				<div class="flex justify-between text-xs text-outline">
-					<span>Good reasons say what's wrong and how to fix it.</span>
-					<span>{rejectReason.length} / 500</span>
-				</div>
-			</fieldset>
-
-			<div
-				class="mt-3 flex items-center gap-2.5 rounded-md border border-info-content bg-info-content/40
-					px-3.5 py-2.5"
-			>
-				<i class="las la-info-circle text-base text-info" aria-hidden="true"></i>
-				<span class="text-[12.5px] text-info">
-					Rejection isn't final — the provider can fix the issues and submit again.
-				</span>
-			</div>
-
-			{#if rejectError}
-				<p role="alert" class="mt-3 text-sm font-medium text-error">{rejectError}</p>
-			{/if}
-
-			<div class="modal-action">
-				<button
-					type="button"
-					class="btn btn-ghost"
-					onclick={() => (rejectOpen = false)}
-					disabled={rejecting}
-				>
-					Cancel
-				</button>
-				<button
-					type="submit"
-					class="btn btn-error text-error-content"
-					disabled={rejectReason.trim().length === 0 || rejecting}
-				>
-					{#if rejecting}
-						<span class="loading loading-spinner loading-sm"></span>
-					{/if}
-					Reject with reason
-				</button>
-			</div>
-		</form>
-		<button
-			type="button"
-			class="modal-backdrop"
-			aria-label="Close"
-			onclick={() => (rejectOpen = false)}
-		></button>
-	</div>
-{/if}
-
-<!-- Revoke confirm dialog: immediate loss of verified status, reason required -->
-{#if revokeOpen && detail?.currentApproval}
-	<div class="modal modal-open" role="dialog" aria-label="Revoke approval">
-		<form class="modal-box" onsubmit={confirmRevoke}>
-			<h2 class="text-lg font-bold">Revoke {applicantName}'s approval</h2>
-			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				This takes effect immediately: the provider loses verified status and is removed from
-				family search. The reason is <b>shown to the provider verbatim</b>.
-			</p>
-
-			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">Reason · required</legend>
-				<textarea
-					class="textarea min-h-24 w-full"
-					maxlength="500"
-					bind:value={revokeReason}
-					placeholder="e.g. Your police clearance was reported invalid. Please upload a valid one and resubmit."
-				></textarea>
-				<div class="flex justify-between text-xs text-outline">
-					<span>Say what's wrong and how they can regain approval.</span>
-					<span>{revokeReason.length} / 500</span>
-				</div>
-			</fieldset>
-
-			<div
-				class="mt-3 flex items-center gap-2.5 rounded-md border border-info-content bg-info-content/40
-					px-3.5 py-2.5"
-			>
-				<i class="las la-info-circle text-base text-info" aria-hidden="true"></i>
-				<span class="text-[12.5px] text-info">
-					Revocation isn't a ban — the provider can fix the issue, resubmit, and be approved again.
-				</span>
-			</div>
-
-			{#if revokeError}
-				<p role="alert" class="mt-3 text-sm font-medium text-error">{revokeError}</p>
-			{/if}
-
-			<div class="modal-action">
-				<button
-					type="button"
-					class="btn btn-ghost"
-					onclick={() => (revokeOpen = false)}
-					disabled={revoking}
-				>
-					Cancel
-				</button>
-				<button
-					type="submit"
-					class="btn btn-error text-error-content"
-					disabled={revokeReason.trim().length === 0 || revoking}
-				>
-					{#if revoking}
-						<span class="loading loading-spinner loading-sm"></span>
-					{/if}
-					Revoke approval
-				</button>
-			</div>
-		</form>
-		<button
-			type="button"
-			class="modal-backdrop"
-			aria-label="Close"
-			onclick={() => (revokeOpen = false)}
-		></button>
-	</div>
-{/if}
-
-<!-- Fullscreen PII-safe viewer (8b): view in-browser, edit expiry only -->
-{#if viewerLoading}
-	<div class="modal modal-open">
-		<div class="modal-box flex w-40 items-center justify-center">
-			<span class="loading loading-spinner loading-lg text-primary"></span>
-		</div>
-	</div>
-{:else if viewer}
-	<div class="fixed inset-0 z-50 flex flex-col bg-secondary" role="dialog" aria-label="Document viewer">
-		<header
-			class="flex items-center justify-between gap-3 border-b border-secondary-content/10 px-5 py-3"
-		>
-			<div class="flex min-w-0 items-center gap-3">
-				<span class="truncate font-display text-base font-bold text-secondary-content">
-					{viewer.documentType.name}
-				</span>
-				<span class="hidden truncate text-xs text-secondary-content-faint sm:inline">
-					{viewer.document.filename}
-				</span>
-				<StatusChip status={docChip(viewer.document.status)} />
-			</div>
-			<button
-				type="button"
-				class="flex size-9 shrink-0 items-center justify-center rounded-full
-					bg-secondary-content/10 text-secondary-content-muted transition-colors
-					hover:text-secondary-content"
-				aria-label="Close viewer"
-				onclick={closeViewer}
-			>
-				<i class="las la-times text-lg" aria-hidden="true"></i>
-			</button>
-		</header>
-		<div class="flex min-h-0 flex-1 flex-col lg:flex-row">
-			<div class="flex min-h-0 flex-1 items-center justify-center overflow-auto p-4">
-				{#if viewerIsPdf}
-					<iframe
-						src={viewer.url}
-						title="Document preview"
-						class="h-full w-full rounded-md bg-base-100"
-					></iframe>
-				{:else}
-					<img
-						src={viewer.url}
-						alt="Document preview"
-						class="max-h-full max-w-full rounded-md shadow-panel"
-					/>
-				{/if}
-			</div>
-			<aside
-				class="w-full shrink-0 overflow-y-auto border-t border-secondary-content/10 bg-base-100
-					p-5 lg:w-80 lg:border-t-0 lg:border-l lg:border-card-border"
-			>
-				<div class="mb-3.5 text-[10.5px] font-semibold tracking-[0.1em] text-neutral uppercase">
-					Document details
-				</div>
-				<div class="mb-5 grid grid-cols-[90px_1fr] gap-x-2.5 gap-y-2 text-[12.5px]">
-					<span class="text-outline">Type</span>
-					<span class="font-medium text-base-content">{viewer.documentType.name}</span>
-					<span class="text-outline">File</span>
-					<span class="truncate font-medium text-base-content">{viewer.document.filename}</span>
-					<span class="text-outline">Submitted</span>
-					<span class="font-medium text-base-content">
-						{formatDate(viewer.document.submittedAt)}
-					</span>
-				</div>
-
-				<form onsubmit={saveExpiry}>
-					<fieldset class="fieldset">
-						<legend class="fieldset-legend">Expiry date</legend>
-						<input type="date" class="input w-full" bind:value={viewerExpiry} />
-					</fieldset>
-					<p class="mt-1.5 mb-3.5 text-[11.5px] leading-relaxed text-outline">
-						Entered by the provider — correct it here if it doesn't match the file.
-					</p>
-					{#if expiryError}
-						<p role="alert" class="mb-2 text-xs font-medium text-error">{expiryError}</p>
-					{/if}
-					{#if expirySaved}
-						<p class="mb-2 text-xs font-medium text-success">Expiry date saved.</p>
-					{/if}
-					<button type="submit" class="btn w-full btn-primary" disabled={savingExpiry}>
-						{#if savingExpiry}
-							<span class="loading loading-spinner loading-sm"></span>
-						{/if}
-						Save expiry date
-					</button>
-				</form>
-
-				<div
-					class="mt-6 flex items-start gap-2.5 rounded-[9px] border border-info-content
-						bg-base-200 p-3"
-				>
-					<i class="las la-shield-alt mt-0.5 text-base text-info" aria-hidden="true"></i>
-					<span class="text-[11.5px] leading-relaxed text-info">
-						This file contains PII. It never leaves Poppynz servers for download — view it here
-						only.
-					</span>
-				</div>
-			</aside>
-		</div>
-	</div>
-{/if}
+<DocumentViewerDialog
+	{viewer}
+	loading={viewerLoading}
+	onclose={closeViewer}
+	onsaved={() => void load()}
+/>

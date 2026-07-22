@@ -43,6 +43,13 @@
       "when": 1784592000000,
       "tag": "0005_approval_status_reason",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1784678400000,
+      "tag": "0006_referrals",
+      "breakpoints": true
     }
   ]
 }

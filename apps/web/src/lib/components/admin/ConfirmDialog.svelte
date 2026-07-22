@@ -4,6 +4,8 @@
 		title: string;
 		body: string;
 		confirmLabel?: string;
+		/** btn class of the confirm action; destructive red by default. */
+		confirmClass?: string;
 		busy?: boolean;
 		onconfirm: () => void;
 		oncancel: () => void;
@@ -14,6 +16,7 @@
 		title,
 		body,
 		confirmLabel = 'Delete',
+		confirmClass = 'btn-error',
 		busy = false,
 		onconfirm,
 		oncancel
@@ -29,7 +32,7 @@
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
 					Cancel
 				</button>
-				<button type="button" class="btn btn-error" onclick={onconfirm} disabled={busy}>
+				<button type="button" class="btn {confirmClass}" onclick={onconfirm} disabled={busy}>
 					{#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
 					{confirmLabel}
 				</button>

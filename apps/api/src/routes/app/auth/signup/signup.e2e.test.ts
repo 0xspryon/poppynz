@@ -2,6 +2,7 @@ import { SqlError } from "@effect/sql/SqlError";
 import {
   EmptyApprovalRepoTest,
   EmptyApprovalRequestRepoTest,
+  EmptyReferralRepoTest,
   makeKycDocumentRepoTest,
   EmptyKycDocumentTypeRepoTest,
   EmptyServiceOfferedRepoTest,
@@ -57,6 +58,7 @@ const makeApp = (options: {
       makeUserProfileRepoTest(makeInMemoryUserProfileRepo([])),
       EmptyApprovalRepoTest,
       EmptyApprovalRequestRepoTest,
+      EmptyReferralRepoTest,
       EmptyKycDocumentTypeRepoTest,
       EmptyServiceOfferedRepoTest,
       makeObjectStorageTest({
@@ -331,6 +333,7 @@ describe("POST /auth/sign-up", () => {
     const hookLayer = Layer.mergeAll(
       makeSignupIntentRepoTest(signupIntentRepo),
       makeUserProfileRepoTest(userProfileRepo),
+      EmptyReferralRepoTest,
     );
 
     const res = await app.request("/api/v1/auth/sign-up", {
@@ -396,6 +399,7 @@ describe("POST /auth/sign-up", () => {
     const hookLayer = Layer.mergeAll(
       makeSignupIntentRepoTest(signupIntentRepo),
       makeUserProfileRepoTest(userProfileRepo),
+      EmptyReferralRepoTest,
     );
 
     const res = await app.request("/api/v1/auth/sign-up", {

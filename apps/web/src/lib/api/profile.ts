@@ -13,6 +13,10 @@ export type SessionRole = Role | 'admin';
 export interface MockSession {
   email: string;
   role: SessionRole;
+  /** Admin user id driving this session, when it is an impersonation (12d). */
+  impersonatedBy: string | null;
+  /** ISO expiry of the better-auth session — the impersonation countdown. */
+  sessionExpiresAt: string | null;
 }
 
 const SESSION_KEY = 'poppynz:session';
@@ -29,7 +33,10 @@ export async function fetchSession(): Promise<MockSession | null> {
   try {
     const res = await fetch('/api/auth/get-session', { credentials: 'same-origin' });
     if (!res.ok) return getSession();
-    const body = (await res.json()) as { user?: { email?: string; role?: string | null } } | null;
+    const body = (await res.json()) as {
+      user?: { email?: string; role?: string | null };
+      session?: { impersonatedBy?: string | null; expiresAt?: string | null };
+    } | null;
     const email = body?.user?.email;
     if (!email) {
       endSession();
@@ -37,7 +44,9 @@ export async function fetchSession(): Promise<MockSession | null> {
     }
     const session: MockSession = {
       email,
-      role: isSessionRole(body?.user?.role) ? body.user.role : 'family'
+      role: isSessionRole(body?.user?.role) ? body.user.role : 'family',
+      impersonatedBy: body?.session?.impersonatedBy ?? null,
+      sessionExpiresAt: body?.session?.expiresAt ?? null
     };
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     return session;
@@ -52,7 +61,11 @@ export function getSession(): MockSession | null {
   const raw = localStorage.getItem(SESSION_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as MockSession;
+    // Backfill fields older cached sessions predate.
+    const parsed = JSON.parse(raw) as MockSession;
+    parsed.impersonatedBy ??= null;
+    parsed.sessionExpiresAt ??= null;
+    return parsed;
   } catch {
     return null;
   }

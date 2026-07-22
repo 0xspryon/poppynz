@@ -13,3 +13,5 @@ export * from "./repos/service-catalogue-repo";
 export * from "./repos/approval-request-repo";
 export * from "./repos/provider-search-repo";
 export * from "./repos/provider-search-outbox-repo";
+export * from "./repos/referral-repo";
+export * from "./repos/user-directory-repo";

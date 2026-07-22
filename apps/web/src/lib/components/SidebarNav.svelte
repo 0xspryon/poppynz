@@ -26,9 +26,11 @@
 		onnavigate?: () => void;
 		/** When set, renders a close button next to the brand (drawer variant). */
 		onclose?: () => void;
+		/** Pink user-card treatment while an admin impersonates this user (12d). */
+		impersonated?: boolean;
 	}
 
-	let { kicker, items, email, roleLabel, onnavigate, onclose }: Props = $props();
+	let { kicker, items, email, roleLabel, onnavigate, onclose, impersonated }: Props = $props();
 
 	const initial = $derived(email.charAt(0).toUpperCase() || '?');
 </script>
@@ -78,16 +80,21 @@
 	<div class="flex justify-center">
 		<LangToggle tone="dark" />
 	</div>
-	<div class="flex items-center gap-2.5 rounded-lg bg-secondary-content/10 p-2.5">
+	<div
+		class="flex items-center gap-2.5 rounded-lg p-2.5
+			{impersonated ? 'border border-accent/50 bg-accent/25' : 'bg-secondary-content/10'}"
+	>
 		<span
-			class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm
-				font-bold text-primary-content"
+			class="flex size-8 shrink-0 items-center justify-center rounded-full text-sm font-bold
+				{impersonated ? 'bg-accent text-accent-content' : 'bg-primary text-primary-content'}"
 		>
 			{initial}
 		</span>
 		<div class="min-w-0 leading-tight">
 			<div class="truncate text-xs font-semibold text-secondary-content">{email}</div>
-			<div class="text-[11px] text-secondary-content-faint">{roleLabel}</div>
+			<div class="text-[11px] {impersonated ? 'text-warning-content' : 'text-secondary-content-faint'}">
+				{impersonated ? 'via admin (impersonated)' : roleLabel}
+			</div>
 		</div>
 	</div>
 </div>

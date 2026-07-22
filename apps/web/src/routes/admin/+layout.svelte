@@ -33,6 +33,7 @@
 
 	const items: Array<SidebarItem> = [
 		{ href: resolve('/admin/approval-requests'), label: 'Approval queue', icon: 'la-user-check' },
+		{ href: resolve('/admin/users'), label: 'Users', icon: 'la-users' },
 		{ href: resolve('/admin/document-types'), label: 'Document types', icon: 'la-file-alt' },
 		{ href: resolve('/admin/service-catalogue'), label: 'Service catalogue', icon: 'la-heart' }
 	];

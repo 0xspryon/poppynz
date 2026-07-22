@@ -6,9 +6,9 @@
 	} from '$lib/api/onboarding';
 	import { uploadKycDocument, type KycUploadError } from '$lib/api/kyc-documents';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import UploadDocumentDialog from '$lib/components/UploadDocumentDialog.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
-	const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp';
 
 	let onboarding = $state<OnboardingState | null>(null);
 	let loading = $state(true);
@@ -16,8 +16,6 @@
 
 	// Upload modal
 	let uploadTarget = $state<OnboardingDocument | null>(null);
-	let uploadFile = $state<File | null>(null);
-	let uploadExpiry = $state('');
 	let uploading = $state(false);
 	let uploadError = $state('');
 
@@ -49,8 +47,6 @@
 
 	function openUpload(doc: OnboardingDocument) {
 		uploadTarget = doc;
-		uploadFile = null;
-		uploadExpiry = '';
 		uploadError = '';
 	}
 
@@ -58,15 +54,6 @@
 		if (uploading) return;
 		uploadTarget = null;
 	}
-
-	function onFileChange(event: Event) {
-		const input = event.currentTarget as HTMLInputElement;
-		uploadFile = input.files?.[0] ?? null;
-	}
-
-	const canUpload = $derived(
-		uploadFile !== null && (!uploadTarget?.requiresExpiryDate || uploadExpiry !== '')
-	);
 
 	function uploadErrorText(error: KycUploadError): string {
 		switch (error.code) {
@@ -79,15 +66,14 @@
 		}
 	}
 
-	async function submitUpload(event: SubmitEvent) {
-		event.preventDefault();
-		if (!uploadTarget || !uploadFile || !canUpload || uploading) return;
+	async function submitUpload(input: { file: File; expiryDate: string | null }) {
+		if (!uploadTarget || uploading) return;
 		uploading = true;
 		uploadError = '';
 		const result = await uploadKycDocument({
 			documentTypeId: uploadTarget.documentTypeId,
-			file: uploadFile,
-			expiryDate: uploadExpiry ? new Date(uploadExpiry).toISOString() : null
+			file: input.file,
+			expiryDate: input.expiryDate
 		});
 		if (result.ok) {
 			uploadTarget = null;
@@ -286,56 +272,10 @@
 	{/if}
 </div>
 
-{#if uploadTarget}
-	<div class="modal modal-open" role="dialog" aria-label="Upload document">
-		<form class="modal-box" onsubmit={submitUpload}>
-			<h2 class="text-lg font-bold">
-				{uploadTarget.document ? 'Replace' : 'Upload'} — {uploadTarget.name}
-			</h2>
-			<p class="mt-1 text-xs text-base-content-muted">
-				PDF, JPG, PNG or WebP · up to 50 MB. Your file is stored securely and only visible to the
-				Poppynz review team.
-			</p>
-
-			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">File</legend>
-				<input
-					type="file"
-					class="file-input w-full"
-					accept={ACCEPTED_TYPES}
-					onchange={onFileChange}
-				/>
-			</fieldset>
-
-			{#if uploadTarget.requiresExpiryDate}
-				<fieldset class="fieldset mt-2">
-					<legend class="fieldset-legend">Expiry date</legend>
-					<input type="date" class="input w-full" bind:value={uploadExpiry} />
-					<p class="label text-xs">This document type requires a future expiry date.</p>
-				</fieldset>
-			{/if}
-
-			{#if uploadError}
-				<p role="alert" class="mt-3 text-sm font-medium text-error">{uploadError}</p>
-			{/if}
-
-			<div class="modal-action">
-				<button type="button" class="btn btn-ghost" onclick={closeUpload} disabled={uploading}>
-					Cancel
-				</button>
-				<button type="submit" class="btn btn-primary" disabled={!canUpload || uploading}>
-					{#if uploading}
-						<span class="loading loading-spinner loading-sm"></span>
-					{/if}
-					{uploadTarget.document ? 'Replace document' : 'Submit document'}
-				</button>
-			</div>
-		</form>
-		<button
-			type="button"
-			class="modal-backdrop"
-			aria-label="Close"
-			onclick={closeUpload}
-		></button>
-	</div>
-{/if}
+<UploadDocumentDialog
+	target={uploadTarget}
+	busy={uploading}
+	error={uploadError}
+	onsubmit={(input) => void submitUpload(input)}
+	oncancel={closeUpload}
+/>

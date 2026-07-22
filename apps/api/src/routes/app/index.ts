@@ -16,6 +16,8 @@ import { providersRoute } from './providers/providers';
 import { adminProviderSearchRoute } from './admin/provider-search';
 import { serviceCatalogueRoute } from './service-catalogue/service-catalogue';
 import { adminServiceCatalogueRoute } from './admin/service-catalogue';
+import { adminUsersRoute } from './admin/users';
+import { referralsRoute } from './referrals/referrals';
 
 export const appRoutes = new Hono<HonoEnv>()
 .route('/auth', signupRoute)
@@ -31,6 +33,8 @@ export const appRoutes = new Hono<HonoEnv>()
 .route('/admin/provider-search', adminProviderSearchRoute)
 .route('/service-catalogue', serviceCatalogueRoute)
 .route('/admin/service-catalogue', adminServiceCatalogueRoute)
+.route('/admin/users', adminUsersRoute)
+.route('/referrals', referralsRoute)
 .route('/providers', providersRoute)
 .route('/geocoding', geocodingRoute)
 .route('/uploads', uploadRoute)

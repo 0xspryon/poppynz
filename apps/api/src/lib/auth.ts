@@ -10,6 +10,8 @@ import { roles, appAc } from './auth-roles'
 import { resolveUiOrigin, trustedUiOrigins } from './ui-origin'
 import {
   db,
+  ReferralRepo,
+  ReferralRepoDefault,
   SignupIntentRepo,
   SignupIntentRepoDefault,
   UserProfileRepo,
@@ -24,6 +26,7 @@ export class SignupHookDbError extends Data.TaggedError("SignupHookDbError")<{
 const AuthHookLive = Layer.mergeAll(
   SignupIntentRepoDefault,
   UserProfileRepoDefault,
+  ReferralRepoDefault,
 );
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
 
@@ -48,6 +51,12 @@ export const createProfileAndConsumeSignupIntentEffect = (user: { id: string; em
   Effect.gen(function*() {
     const signupIntentRepo = yield* SignupIntentRepo;
     const userProfileRepo = yield* UserProfileRepo;
+    const referralRepo = yield* ReferralRepo;
+
+    // Any pending referral invites for this email are now "joined".
+    yield* referralRepo
+      .markJoinedByEmail(user.email, user.id)
+      .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })));
     const intent = yield* signupIntentRepo
       .findValidByEmail(user.email)
       .pipe(Effect.mapError((cause) => new SignupHookDbError({ cause })));

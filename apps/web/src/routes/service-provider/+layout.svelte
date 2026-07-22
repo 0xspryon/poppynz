@@ -2,9 +2,10 @@
 	import { browser } from '$app/environment';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { fetchSession, getSession } from '$lib/api/profile';
+	import { fetchSession, getSession, type MockSession } from '$lib/api/profile';
 	import { getOnboardingState } from '$lib/api/onboarding';
 	import BrandMark from '$lib/components/BrandMark.svelte';
+	import ImpersonationBanner from '$lib/components/ImpersonationBanner.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
 	import type { Snippet } from 'svelte';
@@ -17,15 +18,17 @@
 	let authorized = $state(false);
 	let drawerOpen = $state(false);
 	let missingDocuments = $state(0);
+	let session = $state<MockSession | null>(browser ? getSession() : null);
 
 	$effect(() => {
 		if (!browser) return;
-		void fetchSession().then((session) => {
-			if (session?.role === 'service-provider') {
+		void fetchSession().then((fresh) => {
+			session = fresh;
+			if (fresh?.role === 'service-provider') {
 				authorized = true;
-			} else if (session?.role === 'admin') {
+			} else if (fresh?.role === 'admin') {
 				void goto(resolve('/admin'));
-			} else if (session?.role === 'family') {
+			} else if (fresh?.role === 'family') {
 				void goto(resolve('/family/profile'));
 			} else {
 				void goto(resolve('/auth/sign-in'));
@@ -49,8 +52,8 @@
 		if (authorized) void refreshBadge();
 	});
 
-	const session = $derived(browser ? getSession() : null);
 	const email = $derived(session?.email ?? 'provider');
+	const impersonated = $derived(session?.impersonatedBy != null);
 	const initial = $derived(email.charAt(0).toUpperCase());
 
 	const items: Array<SidebarItem> = $derived([
@@ -63,14 +66,18 @@
 			badge: missingDocuments
 		},
 		{ href: resolve('/service-provider/services'), label: 'Services & rates', icon: 'la-heart' },
-		{ href: resolve('/service-provider/approval'), label: 'Approval', icon: 'la-user-shield' }
+		{ href: resolve('/service-provider/approval'), label: 'Approval', icon: 'la-user-shield' },
+		{ href: resolve('/service-provider/referrals'), label: 'Referrals', icon: 'la-user-plus' }
 	]);
 </script>
 
 {#if authorized}
+	{#if impersonated && session}
+		<ImpersonationBanner {session} />
+	{/if}
 	<div class="flex min-h-screen bg-base-200">
 		<aside class="hidden w-[250px] shrink-0 flex-col gap-1 bg-secondary p-5 lg:flex">
-			<SidebarNav kicker="Mom Helper" {items} {email} roleLabel="Mom Helper" />
+			<SidebarNav kicker="Mom Helper" {items} {email} roleLabel="Mom Helper" {impersonated} />
 		</aside>
 
 		<div class="flex min-w-0 flex-1 flex-col">
@@ -104,5 +111,6 @@
 		{items}
 		{email}
 		roleLabel="Mom Helper"
+		{impersonated}
 	/>
 {/if}

@@ -1,6 +1,10 @@
 import { googleMapsConfig } from "@repo/env";
 import { Context, Data, Effect, Layer } from "effect";
 
+// Backed by Places API (New) — places.googleapis.com/v1. The legacy
+// maps.googleapis.com/maps/api/place endpoints are not enableable on new
+// Google Cloud projects.
+
 export type GooglePlaceLocation = {
   googlePlaceId: string;
   formattedAddress: string | null;
@@ -45,29 +49,32 @@ export class GooglePlaces extends Context.Tag("@repo/google/GooglePlaces")<
 >() { }
 
 type AddressComponent = {
-  long_name: string;
-  short_name: string;
-  types: Array<string>;
+  longText?: string;
+  shortText?: string;
+  types?: Array<string>;
 };
 
 type PlaceDetailsResponse = {
-  status: string;
-  error_message?: string;
-  result?: {
-    place_id?: string;
-    formatted_address?: string;
-    address_components?: Array<AddressComponent>;
-    geometry?: {
-      location?: {
-        lat?: number;
-        lng?: number;
-      };
-    };
+  id?: string;
+  formattedAddress?: string;
+  addressComponents?: Array<AddressComponent>;
+  location?: {
+    latitude?: number;
+    longitude?: number;
   };
 };
 
+type AutocompleteResponse = {
+  suggestions?: Array<{
+    placePrediction?: {
+      placeId?: string;
+      text?: { text?: string };
+    };
+  }>;
+};
+
 const findComponent = (components: Array<AddressComponent>, type: string) =>
-  components.find((component) => component.types.includes(type)) ?? null;
+  components.find((component) => component.types?.includes(type)) ?? null;
 
 const getCity = (components: Array<AddressComponent>) =>
   findComponent(components, "locality") ??
@@ -75,69 +82,46 @@ const getCity = (components: Array<AddressComponent>) =>
   findComponent(components, "administrative_area_level_3") ??
   findComponent(components, "administrative_area_level_2");
 
-const normalizePlaceDetails = (placeId: string, response: PlaceDetailsResponse) => {
-  if (response.status === "NOT_FOUND" || response.status === "ZERO_RESULTS") {
-    return Effect.fail(new GooglePlaceNotFoundError({ placeId }));
-  }
-
-  if (response.status !== "OK") {
-    return Effect.fail(
-      new GooglePlacesError({
-        operation: "placeDetails",
-        placeId,
-        cause: response.error_message ?? response.status,
-      }),
-    );
-  }
-
-  const result = response.result;
-  const latitude = result?.geometry?.location?.lat;
-  const longitude = result?.geometry?.location?.lng;
-
-  if (!result) {
-    return Effect.fail(new GooglePlaceInvalidError({ placeId, message: "Google place is missing result data." }));
-  }
+const normalizePlaceDetails = (placeId: string, result: PlaceDetailsResponse) => {
+  const latitude = result.location?.latitude;
+  const longitude = result.location?.longitude;
 
   if (typeof latitude !== "number" || typeof longitude !== "number") {
     return Effect.fail(new GooglePlaceInvalidError({ placeId, message: "Google place is missing coordinates." }));
   }
 
-  const components = result.address_components ?? [];
+  const components = result.addressComponents ?? [];
   const city = getCity(components);
   const stateProvince = findComponent(components, "administrative_area_level_1");
   const country = findComponent(components, "country");
   const postalCode = findComponent(components, "postal_code");
 
   return Effect.succeed({
-    googlePlaceId: result.place_id ?? placeId,
-    formattedAddress: result.formatted_address ?? null,
-    city: city?.long_name ?? null,
-    stateProvince: stateProvince?.long_name ?? null,
-    stateProvinceCode: stateProvince?.short_name ?? null,
-    country: country?.long_name ?? null,
-    countryCode: country?.short_name ?? null,
-    postalCode: postalCode?.long_name ?? null,
+    googlePlaceId: result.id ?? placeId,
+    formattedAddress: result.formattedAddress ?? null,
+    city: city?.longText ?? null,
+    stateProvince: stateProvince?.longText ?? null,
+    stateProvinceCode: stateProvince?.shortText ?? null,
+    country: country?.longText ?? null,
+    countryCode: country?.shortText ?? null,
+    postalCode: postalCode?.longText ?? null,
     latitude,
     longitude,
   });
-};
-
-type AutocompleteResponse = {
-  status: string;
-  error_message?: string;
-  predictions?: Array<{ place_id?: string; description?: string }>;
 };
 
 const makeGooglePlaces = (config: { apiKey: string }): Context.Tag.Service<GooglePlaces> => ({
   autocompletePlaces: (query) =>
     Effect.tryPromise({
       try: async () => {
-        const params = new URLSearchParams({
-          input: query,
-          types: "geocode",
-          key: config.apiKey,
+        const response = await fetch("https://places.googleapis.com/v1/places:autocomplete", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "X-Goog-Api-Key": config.apiKey,
+          },
+          body: JSON.stringify({ input: query }),
         });
-        const response = await fetch(`https://maps.googleapis.com/maps/api/place/autocomplete/json?${params.toString()}`);
 
         if (!response.ok) {
           throw new GooglePlacesError({
@@ -148,20 +132,13 @@ const makeGooglePlaces = (config: { apiKey: string }): Context.Tag.Service<Googl
         }
 
         const body = (await response.json()) as AutocompleteResponse;
-        if (body.status === "ZERO_RESULTS") return [];
-        if (body.status !== "OK") {
-          throw new GooglePlacesError({
-            operation: "autocomplete",
-            placeId: query,
-            cause: body.error_message ?? body.status,
-          });
-        }
 
-        return (body.predictions ?? []).flatMap((prediction) =>
-          prediction.place_id && prediction.description
-            ? [{ placeId: prediction.place_id, description: prediction.description }]
-            : [],
-        );
+        return (body.suggestions ?? []).flatMap((suggestion) => {
+          const prediction = suggestion.placePrediction;
+          return prediction?.placeId && prediction.text?.text
+            ? [{ placeId: prediction.placeId, description: prediction.text.text }]
+            : [];
+        });
       },
       catch: (cause) =>
         cause instanceof GooglePlacesError
@@ -170,14 +147,21 @@ const makeGooglePlaces = (config: { apiKey: string }): Context.Tag.Service<Googl
     }),
   lookupPlaceById: (placeId) =>
     Effect.gen(function*() {
-      const response = yield* Effect.tryPromise({
+      const result = yield* Effect.tryPromise({
         try: async () => {
-          const params = new URLSearchParams({
-            place_id: placeId,
-            fields: "place_id,geometry,address_component,formatted_address",
-            key: config.apiKey,
-          });
-          const response = await fetch(`https://maps.googleapis.com/maps/api/place/details/json?${params.toString()}`);
+          const response = await fetch(
+            `https://places.googleapis.com/v1/places/${encodeURIComponent(placeId)}`,
+            {
+              headers: {
+                "X-Goog-Api-Key": config.apiKey,
+                "X-Goog-FieldMask": "id,formattedAddress,location,addressComponents",
+              },
+            },
+          );
+
+          if (response.status === 404) {
+            throw new GooglePlaceNotFoundError({ placeId });
+          }
 
           if (!response.ok) {
             throw new GooglePlacesError({
@@ -190,12 +174,12 @@ const makeGooglePlaces = (config: { apiKey: string }): Context.Tag.Service<Googl
           return (await response.json()) as PlaceDetailsResponse;
         },
         catch: (cause) =>
-          cause instanceof GooglePlacesError
+          cause instanceof GooglePlaceNotFoundError || cause instanceof GooglePlacesError
             ? cause
             : new GooglePlacesError({ operation: "placeDetails", placeId, cause }),
       });
 
-      return yield* normalizePlaceDetails(placeId, response);
+      return yield* normalizePlaceDetails(placeId, result);
     }),
 });
 

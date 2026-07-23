@@ -15,9 +15,10 @@ export const providerSearchJobNames = {
   reindexAllProviders: "reindex-all-providers",
 } as const;
 
-// outboxId is null for delayed expiry jobs — the worker creates the outbox
-// row when the job actually fires (an audit row created months ahead of time
-// would just sit unresolved).
+// outboxId stays nullable only for legacy delayed expiry jobs still sitting
+// in Redis from before expiry reconciles were dropped (search-time DB
+// verification made them redundant) — the worker creates the outbox row when
+// such a job fires. New enqueues always carry an outbox id.
 export type ReconcileProviderJob = { outboxId: string | null; userId: string };
 export type ReindexAllProvidersJob = Record<string, never>;
 export type ProviderSearchJobData = ReconcileProviderJob | ReindexAllProvidersJob;
@@ -27,12 +28,11 @@ export type EnqueuedJob = {
   name: string;
 };
 
-const providerSearchExpiryJobId = (userId: string, expiresAt: Date) => `provider-search-expiry-${userId}-${expiresAt.getTime()}`;
 const providerSearchReconcileDeduplicationId = (userId: string) => `provider-search-reconcile-${userId}`;
 const providerSearchReindexDeduplicationId = "provider-search-reindex";
 
 export class ProviderSearchQueueError extends Data.TaggedError("ProviderSearchQueueError")<{
-  operation: "enqueueReconcile" | "enqueueExpiryReconcile" | "enqueueReindex";
+  operation: "enqueueReconcile" | "enqueueReindex";
   cause: unknown;
 }> { }
 
@@ -69,7 +69,6 @@ export class ProviderSearchQueue extends Context.Tag("@repo/queue/ProviderSearch
   ProviderSearchQueue,
   {
     enqueueReconcile: (input: ReconcileProviderJob) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
-    enqueueExpiryReconcile: (input: { userId: string; expiresAt: Date }) => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
     enqueueReindex: () => Effect.Effect<EnqueuedJob, ProviderSearchQueueError>;
   }
 >() { }
@@ -90,28 +89,6 @@ export const ProviderSearchQueueLive = Layer.effect(ProviderSearchQueue, redisCo
           return { id: job.id, name: job.name };
         },
         catch: (cause) => new ProviderSearchQueueError({ operation: "enqueueReconcile", cause }),
-      }),
-    enqueueExpiryReconcile: (input: { userId: string; expiresAt: Date }) =>
-      Effect.tryPromise({
-        try: async () => {
-          const ONE_MINUTE_MILLIS = 1 * 60 * 1000;
-          const delay = Math.max(ONE_MINUTE_MILLIS, input.expiresAt.getTime() - Date.now());
-          const job = await queue.add(
-            providerSearchJobNames.reconcileProvider,
-            { outboxId: null, userId: input.userId },
-            {
-              deduplication: {
-                id: providerSearchExpiryJobId(input.userId, input.expiresAt)
-              },
-              delay
-            },
-          );
-
-          return { id: job.id, name: job.name };
-        },
-        catch: (cause) => new ProviderSearchQueueError(
-          { operation: "enqueueExpiryReconcile", cause }
-        ),
       }),
     enqueueReindex: () =>
       Effect.tryPromise({

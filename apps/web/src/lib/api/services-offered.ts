@@ -8,10 +8,11 @@ const createEndpoint = apiClient.me['services-offered'].$post;
 const updateEndpoint = apiClient.me['services-offered'][':id'].$patch;
 const removeEndpoint = apiClient.me['services-offered'][':id'].$delete;
 
-export type ServiceOffered = Extract<
+export type ServicesOfferedList = Extract<
 	Awaited<ReturnType<typeof listServicesOffered>>,
 	{ ok: true }
->['data'][number];
+>['data'];
+export type ServiceOffered = ServicesOfferedList['services'][number];
 export type ServicesListError = ErrorsOf<typeof listEndpoint>;
 export type ServiceMutationError = ErrorsOf<typeof createEndpoint> | ErrorsOf<typeof updateEndpoint>;
 export type ServiceRemoveError = ErrorsOf<typeof removeEndpoint>;

@@ -10,6 +10,7 @@ import { roles, appAc } from './auth-roles'
 import { resolveUiOrigin, trustedUiOrigins } from './ui-origin'
 import {
   db,
+  ProviderSearchOutboxRepoDefault,
   ReferralRepo,
   ReferralRepoDefault,
   SignupIntentRepo,
@@ -17,7 +18,9 @@ import {
   UserProfileRepo,
   UserProfileRepoDefault,
 } from "@repo/db";
+import { ProviderSearchQueueLive } from "@repo/queue";
 import { Cause, Data, Effect, Exit, Layer, ManagedRuntime, Option } from "effect";
+import { scheduleProviderSearchReconcile } from "./provider-search-jobs";
 
 export class SignupHookDbError extends Data.TaggedError("SignupHookDbError")<{
   cause: unknown;
@@ -27,6 +30,8 @@ const AuthHookLive = Layer.mergeAll(
   SignupIntentRepoDefault,
   UserProfileRepoDefault,
   ReferralRepoDefault,
+  ProviderSearchOutboxRepoDefault,
+  ProviderSearchQueueLive,
 );
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
 
@@ -154,6 +159,19 @@ export const auth = betterAuth({
         }),
         after: async (user) => {
           await runSignupHookEffect(authHookRuntime.runPromiseExit(createProfileAndConsumeSignupIntentEffect(user)), undefined);
+        },
+      },
+      update: {
+        // Fires for better-auth admin mutations (ban/unban, role changes).
+        // A ban hides the provider instantly via the search path's DB gate;
+        // the reconcile keeps the index itself in step — critically on UNBAN,
+        // where the provider's document must be re-created to be searchable
+        // again (lazy repair deletes it while they are banned).
+        after: async (user) => {
+          const updated = user as { id: string; role?: string | null };
+          if (updated.role === "service-provider") {
+            await authHookRuntime.runPromise(scheduleProviderSearchReconcile(updated.id));
+          }
         },
       },
     },

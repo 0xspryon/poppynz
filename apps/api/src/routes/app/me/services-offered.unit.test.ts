@@ -12,7 +12,7 @@ import {
 } from "@repo/db";
 import { makeProviderSearchQueueTest } from "@repo/queue";
 import { makeProviderSearchOutboxRepoTest, type ProviderSearchOutbox } from "@repo/db";
-import { Cause, Effect, Exit, Layer, Option } from "effect";
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { makeAuthServiceTest } from "@/api/lib/effect-auth";
@@ -126,7 +126,6 @@ const makeLayer = (options: {
     }),
     makeProviderSearchQueueTest({
       enqueueReconcile: () => Effect.succeed({ id: "job-1", name: "reconcile-provider" }),
-      enqueueExpiryReconcile: () => Effect.succeed({ id: "job-2", name: "reconcile-provider" }),
       enqueueReindex: () => Effect.succeed({ id: "job-3", name: "reindex-all-providers" }),
     }),
     makeProviderSearchOutboxRepoTest({
@@ -141,9 +140,20 @@ const makeLayer = (options: {
 };
 
 describe("services offered route programs", () => {
-  it("lists service offerings for the authenticated provider", async () => {
+  it("lists service offerings for the authenticated provider with the provider limit", async () => {
     const result = await Effect.runPromise(listServicesOfferedRouteProgram(new Headers()).pipe(Effect.provide(makeLayer())));
-    expect(result).toEqual([expect.objectContaining({ id: "service-1", name: "Childcare", createdAt: "2026-06-12T00:00:00.000Z" })]);
+    expect(result.services).toEqual([expect.objectContaining({ id: "service-1", name: "Childcare", createdAt: "2026-06-12T00:00:00.000Z" })]);
+    expect(result.maxServicesOffered).toBe(20);
+  });
+
+  it("reads the provider limit from SERVICES_OFFERED_MAX_PER_PROVIDER", async () => {
+    const result = await Effect.runPromise(
+      listServicesOfferedRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer()),
+        Effect.withConfigProvider(ConfigProvider.fromMap(new Map([["SERVICES_OFFERED_MAX_PER_PROVIDER", "5"]]))),
+      ),
+    );
+    expect(result.maxServicesOffered).toBe(5);
   });
 
   it("creates a service offering with default currency", async () => {
@@ -156,6 +166,30 @@ describe("services offered route programs", () => {
 
     expect(result).toMatchObject({ name: "Tutoring", hourlyRateCents: 3000, currency: "CAD" });
     expect(created).toEqual([expect.objectContaining({ name: "Tutoring", hourlyRateCents: 3000 })]);
+  });
+
+  it("rejects creating a service once the provider limit is reached", async () => {
+    const atLimit = Array.from({ length: 20 }, (_, index) => service({ id: `service-${index + 1}` }));
+    const exit = await Effect.runPromise(
+      createServiceOfferedRouteProgram(contextWithJson({ name: "One too many", hourlyRateCents: 3000 }), new Headers()).pipe(
+        Effect.provide(makeLayer({ services: atLimit })),
+        Effect.exit,
+      ),
+    );
+    const failure = getFailure(exit);
+    expect(failure._tag).toBe("ServicesOfferedLimitReachedError");
+    expect(failure).toMatchObject({ max: 20 });
+  });
+
+  it("enforces a lowered SERVICES_OFFERED_MAX_PER_PROVIDER on create", async () => {
+    const exit = await Effect.runPromise(
+      createServiceOfferedRouteProgram(contextWithJson({ name: "Second service", hourlyRateCents: 3000 }), new Headers()).pipe(
+        Effect.provide(makeLayer({ services: [service()] })),
+        Effect.withConfigProvider(ConfigProvider.fromMap(new Map([["SERVICES_OFFERED_MAX_PER_PROVIDER", "1"]]))),
+        Effect.exit,
+      ),
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: "ServicesOfferedLimitReachedError", max: 1 });
   });
 
   it("rejects users without service-offered permission", async () => {

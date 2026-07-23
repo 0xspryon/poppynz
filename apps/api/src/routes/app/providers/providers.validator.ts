@@ -26,12 +26,26 @@ const optionalNumber = (value: string | undefined, name: string) => {
     : Effect.fail(new ProviderSearchRequestValidationError({ message: `${name} must be a number.` }));
 };
 
-const positiveInteger = (value: string | undefined, name: string, defaultValue: number) => {
+// Bounds keep a single request from fanning out into an unbounded number of
+// Typesense/PostgreSQL round-trips (the handler over-fetches candidates up to
+// page * perPage).
+const MAX_PAGE = 100;
+const MAX_PER_PAGE = 50;
+
+const boundedPositiveInteger = (value: string | undefined, name: string, defaultValue: number, max: number) => {
   if (value === undefined || value === "") return Effect.succeed(defaultValue);
+  // Reject trailing garbage ("5x") that Number.parseInt would silently accept.
+  if (!/^\d+$/.test(value.trim())) {
+    return Effect.fail(new ProviderSearchRequestValidationError({ message: `${name} must be a positive integer.` }));
+  }
   const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0
-    ? Effect.succeed(parsed)
-    : Effect.fail(new ProviderSearchRequestValidationError({ message: `${name} must be a positive integer.` }));
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    return Effect.fail(new ProviderSearchRequestValidationError({ message: `${name} must be a positive integer.` }));
+  }
+  if (parsed > max) {
+    return Effect.fail(new ProviderSearchRequestValidationError({ message: `${name} must be ${max} or less.` }));
+  }
+  return Effect.succeed(parsed);
 };
 
 const sortParam = (value: string | undefined) => {
@@ -48,8 +62,8 @@ export const validateProviderSearchQuery = (query: Record<string, string | undef
     }
 
     const [page, perPage, radiusKm, minHourlyRateCents, maxHourlyRateCents, sort] = yield* Effect.all([
-      positiveInteger(query.page, "page", 1),
-      positiveInteger(query.perPage, "perPage", 20),
+      boundedPositiveInteger(query.page, "page", 1, MAX_PAGE),
+      boundedPositiveInteger(query.perPage, "perPage", 20, MAX_PER_PAGE),
       optionalNumber(query.radiusKm, "radiusKm"),
       optionalNumber(query.minHourlyRateCents, "minHourlyRateCents"),
       optionalNumber(query.maxHourlyRateCents, "maxHourlyRateCents"),

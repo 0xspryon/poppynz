@@ -1,11 +1,28 @@
 import { describe, expect, it } from 'vitest';
-import { centsToDollars, dollarsToCents } from './money';
+import { centsToCompactDollars, centsToDollars, dollarsToCents, rateRangeLabel } from './money';
 
 describe('centsToDollars', () => {
 	it('formats cents as a two-decimal dollar string', () => {
 		expect(centsToDollars(1800)).toBe('18.00');
 		expect(centsToDollars(2250)).toBe('22.50');
 		expect(centsToDollars(5)).toBe('0.05');
+	});
+});
+
+describe('centsToCompactDollars', () => {
+	it('drops the decimals for whole-dollar amounts only', () => {
+		expect(centsToCompactDollars(2800)).toBe('$28');
+		expect(centsToCompactDollars(2850)).toBe('$28.50');
+	});
+});
+
+describe('rateRangeLabel', () => {
+	it('collapses equal min and max into a single rate', () => {
+		expect(rateRangeLabel(2100, 2100)).toBe('$21/hr');
+	});
+
+	it('renders a range when min and max differ', () => {
+		expect(rateRangeLabel(2500, 4000)).toBe('$25–$40/hr');
 	});
 });
 

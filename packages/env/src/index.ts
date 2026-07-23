@@ -51,3 +51,7 @@ export const typesenseConfig = Config.all({
 export const providerSearchConfig = Config.all({
   minRadiusKm: Config.integer("PROVIDER_SEARCH_MIN_RADIUS_KM").pipe(Config.withDefault(10)),
 });
+
+export const servicesOfferedConfig = Config.all({
+  maxPerProvider: Config.integer("SERVICES_OFFERED_MAX_PER_PROVIDER").pipe(Config.withDefault(20)),
+});

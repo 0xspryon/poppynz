@@ -152,8 +152,9 @@ describe("/me/services-offered", () => {
     const body = await listRes.json();
 
     expect(listRes.status).toBe(200);
-    expect(body).toHaveLength(1);
-    expect(body[0].hourlyRateCents).toBe(2800);
+    expect(body.services).toHaveLength(1);
+    expect(body.services[0].hourlyRateCents).toBe(2800);
+    expect(body.maxServicesOffered).toBe(20);
   });
 
   it("rejects users without service-offered write permission", async () => {
@@ -180,6 +181,6 @@ describe("/me/services-offered", () => {
     expect(deleted.deletedAt).toBe("2026-06-12T00:00:00.000Z");
 
     const listRes = await app.request("/api/v1/me/services-offered");
-    expect(await listRes.json()).toEqual([]);
+    expect((await listRes.json()).services).toEqual([]);
   });
 });

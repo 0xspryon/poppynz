@@ -120,7 +120,7 @@ const makeGooglePlaces = (config: { apiKey: string }): Context.Tag.Service<Googl
             "content-type": "application/json",
             "X-Goog-Api-Key": config.apiKey,
           },
-          body: JSON.stringify({ input: query }),
+          body: JSON.stringify({ input: query, includedRegionCodes: ['ca'] }),
         });
 
         if (!response.ok) {

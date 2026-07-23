@@ -18,6 +18,7 @@
 
 	let catalogue = $state<Array<CatalogueItem>>([]);
 	let services = $state<Array<ServiceOffered>>([]);
+	let maxServices = $state(20);
 	let loading = $state(true);
 	let errorMessage = $state('');
 
@@ -42,9 +43,10 @@
 		]);
 		if (catalogueResult.ok && servicesResult.ok) {
 			catalogue = catalogueResult.data;
-			services = servicesResult.data;
+			services = servicesResult.data.services;
+			maxServices = servicesResult.data.maxServicesOffered;
 			rateDrafts.clear();
-			for (const service of servicesResult.data) {
+			for (const service of servicesResult.data.services) {
 				rateDrafts.set(service.id, centsToDollars(service.hourlyRateCents));
 			}
 		} else {
@@ -65,6 +67,10 @@
 		)
 	);
 	const commonServices = $derived(catalogue.slice(0, COMMON_COUNT));
+	const limitReached = $derived(services.length >= maxServices);
+	const limitMessage = $derived(
+		`You can offer up to ${maxServices} services — remove one to add another.`
+	);
 
 	function floorFor(service: ServiceOffered): number | null {
 		if (!service.catalogueServiceId) return null;
@@ -73,7 +79,7 @@
 	}
 
 	async function addCatalogueService(item: CatalogueItem) {
-		if (linkedCatalogueIds.has(item.id) || busyIds.has(item.id)) return;
+		if (linkedCatalogueIds.has(item.id) || busyIds.has(item.id) || limitReached) return;
 		busyIds.add(item.id);
 		errorMessage = '';
 		const result = await createServiceOffered({
@@ -83,6 +89,8 @@
 		});
 		if (result.ok) {
 			await load();
+		} else if (result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED') {
+			errorMessage = result.error.message;
 		} else {
 			errorMessage = RETRY_MESSAGE;
 		}
@@ -146,7 +154,10 @@
 				catalogueServiceId: item.id
 			});
 			if (!result.ok) {
-				browseError = RETRY_MESSAGE;
+				browseError =
+					result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED'
+						? result.error.message
+						: RETRY_MESSAGE;
 				browseBusy = false;
 				return;
 			}
@@ -177,10 +188,21 @@
 <div class="mx-auto max-w-4xl">
 	<div class="flex flex-wrap items-center justify-between gap-3">
 		<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Services & rates</h1>
-		<a href={resolve('/service-provider/services/custom')} class="btn btn-outline btn-secondary">
-			<i class="las la-plus" aria-hidden="true"></i>
-			Add a custom service
-		</a>
+		{#if limitReached && !loading}
+			<span
+				class="btn btn-outline btn-secondary btn-disabled"
+				title={limitMessage}
+				aria-disabled="true"
+			>
+				<i class="las la-plus" aria-hidden="true"></i>
+				Add a custom service
+			</span>
+		{:else}
+			<a href={resolve('/service-provider/services/custom')} class="btn btn-outline btn-secondary">
+				<i class="las la-plus" aria-hidden="true"></i>
+				Add a custom service
+			</a>
+		{/if}
 	</div>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
 		Pick the services you offer — each comes with a base rate you can raise, but not go below.
@@ -206,7 +228,7 @@
 						? 'border-primary bg-base-400 shadow-focus-ring'
 						: 'border-card-border bg-base-100 hover:border-primary/50'}"
 					onclick={() => void addCatalogueService(item)}
-					disabled={busyIds.has(item.id)}
+					disabled={busyIds.has(item.id) || (limitReached && !inList)}
 				>
 					<span
 						class="absolute top-3 right-3 flex size-5 items-center justify-center rounded-full
@@ -236,6 +258,8 @@
 				class="flex flex-col items-center justify-center gap-1.5 rounded-lg border-[1.5px]
 					border-dashed border-primary bg-base-200 p-4 transition-colors hover:bg-base-300"
 				onclick={() => (browseOpen = true)}
+				disabled={limitReached}
+				title={limitReached ? limitMessage : undefined}
 			>
 				<span class="flex size-8 items-center justify-center rounded-full bg-base-400">
 					<i class="las la-search text-base text-secondary" aria-hidden="true"></i>
@@ -249,10 +273,20 @@
 
 		<div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
 			<span class="text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-				Your services · {services.length}
+				Your services · {services.length} / {maxServices}
 			</span>
 			<span class="text-xs text-outline">Rates can't go below the base rate for the service</span>
 		</div>
+
+		{#if limitReached}
+			<p
+				class="mb-2.5 flex items-center gap-2 rounded-lg bg-warning-content px-3 py-2 text-xs
+					font-medium text-warning"
+			>
+				<i class="las la-info-circle text-sm" aria-hidden="true"></i>
+				{limitMessage}
+			</p>
+		{/if}
 
 		{#if services.length === 0}
 			<p class="rounded-lg border border-card-border bg-base-100 p-6 text-sm text-base-content-muted">

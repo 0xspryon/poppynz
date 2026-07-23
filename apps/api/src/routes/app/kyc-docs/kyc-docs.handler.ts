@@ -1,5 +1,8 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import { DBNotFoundError, KycDocumentRepo, type KycDocumentType, type KycDocument, KycDocumentTypeRepo } from "@repo/db";
+import { objectBucketsConfig } from "@repo/env";
+import { ObjectStorage, type ObjectStorageError } from "@repo/objs";
+import type { ConfigError } from "effect/ConfigError";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, isAuthError, requirePermissions } from "@/api/lib/effect-auth";
@@ -16,6 +19,10 @@ import {
 class KycValidationError extends Data.TaggedError("KycValidationError")<{ message: string }> { }
 class KycNotFoundError extends Data.TaggedError("KycNotFoundError")<{ entity: "document" | "documentType" }> { }
 class KycRepoError extends Data.TaggedError("KycRepoError")<{ cause: SqlError }> { }
+class KycFileMissingError extends Data.TaggedError("KycFileMissingError")<{}> { }
+class KycFileUrlError extends Data.TaggedError("KycFileUrlError")<{ cause: ObjectStorageError | ConfigError }> { }
+
+const fileViewUrlTtlSeconds = 5 * 60;
 
 function mapKycRepoError<A, R>(effect: Effect.Effect<A, SqlError, R>): Effect.Effect<A, KycRepoError, R>;
 function mapKycRepoError<A, R>(effect: Effect.Effect<A, SqlError | DBNotFoundError, R>): Effect.Effect<A, KycRepoError | KycNotFoundError, R>;
@@ -131,13 +138,57 @@ export const updateAdminKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, head
     return toKycDocResponse(doc);
   });
 
+// The admin document viewer renders the file in-browser only: short-lived
+// presigned URL, inline disposition — no download affordance on our side.
+export const getAdminKycDocumentFileUrlRouteProgram = (headers: Headers, id: string) =>
+  Effect.gen(function* () {
+    const authenticated = yield* authenticate(headers);
+    yield* requirePermissions(headers, { kycDocument: ["read"] })(authenticated);
+    const docRepo = yield* KycDocumentRepo;
+    const doc = yield* mapKycRepoError(docRepo.findByIdWithType(id));
+    if (!doc.fileKey) {
+      return yield* Effect.fail(new KycFileMissingError());
+    }
+    const objectStorage = yield* ObjectStorage;
+    const buckets = yield* objectBucketsConfig.pipe(
+      Effect.mapError((cause) => new KycFileUrlError({ cause })),
+    );
+    const presigned = yield* objectStorage
+      .createPresignedGetUrl({
+        bucket: buckets.kycBucket,
+        key: doc.fileKey,
+        expiresInSeconds: fileViewUrlTtlSeconds,
+        contentDisposition: "inline",
+      })
+      .pipe(Effect.mapError((cause) => new KycFileUrlError({ cause })));
+
+    return {
+      url: presigned.url,
+      expiresAt: presigned.expiresAt.toISOString(),
+      document: {
+        id: doc.id,
+        userId: doc.userId,
+        filename: doc.filename,
+        status: doc.status,
+        expiryDate: toDateString(doc.expiryDate),
+        submittedAt: doc.createdAt.toISOString(),
+      },
+      documentType: {
+        id: doc.documentType.id,
+        name: doc.documentType.name,
+        requiresExpiryDate: doc.documentType.requiresExpiryDate,
+      },
+    };
+  });
+
 export type KycDocsRouteError =
   | Effect.Effect.Error<ReturnType<typeof listKycDocumentTypesRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof createKycDocumentTypeRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof updateKycDocumentTypeRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof deleteKycDocumentTypeRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof submitKycDocumentRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof updateAdminKycDocumentRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof updateAdminKycDocumentRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof getAdminKycDocumentFileUrlRouteProgram>>;
 
 const kycDocsErrorToResponse = (c: HonoContext<HonoEnv>, error: KycDocsRouteError) => {
   if (isAuthError(error)) return authErrorToResponse(c, error);
@@ -158,6 +209,10 @@ const kycDocsErrorToResponse = (c: HonoContext<HonoEnv>, error: KycDocsRouteErro
       );
     case "KycRepoError":
       return c.json({ error: { code: "KYC_REPO_ERROR" as const, message: "Unable to process KYC document request." } }, 500);
+    case "KycFileMissingError":
+      return c.json({ error: { code: "KYC_DOCUMENT_FILE_MISSING" as const, message: "KYC document has no stored file." } }, 404);
+    case "KycFileUrlError":
+      return c.json({ error: { code: "KYC_FILE_URL_FAILED" as const, message: "Unable to create a file view link." } }, 502);
     default:
       return handleNever(c, error);
   }
@@ -228,6 +283,16 @@ export async function updateAdminKycDocumentHandler(c: HonoContext<HonoEnv>) {
   const id = c.req.param("id") ?? "";
   const exit = await runtime.runPromiseExit(
     updateAdminKycDocumentRouteProgram(c, headers, id),
+  );
+  return exitToResponse(c, exit);
+}
+
+export async function getAdminKycDocumentFileUrlHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get("runtime");
+  const headers = c.req.raw.headers;
+  const id = c.req.param("id") ?? "";
+  const exit = await runtime.runPromiseExit(
+    getAdminKycDocumentFileUrlRouteProgram(headers, id),
   );
   return exitToResponse(c, exit);
 }

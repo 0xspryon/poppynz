@@ -31,6 +31,7 @@ export type UserProfileLocationUpdate = Pick<
 export type SafeUserProfile = UserProfile & {
   email: string;
   role: string | null;
+  image: string | null;
 };
 
 export class UserProfileRepo extends Context.Tag("@repo/db/UserProfileRepo")<
@@ -64,7 +65,7 @@ export const UserProfileRepoLive = Layer.effect(
           .pipe(Effect.map((rows) => rows[0])),
       findByUserId: (userId) =>
         db
-          .select({ profile: userProfile, email: user.email, role: user.role })
+          .select({ profile: userProfile, email: user.email, role: user.role, image: user.image })
           .from(userProfile)
           .innerJoin(user, eq(userProfile.userId, user.id))
           .where(eq(userProfile.userId, userId))
@@ -74,7 +75,7 @@ export const UserProfileRepoLive = Layer.effect(
               const row = rows[0];
 
               if (row) {
-                return Effect.succeed({ ...row.profile, email: row.email, role: row.role })
+                return Effect.succeed({ ...row.profile, email: row.email, role: row.role, image: row.image })
                }
                return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }))
             }),
@@ -88,7 +89,7 @@ export const UserProfileRepoLive = Layer.effect(
           .pipe(
             Effect.flatMap(() =>
               db
-                .select({ profile: userProfile, email: user.email, role: user.role })
+                .select({ profile: userProfile, email: user.email, role: user.role, image: user.image })
                 .from(userProfile)
                 .innerJoin(user, eq(userProfile.userId, user.id))
                 .where(eq(userProfile.userId, userId))
@@ -99,7 +100,7 @@ export const UserProfileRepoLive = Layer.effect(
 
               if (row) {
                 return Effect.succeed({
-                  ...row.profile, email: row.email, role: row.role
+                  ...row.profile, email: row.email, role: row.role, image: row.image
                 })
               }
               return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }))
@@ -114,7 +115,7 @@ export const UserProfileRepoLive = Layer.effect(
           .pipe(
             Effect.flatMap(() =>
               db
-                .select({ profile: userProfile, email: user.email, role: user.role })
+                .select({ profile: userProfile, email: user.email, role: user.role, image: user.image })
                 .from(userProfile)
                 .innerJoin(user, eq(userProfile.userId, user.id))
                 .where(eq(userProfile.userId, userId))
@@ -125,7 +126,7 @@ export const UserProfileRepoLive = Layer.effect(
 
               if (row) {
                 return Effect.succeed({
-                  ...row.profile, email: row.email, role: row.role
+                  ...row.profile, email: row.email, role: row.role, image: row.image
                 })
               }
               return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }))

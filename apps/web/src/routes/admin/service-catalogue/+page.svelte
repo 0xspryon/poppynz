@@ -6,7 +6,10 @@
 		updateCatalogueItem,
 		type CatalogueItem
 	} from '$lib/api/service-catalogue';
-	import { centsToDollars, dollarsToCents } from '$lib/money';
+	import { centsToDollars } from '$lib/money';
+	import CatalogueItemDialog, {
+		type CatalogueItemDraft
+	} from '$lib/components/admin/CatalogueItemDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
@@ -20,10 +23,6 @@
 	// Create/edit modal
 	let modalOpen = $state(false);
 	let editing: CatalogueItem | null = $state(null);
-	let draftName = $state('');
-	let draftCategory = $state('');
-	let draftRate = $state('');
-	let draftIsLive = $state(true);
 	let saving = $state(false);
 	let modalError: string | null = $state(null);
 
@@ -32,8 +31,6 @@
 	let deleteBusy = $state(false);
 
 	const categories = $derived([...new Set(items.map((item) => item.category))].sort());
-	const draftRateCents = $derived(dollarsToCents(draftRate));
-	const canSave = $derived(draftName.trim() !== '' && draftCategory.trim() !== '' && draftRateCents !== null);
 
 	const errorText = (error: { code: string; message: string }) =>
 		error.code === 'FORBIDDEN'
@@ -60,35 +57,20 @@
 
 	function openCreate() {
 		editing = null;
-		draftName = '';
-		draftCategory = '';
-		draftRate = '';
-		draftIsLive = true;
 		modalError = null;
 		modalOpen = true;
 	}
 
 	function openEdit(item: CatalogueItem) {
 		editing = item;
-		draftName = item.name;
-		draftCategory = item.category;
-		draftRate = centsToDollars(item.baseHourlyRateCents);
-		draftIsLive = item.isLive;
 		modalError = null;
 		modalOpen = true;
 	}
 
-	async function save(event: SubmitEvent) {
-		event.preventDefault();
-		if (saving || !canSave || draftRateCents === null) return;
+	async function save(draft: CatalogueItemDraft) {
+		if (saving) return;
 		saving = true;
 		modalError = null;
-		const draft = {
-			name: draftName.trim(),
-			category: draftCategory.trim(),
-			baseHourlyRateCents: draftRateCents,
-			isLive: draftIsLive
-		};
 		const result = editing
 			? await updateCatalogueItem(editing.id, draft)
 			: await createCatalogueItem(draft);
@@ -251,102 +233,15 @@
 	</p>
 {/if}
 
-{#if modalOpen}
-	<div class="modal modal-open" role="dialog" aria-modal="true">
-		<form class="modal-box max-w-xl border border-card-border" onsubmit={save}>
-			<h3 class="font-display text-xl font-bold text-base-content">
-				{editing ? 'Edit service' : 'New service'}
-			</h3>
-			<p class="mt-1 mb-4 text-sm text-base-content-muted">
-				The base rate is the floor providers can raise but never undercut.
-			</p>
-
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Name · ≤120</legend>
-					<input
-						type="text"
-						class="input w-full"
-						maxlength="120"
-						required
-						placeholder="Weekend babysitting"
-						bind:value={draftName}
-					/>
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Category</legend>
-					<input
-						type="text"
-						class="input w-full"
-						maxlength="80"
-						required
-						placeholder="Childcare"
-						list="catalogue-categories"
-						bind:value={draftCategory}
-					/>
-					<datalist id="catalogue-categories">
-						{#each categories as category (category)}
-							<option value={category}></option>
-						{/each}
-					</datalist>
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Base rate / hour</legend>
-					<label class="input w-full {draftRate !== '' && draftRateCents === null ? 'input-error' : ''}">
-						<span class="text-outline">$</span>
-						<input
-							type="text"
-							class="grow"
-							inputmode="decimal"
-							required
-							placeholder="19.00"
-							bind:value={draftRate}
-						/>
-					</label>
-				</fieldset>
-				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Unit</legend>
-					<select class="select w-full" disabled>
-						<option>Per hour</option>
-					</select>
-				</fieldset>
-			</div>
-
-			<div class="mt-4 flex flex-wrap gap-x-6 gap-y-3">
-				<label class="flex items-center gap-2.5">
-					<input type="checkbox" class="toggle toggle-primary" checked disabled />
-					<span class="text-sm font-medium text-base-content">
-						Rate is a floor — providers may raise it
-					</span>
-				</label>
-				<label class="flex items-center gap-2.5">
-					<input type="checkbox" class="toggle toggle-primary" bind:checked={draftIsLive} />
-					<span class="text-sm font-medium text-base-content">Live in the provider catalogue</span>
-				</label>
-			</div>
-
-			{#if modalError}
-				<p class="mt-4 text-sm font-medium text-error" role="alert">{modalError}</p>
-			{/if}
-
-			<div class="modal-action">
-				<button type="button" class="btn btn-ghost" onclick={() => (modalOpen = false)} disabled={saving}>
-					Cancel
-				</button>
-				<button type="submit" class="btn btn-primary" disabled={saving || !canSave}>
-					{#if saving}<span class="loading loading-spinner loading-sm"></span>{/if}
-					Save service
-				</button>
-			</div>
-		</form>
-		<button
-			type="button"
-			class="modal-backdrop"
-			onclick={() => (modalOpen = false)}
-			aria-label="Close"
-		></button>
-	</div>
-{/if}
+<CatalogueItemDialog
+	open={modalOpen}
+	{editing}
+	{categories}
+	busy={saving}
+	error={modalError}
+	onsave={(draft) => void save(draft)}
+	oncancel={() => (modalOpen = false)}
+/>
 
 <ConfirmDialog
 	open={deleting !== null}

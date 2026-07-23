@@ -69,6 +69,7 @@ const makeLayer = (options: { documentType?: KycDocumentType | null; storageErro
     makeObjectStorageTest({
       ensureBucketExists: () => Effect.void,
       ensurePublicReadBucket: () => Effect.void,
+        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
       createPresignedPutUrl: (input) => {
         options.onPresign?.(input);
         return options.storageError

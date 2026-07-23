@@ -125,10 +125,15 @@ const makeLayer = (options: {
       },
       findCurrentByUserId: (userId) =>
         Effect.fail(new DBNotFoundError({ entity: "approval", value: userId })),
+      listByUserId: () => Effect.succeed([]),
+      revoke: (id) => Effect.fail(new DBNotFoundError({ entity: "approval", value: id })),
     }),
     makeApprovalRequestRepoTest({
       createSubmitted: (userId) => Effect.succeed(makeApprovalRequest({ userId })),
       list: () => Effect.succeed([]),
+      listWithApplicant: () => Effect.succeed([]),
+      countByStatus: () => Effect.succeed({ submitted: 0, approved: 0, rejected: 0 }),
+      listByUserId: () => Effect.succeed([]),
       findById: (id) => {
         if (options.approvalRequestError) return Effect.fail(options.approvalRequestError);
         return id === "request-1"
@@ -191,7 +196,6 @@ const makeLayer = (options: {
     }),
     makeProviderSearchQueueTest({
       enqueueReconcile: () => Effect.succeed({ id: "job-1", name: "reconcile-provider" }),
-      enqueueExpiryReconcile: () => Effect.succeed({ id: "job-2", name: "reconcile-provider" }),
       enqueueReindex: () => Effect.succeed({ id: "job-3", name: "reindex-all-providers" }),
     }),
     makeProviderSearchOutboxRepoTest({

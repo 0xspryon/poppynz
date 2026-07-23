@@ -1,8 +1,9 @@
 import type { SqlError } from "@effect/sql/SqlError";
-import { ApprovalRequestRepo, DBNotFoundError, KycDocumentRepo, KycDocumentTypeRepo, ServiceOfferedRepo, UserProfileRepo } from "@repo/db";
+import { ApprovalRepo, ApprovalRequestRepo, DBNotFoundError, KycDocumentTypeRepo, UserProfileRepo } from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
+import { loadProviderChecklist, loadProviderChecklistWithTypes } from "@/api/lib/provider-onboarding";
 import { parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import { approvalRequestJsonError, validateApprovalRequestRejectInput } from "./approval-requests.validator";
 
@@ -14,7 +15,7 @@ const ensureServiceProvider = <T extends { user: { role: string | null } }>(user
     ? Effect.succeed(userAndSession)
     : Effect.fail(new ApprovalRequestValidationError({ message: "Only service providers can submit approval requests." }));
 
-const toRequestResponse = (request: any) => ({
+const toRequestResponse = <T extends { reviewedAt: Date | null; createdAt: Date; updatedAt: Date }>(request: T) => ({
   ...request,
   reviewedAt: request.reviewedAt?.toISOString() ?? null,
   createdAt: request.createdAt.toISOString(),
@@ -22,25 +23,7 @@ const toRequestResponse = (request: any) => ({
 });
 
 const buildWarnings = (userId: string) =>
-  Effect.gen(function* () {
-    const typeRepo = yield* KycDocumentTypeRepo;
-    const docRepo = yield* KycDocumentRepo;
-    const serviceRepo = yield* ServiceOfferedRepo;
-    const [types, docs, services] = yield* Effect.all([
-      typeRepo.listActive(),
-      docRepo.findByUserId(userId),
-      serviceRepo.listByUserId(userId),
-    ], { concurrency: "unbounded" });
-    const submittedTypeIds = new Set(docs.map((doc) => doc.documentTypeId));
-    const missingRequiredDocuments = types
-      .filter((type) => type.appliesToRole === "service-provider" && !type.isOptional && !submittedTypeIds.has(type.id))
-      .map((type) => ({ documentTypeId: type.id, name: type.name }));
-
-    return {
-      missingRequiredDocuments,
-      missingServicesOffered: services.length === 0,
-    };
-  });
+  loadProviderChecklist(userId).pipe(Effect.map((state) => state.warnings));
 
 export const createApprovalRequestRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
@@ -70,8 +53,33 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { approvalRequest: ["read"] })(authenticated);
     const repo = yield* ApprovalRequestRepo;
-    const requests = yield* repo.list(50);
-    return requests.map(toRequestResponse);
+    const typeRepo = yield* KycDocumentTypeRepo;
+    const [requests, counts, types] = yield* Effect.all([
+      repo.listWithApplicant(50),
+      repo.countByStatus(),
+      typeRepo.listActive(),
+    ], { concurrency: "unbounded" });
+
+    // Warnings reflect the provider's CURRENT checklist (a doc uploaded after
+    // submission clears the warning) — one lookup per distinct applicant.
+    const loadChecklist = loadProviderChecklistWithTypes(types);
+    const userIds = [...new Set(requests.map((request) => request.userId))];
+    const warningsByUser = new Map(
+      yield* Effect.forEach(
+        userIds,
+        (userId) => loadChecklist(userId).pipe(Effect.map((state) => [userId, state.warnings] as const)),
+        { concurrency: 5 },
+      ),
+    );
+
+    return {
+      requests: requests.map((request) => ({
+        ...toRequestResponse(request),
+        applicant: request.applicant,
+        warnings: warningsByUser.get(request.userId) ?? { missingRequiredDocuments: [], missingServicesOffered: false },
+      })),
+      counts: { ...counts, total: counts.submitted + counts.approved + counts.rejected },
+    };
   });
 
 export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string) =>
@@ -80,25 +88,31 @@ export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string
     yield* requirePermissions(headers, { approvalRequest: ["read"] })(authenticated);
     const requestRepo = yield* ApprovalRequestRepo;
     const profileRepo = yield* UserProfileRepo;
-    const docRepo = yield* KycDocumentRepo;
-    const typeRepo = yield* KycDocumentTypeRepo;
-    const serviceRepo = yield* ServiceOfferedRepo;
+    const approvalRepo = yield* ApprovalRepo;
     const request = yield* requestRepo.findById(id);
-    const [profile, docs, types, services, warnings] = yield* Effect.all([
+    const [profile, { checklist, services, warnings }, currentApproval] = yield* Effect.all([
       profileRepo.findByUserId(request.userId),
-      docRepo.findByUserIdWithTypes(request.userId),
-      typeRepo.listActive(),
-      serviceRepo.listByUserId(request.userId),
-      buildWarnings(request.userId),
+      loadProviderChecklist(request.userId),
+      approvalRepo.findCurrentByUserId(request.userId).pipe(
+        Effect.catchTag("DBNotFoundError", () => Effect.succeed(null)),
+      ),
     ], { concurrency: "unbounded" });
-    const submittedTypeIds = new Set(docs.map((doc) => doc.documentTypeId));
     return {
       approvalRequest: toRequestResponse(request),
+      currentApproval: currentApproval
+        ? {
+          id: currentApproval.id,
+          grantedAt: currentApproval.createdAt.toISOString(),
+          expiresAt: currentApproval.expiresAt.toISOString(),
+        }
+        : null,
       user: { id: profile.userId, email: profile.email, role: profile.role },
       profile,
-      kycDocuments: docs,
-      missingRequiredDocuments: types.filter((type) => !type.isOptional && !submittedTypeIds.has(type.id)),
-      optionalDocumentTypes: types.filter((type) => type.isOptional),
+      documents: checklist,
+      missingRequiredDocuments: warnings.missingRequiredDocuments,
+      optionalDocumentTypes: checklist
+        .filter((entry) => entry.isOptional)
+        .map((entry) => ({ id: entry.documentTypeId, name: entry.name })),
       servicesOffered: services,
       warnings,
     };

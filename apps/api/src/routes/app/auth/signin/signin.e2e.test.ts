@@ -53,7 +53,7 @@ const makeApp = (options: {
       EmptyKycDocumentRepoTest,
       EmptyKycDocumentTypeRepoTest,
       EmptyServiceOfferedRepoTest,
-      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used") }),
+      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used"), autocompletePlaces: () => Effect.succeed([]) }),
       makeAuthServiceTest({
         getSession: () => Effect.succeed(null),
         userHasPermission: () => Effect.succeed(false),
@@ -72,6 +72,7 @@ const makeApp = (options: {
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
         createPresignedPutUrl: () => Effect.succeed({ uploadUrl: "https://example.com", expiresAt: new Date() }),
+        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
       }),
     ),
   );

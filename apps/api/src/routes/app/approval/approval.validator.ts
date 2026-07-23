@@ -29,7 +29,13 @@ export const approvalCreateInputSchema = Schema.Struct({
   expiresAt: approvalExpirySchema,
 });
 
+export const approvalRevokeInputSchema = Schema.Struct({
+  reason: trimmedNonEmptyString.pipe(Schema.maxLength(500)),
+});
+
 export type ApprovalInput = Schema.Schema.Type<typeof approvalCreateInputSchema>;
+export type ApprovalRevokeInput = Schema.Schema.Type<typeof approvalRevokeInputSchema>;
 
 export const validateApprovalInput = validateInput(approvalCreateInputSchema, approvalValidationError);
+export const validateApprovalRevokeInput = validateInput(approvalRevokeInputSchema, approvalValidationError);
 export const approvalJsonError = approvalValidationError;

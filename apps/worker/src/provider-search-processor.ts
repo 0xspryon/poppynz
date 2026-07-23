@@ -9,15 +9,19 @@ const processReconcileProvider = (data: ReconcileProviderJob) =>
     const index = yield* ProviderSearchIndex;
     const outboxRepo = yield* ProviderSearchOutboxRepo;
 
-    yield* outboxRepo.markProcessing(data.outboxId);
+    // Delayed expiry jobs carry no outbox row (it would sit unresolved for
+    // the whole approval lifetime) — create the audit row when the job fires.
+    const outboxId = data.outboxId ?? (yield* outboxRepo.createPending(data.userId)).id;
+
+    yield* outboxRepo.markProcessing(outboxId);
     yield* index.reconcileProvider(data.userId).pipe(
       Effect.catchAllCause((cause) =>
-        outboxRepo.markFailed(data.outboxId, Cause.pretty(cause)).pipe(
+        outboxRepo.markFailed(outboxId, Cause.pretty(cause)).pipe(
           Effect.flatMap(() => Effect.failCause(cause)),
         ),
       ),
     );
-    yield* outboxRepo.markProcessed(data.outboxId);
+    yield* outboxRepo.markProcessed(outboxId);
   });
 
 const processReindexAllProviders = () =>

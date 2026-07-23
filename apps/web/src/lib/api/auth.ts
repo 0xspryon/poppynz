@@ -11,7 +11,7 @@ export interface PendingAuth {
   sentAt: number;
 }
 
-export type AuthDestination = '/' | '/admin' | '/auth/expired' | '/account';
+export type AuthDestination = '/' | '/admin' | '/auth/expired' | '/service-provider/dashboard' | '/family/profile';
 
 export interface VerifyResult {
   status: 'ok' | 'expired';
@@ -107,7 +107,14 @@ export async function verifyMagicLink(token: string): Promise<VerifyResult> {
   const { fetchSession } = await import('./profile');
   const session = await fetchSession();
   clearPendingAuth();
-  return { status: 'ok', destination: session?.role === 'admin' ? '/admin' : '/account' };
+  if (session?.role === 'admin') return { status: 'ok', destination: '/admin' };
+  if (session?.role === 'service-provider') {
+    return { status: 'ok', destination: '/service-provider/dashboard' };
+  }
+  if (session?.role === 'family') {
+    return { status: 'ok', destination: '/family/profile' };
+  }
+  return { status: 'ok', destination: '/' };
 }
 
 export async function signOut(): Promise<void> {

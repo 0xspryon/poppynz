@@ -2,10 +2,10 @@ import { ApprovalRepo, ApprovalRequestRepo, DBNotFoundError, ServiceOfferedRepo,
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, isAuthError, requirePermissions, type UserAndSession } from "@/api/lib/effect-auth";
-import { approvalJsonError, validateApprovalInput, type ApprovalInput } from "./approval.validator";
+import { approvalJsonError, validateApprovalInput, validateApprovalRevokeInput, type ApprovalInput } from "./approval.validator";
 import { isRequestValidationError, parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import type { SqlError } from "@effect/sql/SqlError";
-import { scheduleProviderSearchApprovalJobs } from "@/api/lib/provider-search-jobs";
+import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
 
 export class ApprovalRepoError extends Data.TaggedError("ApprovalRepoError")<{ cause: SqlError }> { }
 export class ApprovalRequestMismatchError extends Data.TaggedError("ApprovalRequestMismatchError")<{}> { }
@@ -76,12 +76,41 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
       expiresAt: approval.expiresAt.toISOString(),
     };
 
-    yield* scheduleProviderSearchApprovalJobs(response.userId, approval.expiresAt);
+    // Indexing on grant is still required; expiry needs no delayed job — the
+    // search read path filters on approvalExpiresAt and re-verifies in the DB.
+    yield* scheduleProviderSearchReconcile(response.userId);
 
     return response;
   });
 
+export class ApprovalNotFoundError extends Data.TaggedError("ApprovalNotFoundError")<{ id: string }> { }
+
+// Revokes a live approval before its expiry (status → rejected, reason kept
+// for the provider). No reconcile needed: the search read path re-verifies
+// approvals in the DB, and lazy repair deletes the stale index doc the next
+// time a search nominates this provider.
+export const revokeApprovalProgram = (id: string, reason: string) =>
+  Effect.gen(function*() {
+    const approvalRepo = yield* ApprovalRepo;
+    const revoked = yield* approvalRepo.revoke(id, reason).pipe(
+      Effect.catchTags({
+        SqlError: (cause) => Effect.fail(new ApprovalRepoError({ cause })),
+        DBNotFoundError: () => Effect.fail(new ApprovalNotFoundError({ id })),
+      }),
+    );
+
+    return {
+      id: revoked.id,
+      userId: revoked.userId,
+      approvalRequestId: revoked.approvalRequestId,
+      status: revoked.status,
+      reason: revoked.reason,
+      expiresAt: revoked.expiresAt.toISOString(),
+    };
+  });
+
 export type ApprovalError = Effect.Effect.Error<ReturnType<typeof createApprovalProgram>>;
+export type ApprovalRevokeError = Effect.Effect.Error<ReturnType<typeof revokeApprovalProgram>>;
 
 const approvalErrorToResponse = (c: HonoContext<HonoEnv>, error: ApprovalError) => {
   switch (error._tag) {
@@ -93,7 +122,8 @@ const approvalErrorToResponse = (c: HonoContext<HonoEnv>, error: ApprovalError) 
       return c.json({ error: { code: "APPROVAL_ELIGIBILITY_FAILED" as const, message: error.message } }, 400);
     case "ApprovalRepoError":
       return c.json({ error: { code: "APPROVAL_FAILED" as const, message: "Unable to create approval." } }, 500);
-    default: handleNever(c, error)
+    default:
+      return handleNever(c, error);
   }
 };
 
@@ -102,6 +132,40 @@ const isApprovalError = (error: unknown): error is ApprovalError =>
   error instanceof ApprovalRequestMismatchError ||
   error instanceof ApprovalRequestNotFoundError ||
   error instanceof ApprovalEligibilityError;
+
+export async function revokeApprovalHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get("runtime");
+  const headers = c.req.raw.headers;
+  const id = c.req.param("id") ?? "";
+  const exit = await runtime.runPromiseExit(
+    Effect.gen(function*() {
+      const rawBody = yield* parseJsonBody(c, approvalJsonError);
+      const input = yield* validateApprovalRevokeInput(rawBody);
+      const authenticated = yield* authenticate(headers);
+      yield* requirePermissions(headers, { approval: ["write"] })(authenticated);
+
+      return yield* revokeApprovalProgram(id, input.reason);
+    }),
+  );
+
+  return Exit.match(exit, {
+    onSuccess: (approval) => c.json(approval),
+    onFailure: (cause) => {
+      const failure = Cause.failureOption(cause);
+      if (Option.isSome(failure)) {
+        if (isAuthError(failure.value)) return authErrorToResponse(c, failure.value);
+        if (isRequestValidationError(failure.value)) return requestValidationErrorToResponse(c, failure.value);
+        if (failure.value instanceof ApprovalNotFoundError) {
+          return c.json({ error: { code: "APPROVAL_NOT_FOUND" as const, message: "No active approval was found to revoke." } }, 404);
+        }
+        if (failure.value instanceof ApprovalRepoError) {
+          return c.json({ error: { code: "APPROVAL_FAILED" as const, message: "Unable to revoke approval." } }, 500);
+        }
+      }
+      return c.json({ error: { code: "INTERNAL_SERVER_ERROR" as const, message: "Unexpected server error." } }, 500);
+    },
+  });
+}
 
 export async function createApprovalHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");

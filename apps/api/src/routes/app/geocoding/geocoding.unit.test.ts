@@ -59,6 +59,7 @@ const makeLayer = (options: { hasPermission?: boolean } = {}) => {
       findById: (id) => id === currentSession.id ? Effect.succeed(currentSession) : Effect.fail(new DBNotFoundError({ entity: "session", value: id })),
     }),
     makeGooglePlacesTest({
+      autocompletePlaces: () => Effect.succeed([]),
       lookupPlaceById: (placeId) => Effect.succeed({
         googlePlaceId: placeId,
         formattedAddress: "123 Main St, Toronto, ON, Canada",

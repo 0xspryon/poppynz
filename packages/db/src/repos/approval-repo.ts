@@ -22,6 +22,8 @@ export class ApprovalRepo extends Context.Tag("@repo/db/ApprovalRepo")<
   {
     create: (input: ApprovalCreateInput) => Effect.Effect<Approval, SqlError>;
     findCurrentByUserId: (userId: string) => Effect.Effect<Approval, SqlError | DBNotFoundError>;
+    listByUserId: (userId: string) => Effect.Effect<Array<Approval>, SqlError>;
+    revoke: (id: string, reason: string) => Effect.Effect<Approval, SqlError | DBNotFoundError>;
   }
 >() { }
 
@@ -61,6 +63,28 @@ export const ApprovalRepoLive = Layer.effect(
               return Effect.fail(new DBNotFoundError({ entity: "approval", value: userId }));
             }),
           ),
+      listByUserId: (userId) =>
+        db
+          .select()
+          .from(approval)
+          .where(eq(approval.userId, userId))
+          .orderBy(desc(approval.createdAt)),
+      // Revocation flips a live approval to `rejected` — findCurrentByUserId
+      // and the search-index candidate query both filter on status='approved',
+      // so a revoked provider immediately loses verified standing.
+      revoke: (id, reason) =>
+        db
+          .update(approval)
+          .set({ status: "rejected", reason, updatedAt: new Date() })
+          .where(and(eq(approval.id, id), eq(approval.status, "approved")))
+          .returning()
+          .pipe(
+            Effect.flatMap((rows) =>
+              rows[0]
+                ? Effect.succeed(rows[0])
+                : Effect.fail(new DBNotFoundError({ entity: "approval", value: id })),
+            ),
+          ),
     };
   }),
 );
@@ -73,4 +97,6 @@ export const makeApprovalRepoTest = (implementation: Context.Tag.Service<Approva
 export const EmptyApprovalRepoTest = makeApprovalRepoTest({
   create: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: "" }) as never),
   findCurrentByUserId: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: "" })),
+  listByUserId: () => Effect.succeed([]),
+  revoke: () => Effect.fail(new DBNotFoundError({ entity: "approval", value: "" })),
 });

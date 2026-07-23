@@ -16,6 +16,7 @@ import {
   type Session,
   type User,
   type UserProfile,
+  EmptyApprovalRepoTest,
 } from "@repo/db";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
@@ -154,6 +155,7 @@ const makeLayer = (options: {
   const currentSession = session({ userId: currentUser.id });
 
   return Layer.mergeAll(
+    EmptyApprovalRepoTest,
     makeApprovalRequestRepoTest({
       createSubmitted: (userId) => {
         options.onCreateSubmitted?.(userId);
@@ -162,6 +164,9 @@ const makeLayer = (options: {
           : Effect.succeed(approvalRequest({ id: "request-created", userId }));
       },
       list: () => Effect.succeed(options.approvalRequests ?? []),
+      listWithApplicant: () => Effect.succeed((options.approvalRequests ?? []).map((request) => ({ ...request, applicant: { email: "provider@example.com", firstName: "Maria", lastName: "Santos" } }))),
+      countByStatus: () => Effect.succeed({ submitted: 0, approved: 0, rejected: 0 }),
+      listByUserId: () => Effect.succeed([]),
       findById: (id) => {
         const request = (options.approvalRequests ?? [approvalRequest()]).find((item) => item.id === id);
         return request ? Effect.succeed(request) : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id }));
@@ -297,8 +302,9 @@ describe("admin approval request review route programs", () => {
       ),
     );
 
-    expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ id: "request-1", status: "submitted" });
+    expect(result.requests).toHaveLength(2);
+    expect(result.requests[0]).toMatchObject({ id: "request-1", status: "submitted" });
+    expect(result.requests[0]?.applicant).toEqual({ email: "provider@example.com", firstName: "Maria", lastName: "Santos" });
   });
 
   it("returns an approval request review packet", async () => {
@@ -310,7 +316,7 @@ describe("admin approval request review route programs", () => {
 
     expect(result.approvalRequest).toMatchObject({ id: "request-1", status: "submitted" });
     expect(result.user).toEqual({ id: "provider-1", email: "provider@example.com", role: "service-provider" });
-    expect(result.missingRequiredDocuments).toEqual([expect.objectContaining({ id: "document-type-1", name: "Identity document" })]);
+    expect(result.missingRequiredDocuments).toEqual([{ documentTypeId: "document-type-1", name: "Identity document" }]);
     expect(result.warnings).toEqual({
       missingRequiredDocuments: [{ documentTypeId: "document-type-1", name: "Identity document" }],
       missingServicesOffered: true,

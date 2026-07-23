@@ -45,10 +45,12 @@ export const ProviderSearchOutboxRepoLive = Layer.effect(
           .returning()
           .pipe(Effect.map((rows) => rows[0])),
       listUnresolved: (limit) =>
+        // Includes rows stranded in `processing`/`failed` by a worker crash —
+        // startup recovery re-enqueues them (reconcile jobs are idempotent).
         db
           .select()
           .from(providerSearchOutbox)
-          .where(eq(providerSearchOutbox.status, "pending"))
+          .where(inArray(providerSearchOutbox.status, unresolvedStatuses))
           .limit(limit),
       markProcessing: (id) =>
         db

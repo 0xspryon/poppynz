@@ -3,6 +3,7 @@ import { UserRepo } from "@repo/db";
 import { Cause, Context, Data, Effect, Exit, Layer, Option } from "effect";
 import type { HonoContext, HonoEnv } from "../../../../app-env";
 import { auth } from "../../../../lib/auth";
+import { resolveUiOrigin } from "../../../../lib/ui-origin";
 import {
   signinJsonError,
   validateSigninInput,
@@ -36,11 +37,12 @@ export const SigninServiceLive = Layer.succeed(SigninService, {
   sendSigninLink: ({ email, headers }) =>
     Effect.tryPromise({
       try: async () => {
+        const uiOrigin = resolveUiOrigin(headers);
         await auth.api.signInMagicLink({
           body: {
             email,
-            callbackURL: "/",
-            errorCallbackURL: "/auth/sign-in/error",
+            callbackURL: `${uiOrigin}/`,
+            errorCallbackURL: `${uiOrigin}/auth/sign-in/error`,
           },
           headers,
         });

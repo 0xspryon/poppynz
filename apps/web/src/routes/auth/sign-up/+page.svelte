@@ -1,14 +1,19 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { requestSignUpLink, type Role } from '$lib/api/auth';
 	import { matchError } from '$lib/api/client';
 	import RoleChooser from '$lib/components/RoleChooser.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
-	let role: Role = $state('family');
-	let email = $state('');
+	// Referral invite links land here with ?email=…&role=… prefilled.
+	const invitedRole = page.url.searchParams.get('role');
+	let role: Role = $state(
+		invitedRole === 'family' || invitedRole === 'service-provider' ? invitedRole : 'family'
+	);
+	let email = $state(page.url.searchParams.get('email') ?? '');
 	let agreed = $state(false);
 	let submitting = $state(false);
 	let errorMessage: string | null = $state(null);

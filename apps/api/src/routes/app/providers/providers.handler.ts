@@ -1,8 +1,10 @@
-import { ProviderSearchIndex, buildProviderSearchDocument, getProviderSearchMinRadiusKm } from "@repo/typesense";
+import { ProviderSearchIndex, type ProviderSearchDocument, buildProviderSearchDocument, getProviderSearchMinRadiusKm } from "@repo/typesense";
 import { DBNotFoundError, ProviderSearchRepo, UserProfileRepo } from "@repo/db";
 import { Cause, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
+import { presignProfileImageUrl } from "@/api/lib/profile-image";
+import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
 import { ProviderSearchRequestValidationError, validateProviderSearchQuery } from "./providers.validator";
 
 const publicProvider = (provider: {
@@ -18,10 +20,11 @@ const publicProvider = (provider: {
   maxHourlyRateCents: number;
   currencies: Array<string>;
   distanceKm?: number;
-}) => ({
+}, imageUrl: string | null) => ({
   userId: provider.userId,
   displayName: provider.displayName,
   shortBio: provider.shortBio,
+  image: imageUrl,
   location: {
     city: provider.city,
     stateProvince: provider.stateProvince,
@@ -35,7 +38,7 @@ const publicProvider = (provider: {
   distanceKm: provider.distanceKm,
 });
 
-const publicProviderDetail = (candidate: Parameters<typeof buildProviderSearchDocument>[0]) => {
+const publicProviderDetail = (candidate: Parameters<typeof buildProviderSearchDocument>[0], imageUrl: string | null) => {
   const document = buildProviderSearchDocument(candidate);
   if (!document) return null;
 
@@ -43,6 +46,7 @@ const publicProviderDetail = (candidate: Parameters<typeof buildProviderSearchDo
     userId: document.userId,
     displayName: document.displayName,
     shortBio: document.shortBio,
+    image: imageUrl,
     location: {
       city: document.city,
       stateProvince: document.stateProvince,
@@ -82,20 +86,88 @@ export const searchProvidersRouteProgram = (headers: Headers, query: Record<stri
     }
 
     const index = yield* ProviderSearchIndex;
-    const result = yield* index.searchProviders({
+    const repo = yield* ProviderSearchRepo;
+
+    // Typesense only nominates ranked candidates; the DB is the authority on
+    // eligibility (role, ban, live approval, active services) and on the data
+    // we return. Over-fetch candidates and keep scanning until the requested
+    // page is full, so stale index entries can't leave holes in a page.
+    const needed = input.page * input.perPage;
+    const candidatePerPage = Math.min(250, input.perPage * 2);
+    const maxCandidatePages = Math.ceil(needed / candidatePerPage) + 2;
+
+    const verified: Array<ProviderSearchDocument & { distanceKm?: number }> = [];
+    const staleUserIds: Array<string> = [];
+    let indexTotal = 0;
+    let exhausted = false;
+
+    for (let candidatePage = 1; verified.length < needed && candidatePage <= maxCandidatePages; candidatePage += 1) {
+      const result = yield* index.searchProviders({
+        q: input.q,
+        city: input.city,
+        service: input.service,
+        radiusKm: input.radiusKm,
+        center,
+        minHourlyRateCents: input.minHourlyRateCents,
+        maxHourlyRateCents: input.maxHourlyRateCents,
+        page: candidatePage,
+        perPage: candidatePerPage,
+        sort: input.sort,
+      });
+      indexTotal = result.pagination.total;
+
+      if (result.providers.length === 0) {
+        exhausted = true;
+        break;
+      }
+
+      const candidates = yield* repo.listCandidatesByUserIds(result.providers.map((hit) => hit.userId));
+      const candidateByUserId = new Map(candidates.map((candidate) => [candidate.profile.userId, candidate]));
+
+      for (const hit of result.providers) {
+        const candidate = candidateByUserId.get(hit.userId);
+        const document = candidate ? buildProviderSearchDocument(candidate) : null;
+        if (document) verified.push({ ...document, distanceKm: hit.distanceKm });
+        else staleUserIds.push(hit.userId);
+      }
+
+      if (candidatePage * candidatePerPage >= indexTotal) {
+        exhausted = true;
+        break;
+      }
+    }
+
+    // Candidates the DB rejected are stale index entries; a reconcile removes them.
+    yield* Effect.forEach(staleUserIds, scheduleProviderSearchReconcile, { discard: true });
+
+    const pageStart = (input.page - 1) * input.perPage;
+    const pageOfProviders = verified.slice(pageStart, pageStart + input.perPage);
+    const total = exhausted ? verified.length : Math.max(indexTotal - staleUserIds.length, verified.length);
+
+    const providers = yield* Effect.forEach(
+      pageOfProviders,
+      (provider) =>
+        presignProfileImageUrl(provider.image).pipe(
+          Effect.map((imageUrl) => publicProvider(provider, imageUrl)),
+        ),
+      { concurrency: 5 },
+    );
+
+    // City facet options for the filter dropdown, respecting the other active
+    // filters (q/service/rate/radius) but not city itself.
+    const cityFacets = yield* index.listCityFacets({
       q: input.q,
-      city: input.city,
       service: input.service,
       radiusKm: input.radiusKm,
       center,
       minHourlyRateCents: input.minHourlyRateCents,
       maxHourlyRateCents: input.maxHourlyRateCents,
-      page: input.page,
+      page: 1,
       perPage: input.perPage,
       sort: input.sort,
     });
 
-    return { providers: result.providers.map(publicProvider), pagination: result.pagination };
+    return { providers, pagination: { page: input.page, perPage: input.perPage, total }, facets: { city: cityFacets } };
   });
 
 export const getProviderRouteProgram = (headers: Headers, userId: string) =>
@@ -104,7 +176,8 @@ export const getProviderRouteProgram = (headers: Headers, userId: string) =>
     yield* requirePermissions(headers, { providerSearch: ["read"] })(authenticated);
     const repo = yield* ProviderSearchRepo;
     const candidate = yield* repo.findCandidateByUserId(userId);
-    const provider = publicProviderDetail(candidate);
+    const imageUrl = yield* presignProfileImageUrl(candidate.profile.image);
+    const provider = publicProviderDetail(candidate, imageUrl);
 
     if (!provider) return yield* Effect.fail(new DBNotFoundError({ entity: "provider", value: userId }));
     return provider;
@@ -125,6 +198,8 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: ProvidersRouteError) =>
       return c.json({ error: { code: "INVALID_PROVIDER_SEARCH" as const, message: error.message } }, 400);
     case "ProviderSearchIndexError":
       return c.json({ error: { code: "PROVIDER_SEARCH_FAILED" as const, message: "Unable to search providers." } }, 502);
+    case "ProfileImageUrlError":
+      return c.json({ error: { code: "PROVIDER_IMAGE_URL_FAILED" as const, message: "Unable to create a profile image link." } }, 502);
     case "DBNotFoundError":
       return c.json({ error: { code: "PROVIDER_NOT_FOUND" as const, message: "Provider was not found." } }, 404);
     case "SqlError":

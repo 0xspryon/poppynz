@@ -2,6 +2,7 @@ import { SqlError } from "@effect/sql/SqlError";
 import {
   EmptyApprovalRepoTest,
   EmptyApprovalRequestRepoTest,
+  EmptyReferralRepoTest,
   makeKycDocumentRepoTest,
   EmptyKycDocumentTypeRepoTest,
   EmptyServiceOfferedRepoTest,
@@ -53,16 +54,18 @@ const makeApp = (options: {
       }),
       EmptySigninServiceTest,
       makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
-      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used") }),
+      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used"), autocompletePlaces: () => Effect.succeed([]) }),
       makeUserProfileRepoTest(makeInMemoryUserProfileRepo([])),
       EmptyApprovalRepoTest,
       EmptyApprovalRequestRepoTest,
+      EmptyReferralRepoTest,
       EmptyKycDocumentTypeRepoTest,
       EmptyServiceOfferedRepoTest,
       makeObjectStorageTest({
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
         createPresignedPutUrl: () => Effect.succeed({ uploadUrl: "https://example.com", expiresAt: new Date() }),
+        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
       }),
       makeKycDocumentRepoTest({
         findByIdWithType: () => Effect.fail(new DBNotFoundError({ entity: "kycDocument", value: "" })),
@@ -330,6 +333,7 @@ describe("POST /auth/sign-up", () => {
     const hookLayer = Layer.mergeAll(
       makeSignupIntentRepoTest(signupIntentRepo),
       makeUserProfileRepoTest(userProfileRepo),
+      EmptyReferralRepoTest,
     );
 
     const res = await app.request("/api/v1/auth/sign-up", {
@@ -395,6 +399,7 @@ describe("POST /auth/sign-up", () => {
     const hookLayer = Layer.mergeAll(
       makeSignupIntentRepoTest(signupIntentRepo),
       makeUserProfileRepoTest(userProfileRepo),
+      EmptyReferralRepoTest,
     );
 
     const res = await app.request("/api/v1/auth/sign-up", {

@@ -88,6 +88,13 @@ const makeInMemoryApprovalRequestRepo = (requests: Array<ApprovalRequest>) => ({
     return Effect.succeed(request);
   },
   list: () => Effect.succeed(requests),
+  listWithApplicant: () => Effect.succeed(requests.map((request) => ({ ...request, applicant: { email: "provider@example.com", firstName: "Maria", lastName: "Santos" } }))),
+  countByStatus: () => Effect.succeed({
+    submitted: requests.filter((request) => request.status === "submitted").length,
+    approved: requests.filter((request) => request.status === "approved").length,
+    rejected: requests.filter((request) => request.status === "rejected").length,
+  }),
+  listByUserId: (userId: string) => Effect.succeed(requests.filter((request) => request.userId === userId)),
   findById: (id: string) => {
     const request = requests.find((request) => request.id === id);
     return request ? Effect.succeed(request) : Effect.fail(new DBNotFoundError({ entity: "approvalRequest", value: id }));
@@ -124,6 +131,14 @@ const makeInMemoryApprovalRepo = (approvals: Array<Approval>) => ({
     const approval = makeApproval(input, { id: `approval-${approvals.length + 1}` });
     approvals.push(approval);
     return Effect.succeed(approval);
+  },
+  listByUserId: (userId: string) => Effect.succeed(approvals.filter((approval) => approval.userId === userId)),
+  revoke: (id: string, reason: string) => {
+    const target = approvals.find((approval) => approval.id === id && approval.status === "approved");
+    if (!target) return Effect.fail(new DBNotFoundError({ entity: "approval", value: id }));
+    target.status = "rejected";
+    target.reason = reason;
+    return Effect.succeed(target);
   },
   findCurrentByUserId: (userId: string) => {
     const approval = approvals.find((approval) => approval.userId === userId);
@@ -191,11 +206,12 @@ const makeApp = (options: {
         updateByIdForUser: () => Effect.die("not used"),
         softDeleteByIdForUser: () => Effect.die("not used"),
       }),
-      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used") }),
+      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used"), autocompletePlaces: () => Effect.succeed([]) }),
       makeObjectStorageTest({
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
         createPresignedPutUrl: () => Effect.succeed({ uploadUrl: "https://example.com", expiresAt: new Date() }),
+        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
       }),
       makeApprovalRepoTest(makeInMemoryApprovalRepo(approvals)),
       makeApprovalRequestRepoTest(makeInMemoryApprovalRequestRepo(requests)),

@@ -128,10 +128,10 @@ services:
       - drizzle-gateway:${DRIZZLE_GATEWAY_STORE_PATH}
     labels:
       - traefik.enable=true
-      - traefik.http.routers.poppynz-staging-web.rule=Host(`db.staging.poppynz.com`)
-      - traefik.http.routers.poppynz-staging-web.entrypoints=websecure
-      - traefik.http.routers.poppynz-staging-web.tls.certresolver=letsencrypt
-      - traefik.http.services.poppynz-staging-web.loadbalancer.server.port=3000
+      - traefik.http.routers.poppynz-staging-db.rule=Host(`db.staging.poppynz.com`)
+      - traefik.http.routers.poppynz-staging-db.entrypoints=websecure
+      - traefik.http.routers.poppynz-staging-db.tls.certresolver=letsencrypt
+      - traefik.http.services.poppynz-staging-db.loadbalancer.server.port=3000
 
 volumes:
   drizzle-gateway:

@@ -1,0 +1,116 @@
+name: poppynz-staging
+
+x-app-env: &app-env
+  NODE_ENV: production
+
+services:
+  migrations:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.migrations.production
+    restart: "no"
+    env_file: .env
+    environment:
+      <<: *app-env
+    networks:
+      - dokploy-network
+
+  seeds:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.seeds.production
+    restart: "no"
+    env_file: .env
+    environment:
+      <<: *app-env
+    networks:
+      - dokploy-network
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+
+  api:
+    build:
+      context: .
+      dockerfile: ./apps/api/Dockerfile.production
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *app-env
+    expose:
+      - "3000"
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - traefik.enable=true
+      # More specific rule than the web router, so /api/* wins by priority.
+      - traefik.http.routers.poppynz-staging-api.rule=Host(`staging.poppynz.com`) && PathPrefix(`/api`)
+      - traefik.http.routers.poppynz-staging-api.entrypoints=websecure
+      - traefik.http.routers.poppynz-staging-api.tls.certresolver=letsencrypt
+      - traefik.http.services.poppynz-staging-api.loadbalancer.server.port=3000
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      seeds:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: ./apps/worker/Dockerfile.production
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *app-env
+      WORKER_HTTP_PORT: 3000
+    expose:
+      - "3000"
+    networks:
+      - dokploy-network
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+      seeds:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: ./apps/web/Dockerfile.production
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      <<: *app-env
+      HOST: 0.0.0.0
+      PORT: 3000
+      # adapter-node needs the public origin for CSRF checks and absolute URLs.
+      ORIGIN: ${ORIGIN:-https://staging.poppynz.com}
+    expose:
+      - "3000"
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.poppynz-staging-web.rule=Host(`staging.poppynz.com`)
+      - traefik.http.routers.poppynz-staging-web.entrypoints=websecure
+      - traefik.http.routers.poppynz-staging-web.tls.certresolver=letsencrypt
+      - traefik.http.services.poppynz-staging-web.loadbalancer.server.port=3000
+    depends_on:
+      api:
+        condition: service_healthy
+
+networks:
+  dokploy-network:
+    external: true

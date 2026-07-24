@@ -6,6 +6,7 @@
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
+	import ToastHost from '$lib/components/ToastHost.svelte';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -86,3 +87,5 @@
 		roleLabel="Administrator"
 	/>
 {/if}
+
+<ToastHost />

@@ -5,12 +5,11 @@
 		open: boolean;
 		applicantName: string;
 		busy?: boolean;
-		error?: string;
 		onconfirm: (reason: string) => void;
 		oncancel: () => void;
 	}
 
-	let { open, applicantName, busy = false, error = '', onconfirm, oncancel }: Props = $props();
+	let { open, applicantName, busy = false, onconfirm, oncancel }: Props = $props();
 
 	let reason = $state('');
 
@@ -57,10 +56,6 @@
 					Revocation isn't a ban — the provider can fix the issue, resubmit, and be approved again.
 				</span>
 			</div>
-
-			{#if error}
-				<p role="alert" class="mt-3 text-sm font-medium text-error">{error}</p>
-			{/if}
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>

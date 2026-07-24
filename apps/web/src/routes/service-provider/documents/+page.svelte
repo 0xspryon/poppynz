@@ -4,9 +4,10 @@
 		type OnboardingDocument,
 		type OnboardingState
 	} from '$lib/api/onboarding';
-	import { uploadKycDocument, type KycUploadError } from '$lib/api/kyc-documents';
+	import { uploadKycDocument } from '$lib/api/kyc-documents';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import UploadDocumentDialog from '$lib/components/UploadDocumentDialog.svelte';
+	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 
@@ -55,17 +56,6 @@
 		uploadTarget = null;
 	}
 
-	function uploadErrorText(error: KycUploadError): string {
-		switch (error.code) {
-			case 'INVALID_KYC_DOCUMENT':
-			case 'INVALID_UPLOAD_PRESIGN_INPUT':
-			case 'INVALID_UPLOAD':
-				return error.message;
-			default:
-				return RETRY_MESSAGE;
-		}
-	}
-
 	async function submitUpload(input: { file: File; expiryDate: string | null }) {
 		if (!uploadTarget || uploading) return;
 		uploading = true;
@@ -76,10 +66,19 @@
 			expiryDate: input.expiryDate
 		});
 		if (result.ok) {
+			toast.success(`${uploadTarget.name} uploaded.`);
 			uploadTarget = null;
 			await load();
+		} else if (
+			result.error.code === 'INVALID_KYC_DOCUMENT' ||
+			result.error.code === 'INVALID_UPLOAD_PRESIGN_INPUT' ||
+			result.error.code === 'INVALID_UPLOAD'
+		) {
+			// The server is rejecting the chosen file/expiry — keep that next to
+			// the inputs so it can be corrected in place.
+			uploadError = result.error.message;
 		} else {
-			uploadError = uploadErrorText(result.error);
+			toast.error(RETRY_MESSAGE, { title: 'Upload failed' });
 		}
 		uploading = false;
 	}

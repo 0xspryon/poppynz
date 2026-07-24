@@ -6,6 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { stopImpersonating } from '$lib/api/admin-users';
 	import { fetchSession, type MockSession } from '$lib/api/profile';
+	import { toast } from '$lib/toast.svelte';
 
 	interface Props {
 		session: MockSession;
@@ -34,10 +35,19 @@
 	async function stop() {
 		if (stopping) return;
 		stopping = true;
-		await stopImpersonating();
+		const result = await stopImpersonating();
 		// Whether the call succeeded or the session already lapsed, re-read who
-		// we are now and land back on the admin console.
-		await fetchSession();
+		// we are now — the session is the source of truth for where we land.
+		const fresh = await fetchSession();
+		if (fresh?.impersonatedBy != null) {
+			// Still impersonating: the stop didn't take — stay put and say so.
+			toast.error('Could not stop impersonating. Please try again.');
+			stopping = false;
+			return;
+		}
+		if (result.ok) {
+			toast.success(`Stopped impersonating ${session.email}.`);
+		}
 		await goto(resolve('/admin/users'));
 	}
 </script>

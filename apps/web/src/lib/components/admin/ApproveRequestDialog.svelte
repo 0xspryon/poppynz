@@ -7,7 +7,6 @@
 		warningCount: number;
 		warningText: string;
 		busy?: boolean;
-		error?: string;
 		onconfirm: (expiryDate: string) => void;
 		oncancel: () => void;
 	}
@@ -18,7 +17,6 @@
 		warningCount,
 		warningText,
 		busy = false,
-		error = '',
 		onconfirm,
 		oncancel
 	}: Props = $props();
@@ -112,10 +110,6 @@
 						approval. Blocking issues (no services, no location) disable approval instead.
 					</span>
 				</div>
-			{/if}
-
-			{#if error}
-				<p role="alert" class="mt-3 text-sm font-medium text-error">{error}</p>
 			{/if}
 
 			<div class="modal-action">

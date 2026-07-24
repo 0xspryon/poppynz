@@ -9,6 +9,7 @@
 		type ReferralEntry,
 		type ReferralList
 	} from '$lib/api/referrals';
+	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 
@@ -20,7 +21,6 @@
 	let role: Role = $state('service-provider');
 	let sending = $state(false);
 	let formError = $state('');
-	let formNotice = $state('');
 
 	async function load() {
 		loadError = '';
@@ -47,14 +47,13 @@
 		if (!canSend) return;
 		sending = true;
 		formError = '';
-		formNotice = '';
 		const result = await sendReferralInvite({ email, role });
 		if (result.ok) {
-			formNotice = `Invite sent to ${result.data.email}.`;
+			toast.success(`Invite sent to ${result.data.email}.`);
 			email = '';
 			await load();
 		} else {
-			formError = matchError(result.error, {
+			const message: string = matchError(result.error, {
 				REFERRAL_ALREADY_INVITED: () => 'You already have a pending invite for this email.',
 				REFERRAL_EMAIL_ALREADY_MEMBER: () => 'This person is already on Poppynz.',
 				INVALID_REFERRAL_INPUT: () => "That email address doesn't look right. Check it and try again.",
@@ -67,6 +66,12 @@
 				INTERNAL_SERVER_ERROR: () => RETRY_MESSAGE,
 				UNEXPECTED: () => RETRY_MESSAGE
 			});
+			if (result.error.code === 'INVALID_REFERRAL_INPUT') {
+				// A bad email is fixed in the field — keep that message inline.
+				formError = message;
+			} else {
+				toast.error(message, { title: 'Invite not sent' });
+			}
 		}
 		sending = false;
 	}
@@ -148,9 +153,6 @@
 		</p>
 		{#if formError}
 			<p role="alert" class="mt-2 text-sm font-medium text-error">{formError}</p>
-		{/if}
-		{#if formNotice}
-			<p role="status" class="mt-2 text-sm font-medium text-success">{formNotice}</p>
 		{/if}
 	</form>
 

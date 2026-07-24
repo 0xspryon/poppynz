@@ -11,6 +11,7 @@
 		type CatalogueItemDraft
 	} from '$lib/components/admin/CatalogueItemDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
+	import { toast } from '$lib/toast.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
@@ -76,12 +77,16 @@
 			: await createCatalogueItem(draft);
 		if (result.ok) {
 			modalOpen = false;
+			toast.success(editing ? `${result.data.name} updated.` : `${result.data.name} created.`);
 			await load();
-		} else {
+		} else if (result.error.code === 'INVALID_SERVICE_CATALOGUE_INPUT') {
+			// Field validation stays next to the inputs inside the dialog.
 			modalError =
-				result.error.code === 'INVALID_SERVICE_CATALOGUE_INPUT'
-					? 'Check the fields — name and category are required, and the base rate must be a positive amount.'
-					: errorText(result.error);
+				'Check the fields — name and category are required, and the base rate must be a positive amount.';
+		} else {
+			toast.error(errorText(result.error), {
+				title: editing ? 'Service not updated' : 'Service not created'
+			});
 		}
 		saving = false;
 	}
@@ -93,10 +98,14 @@
 		const result = await updateCatalogueItem(item.id, { isLive: value });
 		if (result.ok) {
 			items = items.map((candidate) => (candidate.id === item.id ? result.data : candidate));
-			errorMessage = null;
+			toast.success(
+				result.data.isLive
+					? `${result.data.name} is now live for providers.`
+					: `${result.data.name} is now hidden from providers.`
+			);
 		} else {
 			input.checked = !value;
-			errorMessage = errorText(result.error);
+			toast.error(errorText(result.error), { title: `${item.name} not updated` });
 		}
 		busyIds.delete(item.id);
 	}
@@ -106,10 +115,11 @@
 		deleteBusy = true;
 		const result = await removeCatalogueItem(deleting.id);
 		if (result.ok) {
+			toast.success(`${deleting.name} deleted.`);
 			deleting = null;
 			await load();
 		} else {
-			errorMessage = errorText(result.error);
+			toast.error(errorText(result.error), { title: `${deleting.name} not deleted` });
 			deleting = null;
 		}
 		deleteBusy = false;

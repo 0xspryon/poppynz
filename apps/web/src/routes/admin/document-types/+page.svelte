@@ -9,6 +9,7 @@
 	} from '$lib/api/document-types';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import DocumentTypeDialog from '$lib/components/admin/DocumentTypeDialog.svelte';
+	import { toast } from '$lib/toast.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
@@ -72,12 +73,15 @@
 			: await createDocumentType(draft);
 		if (result.ok) {
 			modalOpen = false;
+			toast.success(editing ? `${result.data.name} updated.` : `${result.data.name} created.`);
 			await load();
+		} else if (result.error.code === 'INVALID_KYC_DOCUMENT_TYPE_INPUT') {
+			// Field validation stays next to the input inside the dialog.
+			modalError = 'Check the name — it must be 1–120 characters.';
 		} else {
-			modalError =
-				result.error.code === 'INVALID_KYC_DOCUMENT_TYPE_INPUT'
-					? 'Check the name — it must be 1–120 characters.'
-					: errorText(result.error);
+			toast.error(errorText(result.error), {
+				title: editing ? 'Document type not updated' : 'Document type not created'
+			});
 		}
 		saving = false;
 	}
@@ -96,10 +100,17 @@
 		const result = await updateDocumentType(item.id, { [field]: patchValue });
 		if (result.ok) {
 			items = items.map((candidate) => (candidate.id === item.id ? result.data : candidate));
-			errorMessage = null;
+			const updated = result.data;
+			toast.success(
+				field === 'isOptional'
+					? `${updated.name} is now ${updated.isOptional ? 'optional' : 'required'}.`
+					: field === 'requiresExpiryDate'
+						? `${updated.name} ${updated.requiresExpiryDate ? 'now requires' : 'no longer requires'} an expiry date.`
+						: `${updated.name} is now ${updated.isFetchable ? 'fetchable via Credibled' : 'upload only'}.`
+			);
 		} else {
 			input.checked = !value;
-			errorMessage = errorText(result.error);
+			toast.error(errorText(result.error), { title: `${item.name} not updated` });
 		}
 		busyIds.delete(item.id);
 	}
@@ -109,10 +120,11 @@
 		deleteBusy = true;
 		const result = await removeDocumentType(deleting.id);
 		if (result.ok) {
+			toast.success(`${deleting.name} deleted.`);
 			deleting = null;
 			await load();
 		} else {
-			errorMessage = errorText(result.error);
+			toast.error(errorText(result.error), { title: `${deleting.name} not deleted` });
 			deleting = null;
 		}
 		deleteBusy = false;

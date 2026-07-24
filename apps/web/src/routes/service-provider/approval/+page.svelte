@@ -7,6 +7,7 @@
 		type OnboardingState
 	} from '$lib/api/onboarding';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 	const DAY_MS = 24 * 60 * 60 * 1000;
@@ -16,7 +17,6 @@
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let submitting = $state(false);
-	let submitError = $state('');
 
 	async function load() {
 		errorMessage = '';
@@ -40,15 +40,19 @@
 	async function submit() {
 		if (submitting) return;
 		submitting = true;
-		submitError = '';
 		const result = await submitApprovalRequest();
 		if (result.ok) {
+			toast.success('Your application is with our review team — expect a decision within ~2 days.', {
+				title: 'Submitted for review'
+			});
 			await load();
 		} else {
-			submitError =
+			toast.error(
 				result.error.code === 'APPROVAL_REQUEST_ALREADY_SUBMITTED'
 					? 'Your application is already with our review team.'
-					: RETRY_MESSAGE;
+					: RETRY_MESSAGE,
+				{ title: 'Submission failed' }
+			);
 		}
 		submitting = false;
 	}
@@ -320,10 +324,6 @@
 					Submit for review
 				</button>
 			</div>
-		{/if}
-
-		{#if submitError}
-			<p role="alert" class="mb-4 text-sm font-medium text-error">{submitError}</p>
 		{/if}
 
 		<!-- History timeline -->

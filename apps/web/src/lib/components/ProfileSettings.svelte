@@ -7,6 +7,7 @@
 		type PlaceSuggestion,
 		type ProviderProfile
 	} from '$lib/api/provider-profile';
+	import { toast } from '$lib/toast.svelte';
 
 	interface Props {
 		/** Subtitle under the page heading. */
@@ -31,7 +32,6 @@
 	let shortBio = $state('');
 	let saving = $state(false);
 	let saveError = $state('');
-	let savedAt = $state<number | null>(null);
 
 	// Location picker
 	let locationQuery = $state('');
@@ -74,7 +74,6 @@
 		if (!canSave || saving) return;
 		saving = true;
 		saveError = '';
-		savedAt = null;
 		const result = await updateProfile({
 			firstName: firstName.trim() || null,
 			lastName: lastName.trim() || null,
@@ -85,9 +84,12 @@
 		});
 		if (result.ok) {
 			profile = result.data;
-			savedAt = Date.now();
+			toast.success('Profile saved.');
+		} else if (result.error.code === 'INVALID_PROFILE_INPUT') {
+			// Server-side form validation stays next to the fields.
+			saveError = result.error.message;
 		} else {
-			saveError = result.error.code === 'INVALID_PROFILE_INPUT' ? result.error.message : RETRY_MESSAGE;
+			toast.error(RETRY_MESSAGE, { title: 'Profile not saved' });
 		}
 		saving = false;
 	}
@@ -124,9 +126,12 @@
 			profile = result.data;
 			suggestions = [];
 			locationQuery = '';
+			toast.success('Location saved.');
 		} else {
-			locationError =
-				result.error.code === 'GOOGLE_PLACE_INVALID' ? result.error.message : RETRY_MESSAGE;
+			toast.error(
+				result.error.code === 'GOOGLE_PLACE_INVALID' ? result.error.message : RETRY_MESSAGE,
+				{ title: 'Location not saved' }
+			);
 		}
 		savingLocation = false;
 	}
@@ -198,9 +203,6 @@
 			{/if}
 
 			<div class="mt-5 flex items-center justify-end gap-3">
-				{#if savedAt}
-					<span class="text-xs font-medium text-success">Saved</span>
-				{/if}
 				<button type="submit" class="btn btn-primary" disabled={!canSave || saving}>
 					{#if saving}
 						<span class="loading loading-spinner loading-sm"></span>

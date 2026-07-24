@@ -8,6 +8,7 @@
 		type KycFileView
 	} from '$lib/api/admin-approvals';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 
@@ -22,14 +23,10 @@
 
 	let expiry = $state('');
 	let saving = $state(false);
-	let saveError = $state('');
-	let saved = $state(false);
 
 	$effect(() => {
 		if (viewer) {
 			expiry = viewer.document.expiryDate ? viewer.document.expiryDate.slice(0, 10) : '';
-			saveError = '';
-			saved = false;
 		}
 	});
 
@@ -55,16 +52,16 @@
 		event.preventDefault();
 		if (!viewer || saving) return;
 		saving = true;
-		saveError = '';
-		saved = false;
 		const iso = expiry ? new Date(expiry).toISOString() : null;
 		const result = await updateKycDocumentExpiry(viewer.document.id, iso);
 		if (result.ok) {
-			saved = true;
+			toast.success('Expiry date saved.');
 			onsaved();
 		} else {
-			saveError =
-				result.error.code === 'INVALID_KYC_DOCUMENT' ? result.error.message : RETRY_MESSAGE;
+			toast.error(
+				result.error.code === 'INVALID_KYC_DOCUMENT' ? result.error.message : RETRY_MESSAGE,
+				{ title: 'Expiry date not saved' }
+			);
 		}
 		saving = false;
 	}
@@ -147,12 +144,6 @@
 					<p class="mt-1.5 mb-3.5 text-[11.5px] leading-relaxed text-outline">
 						Entered by the provider — correct it here if it doesn't match the file.
 					</p>
-					{#if saveError}
-						<p role="alert" class="mb-2 text-xs font-medium text-error">{saveError}</p>
-					{/if}
-					{#if saved}
-						<p class="mb-2 text-xs font-medium text-success">Expiry date saved.</p>
-					{/if}
 					<button type="submit" class="btn w-full btn-primary" disabled={saving}>
 						{#if saving}
 							<span class="loading loading-spinner loading-sm"></span>

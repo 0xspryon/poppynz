@@ -17,6 +17,7 @@
 	import RejectRequestDialog from '$lib/components/admin/RejectRequestDialog.svelte';
 	import RevokeApprovalDialog from '$lib/components/admin/RevokeApprovalDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 
@@ -27,22 +28,18 @@
 	// Approve dialog
 	let approveOpen = $state(false);
 	let approving = $state(false);
-	let approveError = $state('');
 
 	// Reject dialog
 	let rejectOpen = $state(false);
 	let rejecting = $state(false);
-	let rejectError = $state('');
 
 	// Revoke dialog (live approval only)
 	let revokeOpen = $state(false);
 	let revoking = $state(false);
-	let revokeError = $state('');
 
 	// Fullscreen document viewer
 	let viewer = $state<KycFileView | null>(null);
 	let viewerLoading = $state(false);
-	let viewerError = $state('');
 
 	const requestId = $derived(page.params.id ?? '');
 
@@ -120,7 +117,6 @@
 	}
 
 	function openApprove() {
-		approveError = '';
 		approveOpen = true;
 	}
 
@@ -141,7 +137,6 @@
 	async function confirmApprove(expiryDate: string) {
 		if (!detail || approving) return;
 		approving = true;
-		approveError = '';
 		// End of the chosen day so the approval spans the full expiry date.
 		const expires = new Date(expiryDate);
 		expires.setHours(23, 59, 59, 999);
@@ -152,9 +147,10 @@
 		});
 		if (result.ok) {
 			approveOpen = false;
+			toast.success(`${applicantName} is approved until ${formatDate(expires.toISOString())}.`);
 			await load();
 		} else {
-			approveError = approveErrorText(result.error);
+			toast.error(approveErrorText(result.error), { title: 'Approval failed' });
 		}
 		approving = false;
 	}
@@ -162,14 +158,16 @@
 	async function confirmReject(reason: string) {
 		if (rejecting) return;
 		rejecting = true;
-		rejectError = '';
 		const result = await rejectApprovalRequest(requestId, reason);
 		if (result.ok) {
 			rejectOpen = false;
+			toast.success(`${applicantName}'s application was rejected.`);
 			await load();
 		} else {
-			rejectError =
-				result.error.code === 'INVALID_APPROVAL_REQUEST_INPUT' ? result.error.message : RETRY_MESSAGE;
+			toast.error(
+				result.error.code === 'INVALID_APPROVAL_REQUEST_INPUT' ? result.error.message : RETRY_MESSAGE,
+				{ title: 'Rejection failed' }
+			);
 		}
 		rejecting = false;
 	}
@@ -177,33 +175,36 @@
 	async function confirmRevoke(reason: string) {
 		if (!detail?.currentApproval || revoking) return;
 		revoking = true;
-		revokeError = '';
 		const result = await revokeApproval(detail.currentApproval.id, reason);
 		if (result.ok) {
 			revokeOpen = false;
+			toast.success(`${applicantName}'s approval was revoked.`);
 			await load();
 		} else {
-			revokeError =
+			toast.error(
 				result.error.code === 'INVALID_APPROVAL_INPUT'
 					? result.error.message
 					: result.error.code === 'APPROVAL_NOT_FOUND'
 						? 'No active approval was found — it may already be revoked or expired.'
-						: RETRY_MESSAGE;
+						: RETRY_MESSAGE,
+				{ title: 'Revocation failed' }
+			);
 		}
 		revoking = false;
 	}
 
 	async function openViewer(documentId: string) {
 		viewerLoading = true;
-		viewerError = '';
 		const result = await getKycDocumentFileUrl(documentId);
 		if (result.ok) {
 			viewer = result.data;
 		} else {
-			viewerError =
+			toast.error(
 				result.error.code === 'KYC_DOCUMENT_FILE_MISSING'
 					? 'This document has no stored file.'
-					: RETRY_MESSAGE;
+					: RETRY_MESSAGE,
+				{ title: 'Could not open document' }
+			);
 		}
 		viewerLoading = false;
 	}
@@ -285,10 +286,7 @@
 				<button
 					type="button"
 					class="btn btn-outline btn-sm btn-error"
-					onclick={() => {
-						revokeError = '';
-						revokeOpen = true;
-					}}
+					onclick={() => (revokeOpen = true)}
 				>
 					Revoke approval…
 				</button>
@@ -456,9 +454,6 @@
 					The decision is on the whole request — documents are submitted or missing. Expiry dates
 					can be corrected from the fullscreen viewer.
 				</p>
-				{#if viewerError}
-					<p role="alert" class="mt-2 text-xs font-medium text-error">{viewerError}</p>
-				{/if}
 			</div>
 		</div>
 	{/if}
@@ -470,7 +465,6 @@
 	{warningCount}
 	{warningText}
 	busy={approving}
-	error={approveError}
 	onconfirm={(expiryDate) => void confirmApprove(expiryDate)}
 	oncancel={() => (approveOpen = false)}
 />
@@ -478,7 +472,6 @@
 <RejectRequestDialog
 	open={rejectOpen}
 	busy={rejecting}
-	error={rejectError}
 	onconfirm={(reason) => void confirmReject(reason)}
 	oncancel={() => (rejectOpen = false)}
 />
@@ -487,7 +480,6 @@
 	open={revokeOpen && detail?.currentApproval != null}
 	{applicantName}
 	busy={revoking}
-	error={revokeError}
 	onconfirm={(reason) => void confirmRevoke(reason)}
 	oncancel={() => (revokeOpen = false)}
 />

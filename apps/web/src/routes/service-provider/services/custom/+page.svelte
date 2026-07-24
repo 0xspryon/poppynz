@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { createServiceOffered } from '$lib/api/services-offered';
 	import { dollarsToCents } from '$lib/money';
+	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 
@@ -27,13 +28,18 @@
 			catalogueServiceId: null
 		});
 		if (result.ok) {
+			// The toast store is module-level, so this survives the navigation.
+			toast.success(`${name.trim()} added to your services.`);
 			await goto(resolve('/service-provider/services'));
+		} else if (result.error.code === 'INVALID_SERVICE_OFFERED_INPUT') {
+			// Server-side form validation stays next to the fields.
+			errorMessage = result.error.message;
+			saving = false;
+		} else if (result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED') {
+			toast.error(result.error.message, { title: 'Service not added' });
+			saving = false;
 		} else {
-			errorMessage =
-				result.error.code === 'INVALID_SERVICE_OFFERED_INPUT' ||
-				result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED'
-					? result.error.message
-					: RETRY_MESSAGE;
+			toast.error(RETRY_MESSAGE, { title: 'Service not added' });
 			saving = false;
 		}
 	}

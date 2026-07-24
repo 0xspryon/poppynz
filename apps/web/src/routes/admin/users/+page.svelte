@@ -13,6 +13,7 @@
 	import BanUserDialog from '$lib/components/admin/BanUserDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import ImpersonateDialog from '$lib/components/admin/ImpersonateDialog.svelte';
+	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 	type Filter = 'all' | 'providers' | 'families' | 'admins' | 'banned';
@@ -20,7 +21,6 @@
 	let data = $state<AdminUserList | null>(null);
 	let loading = $state(true);
 	let errorMessage = $state('');
-	let actionError = $state('');
 	let filter = $state<Filter>('all');
 	let search = $state('');
 
@@ -106,10 +106,11 @@
 	async function confirmImpersonate() {
 		if (!impersonateTarget || impersonating) return;
 		impersonating = true;
-		actionError = '';
 		const result = await impersonateUser(impersonateTarget.id);
 		if (!result.ok) {
-			actionError = result.error.message || RETRY_MESSAGE;
+			toast.error(result.error.message || RETRY_MESSAGE, {
+				title: `Could not impersonate ${impersonateTarget.name}`
+			});
 			impersonating = false;
 			impersonateTarget = null;
 			return;
@@ -129,10 +130,13 @@
 	async function confirmBan(reason: string | undefined) {
 		if (!banTarget || banning) return;
 		banning = true;
-		actionError = '';
 		const result = await banUser(banTarget.id, reason);
-		if (!result.ok) {
-			actionError = result.error.message || RETRY_MESSAGE;
+		if (result.ok) {
+			toast.success(`${banTarget.name} is banned.`);
+		} else {
+			toast.error(result.error.message || RETRY_MESSAGE, {
+				title: `Could not ban ${banTarget.name}`
+			});
 		}
 		banning = false;
 		banTarget = null;
@@ -142,10 +146,13 @@
 	async function confirmUnban() {
 		if (!unbanTarget || unbanning) return;
 		unbanning = true;
-		actionError = '';
 		const result = await unbanUser(unbanTarget.id);
-		if (!result.ok) {
-			actionError = result.error.message || RETRY_MESSAGE;
+		if (result.ok) {
+			toast.success(`${unbanTarget.name} is unbanned.`);
+		} else {
+			toast.error(result.error.message || RETRY_MESSAGE, {
+				title: `Could not unban ${unbanTarget.name}`
+			});
 		}
 		unbanning = false;
 		unbanTarget = null;
@@ -185,10 +192,6 @@
 			</button>
 		{/each}
 	</div>
-
-	{#if actionError}
-		<p role="alert" class="mb-3 text-sm font-medium text-error">{actionError}</p>
-	{/if}
 
 	{#if loading}
 		<div class="flex justify-center py-24">

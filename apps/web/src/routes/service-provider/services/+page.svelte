@@ -12,6 +12,7 @@
 	import { centsToDollars, dollarsToCents } from '$lib/money';
 	import BrowseServicesDialog from '$lib/components/BrowseServicesDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
+	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 	const COMMON_COUNT = 6;
@@ -30,7 +31,6 @@
 	// Browse-all modal
 	let browseOpen = $state(false);
 	let browseBusy = $state(false);
-	let browseError = $state('');
 
 	let deleting = $state<ServiceOffered | null>(null);
 	let deleteBusy = $state(false);
@@ -81,18 +81,18 @@
 	async function addCatalogueService(item: CatalogueItem) {
 		if (linkedCatalogueIds.has(item.id) || busyIds.has(item.id) || limitReached) return;
 		busyIds.add(item.id);
-		errorMessage = '';
 		const result = await createServiceOffered({
 			name: item.name,
 			hourlyRateCents: item.baseHourlyRateCents,
 			catalogueServiceId: item.id
 		});
 		if (result.ok) {
+			toast.success(`${item.name} added to your services.`);
 			await load();
 		} else if (result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED') {
-			errorMessage = result.error.message;
+			toast.error(result.error.message, { title: `Could not add ${item.name}` });
 		} else {
-			errorMessage = RETRY_MESSAGE;
+			toast.error(RETRY_MESSAGE, { title: `Could not add ${item.name}` });
 		}
 		busyIds.delete(item.id);
 	}
@@ -122,10 +122,13 @@
 			services = services.map((entry) => (entry.id === service.id ? result.data : entry));
 			rateDrafts.set(service.id, centsToDollars(result.data.hourlyRateCents));
 			rowErrors.delete(service.id);
+			toast.success(
+				`${service.name} rate updated to $${centsToDollars(result.data.hourlyRateCents)}/hr.`
+			);
 		} else if (result.error.code === 'SERVICE_RATE_BELOW_FLOOR') {
 			rowErrors.set(service.id, result.error.message);
 		} else {
-			rowErrors.set(service.id, RETRY_MESSAGE);
+			toast.error(RETRY_MESSAGE, { title: `${service.name} rate not saved` });
 		}
 		busyIds.delete(service.id);
 	}
@@ -136,15 +139,19 @@
 		const result = await removeServiceOffered(deleting.id);
 		deleteBusy = false;
 		if (result.ok) {
+			toast.success(`${deleting.name} removed from your services.`);
 			deleting = null;
 			await load();
+		} else {
+			toast.error(RETRY_MESSAGE, { title: `Could not remove ${deleting.name}` });
+			deleting = null;
 		}
 	}
 
 	async function addSelected(ids: Array<string>) {
 		if (ids.length === 0 || browseBusy) return;
 		browseBusy = true;
-		browseError = '';
+		let added = 0;
 		for (const id of ids) {
 			const item = catalogue.find((entry) => entry.id === id);
 			if (!item) continue;
@@ -154,16 +161,23 @@
 				catalogueServiceId: item.id
 			});
 			if (!result.ok) {
-				browseError =
+				const reason =
 					result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED'
 						? result.error.message
 						: RETRY_MESSAGE;
+				toast.error(
+					added > 0 ? `Only ${added} of ${ids.length} services were added. ${reason}` : reason,
+					{ title: 'Could not add services' }
+				);
 				browseBusy = false;
+				await load();
 				return;
 			}
+			added += 1;
 		}
 		browseOpen = false;
 		browseBusy = false;
+		toast.success(added === 1 ? '1 service added.' : `${added} services added.`);
 		await load();
 	}
 
@@ -386,7 +400,6 @@
 	{catalogue}
 	linkedIds={linkedCatalogueIds}
 	busy={browseBusy}
-	error={browseError}
 	onadd={(ids) => void addSelected(ids)}
 	oncancel={() => (browseOpen = false)}
 />

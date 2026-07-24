@@ -12,12 +12,11 @@
 		/** Catalogue ids the provider already offers — shown checked and disabled. */
 		linkedIds: Set<string>;
 		busy?: boolean;
-		error?: string;
 		onadd: (ids: Array<string>) => void;
 		oncancel: () => void;
 	}
 
-	let { open, catalogue, linkedIds, busy = false, error = '', onadd, oncancel }: Props = $props();
+	let { open, catalogue, linkedIds, busy = false, onadd, oncancel }: Props = $props();
 
 	let query = $state('');
 	let category = $state<string | null>(null);
@@ -142,9 +141,6 @@
 			</div>
 			<div class="flex items-center justify-between bg-base-200 px-6 py-4">
 				<span class="text-[13px] text-base-content-muted">{selected.size} selected</span>
-				{#if error}
-					<p role="alert" class="text-xs font-medium text-error">{error}</p>
-				{/if}
 				<div class="flex gap-2.5">
 					<button type="button" class="btn btn-ghost" onclick={oncancel}>Cancel</button>
 					<button

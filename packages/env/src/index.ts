@@ -1,7 +1,12 @@
 import { Config } from "effect";
 
 export const adminAccountConfig = Config.all({
-  adminAccounts: Config.string("ADMIN_ACCOUNTS").pipe(Config.withDefault('springfield@poppynz.com;kay@poppynz.com')),
+  adminAccounts: Config.string("ADMIN_ACCOUNTS").pipe(
+    Config.withDefault('springfield@poppynz.com;kay@poppynz.com'),
+    Config.map(
+      (raw) => raw.split(";").map((entry) => entry.trim().toLowerCase()).filter((entry) => entry.length > 0)
+    ),
+  ),
 });
 
 // Semicolon-separated UI origins allowed as magic-link callback targets.
@@ -65,6 +70,6 @@ export const mailConfig = Config.all({
   from: Config.string("MAIL_FROM").pipe(Config.withDefault("Poppynz <no-reply@poppynz.com>")),
   adminNotificationEmails: Config.string("ADMIN_NOTIFICATION_EMAILS").pipe(
     Config.withDefault(""),
-    Config.map((raw) => raw.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0)),
+    Config.map((raw) => raw.split(";").map((entry) => entry.trim()).filter((entry) => entry.length > 0)),
   ),
 });

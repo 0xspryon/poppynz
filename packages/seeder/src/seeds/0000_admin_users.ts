@@ -11,12 +11,8 @@ export const adminUsers: Seed = {
   name: "0000_admin_users",
   run: async (db) => {
     const { adminAccounts } = Effect.runSync(adminAccountConfig);
-    const emails = adminAccounts
-      .split(";")
-      .map((email) => email.trim().toLowerCase())
-      .filter((email) => email.length > 0);
 
-    for (const email of emails) {
+    for (const email of adminAccounts) {
       await db
         .insert(user)
         .values({

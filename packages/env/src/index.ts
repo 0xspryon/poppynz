@@ -1,7 +1,7 @@
 import { Config } from "effect";
 
 export const adminAccountConfig = Config.all({
-  adminAccounts: Config.string("adminAccounts").pipe(Config.withDefault('springfield@poppynz.com;kay@poppynz.com')),
+  adminAccounts: Config.string("ADMIN_ACCOUNTS").pipe(Config.withDefault('springfield@poppynz.com;kay@poppynz.com')),
 });
 
 // Semicolon-separated UI origins allowed as magic-link callback targets.

@@ -14,10 +14,12 @@ export type ProviderSearchDocument = {
   // the API swaps it for a presigned URL at response time.
   image?: string;
   city: string;
+  cityNormalized: string;
   stateProvince: string;
   country: string | null;
   location: [number, number];
   services: Array<string>;
+  servicesNormalized: Array<string>;
   serviceDescriptions: Array<string>;
   serviceNamesText: string;
   minHourlyRateCents: number;
@@ -45,6 +47,8 @@ export type ProviderSearchResult = {
   pagination: { page: number; perPage: number; total: number };
 };
 
+export type ProviderCityFacet = { value: string; count: number };
+
 export class ProviderSearchIndexError extends Data.TaggedError("ProviderSearchIndexError")<{
   operation: "ensureCollection" | "upsert" | "delete" | "search" | "get" | "reindex" | "listDocuments";
   cause: unknown;
@@ -60,6 +64,7 @@ export class ProviderSearchIndex extends Context.Tag("@repo/typesense/ProviderSe
     ensureCollection: () => Effect.Effect<void, ProviderSearchIndexError>;
     reconcileProvider: (userId: string) => Effect.Effect<void, ProviderSearchIndexError>;
     searchProviders: (input: ProviderSearchInput) => Effect.Effect<ProviderSearchResult, ProviderSearchIndexError>;
+    listCityFacets: (input: ProviderSearchInput) => Effect.Effect<Array<ProviderCityFacet>, ProviderSearchIndexError>;
     getProvider: (userId: string) => Effect.Effect<ProviderSearchDocument, ProviderSearchIndexError | DBNotFoundError>;
     reindexAllProviders: () => Effect.Effect<{ indexed: number; deletedStale: number }, ProviderSearchIndexError>;
   }
@@ -78,11 +83,17 @@ const displayName = (firstName: string | null, lastName: string | null) => {
 
 const unique = (values: Array<string>) => Array.from(new Set(values));
 
+/** Matching-side normalization: facet filters compare lowercase against
+ * lowercase, while the original-cased fields stay for display. */
+const normalizeForMatch = (value: string) => value.trim().toLowerCase();
+
 export const buildProviderSearchDocument = (candidate: ProviderSearchCandidate): ProviderSearchDocument | null => {
   const { profile, approval, services } = candidate;
   const activeServices = services.filter((service) => service.deletedAt === null);
 
   if (profile.role !== "service-provider") return null;
+  // A ban with no expiry is permanent; an expiry in the past means the ban has lapsed.
+  if (profile.banned === true && (profile.banExpires === null || profile.banExpires > new Date())) return null;
   if (!approval || approval.expiresAt <= new Date()) return null;
   if (typeof profile.latitude !== "number" || typeof profile.longitude !== "number") return null;
   if (!profile.city || !profile.stateProvince) return null;
@@ -103,10 +114,12 @@ export const buildProviderSearchDocument = (candidate: ProviderSearchCandidate):
     shortBio: profile.shortBio,
     ...(profile.image ? { image: profile.image } : {}),
     city: profile.city,
+    cityNormalized: normalizeForMatch(profile.city),
     stateProvince: profile.stateProvince,
     country: profile.country,
     location: [profile.latitude, profile.longitude],
     services: servicesNames,
+    servicesNormalized: unique(servicesNames.map(normalizeForMatch)),
     serviceDescriptions,
     serviceNamesText: servicesNames.join(" "),
     minHourlyRateCents: Math.min(...rates),
@@ -132,10 +145,12 @@ const collectionSchema = (name: string) => ({
     { name: "shortBio", type: "string" as const, optional: true },
     { name: "image", type: "string" as const, optional: true, index: false },
     { name: "city", type: "string" as const, facet: true },
+    { name: "cityNormalized", type: "string" as const, facet: true },
     { name: "stateProvince", type: "string" as const, facet: true },
     { name: "country", type: "string" as const, facet: true, optional: true },
     { name: "location", type: "geopoint" as const },
     { name: "services", type: "string[]" as const, facet: true },
+    { name: "servicesNormalized", type: "string[]" as const, facet: true },
     { name: "serviceDescriptions", type: "string[]" as const, optional: true },
     { name: "serviceNamesText", type: "string" as const },
     { name: "minHourlyRateCents", type: "int32" as const, facet: true },
@@ -147,10 +162,15 @@ const collectionSchema = (name: string) => ({
   default_sorting_field: "updatedAt",
 });
 
-const buildFilter = (input: ProviderSearchInput) => {
+// Wrap a facet value in Typesense's backtick literal syntax so user input
+// can't inject filter operators (`||`, `:`, geo predicates). JSON.stringify
+// is NOT enough here — it only escapes for JSON, not the filter grammar.
+const filterString = (value: string) => `\`${value.replace(/`/g, "\\`")}\``;
+
+export const buildFilter = (input: ProviderSearchInput) => {
   const filters = [`approvalExpiresAt:>${Date.now()}`];
-  if (input.city) filters.push(`city:=${JSON.stringify(input.city)}`);
-  if (input.service) filters.push(`services:=${JSON.stringify(input.service)}`);
+  if (input.city) filters.push(`cityNormalized:=${filterString(normalizeForMatch(input.city))}`);
+  if (input.service) filters.push(`servicesNormalized:=${filterString(normalizeForMatch(input.service))}`);
   if (typeof input.minHourlyRateCents === "number") filters.push(`maxHourlyRateCents:>=${input.minHourlyRateCents}`);
   if (typeof input.maxHourlyRateCents === "number") filters.push(`minHourlyRateCents:<=${input.maxHourlyRateCents}`);
   if (input.radiusKm && input.center) filters.push(`location:(${input.center[0]}, ${input.center[1]}, ${input.radiusKm} km)`);
@@ -172,8 +192,6 @@ const chunksOf = <T>(items: Array<T>, size: number) => {
 
   return chunks;
 };
-
-const filterString = (value: string) => `\`${value.replace(/`/g, "\\`")}\``;
 
 const sortBy = (input: ProviderSearchInput) => {
   if (input.center && (input.sort === undefined || input.sort === "distance")) return `location(${input.center[0]}, ${input.center[1]}):asc`;
@@ -293,6 +311,32 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
         catch: (cause) => new ProviderSearchIndexError({ operation: "search", cause }),
       });
 
+    const listCityFacets = (input: ProviderSearchInput) =>
+      Effect.tryPromise({
+        try: async () => {
+          const response = await client.collections(readCollection).documents().search({
+            q: input.q?.trim() || "*",
+            query_by: "displayName,shortBio,services,serviceDescriptions,serviceNamesText,city,stateProvince,country",
+            // Drop the city AND geo clauses: the dropdown must list every city
+            // with providers (not just those inside the current radius) so it
+            // can act as a "jump to this place" control, and selecting a city
+            // must not collapse the list to that one option. Other filters
+            // (q, service, rate) still scope the counts.
+            filter_by: buildFilter({ ...input, city: undefined, radiusKm: undefined, center: undefined }),
+            facet_by: "city",
+            max_facet_values: 250,
+            per_page: 0,
+            page: 1,
+          });
+          const facet = (response.facet_counts ?? []).find((entry) => entry.field_name === "city");
+          const counts = (facet?.counts ?? []) as Array<{ value: string; count: number }>;
+          return counts
+            .map((entry) => ({ value: entry.value, count: entry.count }))
+            .sort((a, b) => a.value.localeCompare(b.value));
+        },
+        catch: (cause) => new ProviderSearchIndexError({ operation: "search", cause }),
+      });
+
     const getProvider = (userId: string) =>
       Effect.tryPromise({
         try: async () => {
@@ -364,7 +408,7 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
         Effect.catchAllCause((cause) => Effect.fail(new ProviderSearchIndexError({ operation: "reindex", cause: Cause.pretty(cause) }))),
       );
 
-    return { ensureCollection, reconcileProvider, searchProviders, getProvider, reindexAllProviders };
+    return { ensureCollection, reconcileProvider, searchProviders, listCityFacets, getProvider, reindexAllProviders };
   });
 };
 

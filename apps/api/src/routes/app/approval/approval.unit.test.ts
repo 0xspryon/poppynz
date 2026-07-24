@@ -196,7 +196,6 @@ const makeLayer = (options: {
     }),
     makeProviderSearchQueueTest({
       enqueueReconcile: () => Effect.succeed({ id: "job-1", name: "reconcile-provider" }),
-      enqueueExpiryReconcile: () => Effect.succeed({ id: "job-2", name: "reconcile-provider" }),
       enqueueReindex: () => Effect.succeed({ id: "job-3", name: "reindex-all-providers" }),
     }),
     makeProviderSearchOutboxRepoTest({

@@ -58,7 +58,6 @@ const makeLayer = (options: { hasPermission?: boolean; onReindex?: () => void } 
     makeSessionRepoTest({ findById: (id) => id === currentSession.id ? Effect.succeed(currentSession) : Effect.fail(new DBNotFoundError({ entity: "session", value: id })) }),
     makeProviderSearchQueueTest({
       enqueueReconcile: () => Effect.succeed({ id: "job-1", name: "reconcile-provider" }),
-      enqueueExpiryReconcile: () => Effect.succeed({ id: "job-2", name: "reconcile-provider" }),
       enqueueReindex: () => {
         options.onReindex?.();
         return Effect.succeed({ id: "job-3", name: "reindex-all-providers" });

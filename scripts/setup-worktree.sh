@@ -75,8 +75,8 @@ copy_env "$ROOT_DIR/apps/api/.env" "$new_worktree/apps/api/.env"
 copy_env "$ROOT_DIR/apps/web/.env" "$new_worktree/apps/web/.env"
 
 link_api_env "$new_worktree/packages/db/.env"
+link_api_env "$new_worktree/apps/worker/.env"
 mkdir -p "$new_worktree/bun_node_modules"
-# link_api_env "$new_worktree/apps/worker/.env"
 
 (
   cd "$new_worktree"

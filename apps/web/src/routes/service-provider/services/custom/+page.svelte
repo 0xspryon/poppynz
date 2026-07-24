@@ -30,7 +30,10 @@
 			await goto(resolve('/service-provider/services'));
 		} else {
 			errorMessage =
-				result.error.code === 'INVALID_SERVICE_OFFERED_INPUT' ? result.error.message : RETRY_MESSAGE;
+				result.error.code === 'INVALID_SERVICE_OFFERED_INPUT' ||
+				result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED'
+					? result.error.message
+					: RETRY_MESSAGE;
 			saving = false;
 		}
 	}

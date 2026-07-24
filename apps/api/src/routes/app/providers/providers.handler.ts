@@ -1,9 +1,10 @@
-import { ProviderSearchIndex, buildProviderSearchDocument, getProviderSearchMinRadiusKm } from "@repo/typesense";
+import { ProviderSearchIndex, type ProviderSearchDocument, buildProviderSearchDocument, getProviderSearchMinRadiusKm } from "@repo/typesense";
 import { DBNotFoundError, ProviderSearchRepo, UserProfileRepo } from "@repo/db";
 import { Cause, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
 import { presignProfileImageUrl } from "@/api/lib/profile-image";
+import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
 import { ProviderSearchRequestValidationError, validateProviderSearchQuery } from "./providers.validator";
 
 const publicProvider = (provider: {
@@ -85,21 +86,66 @@ export const searchProvidersRouteProgram = (headers: Headers, query: Record<stri
     }
 
     const index = yield* ProviderSearchIndex;
-    const result = yield* index.searchProviders({
-      q: input.q,
-      city: input.city,
-      service: input.service,
-      radiusKm: input.radiusKm,
-      center,
-      minHourlyRateCents: input.minHourlyRateCents,
-      maxHourlyRateCents: input.maxHourlyRateCents,
-      page: input.page,
-      perPage: input.perPage,
-      sort: input.sort,
-    });
+    const repo = yield* ProviderSearchRepo;
+
+    // Typesense only nominates ranked candidates; the DB is the authority on
+    // eligibility (role, ban, live approval, active services) and on the data
+    // we return. Over-fetch candidates and keep scanning until the requested
+    // page is full, so stale index entries can't leave holes in a page.
+    const needed = input.page * input.perPage;
+    const candidatePerPage = Math.min(250, input.perPage * 2);
+    const maxCandidatePages = Math.ceil(needed / candidatePerPage) + 2;
+
+    const verified: Array<ProviderSearchDocument & { distanceKm?: number }> = [];
+    const staleUserIds: Array<string> = [];
+    let indexTotal = 0;
+    let exhausted = false;
+
+    for (let candidatePage = 1; verified.length < needed && candidatePage <= maxCandidatePages; candidatePage += 1) {
+      const result = yield* index.searchProviders({
+        q: input.q,
+        city: input.city,
+        service: input.service,
+        radiusKm: input.radiusKm,
+        center,
+        minHourlyRateCents: input.minHourlyRateCents,
+        maxHourlyRateCents: input.maxHourlyRateCents,
+        page: candidatePage,
+        perPage: candidatePerPage,
+        sort: input.sort,
+      });
+      indexTotal = result.pagination.total;
+
+      if (result.providers.length === 0) {
+        exhausted = true;
+        break;
+      }
+
+      const candidates = yield* repo.listCandidatesByUserIds(result.providers.map((hit) => hit.userId));
+      const candidateByUserId = new Map(candidates.map((candidate) => [candidate.profile.userId, candidate]));
+
+      for (const hit of result.providers) {
+        const candidate = candidateByUserId.get(hit.userId);
+        const document = candidate ? buildProviderSearchDocument(candidate) : null;
+        if (document) verified.push({ ...document, distanceKm: hit.distanceKm });
+        else staleUserIds.push(hit.userId);
+      }
+
+      if (candidatePage * candidatePerPage >= indexTotal) {
+        exhausted = true;
+        break;
+      }
+    }
+
+    // Candidates the DB rejected are stale index entries; a reconcile removes them.
+    yield* Effect.forEach(staleUserIds, scheduleProviderSearchReconcile, { discard: true });
+
+    const pageStart = (input.page - 1) * input.perPage;
+    const pageOfProviders = verified.slice(pageStart, pageStart + input.perPage);
+    const total = exhausted ? verified.length : Math.max(indexTotal - staleUserIds.length, verified.length);
 
     const providers = yield* Effect.forEach(
-      result.providers,
+      pageOfProviders,
       (provider) =>
         presignProfileImageUrl(provider.image).pipe(
           Effect.map((imageUrl) => publicProvider(provider, imageUrl)),
@@ -107,7 +153,21 @@ export const searchProvidersRouteProgram = (headers: Headers, query: Record<stri
       { concurrency: 5 },
     );
 
-    return { providers, pagination: result.pagination };
+    // City facet options for the filter dropdown, respecting the other active
+    // filters (q/service/rate/radius) but not city itself.
+    const cityFacets = yield* index.listCityFacets({
+      q: input.q,
+      service: input.service,
+      radiusKm: input.radiusKm,
+      center,
+      minHourlyRateCents: input.minHourlyRateCents,
+      maxHourlyRateCents: input.maxHourlyRateCents,
+      page: 1,
+      perPage: input.perPage,
+      sort: input.sort,
+    });
+
+    return { providers, pagination: { page: input.page, perPage: input.perPage, total }, facets: { city: cityFacets } };
   });
 
 export const getProviderRouteProgram = (headers: Headers, userId: string) =>

@@ -5,7 +5,7 @@ import { authErrorToResponse, authenticate, handleNever, isAuthError, requirePer
 import { approvalJsonError, validateApprovalInput, validateApprovalRevokeInput, type ApprovalInput } from "./approval.validator";
 import { isRequestValidationError, parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import type { SqlError } from "@effect/sql/SqlError";
-import { scheduleProviderSearchApprovalJobs, scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
+import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
 
 export class ApprovalRepoError extends Data.TaggedError("ApprovalRepoError")<{ cause: SqlError }> { }
 export class ApprovalRequestMismatchError extends Data.TaggedError("ApprovalRequestMismatchError")<{}> { }
@@ -76,7 +76,9 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
       expiresAt: approval.expiresAt.toISOString(),
     };
 
-    yield* scheduleProviderSearchApprovalJobs(response.userId, approval.expiresAt);
+    // Indexing on grant is still required; expiry needs no delayed job — the
+    // search read path filters on approvalExpiresAt and re-verifies in the DB.
+    yield* scheduleProviderSearchReconcile(response.userId);
 
     return response;
   });
@@ -84,7 +86,9 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
 export class ApprovalNotFoundError extends Data.TaggedError("ApprovalNotFoundError")<{ id: string }> { }
 
 // Revokes a live approval before its expiry (status → rejected, reason kept
-// for the provider). Deindexes the provider from search via reconcile.
+// for the provider). No reconcile needed: the search read path re-verifies
+// approvals in the DB, and lazy repair deletes the stale index doc the next
+// time a search nominates this provider.
 export const revokeApprovalProgram = (id: string, reason: string) =>
   Effect.gen(function*() {
     const approvalRepo = yield* ApprovalRepo;
@@ -94,8 +98,6 @@ export const revokeApprovalProgram = (id: string, reason: string) =>
         DBNotFoundError: () => Effect.fail(new ApprovalNotFoundError({ id })),
       }),
     );
-
-    yield* scheduleProviderSearchReconcile(revoked.userId);
 
     return {
       id: revoked.id,

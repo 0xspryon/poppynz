@@ -1,5 +1,6 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import { DBNotFoundError, ServiceCatalogueRepo, type ServiceCatalogueItem, ServiceOfferedRepo } from "@repo/db";
+import { servicesOfferedConfig } from "@repo/env";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
@@ -17,6 +18,14 @@ const unexpected = (c: HonoContext<HonoEnv>) =>
 class ServiceCatalogueItemNotFoundError extends Data.TaggedError("ServiceCatalogueItemNotFoundError")<{ id: string }> { }
 class ServiceCatalogueItemHiddenError extends Data.TaggedError("ServiceCatalogueItemHiddenError")<{ id: string }> { }
 class ServiceRateBelowFloorError extends Data.TaggedError("ServiceRateBelowFloorError")<{ floorCents: number; currency: string }> { }
+class ServicesOfferedLimitReachedError extends Data.TaggedError("ServicesOfferedLimitReachedError")<{ max: number }> { }
+
+// Same defensive shape as the provider-search min-radius config: the env
+// default (20) applies when the variable is absent or malformed.
+const maxServicesPerProvider = servicesOfferedConfig.pipe(
+  Effect.map((config) => config.maxPerProvider),
+  Effect.orElseSucceed(() => 20),
+);
 
 // Catch the catalogue repo's DBNotFoundError here so it can't fall through to
 // the serviceOffered SERVICE_OFFERED_NOT_FOUND mapping.
@@ -58,8 +67,9 @@ export const listServicesOfferedRouteProgram = (headers: Headers) =>
     const userAndSession = yield* requirePermissions(headers, { serviceOffered: ["read"] })(authenticated);
     const repo = yield* ServiceOfferedRepo;
     const services = yield* repo.listByUserId(userAndSession.user.id);
+    const maxServicesOffered = yield* maxServicesPerProvider;
 
-    return services.map(toResponse);
+    return { services: services.map(toResponse), maxServicesOffered };
   });
 
 export const createServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
@@ -74,6 +84,11 @@ export const createServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
       yield* ensureRateMeetsFloor(item, input.hourlyRateCents);
     }
     const repo = yield* ServiceOfferedRepo;
+    const max = yield* maxServicesPerProvider;
+    const existing = yield* repo.listByUserId(userAndSession.user.id);
+    if (existing.length >= max) {
+      return yield* Effect.fail(new ServicesOfferedLimitReachedError({ max }));
+    }
     const service = yield* repo.create({
       userId: userAndSession.user.id,
       catalogueServiceId: input.catalogueServiceId ?? null,
@@ -179,6 +194,17 @@ const serviceOfferedErrorToResponse = (c: HonoContext<HonoEnv>, error: ServiceOf
             code: "SERVICE_RATE_BELOW_FLOOR" as const,
             message: `Hourly rate is below the base rate for this service (${formatCents(error.floorCents)}/hr ${error.currency}).`,
             floorCents: error.floorCents,
+          },
+        },
+        422,
+      );
+    case "ServicesOfferedLimitReachedError":
+      return c.json(
+        {
+          error: {
+            code: "SERVICES_OFFERED_LIMIT_REACHED" as const,
+            message: `You can offer up to ${error.max} services — remove one to add another.`,
+            max: error.max,
           },
         },
         422,

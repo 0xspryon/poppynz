@@ -111,6 +111,25 @@ services:
       api:
         condition: service_healthy
 
+  drizzle-gate:
+    image: ghcr.io/drizzle-team/gateway:latest
+    restart: always
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      STORE_PATH: ${DRIZZLE_GATEWAY_STORE_PATH}
+      MASTERPASS: ${DRIZZLE_GATEWAY_MASTERPASS}
+    networks:
+      - dokploy-network
+    expose:
+      - "3000"
+    volumes:
+      - drizzle-gateway:${DRIZZLE_GATEWAY_STORE_PATH}
+
+volumes:
+  drizzle-gateway:
+
 networks:
   dokploy-network:
     external: true

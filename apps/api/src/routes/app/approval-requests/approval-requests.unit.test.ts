@@ -21,6 +21,7 @@ import {
 import { Cause, Effect, Exit, Layer, Option } from "effect";
 import { describe, expect, it } from "vitest";
 import { makeAuthServiceTest } from "@/api/lib/effect-auth";
+import { MailerError, makeMailerTest } from "@/api/lib/mailer";
 import { createApprovalRequestRouteProgram, getAdminApprovalRequestRouteProgram, listAdminApprovalRequestsRouteProgram, rejectAdminApprovalRequestRouteProgram } from "./approval-requests.handler";
 
 const user = (overrides: Partial<User> = {}): User => ({
@@ -150,12 +151,28 @@ const makeLayer = (options: {
   services?: Array<ServiceOffered>;
   onCreateSubmitted?: (userId: string) => void;
   onReject?: (id: string, reviewedBy: string, reason: string) => void;
+  sentMails?: Array<{ kind: string; mail: unknown }>;
+  mailerFail?: boolean;
 } = {}) => {
   const currentUser = options.user ?? user();
   const currentSession = session({ userId: currentUser.id });
 
   return Layer.mergeAll(
     EmptyApprovalRepoTest,
+    makeMailerTest({
+      sendApprovalRequestSubmitted: (mail) => {
+        options.sentMails?.push({ kind: "submitted", mail });
+        return options.mailerFail ? Effect.fail(new MailerError({ cause: "boom" })) : Effect.void;
+      },
+      sendAdminApprovalRequestSubmitted: (mail) => {
+        options.sentMails?.push({ kind: "admin-notification", mail });
+        return options.mailerFail ? Effect.fail(new MailerError({ cause: "boom" })) : Effect.void;
+      },
+      sendApprovalRequestRejected: (mail) => {
+        options.sentMails?.push({ kind: "rejected", mail });
+        return options.mailerFail ? Effect.fail(new MailerError({ cause: "boom" })) : Effect.void;
+      },
+    }),
     makeApprovalRequestRepoTest({
       createSubmitted: (userId) => {
         options.onCreateSubmitted?.(userId);
@@ -215,7 +232,14 @@ const makeLayer = (options: {
       userHasPermission: () => Effect.succeed(options.hasPermission ?? true),
     }),
     makeUserRepoTest({
-      findById: (id) => id === currentUser.id ? Effect.succeed(currentUser) : Effect.fail(new DBNotFoundError({ entity: "user", value: id })),
+      // Falls back to the default provider so admin-run programs can look up
+      // the applicant (e.g. rejection mail delivery).
+      findById: (id) =>
+        id === currentUser.id
+          ? Effect.succeed(currentUser)
+          : id === "provider-1"
+            ? Effect.succeed(user())
+            : Effect.fail(new DBNotFoundError({ entity: "user", value: id })),
       findByEmail: () => Effect.succeed(currentUser),
     }),
     makeSessionRepoTest({
@@ -256,6 +280,34 @@ describe("createApprovalRequestRouteProgram", () => {
       missingRequiredDocuments: [{ documentTypeId: "document-type-1", name: "Identity document" }],
       missingServicesOffered: true,
     });
+  });
+
+  it("sends a submitted confirmation mail to the provider", async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    await Effect.runPromise(
+      createApprovalRequestRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ sentMails })),
+      ),
+    );
+
+    expect(sentMails).toEqual([
+      { kind: "submitted", mail: { email: "provider@example.com", name: "Provider User" } },
+      {
+        kind: "admin-notification",
+        mail: { providerName: "Provider User", providerEmail: "provider@example.com" },
+      },
+    ]);
+  });
+
+  it("still creates the request when the confirmation mail fails", async () => {
+    const result = await Effect.runPromise(
+      createApprovalRequestRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ mailerFail: true })),
+      ),
+    );
+
+    expect(result.id).toBe("request-created");
   });
 
   it("fails when a submitted approval request already exists", async () => {
@@ -334,6 +386,33 @@ describe("admin approval request review route programs", () => {
 
     expect(result).toMatchObject({ id: "request-1", status: "rejected", reviewedBy: "admin-1", reason: "Missing required documents." });
     expect(rejected).toEqual([{ id: "request-1", reviewedBy: "admin-1", reason: "Missing required documents." }]);
+  });
+
+  it("sends a rejection mail to the applicant with the reason", async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    await Effect.runPromise(
+      rejectAdminApprovalRequestRouteProgram(contextWithJson({ reason: "Missing required documents." }), new Headers(), "request-1").pipe(
+        Effect.provide(makeLayer({ user: user({ id: "admin-1", role: "admin" }), sentMails })),
+      ),
+    );
+
+    expect(sentMails).toEqual([
+      {
+        kind: "rejected",
+        mail: { email: "provider@example.com", name: "Provider User", reason: "Missing required documents." },
+      },
+    ]);
+  });
+
+  it("still rejects the request when the rejection mail fails", async () => {
+    const result = await Effect.runPromise(
+      rejectAdminApprovalRequestRouteProgram(contextWithJson({ reason: "Missing required documents." }), new Headers(), "request-1").pipe(
+        Effect.provide(makeLayer({ user: user({ id: "admin-1", role: "admin" }), mailerFail: true })),
+      ),
+    );
+
+    expect(result).toMatchObject({ id: "request-1", status: "rejected" });
   });
 
   it("rejects admin review access without approval-request permission", async () => {

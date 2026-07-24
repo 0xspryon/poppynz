@@ -1,8 +1,9 @@
 import type { SqlError } from "@effect/sql/SqlError";
-import { ApprovalRepo, ApprovalRequestRepo, DBNotFoundError, KycDocumentTypeRepo, UserProfileRepo } from "@repo/db";
+import { ApprovalRepo, ApprovalRequestRepo, DBNotFoundError, KycDocumentTypeRepo, UserProfileRepo, UserRepo } from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
+import { Mailer, sendMailBestEffort } from "@/api/lib/mailer";
 import { loadProviderChecklist, loadProviderChecklistWithTypes } from "@/api/lib/provider-onboarding";
 import { parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import { approvalRequestJsonError, validateApprovalRequestRejectInput } from "./approval-requests.validator";
@@ -45,6 +46,23 @@ export const createApprovalRequestRouteProgram = (headers: Headers) =>
       repo.createSubmitted(provider.user.id),
       buildWarnings(provider.user.id),
     ], { concurrency: "unbounded" });
+
+    const mailer = yield* Mailer;
+    yield* sendMailBestEffort(
+      "approval-request submitted",
+      mailer.sendApprovalRequestSubmitted({
+        email: provider.user.email,
+        name: provider.user.name || null,
+      }),
+    );
+    yield* sendMailBestEffort(
+      "approval-request admin notification",
+      mailer.sendAdminApprovalRequestSubmitted({
+        providerName: provider.user.name || null,
+        providerEmail: provider.user.email,
+      }),
+    );
+
     return { id: request.id, status: request.status, warnings };
   });
 
@@ -126,6 +144,21 @@ export const rejectAdminApprovalRequestRouteProgram = (c: HonoContext<HonoEnv>, 
     const userAndSession = yield* requirePermissions(headers, { approvalRequest: ["write"] })(authenticated);
     const repo = yield* ApprovalRequestRepo;
     const request = yield* repo.reject(id, userAndSession.user.id, input.reason);
+
+    yield* sendMailBestEffort(
+      "approval-request rejected",
+      Effect.gen(function* () {
+        const userRepo = yield* UserRepo;
+        const mailer = yield* Mailer;
+        const applicant = yield* userRepo.findById(request.userId);
+        yield* mailer.sendApprovalRequestRejected({
+          email: applicant.email,
+          name: applicant.name || null,
+          reason: input.reason,
+        });
+      }),
+    );
+
     return toRequestResponse(request);
   });
 

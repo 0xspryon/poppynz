@@ -23,6 +23,7 @@
         "@repo/db": "*",
         "@repo/env": "*",
         "@repo/google": "*",
+        "@repo/mail": "*",
         "@repo/objs": "*",
         "@repo/queue": "*",
         "@repo/typesense": "*",
@@ -102,6 +103,7 @@
         "@queuedash/api": "^3.19.0",
         "@repo/db": "*",
         "@repo/google": "*",
+        "@repo/mail": "*",
         "@repo/objs": "*",
         "@repo/queue": "*",
         "@repo/typesense": "*",
@@ -157,6 +159,14 @@
     },
     "packages/google": {
       "name": "@repo/google",
+      "version": "0.0.0",
+      "dependencies": {
+        "@repo/env": "*",
+        "effect": "^3.21.2",
+      },
+    },
+    "packages/mail": {
+      "name": "@repo/mail",
       "version": "0.0.0",
       "dependencies": {
         "@repo/env": "*",
@@ -583,6 +593,8 @@
     "@repo/eslint-config": ["@repo/eslint-config@workspace:packages/eslint-config"],
 
     "@repo/google": ["@repo/google@workspace:packages/google"],
+
+    "@repo/mail": ["@repo/mail@workspace:packages/mail"],
 
     "@repo/objs": ["@repo/objs@workspace:packages/objs"],
 

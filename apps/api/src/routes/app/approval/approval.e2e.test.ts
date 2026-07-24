@@ -21,6 +21,7 @@ import { makeObjectStorageTest } from "@repo/objs";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../../index";
 import { makeAuthServiceTest, type AuthSession, type Permissions } from "../../../lib/effect-auth";
+import { makeMailerTest } from "../../../lib/mailer";
 import { EmptySigninServiceTest } from "../auth/signin/signin.handler";
 import { EmptySignupServiceTest } from "../auth/signup/signup.handler";
 
@@ -76,6 +77,10 @@ const makeApproval = (input: ApprovalCreateInput, overrides: Partial<Approval> =
   status: "approved",
   reason: null,
   expiresAt: input.expiresAt,
+  notifiedExpiresInOneMonthAt: null,
+  notifiedExpiresInTwoWeeksAt: null,
+  notifiedExpiresInOneWeekAt: null,
+  notifiedExpiresInTwoDaysAt: null,
   createdAt: new Date("2026-06-12T00:00:00.000Z"),
   updatedAt: new Date("2026-06-12T00:00:00.000Z"),
   ...overrides,
@@ -164,6 +169,7 @@ const makeApp = (options: {
       EmptySigninServiceTest,
       EmptySignupServiceTest,
       EmptyKycDocumentRepoTest,
+      makeMailerTest({}),
       EmptyKycDocumentTypeRepoTest,
       makeUserProfileRepoTest({
         create: (input) => Effect.succeed({ userId: input.userId, language: input.language } as never),

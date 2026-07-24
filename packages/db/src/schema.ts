@@ -157,6 +157,13 @@ export const approval = appDb.table(
     status: approvalStatus("status").notNull().default('rejected'),
     reason: text('reason'),
     expiresAt: timestamp("expires_at").notNull(),
+    // Expiry-warning mail stamps, one per tier. Null = not sent. Firing a
+    // shorter tier also stamps every longer tier so late-entering approvals
+    // get exactly one mail (see the worker's approval-expiry processor).
+    notifiedExpiresInOneMonthAt: timestamp("notified_expires_in_one_month_at"),
+    notifiedExpiresInTwoWeeksAt: timestamp("notified_expires_in_two_weeks_at"),
+    notifiedExpiresInOneWeekAt: timestamp("notified_expires_in_one_week_at"),
+    notifiedExpiresInTwoDaysAt: timestamp("notified_expires_in_two_days_at"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -166,6 +173,7 @@ export const approval = appDb.table(
   (table) => [
     index("approvals_user_id_idx").on(table.userId),
     index("approvals_request_id_idx").on(table.approvalRequestId),
+    index("approvals_status_expires_at_idx").on(table.status, table.expiresAt),
   ],
 );
 

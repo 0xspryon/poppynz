@@ -7,8 +7,11 @@ import {
   type ApprovalRequest,
   makeServiceOfferedRepoTest,
   makeUserProfileRepoTest,
+  makeUserRepoTest,
+  type User,
 } from "@repo/db";
 import { SqlError } from "@effect/sql/SqlError";
+import { MailerError, makeMailerTest } from "@/api/lib/mailer";
 import { makeProviderSearchQueueTest } from "@repo/queue";
 import { makeProviderSearchOutboxRepoTest, type ProviderSearchOutbox } from "@repo/db";
 import { Cause, Effect, Exit, Layer, Option } from "effect";
@@ -18,6 +21,7 @@ import {
   ApprovalRequestMismatchError,
   ApprovalRequestNotFoundError,
   createApprovalProgram,
+  revokeApprovalProgram,
 } from "./approval.handler";
 import type { UserAndSession } from "@/api/lib/effect-auth";
 
@@ -78,6 +82,10 @@ const makeApproval = (approvalInput: ApprovalCreateInput, overrides: Partial<App
   reason: null,
   approvedBy: approvalInput.approvedBy,
   expiresAt: approvalInput.expiresAt,
+  notifiedExpiresInOneMonthAt: null,
+  notifiedExpiresInTwoWeeksAt: null,
+  notifiedExpiresInOneWeekAt: null,
+  notifiedExpiresInTwoDaysAt: null,
   createdAt: new Date("2026-06-12T00:00:00.000Z"),
   updatedAt: new Date("2026-06-12T00:00:00.000Z"),
   ...overrides,
@@ -114,6 +122,9 @@ const makeLayer = (options: {
   markApprovedError?: DBNotFoundError | SqlError;
   onCreateApproval?: (input: ApprovalCreateInput) => void;
   onMarkApproved?: (id: string, reviewedBy: string) => void;
+  revokeSucceeds?: boolean;
+  sentMails?: Array<{ kind: string; mail: unknown }>;
+  mailerFail?: boolean;
 } = {}) =>
   Layer.mergeAll(
     makeApprovalRepoTest({
@@ -126,7 +137,43 @@ const makeLayer = (options: {
       findCurrentByUserId: (userId) =>
         Effect.fail(new DBNotFoundError({ entity: "approval", value: userId })),
       listByUserId: () => Effect.succeed([]),
-      revoke: (id) => Effect.fail(new DBNotFoundError({ entity: "approval", value: id })),
+      revoke: (id, reason) =>
+        options.revokeSucceeds
+          ? Effect.succeed(makeApproval(
+            { userId: "provider-1", approvalRequestId: "request-1", status: "rejected", approvedBy: "admin-1", expiresAt: input.expiresAt },
+            { id, status: "rejected", reason },
+          ))
+          : Effect.fail(new DBNotFoundError({ entity: "approval", value: id })),
+    }),
+    makeUserRepoTest({
+      findById: (id) =>
+        Effect.succeed({
+          id,
+          name: "Provider User",
+          email: "provider@example.com",
+          emailVerified: true,
+          image: null,
+          createdAt: new Date("2026-06-12T00:00:00.000Z"),
+          updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+          isAnonymous: false,
+          role: "service-provider",
+          banned: false,
+          banReason: null,
+          banExpires: null,
+          phoneNumber: null,
+          phoneNumberVerified: null,
+        } as User),
+      findByEmail: (email) => Effect.fail(new DBNotFoundError({ entity: "user", value: email })),
+    }),
+    makeMailerTest({
+      sendApprovalGranted: (mail) => {
+        options.sentMails?.push({ kind: "granted", mail });
+        return options.mailerFail ? Effect.fail(new MailerError({ cause: "boom" })) : Effect.void;
+      },
+      sendApprovalRevoked: (mail) => {
+        options.sentMails?.push({ kind: "revoked", mail });
+        return options.mailerFail ? Effect.fail(new MailerError({ cause: "boom" })) : Effect.void;
+      },
     }),
     makeApprovalRequestRepoTest({
       createSubmitted: (userId) => Effect.succeed(makeApprovalRequest({ userId })),
@@ -243,6 +290,33 @@ describe("createApprovalProgram", () => {
     expect(markedApproved).toEqual([{ id: "request-1", reviewedBy: "admin-1" }]);
   });
 
+  it("sends an approval granted mail to the provider", async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(Effect.provide(makeLayer({ sentMails }))),
+    );
+
+    expect(sentMails).toEqual([
+      {
+        kind: "granted",
+        mail: {
+          email: "provider@example.com",
+          name: "Provider",
+          expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+        },
+      },
+    ]);
+  });
+
+  it("still creates the approval when the granted mail fails", async () => {
+    const result = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(Effect.provide(makeLayer({ mailerFail: true }))),
+    );
+
+    expect(result.id).toBe("approval-1");
+  });
+
   it("translates missing approval request to ApprovalRequestNotFoundError", async () => {
     const exit = await Effect.runPromise(
       createApprovalProgram(userAndSession, input).pipe(
@@ -293,5 +367,39 @@ describe("createApprovalProgram", () => {
     );
 
     expect(getFailure(exit)).toBeInstanceOf(ApprovalRequestNotFoundError);
+  });
+});
+
+describe("revokeApprovalProgram", () => {
+  it("sends an approval revoked mail to the provider", async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    const result = await Effect.runPromise(
+      revokeApprovalProgram("approval-1", "Expired vulnerable sector check").pipe(
+        Effect.provide(makeLayer({ revokeSucceeds: true, sentMails })),
+      ),
+    );
+
+    expect(result.status).toBe("rejected");
+    expect(sentMails).toEqual([
+      {
+        kind: "revoked",
+        mail: {
+          email: "provider@example.com",
+          name: "Provider User",
+          reason: "Expired vulnerable sector check",
+        },
+      },
+    ]);
+  });
+
+  it("still revokes the approval when the revoked mail fails", async () => {
+    const result = await Effect.runPromise(
+      revokeApprovalProgram("approval-1", "Expired vulnerable sector check").pipe(
+        Effect.provide(makeLayer({ revokeSucceeds: true, mailerFail: true })),
+      ),
+    );
+
+    expect(result.status).toBe("rejected");
   });
 });

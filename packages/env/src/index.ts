@@ -55,3 +55,16 @@ export const providerSearchConfig = Config.all({
 export const servicesOfferedConfig = Config.all({
   maxPerProvider: Config.integer("SERVICES_OFFERED_MAX_PER_PROVIDER").pipe(Config.withDefault(20)),
 });
+
+// Without RESEND_API_KEY the mailer stays in dev log-mode: deliveries are
+// written to stdout (the magic-link sign-in recipe depends on that).
+// ADMIN_NOTIFICATION_EMAILS is the comma-separated subset of admin accounts
+// that receive review-queue notifications; empty means notify nobody.
+export const mailConfig = Config.all({
+  resendApiKey: Config.option(Config.string("RESEND_API_KEY")),
+  from: Config.string("MAIL_FROM").pipe(Config.withDefault("Poppynz <no-reply@poppynz.com>")),
+  adminNotificationEmails: Config.string("ADMIN_NOTIFICATION_EMAILS").pipe(
+    Config.withDefault(""),
+    Config.map((raw) => raw.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0)),
+  ),
+});

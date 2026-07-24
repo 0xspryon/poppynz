@@ -9,6 +9,7 @@
     "@queuedash/api": "^3.19.0",
     "@repo/db": "*",
     "@repo/google": "*",
+    "@repo/mail": "*",
     "@repo/objs": "*",
     "@repo/queue": "*",
     "@repo/typesense": "*",

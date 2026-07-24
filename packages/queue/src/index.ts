@@ -8,12 +8,26 @@ export const providerSearchQueueDefinition = {
   type: "bullmq" as const,
 };
 
-export const queues = [providerSearchQueueDefinition] as const;
+export const approvalExpiryQueueDefinition = {
+  name: "approval-expiry" as const,
+  displayName: "Approval Expiry" as const,
+  type: "bullmq" as const,
+};
+
+export const queues = [providerSearchQueueDefinition, approvalExpiryQueueDefinition] as const;
 
 export const providerSearchJobNames = {
   reconcileProvider: "reconcile-provider",
   reindexAllProviders: "reindex-all-providers",
 } as const;
+
+export const approvalExpiryJobNames = {
+  notifyExpiring: "notify-expiring-approvals",
+} as const;
+
+/** One repeatable scheduler drives the daily run; upserted on worker boot. */
+export const approvalExpirySchedulerId = "approval-expiry-daily";
+export const approvalExpiryCronPattern = "0 2 * * *";
 
 // outboxId stays nullable only for legacy delayed expiry jobs still sitting
 // in Redis from before expiry reconciles were dropped (search-time DB

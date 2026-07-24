@@ -1,10 +1,11 @@
-import { ApprovalRepo, ApprovalRequestRepo, DBNotFoundError, ServiceOfferedRepo, UserProfileRepo } from "@repo/db";
+import { ApprovalRepo, ApprovalRequestRepo, DBNotFoundError, ServiceOfferedRepo, UserProfileRepo, UserRepo } from "@repo/db";
 import { Cause, Data, Effect, Exit, Option } from "effect";
 import type { HonoContext, HonoEnv } from "@/api/app-env";
 import { authErrorToResponse, authenticate, handleNever, isAuthError, requirePermissions, type UserAndSession } from "@/api/lib/effect-auth";
 import { approvalJsonError, validateApprovalInput, validateApprovalRevokeInput, type ApprovalInput } from "./approval.validator";
 import { isRequestValidationError, parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import type { SqlError } from "@effect/sql/SqlError";
+import { Mailer, sendMailBestEffort } from "@/api/lib/mailer";
 import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
 
 export class ApprovalRepoError extends Data.TaggedError("ApprovalRepoError")<{ cause: SqlError }> { }
@@ -80,6 +81,16 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
     // search read path filters on approvalExpiresAt and re-verifies in the DB.
     yield* scheduleProviderSearchReconcile(response.userId);
 
+    const mailer = yield* Mailer;
+    yield* sendMailBestEffort(
+      "approval granted",
+      mailer.sendApprovalGranted({
+        email: profile.email,
+        name: profile.firstName || null,
+        expiresAt: approval.expiresAt,
+      }),
+    );
+
     return response;
   });
 
@@ -96,6 +107,20 @@ export const revokeApprovalProgram = (id: string, reason: string) =>
       Effect.catchTags({
         SqlError: (cause) => Effect.fail(new ApprovalRepoError({ cause })),
         DBNotFoundError: () => Effect.fail(new ApprovalNotFoundError({ id })),
+      }),
+    );
+
+    yield* sendMailBestEffort(
+      "approval revoked",
+      Effect.gen(function*() {
+        const userRepo = yield* UserRepo;
+        const mailer = yield* Mailer;
+        const provider = yield* userRepo.findById(revoked.userId);
+        yield* mailer.sendApprovalRevoked({
+          email: provider.email,
+          name: provider.name || null,
+          reason,
+        });
       }),
     );
 

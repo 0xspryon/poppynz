@@ -20,6 +20,7 @@ import {
 } from "@repo/db";
 import { ProviderSearchQueueLive } from "@repo/queue";
 import { Cause, Data, Effect, Exit, Layer, ManagedRuntime, Option } from "effect";
+import { Mailer, MailerLive, sendMailBestEffort } from "./mailer";
 import { scheduleProviderSearchReconcile } from "./provider-search-jobs";
 
 export class SignupHookDbError extends Data.TaggedError("SignupHookDbError")<{
@@ -32,6 +33,7 @@ const AuthHookLive = Layer.mergeAll(
   ReferralRepoDefault,
   ProviderSearchOutboxRepoDefault,
   ProviderSearchQueueLive,
+  MailerLive,
 );
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
 
@@ -109,6 +111,39 @@ const runSignupHookEffect = async <A>(exitPromise: Promise<Exit.Exit<A, unknown>
   });
 };
 
+/** Mails a user when an admin bans or unbans them. Keyed off the admin
+ * endpoint paths so the lazy `banExpires` auto-unban (which also flips
+ * `banned` back to false, from whatever endpoint touched the session) never
+ * emails anyone. Best-effort: a mail failure must not fail the admin call. */
+export const notifyBanStatusChangeEffect = (
+  user: { email: string; name?: string | null; banReason?: string | null },
+  endpointPath: string | undefined,
+  headers?: Headers,
+) => {
+  if (endpointPath !== "/admin/ban-user" && endpointPath !== "/admin/unban-user") {
+    return Effect.void as Effect.Effect<void, never, Mailer>;
+  }
+
+  const name = user.name || null;
+  return endpointPath === "/admin/ban-user"
+    ? sendMailBestEffort(
+      "account banned",
+      Effect.flatMap(Mailer, (mailer) =>
+        mailer.sendAccountBanned({ email: user.email, name, reason: user.banReason ?? null }),
+      ),
+    )
+    : sendMailBestEffort(
+      "account unbanned",
+      Effect.flatMap(Mailer, (mailer) =>
+        mailer.sendAccountUnbanned({
+          email: user.email,
+          name,
+          link: new URL("/auth/sign-in", resolveUiOrigin(headers ?? new Headers())).toString(),
+        }),
+      ),
+    );
+};
+
 export const auth = betterAuth({
   appName: "Poppynz",
   // Allows magic-link callback URLs to point back at the calling UI app.
@@ -147,7 +182,13 @@ export const auth = betterAuth({
         const generated = new URL(url);
         const uiOrigin = resolveUiOrigin(ctx?.headers ?? new Headers());
         const link = new URL(`${generated.pathname}${generated.search}`, uiOrigin);
-        console.log(`Magic link for ${email}: ${link.toString()}`);
+        // Failures propagate so better-auth reports the send error instead of
+        // silently succeeding while no mail goes out.
+        await authHookRuntime.runPromise(
+          Effect.flatMap(Mailer, (mailer) =>
+            mailer.sendMagicLink({ email, link: link.toString() }),
+          ),
+        );
       },
     })
   ],
@@ -167,8 +208,17 @@ export const auth = betterAuth({
         // the reconcile keeps the index itself in step — critically on UNBAN,
         // where the provider's document must be re-created to be searchable
         // again (lazy repair deletes it while they are banned).
-        after: async (user) => {
-          const updated = user as { id: string; role?: string | null };
+        after: async (user, ctx) => {
+          const updated = user as {
+            id: string;
+            email: string;
+            name?: string | null;
+            role?: string | null;
+            banReason?: string | null;
+          };
+          await authHookRuntime.runPromise(
+            notifyBanStatusChangeEffect(updated, ctx?.path, ctx?.headers ?? undefined),
+          );
           if (updated.role === "service-provider") {
             await authHookRuntime.runPromise(scheduleProviderSearchReconcile(updated.id));
           }

@@ -19,6 +19,7 @@ import { makeObjectStorageTest } from "@repo/objs";
 import { describe, expect, it } from "vitest";
 import { createApp } from "../../../index";
 import { makeAuthServiceTest, type AuthSession } from "../../../lib/effect-auth";
+import { makeMailerTest } from "../../../lib/mailer";
 import { EmptySigninServiceTest } from "../auth/signin/signin.handler";
 import { EmptySignupServiceTest } from "../auth/signup/signup.handler";
 
@@ -119,6 +120,7 @@ const makeApp = (options: { authSession?: AuthSession | null; user?: User; reque
       EmptySigninServiceTest,
       EmptySignupServiceTest,
       EmptyUserProfileRepoTest,
+      makeMailerTest({}),
       EmptyApprovalRepoTest,
       EmptyKycDocumentRepoTest,
       EmptyKycDocumentTypeRepoTest,

@@ -12,7 +12,10 @@
 	/** Inner column of the navy sidebar — shared by the desktop aside and the
 	 * mobile drawer (design 9a: brand, role kicker, nav items with optional
 	 * attention badge, language toggle + user card pinned at the bottom). */
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { signOut } from '$lib/api/auth';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import LangToggle from '$lib/components/LangToggle.svelte';
 
@@ -33,6 +36,15 @@
 	let { kicker, items, email, roleLabel, onnavigate, onclose, impersonated }: Props = $props();
 
 	const initial = $derived(email.charAt(0).toUpperCase() || '?');
+
+	let signingOut = $state(false);
+
+	async function handleSignOut() {
+		if (signingOut) return;
+		signingOut = true;
+		await signOut();
+		await goto(resolve('/auth/sign-in'));
+	}
 </script>
 
 <div class="flex items-center justify-between px-2.5 pb-2">
@@ -97,4 +109,15 @@
 			</div>
 		</div>
 	</div>
+	<button
+		type="button"
+		class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold
+			text-secondary-content-muted transition-colors hover:bg-primary/10
+			hover:text-secondary-content disabled:opacity-60"
+		onclick={handleSignOut}
+		disabled={signingOut}
+	>
+		<i class="las la-sign-out-alt text-lg" aria-hidden="true"></i>
+		{signingOut ? 'Signing out…' : 'Sign out'}
+	</button>
 </div>

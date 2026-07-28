@@ -12,28 +12,11 @@ CREATE TABLE "app_db"."kyc_document_types" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );--> statement-breakpoint
 
-INSERT INTO "app_db"."kyc_document_types" ("name", "applies_to_role", "is_optional", "requires_expiry_date") VALUES
-	('Government ID', 'service-provider', false, true),
-	('Vulnerable Sector Check', 'service-provider', false, true),
-	('First Aid Certification', 'service-provider', false, true),
-	('Driving License', 'service-provider', true, true);--> statement-breakpoint
-
 ALTER TABLE "app_db"."kyc_documents" DROP CONSTRAINT IF EXISTS "kyc_documents_user_id_user_id_fk";--> statement-breakpoint
 DROP INDEX IF EXISTS "app_db"."kyc_documents_user_id_type_uidx";--> statement-breakpoint
 ALTER TABLE "app_db"."kyc_documents" ADD COLUMN "document_type_id" uuid;--> statement-breakpoint
 ALTER TABLE "app_db"."kyc_documents" ADD COLUMN "expiry_date" timestamp;--> statement-breakpoint
 ALTER TABLE "app_db"."kyc_documents" ADD COLUMN "deleted_at" timestamp;--> statement-breakpoint
-UPDATE "app_db"."kyc_documents"
-SET "document_type_id" = (
-	SELECT "id" FROM "app_db"."kyc_document_types"
-	WHERE "name" = CASE "app_db"."kyc_documents"."type"::text
-		WHEN 'government-id' THEN 'Government ID'
-		WHEN 'vulnerable-sector-check' THEN 'Vulnerable Sector Check'
-		WHEN 'first-aid-certification' THEN 'First Aid Certification'
-		WHEN 'driving-license' THEN 'Driving License'
-	END
-);--> statement-breakpoint
-UPDATE "app_db"."kyc_documents" SET "status" = 'submitted' WHERE "status" = 'uploaded';--> statement-breakpoint
 ALTER TABLE "app_db"."kyc_documents" ALTER COLUMN "document_type_id" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "app_db"."kyc_documents" DROP COLUMN "type";--> statement-breakpoint
 ALTER TABLE "app_db"."kyc_documents" ADD CONSTRAINT "kyc_documents_user_id_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "app_db"."user"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

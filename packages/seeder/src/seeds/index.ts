@@ -1,5 +1,7 @@
 import type { Seed } from "../types";
 import { adminUsers } from "./0000_admin_users";
+import { kycDocumentTypes } from "./0001_kyc_document_types";
+import { serviceCatalogue } from "./0002_service_catalogue";
 // <seed:new-imports> — `bun run seed:new` inserts above; keep this marker.
 
 /**
@@ -10,5 +12,7 @@ import { adminUsers } from "./0000_admin_users";
  */
 export const seeds: ReadonlyArray<Seed> = [
   adminUsers,
+  kycDocumentTypes,
+  serviceCatalogue,
   // <seed:new-entries> — `bun run seed:new` inserts above; keep this marker.
 ];

@@ -1,4 +1,4 @@
-import { mailConfig } from "@repo/env";
+import { mailConfig, type AppEnvironment } from "@repo/env";
 import { Context, Data, Effect, Layer, Option } from "effect";
 import type { MailRole } from "./templates";
 import {
@@ -137,20 +137,64 @@ export const makeMailer = (config: {
   resendApiKey: Option.Option<string>;
   from: string;
   adminNotificationEmails: ReadonlyArray<string>;
+  environment: AppEnvironment;
+  adminAccounts: ReadonlyArray<string>;
 }): Context.Tag.Service<Mailer> => {
-  const deliver = Option.match(config.resendApiKey, {
-    onNone: () => makeLogDeliver(),
+  const logMode = Option.isNone(config.resendApiKey);
+  const logDeliver = makeLogDeliver();
+  const send = Option.match(config.resendApiKey, {
+    onNone: () => logDeliver,
     onSome: (apiKey) => makeResendDeliver({ apiKey, from: config.from }),
   });
-  const logMode = Option.isNone(config.resendApiKey);
+  const adminAccounts = new Set(config.adminAccounts.map((email) => email.trim().toLowerCase()));
+
+  // Production mails everyone; staging and dev only @poppynz.com addresses
+  // and the admin accounts, so test users can never receive real mail.
+  const isAllowed = (recipient: string) => {
+    if (config.environment === "production") {
+      return true;
+    }
+
+    const email = recipient.trim().toLowerCase();
+    return email.endsWith("@poppynz.com") || adminAccounts.has(email);
+  };
+
+  const deliver = (to: ReadonlyArray<string>, content: MailContent): Effect.Effect<void, MailerError> => {
+    if (logMode) {
+      return logDeliver(to, content);
+    }
+
+    const allowed = to.filter(isAllowed);
+    const suppressed = to.filter((recipient) => !isAllowed(recipient));
+    return Effect.all(
+      [
+        config.environment === "dev" ? logDeliver(to, content) : Effect.void,
+        suppressed.length === 0
+          ? Effect.void
+          : Effect.sync(() => {
+            console.log(`[mail] suppressed (${config.environment}) to ${suppressed.join(", ")}: ${content.subject}`);
+          }),
+        allowed.length === 0 ? Effect.void : send(allowed, content),
+      ],
+      { discard: true },
+    );
+  };
 
   return {
-    sendMagicLink: (mail) =>
-      logMode
-        ? Effect.sync(() => {
-          console.log(`Magic link for ${mail.email}: ${mail.link}`);
-        })
-        : deliver([mail.email], magicLinkMail(mail)),
+    sendMagicLink: (mail) => {
+      const logLine = Effect.sync(() => {
+        console.log(`Magic link for ${mail.email}: ${mail.link}`);
+      });
+      if (logMode) {
+        return logLine;
+      }
+
+      // Dev keeps the historical log line even when a key is set — the local
+      // sign-in recipe reads the link out of the api logs.
+      return config.environment === "dev"
+        ? logLine.pipe(Effect.zipRight(deliver([mail.email], magicLinkMail(mail))))
+        : deliver([mail.email], magicLinkMail(mail));
+    },
     sendReferralInvite: (mail) => deliver([mail.email], referralInviteMail(mail)),
     sendApprovalRequestSubmitted: (mail) => deliver([mail.email], approvalRequestSubmittedMail(mail)),
     sendAdminApprovalRequestSubmitted: (mail) =>

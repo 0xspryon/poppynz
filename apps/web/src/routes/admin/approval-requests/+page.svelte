@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import {
 		listApprovalRequests,
@@ -30,7 +31,7 @@
 		loading = false;
 	}
 
-	$effect(() => {
+	onMount(() => {
 		void load();
 	});
 

@@ -1,12 +1,34 @@
-import { Config } from "effect";
+import { Config, ConfigError, Either } from "effect";
+
+export const appEnvironments = ["dev", "staging", "production"] as const;
+export type AppEnvironment = (typeof appEnvironments)[number];
+
+const isAppEnvironment = (value: string): value is AppEnvironment =>
+  (appEnvironments as ReadonlyArray<string>).includes(value);
+
+// Which deployment this process runs in. Gates outbound mail (see mailConfig);
+// defaults to "dev" so a missing variable can never mass-mail real users.
+export const environmentConfig = Config.string("ENVIRONMENT").pipe(
+  Config.withDefault("dev"),
+  Config.mapOrFail((raw) => {
+    const value = raw.trim().toLowerCase();
+    return isAppEnvironment(value)
+      ? Either.right(value)
+      : Either.left(
+        ConfigError.InvalidData([], `ENVIRONMENT must be one of: ${appEnvironments.join(", ")} — got "${raw}"`),
+      );
+  }),
+);
+
+const adminAccountsList = Config.string("ADMIN_ACCOUNTS").pipe(
+  Config.withDefault('springfield@poppynz.com;kay@poppynz.com'),
+  Config.map(
+    (raw) => raw.split(";").map((entry) => entry.trim().toLowerCase()).filter((entry) => entry.length > 0)
+  ),
+);
 
 export const adminAccountConfig = Config.all({
-  adminAccounts: Config.string("ADMIN_ACCOUNTS").pipe(
-    Config.withDefault('springfield@poppynz.com;kay@poppynz.com'),
-    Config.map(
-      (raw) => raw.split(";").map((entry) => entry.trim().toLowerCase()).filter((entry) => entry.length > 0)
-    ),
-  ),
+  adminAccounts: adminAccountsList,
 });
 
 // Semicolon-separated UI origins allowed as magic-link callback targets.
@@ -63,6 +85,9 @@ export const servicesOfferedConfig = Config.all({
 
 // Without RESEND_API_KEY the mailer stays in dev log-mode: deliveries are
 // written to stdout (the magic-link sign-in recipe depends on that).
+// With a key, ENVIRONMENT gates who actually receives mail: production sends
+// to everyone; staging only to @poppynz.com addresses and the admin accounts;
+// dev applies the staging rule and additionally logs every mail to stdout.
 // ADMIN_NOTIFICATION_EMAILS is the comma-separated subset of admin accounts
 // that receive review-queue notifications; empty means notify nobody.
 export const mailConfig = Config.all({
@@ -72,4 +97,6 @@ export const mailConfig = Config.all({
     Config.withDefault(""),
     Config.map((raw) => raw.split(";").map((entry) => entry.trim()).filter((entry) => entry.length > 0)),
   ),
+  environment: environmentConfig,
+  adminAccounts: adminAccountsList,
 });

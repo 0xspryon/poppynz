@@ -18,6 +18,9 @@ import { serviceCatalogueRoute } from './service-catalogue/service-catalogue';
 import { adminServiceCatalogueRoute } from './admin/service-catalogue';
 import { adminUsersRoute } from './admin/users';
 import { referralsRoute } from './referrals/referrals';
+import { tcsRoute } from './tcs/tcs';
+import { meTcsRoute } from './me/tcs';
+import { adminTcsRoute } from './admin/tcs';
 
 export const appRoutes = new Hono<HonoEnv>()
 .route('/auth', signupRoute)
@@ -25,6 +28,9 @@ export const appRoutes = new Hono<HonoEnv>()
 .route('/me/profile', profileRoute)
 .route('/me/onboarding', onboardingRoute)
 .route('/me/services-offered', servicesOfferedRoute)
+.route('/me/tcs', meTcsRoute)
+.route('/tcs', tcsRoute)
+.route('/admin/tcs', adminTcsRoute)
 .route('/kyc-docs', kycDocsRoute)
 .route('/approval-requests', approvalRequestsRoute)
 .route('/approvals', approvalRoute)

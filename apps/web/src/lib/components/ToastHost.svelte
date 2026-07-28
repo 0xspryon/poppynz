@@ -17,7 +17,7 @@
 	};
 </script>
 
-<div class="toast toast-top toast-end z-100 pointer-events-none" aria-live="polite">
+<div class="toast toast-top toast-end z-[10000] pointer-events-none" aria-live="polite">
 	{#each toast.items as item (item.id)}
 		<div
 			role={item.kind === 'error' ? 'alert' : 'status'}

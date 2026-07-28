@@ -2,6 +2,9 @@ name: poppynz-staging
 
 x-app-env: &app-env
   NODE_ENV: production
+  # Mail gating (@repo/mail): staging only mails @poppynz.com addresses and
+  # the admin accounts. Pinned here so a dokploy .env can't override it.
+  ENVIRONMENT: staging
 
 services:
   migrations:

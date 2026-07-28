@@ -1,6 +1,7 @@
 <script lang="ts">
 	/** Referrals screen body (design 12a) — identical for providers and
 	 * families: invite-by-email form, stats row, invite list with status. */
+	import { onMount } from 'svelte';
 	import { matchError } from '$lib/api/client';
 	import type { Role } from '$lib/api/auth';
 	import {
@@ -36,7 +37,7 @@
 		loading = false;
 	}
 
-	$effect(() => {
+	onMount(() => {
 		void load();
 	});
 

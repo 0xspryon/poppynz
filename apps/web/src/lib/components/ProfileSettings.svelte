@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import {
 		getPlaceSuggestions,
 		getProfile,
@@ -63,7 +64,7 @@
 		loading = false;
 	}
 
-	$effect(() => {
+	onMount(() => {
 		void load();
 	});
 

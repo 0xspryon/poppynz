@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import {
 		getOnboardingHistory,
 		getOnboardingState,
@@ -33,7 +34,7 @@
 		loading = false;
 	}
 
-	$effect(() => {
+	onMount(() => {
 		void load();
 	});
 

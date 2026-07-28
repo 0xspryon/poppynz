@@ -2,11 +2,18 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { browser } from '$app/environment';
 	import { requestSignUpLink, type Role } from '$lib/api/auth';
 	import { matchError } from '$lib/api/client';
+	import { listPublishedTcs, type PublishedTc } from '$lib/api/tcs';
 	import RoleChooser from '$lib/components/RoleChooser.svelte';
+	import TcModal from '$lib/components/TcModal.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+	// Static fallback while the published terms load (or if the fetch fails);
+	// matches the seeded terms_of_service checkbox label.
+	const TERMS_CHECKBOX_FALLBACK =
+		'I have read and agree to the Poppynz Terms of Service, Payment and Cancellation Policy, and Privacy Policy.';
 
 	// Referral invite links land here with ?email=…&role=… prefilled.
 	const invitedRole = page.url.searchParams.get('role');
@@ -17,6 +24,20 @@
 	let agreed = $state(false);
 	let submitting = $state(false);
 	let errorMessage: string | null = $state(null);
+	let terms = $state<PublishedTc | null>(null);
+	let termsOpen = $state(false);
+
+	// Acceptance itself is recorded after the magic-link sign-in (the terms
+	// gate in the role layouts) — this is the read-and-agree step.
+	$effect(() => {
+		const forRole = role;
+		if (!browser) return;
+		void listPublishedTcs(forRole).then((result) => {
+			if (result.ok) {
+				terms = result.data.find((tc) => tc.slug === 'terms_of_service') ?? null;
+			}
+		});
+	});
 
 	const canSubmit = $derived(email.includes('@') && agreed);
 
@@ -78,10 +99,16 @@
 	<label class="label mb-7 items-start gap-2.5 text-sm whitespace-normal">
 		<input type="checkbox" class="checkbox checkbox-primary checkbox-sm" bind:checked={agreed} />
 		<span>
-			<!-- Terms & privacy pages don't exist yet — placeholder anchors -->
-			I agree to Poppynz's <a href="#terms" class="font-semibold text-primary">Terms</a> and
-			acknowledge the
-			<a href="#privacy" class="font-semibold text-primary">Privacy Policy</a> (PIPEDA-compliant).
+			{terms?.checkboxLabel ?? TERMS_CHECKBOX_FALLBACK}
+			{#if terms}
+				<button
+					type="button"
+					class="font-semibold text-primary underline"
+					onclick={() => (termsOpen = true)}
+				>
+					Read the terms
+				</button>
+			{/if}
 		</span>
 	</label>
 
@@ -108,3 +135,13 @@
 		No password needed — the link signs you in securely and expires in 5 minutes.
 	</p>
 </form>
+
+{#if terms}
+	<TcModal
+		open={termsOpen}
+		mode="view"
+		title={terms.title}
+		content={terms.content}
+		onclose={() => (termsOpen = false)}
+	/>
+{/if}

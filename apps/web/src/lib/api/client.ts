@@ -24,7 +24,6 @@ type SuccessOf<TRes> = Exclude<ResponseBody<TRes>, ApiErrorBody>;
 export type ErrorsOf<TEndpoint extends (...args: never[]) => Promise<unknown>> =
   | KnownErrorOf<Awaited<ReturnType<TEndpoint>>>
   | UnexpectedError;
-
 const unexpected = (message: string, status: number | null): UnexpectedError => ({
   code: 'UNEXPECTED',
   message,

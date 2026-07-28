@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import {
 		createDocumentType,
 		listDocumentTypes,
@@ -48,7 +49,7 @@
 		loading = false;
 	}
 
-	$effect(() => {
+	onMount(() => {
 		void load();
 	});
 

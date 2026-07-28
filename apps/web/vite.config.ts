@@ -1,9 +1,17 @@
 import { fileURLToPath } from 'node:url';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import { defaultClientConditions, defineConfig } from 'vite';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
+	resolve: {
+		alias: {
+			'@/web': fileURLToPath(new URL('./src', import.meta.url))
+		},
+		// Component tests mount Svelte pages under jsdom; the browser condition
+		// makes `mount` resolve to the client runtime instead of the server stub.
+		...(mode === 'test' ? { conditions: ['browser', ...defaultClientConditions] } : {})
+	},
 	server: {
 		// Honor the port assigned by the host (e.g. preview tooling); vite
 		// ignores PORT on its own and would silently pick another port.
@@ -18,10 +26,5 @@ export default defineConfig({
 			}
 		}
 	},
-	resolve: {
-		alias: {
-			'@/web': fileURLToPath(new URL('./src', import.meta.url))
-		}
-	},
 	plugins: [tailwindcss(), sveltekit()]
-});
+}));

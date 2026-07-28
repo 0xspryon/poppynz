@@ -5,8 +5,29 @@ import { makeMailer } from "./mailer";
 const from = "Poppynz <no-reply@poppynz.com>";
 
 const resendMailer = (adminNotificationEmails: ReadonlyArray<string> = []) =>
-  makeMailer({ resendApiKey: Option.some("re_test_key"), from, adminNotificationEmails });
-const logMailer = () => makeMailer({ resendApiKey: Option.none(), from, adminNotificationEmails: [] });
+  makeMailer({
+    resendApiKey: Option.some("re_test_key"),
+    from,
+    adminNotificationEmails,
+    environment: "production",
+    adminAccounts: [],
+  });
+const logMailer = () =>
+  makeMailer({
+    resendApiKey: Option.none(),
+    from,
+    adminNotificationEmails: [],
+    environment: "dev",
+    adminAccounts: [],
+  });
+const gatedMailer = (environment: "dev" | "staging", adminAccounts: ReadonlyArray<string> = []) =>
+  makeMailer({
+    resendApiKey: Option.some("re_test_key"),
+    from,
+    adminNotificationEmails: [],
+    environment,
+    adminAccounts,
+  });
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -103,6 +124,125 @@ describe("makeMailer (resend mode)", () => {
     );
 
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+});
+
+describe("makeMailer (ENVIRONMENT gating)", () => {
+  it("staging sends to @poppynz.com addresses", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: "mail-1" }), { status: 200 }));
+
+    await Effect.runPromise(
+      gatedMailer("staging").sendApprovalGranted({
+        email: "helper@poppynz.com",
+        name: "Helper",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).to).toEqual(["helper@poppynz.com"]);
+  });
+
+  it("staging sends to configured admin emails outside the domain", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: "mail-1" }), { status: 200 }));
+
+    await Effect.runPromise(
+      gatedMailer("staging", ["Ops.Admin@Gmail.com"]).sendApprovalGranted({
+        email: "ops.admin@gmail.com",
+        name: "Ops",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("staging suppresses everyone else and logs the suppression", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+
+    await Effect.runPromise(
+      gatedMailer("staging").sendApprovalGranted({
+        email: "user@example.com",
+        name: "User",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      }),
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(String(logSpy.mock.calls[0]![0])).toContain("suppressed (staging) to user@example.com");
+  });
+
+  it("staging filters a mixed recipient list down to the allowed subset", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: "mail-1" }), { status: 200 }));
+    vi.spyOn(console, "log").mockImplementation(() => { });
+
+    await Effect.runPromise(
+      makeMailer({
+        resendApiKey: Option.some("re_test_key"),
+        from,
+        adminNotificationEmails: ["kay@poppynz.com", "watcher@example.com"],
+        environment: "staging",
+        adminAccounts: [],
+      }).sendAdminApprovalRequestSubmitted({ providerName: "P", providerEmail: "p@example.com" }),
+    );
+
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).to).toEqual(["kay@poppynz.com"]);
+  });
+
+  it("dev logs the mail to the console in addition to sending to allowed recipients", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: "mail-1" }), { status: 200 }));
+
+    await Effect.runPromise(
+      gatedMailer("dev").sendApprovalGranted({
+        email: "helper@poppynz.com",
+        name: "Helper",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(String(logSpy.mock.calls[0]![0])).toContain("[mail] to helper@poppynz.com");
+  });
+
+  it("dev keeps the historical magic-link log line even with a key set", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => { });
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: "mail-1" }), { status: 200 }));
+
+    await Effect.runPromise(
+      gatedMailer("dev").sendMagicLink({ email: "kay@poppynz.com", link: "https://localhost:5173/magic" }),
+    );
+
+    expect(logSpy).toHaveBeenCalledWith("Magic link for kay@poppynz.com: https://localhost:5173/magic");
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("production sends to any recipient", async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify({ id: "mail-1" }), { status: 200 }));
+
+    await Effect.runPromise(
+      resendMailer().sendApprovalGranted({
+        email: "user@example.com",
+        name: "User",
+        expiresAt: new Date("2027-01-01T00:00:00.000Z"),
+      }),
+    );
+
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).to).toEqual(["user@example.com"]);
   });
 });
 

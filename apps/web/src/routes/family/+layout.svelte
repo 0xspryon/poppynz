@@ -7,8 +7,9 @@
 	import ImpersonationBanner from '$lib/components/ImpersonationBanner.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
+	import TcGate from '$lib/components/TcGate.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
 		children: Snippet;
@@ -19,8 +20,7 @@
 	let drawerOpen = $state(false);
 	let session = $state<MockSession | null>(browser ? getSession() : null);
 
-	$effect(() => {
-		if (!browser) return;
+	onMount(() => {
 		void fetchSession().then((fresh) => {
 			session = fresh;
 			if (fresh?.role === 'family') {
@@ -88,6 +88,8 @@
 		roleLabel="Family"
 		{impersonated}
 	/>
+
+	<TcGate />
 {/if}
 
 <ToastHost />

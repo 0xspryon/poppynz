@@ -18,6 +18,8 @@ export const accessControlRole = appDb.enum("access_control_role", ["family", "s
 export const approvalRequestStatus = appDb.enum("approval_request_status", ["submitted", "approved", "rejected"]);
 export const approvalStatus = appDb.enum("approval_status", ["approved", "rejected"]);
 export const providerSearchOutboxStatus = appDb.enum("provider_search_outbox_status", ["pending", "processing", "processed", "failed", "superseded"]);
+// "all" means every non-admin profile — admins are never shown T&C.
+export const tcAppliesToRole = appDb.enum("tc_applies_to_role", ["all", "family", "service-provider"]);
 export const kycDocumentStatus = appDb.enum("kyc_document_status", [
   "submitted",
   "approved",
@@ -285,6 +287,91 @@ export const providerSearchOutbox = appDb.table(
   ],
 );
 
+// Admin-managed terms-and-conditions documents. A document is a stable slug
+// (e.g. "terms_of_service"); its text lives in tc_document_versions so every
+// published revision is kept verbatim for the acceptance audit trail.
+export const tcDocument = appDb.table(
+  "tc_documents",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    slug: text("slug").notNull(),
+    title: text("title").notNull(),
+    appliesToRole: tcAppliesToRole("applies_to_role").default("all").notNull(),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("tc_documents_slug_uidx").on(table.slug),
+    index("tc_documents_deleted_at_idx").on(table.deletedAt),
+  ],
+);
+
+// Immutable once published (publishedAt set): users accepted that exact text,
+// so published rows are never updated or deleted. publishedAt null = the
+// document's single open draft, enforced by the partial unique index.
+export const tcDocumentVersion = appDb.table(
+  "tc_document_versions",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => tcDocument.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    description: text("description").notNull(),
+    content: text("content").notNull(),
+    checkboxLabel: text("checkbox_label").notNull(),
+    publishedAt: timestamp("published_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("tc_document_versions_document_id_idx").on(table.documentId),
+    uniqueIndex("tc_document_versions_document_id_version_uidx").on(
+      table.documentId,
+      table.version,
+    ),
+    uniqueIndex("tc_document_versions_document_id_draft_uidx")
+      .on(table.documentId)
+      .where(sql`${table.publishedAt} is null`),
+  ],
+);
+
+// Append-only audit log; rows are never updated or deleted. slug and version
+// are denormalized so acceptance history stays queryable by slug even if a
+// document is renamed or removed later.
+export const tcDocumentAcceptance = appDb.table(
+  "tc_document_acceptances",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    documentId: uuid("document_id")
+      .notNull()
+      .references(() => tcDocument.id, { onDelete: "restrict" }),
+    slug: text("slug").notNull(),
+    versionId: uuid("version_id")
+      .notNull()
+      .references(() => tcDocumentVersion.id, { onDelete: "restrict" }),
+    version: integer("version").notNull(),
+    acceptedAt: timestamp("accepted_at").defaultNow().notNull(),
+  },
+  (table) => [
+    index("tc_document_acceptances_user_id_idx").on(table.userId),
+    index("tc_document_acceptances_version_id_idx").on(table.versionId),
+    uniqueIndex("tc_document_acceptances_user_id_version_id_uidx").on(
+      table.userId,
+      table.versionId,
+    ),
+  ],
+);
 
 export const session = appDb.table(
   "session",
@@ -443,6 +530,35 @@ export const userRelations = relations(user, ({ many }) => ({
   approvalRequests: many(approvalRequest),
   kycDocuments: many(kycDocument),
   servicesOffered: many(serviceOffered),
+  tcDocumentAcceptances: many(tcDocumentAcceptance),
+}));
+
+export const tcDocumentRelations = relations(tcDocument, ({ many }) => ({
+  versions: many(tcDocumentVersion),
+  acceptances: many(tcDocumentAcceptance),
+}));
+
+export const tcDocumentVersionRelations = relations(tcDocumentVersion, ({ one, many }) => ({
+  document: one(tcDocument, {
+    fields: [tcDocumentVersion.documentId],
+    references: [tcDocument.id],
+  }),
+  acceptances: many(tcDocumentAcceptance),
+}));
+
+export const tcDocumentAcceptanceRelations = relations(tcDocumentAcceptance, ({ one }) => ({
+  user: one(user, {
+    fields: [tcDocumentAcceptance.userId],
+    references: [user.id],
+  }),
+  document: one(tcDocument, {
+    fields: [tcDocumentAcceptance.documentId],
+    references: [tcDocument.id],
+  }),
+  version: one(tcDocumentVersion, {
+    fields: [tcDocumentAcceptance.versionId],
+    references: [tcDocumentVersion.id],
+  }),
 }));
 
 export const approvalRequestRelations = relations(approvalRequest, ({ one, many }) => ({

@@ -4,6 +4,7 @@
 	 * state lives in the URL so returning from a profile restores it. Radius
 	 * searches are centered server-side on the family's saved home location —
 	 * "Change" points at the profile page rather than an inline picker. */
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
@@ -69,7 +70,7 @@
 	let retryTick = $state(0);
 	let requestId = 0;
 
-	$effect(() => {
+	onMount(() => {
 		void getProfile().then((result) => {
 			if (result.ok) {
 				// The profile response never exposes lat/lng; a saved googlePlaceId

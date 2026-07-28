@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import {
 		getOnboardingState,
@@ -28,7 +29,10 @@
 		loading = false;
 	}
 
-	$effect(() => {
+	// onMount, not $effect: load() reads `onboarding` synchronously, so an
+	// effect would track it and re-run on every response — an infinite
+	// request loop against /me/onboarding.
+	onMount(() => {
 		void load();
 	});
 

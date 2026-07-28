@@ -15,3 +15,4 @@ export * from "./repos/provider-search-repo";
 export * from "./repos/provider-search-outbox-repo";
 export * from "./repos/referral-repo";
 export * from "./repos/user-directory-repo";
+export * from "./repos/tc-document-repo";

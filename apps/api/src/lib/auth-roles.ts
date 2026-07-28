@@ -14,6 +14,7 @@ export const appAc = createAccessControl({
   referral: ["read", "write"],
   serviceCatalogue: ["read", "write"],
   serviceOffered: ["read", "write"],
+  tcs: ["read", "accept", "write"],
 });
 
 export const familyRole = appAc.newRole({
@@ -24,6 +25,7 @@ export const familyRole = appAc.newRole({
   referral: ["read", "write"],
   serviceCatalogue: ["read"],
   serviceOffered: ["read", "write"],
+  tcs: ["read", "accept"],
 });
 
 export const spRole = appAc.newRole({
@@ -33,6 +35,7 @@ export const spRole = appAc.newRole({
   referral: ["read", "write"],
   serviceCatalogue: ["read"],
   serviceOffered: ["read", "write"],
+  tcs: ["read", "accept"],
 });
 
 export const adminRole = appAc.newRole({
@@ -48,6 +51,7 @@ export const adminRole = appAc.newRole({
   referral: ["read", "write"],
   serviceCatalogue: ["read", "write"],
   serviceOffered: ["read", "write"],
+  tcs: ["read", "accept", "write"],
 });
 
 export const roles = {

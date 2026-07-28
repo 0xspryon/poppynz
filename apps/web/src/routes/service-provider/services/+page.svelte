@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { listLiveCatalogue, type CatalogueItem } from '$lib/api/service-catalogue';
@@ -9,9 +10,11 @@
 		updateServiceOffered,
 		type ServiceOffered
 	} from '$lib/api/services-offered';
+	import { acceptTcs, listPendingTcs, type PublishedTc } from '$lib/api/tcs';
 	import { centsToDollars, dollarsToCents } from '$lib/money';
 	import BrowseServicesDialog from '$lib/components/BrowseServicesDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
+	import TcModal from '$lib/components/TcModal.svelte';
 	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
@@ -35,6 +38,39 @@
 	let deleting = $state<ServiceOffered | null>(null);
 	let deleteBusy = $state(false);
 
+	// The earning-fee terms gate this page: shown as soon as it opens, until
+	// the provider accepts the latest published version.
+	let feeTerms = $state<PublishedTc | null>(null);
+	let feeTermsBusy = $state(false);
+	let feeTermsError = $state<string | null>(null);
+
+	async function loadFeeTerms() {
+		const result = await listPendingTcs();
+		if (result.ok) {
+			feeTerms = result.data.find((tc) => tc.slug === 'service_provider_fee_acceptance') ?? null;
+		}
+	}
+
+	onMount(() => {
+		void loadFeeTerms();
+	});
+
+	async function acceptFeeTerms() {
+		if (!feeTerms || feeTermsBusy) return;
+		feeTermsBusy = true;
+		feeTermsError = null;
+		const result = await acceptTcs([{ slug: feeTerms.slug, versionId: feeTerms.versionId }]);
+		if (result.ok) {
+			feeTerms = null;
+		} else if (result.error.code === 'TC_VERSION_STALE') {
+			feeTermsError = 'These terms were just updated — please review the newest version.';
+			await loadFeeTerms();
+		} else {
+			feeTermsError = 'We could not record your acceptance. Please try again.';
+		}
+		feeTermsBusy = false;
+	}
+
 	async function load() {
 		errorMessage = '';
 		const [catalogueResult, servicesResult] = await Promise.all([
@@ -55,7 +91,7 @@
 		loading = false;
 	}
 
-	$effect(() => {
+	onMount(() => {
 		void load();
 	});
 
@@ -413,3 +449,16 @@
 	onconfirm={() => void confirmDelete()}
 	oncancel={() => (deleting = null)}
 />
+
+{#if feeTerms}
+	<TcModal
+		open
+		title={feeTerms.title}
+		content={feeTerms.content}
+		checkboxLabel={feeTerms.checkboxLabel}
+		intro="Before you offer services, please review how the Poppynz service fee works."
+		busy={feeTermsBusy}
+		error={feeTermsError}
+		onaccept={acceptFeeTerms}
+	/>
+{/if}

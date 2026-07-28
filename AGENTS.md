@@ -43,3 +43,6 @@ These project-specific rules exist to prevent repeat mistakes from prior impleme
 - Prefer `requirePermissions(...)` for access control decisions.
 - Do not add extra checks like `requireServiceProvider` just because a feature is normally used by a role. If the role should not access a capability, model that through permissions.
 - Tests for access denial should usually deny permissions rather than asserting on a user role, unless the feature explicitly requires role-based logic.
+
+## User interface
+Use toast messages where appropriate in lieu of showing inline messages (sucess/error messages)

@@ -7,7 +7,7 @@
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
-	import type { Snippet } from 'svelte';
+	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
 		children: Snippet;
@@ -17,8 +17,7 @@
 	let authorized = $state(false);
 	let drawerOpen = $state(false);
 
-	$effect(() => {
-		if (!browser) return;
+	onMount(() => {
 		void fetchSession().then((session) => {
 			if (session?.role === 'admin') {
 				authorized = true;
@@ -36,7 +35,8 @@
 		{ href: resolve('/admin/approval-requests'), label: 'Approval queue', icon: 'la-user-check' },
 		{ href: resolve('/admin/users'), label: 'Users', icon: 'la-users' },
 		{ href: resolve('/admin/document-types'), label: 'Document types', icon: 'la-file-alt' },
-		{ href: resolve('/admin/service-catalogue'), label: 'Service catalogue', icon: 'la-heart' }
+		{ href: resolve('/admin/service-catalogue'), label: 'Service catalogue', icon: 'la-heart' },
+		{ href: resolve('/admin/tcs'), label: 'Terms & conditions', icon: 'la-file-contract' }
 	];
 </script>
 
@@ -86,6 +86,7 @@
 		{email}
 		roleLabel="Administrator"
 	/>
+
 {/if}
 
 <ToastHost />

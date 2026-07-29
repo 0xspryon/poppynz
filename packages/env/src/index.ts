@@ -73,14 +73,25 @@ export const typesenseConfig = Config.all({
   providerCollection: Config.string("TYPESENSE_PROVIDER_COLLECTION").pipe(Config.withDefault("service_providers")),
   providerCollectionAlias: Config.string("TYPESENSE_PROVIDER_COLLECTION_ALIAS").pipe(Config.withDefault("service_providers_current")),
   providerCollectionVersion: Config.string("TYPESENSE_PROVIDER_COLLECTION_VERSION").pipe(Config.withDefault("service_providers_v1")),
+  familyCollection: Config.string("TYPESENSE_FAMILY_COLLECTION").pipe(Config.withDefault("families")),
+  familyCollectionAlias: Config.string("TYPESENSE_FAMILY_COLLECTION_ALIAS").pipe(Config.withDefault("families_current")),
+  familyCollectionVersion: Config.string("TYPESENSE_FAMILY_COLLECTION_VERSION").pipe(Config.withDefault("families_v1")),
 });
 
 export const providerSearchConfig = Config.all({
   minRadiusKm: Config.integer("PROVIDER_SEARCH_MIN_RADIUS_KM").pipe(Config.withDefault(10)),
 });
 
+export const familySearchConfig = Config.all({
+  minRadiusKm: Config.integer("FAMILY_SEARCH_MIN_RADIUS_KM").pipe(Config.withDefault(10)),
+});
+
 export const servicesOfferedConfig = Config.all({
   maxPerProvider: Config.integer("SERVICES_OFFERED_MAX_PER_PROVIDER").pipe(Config.withDefault(20)),
+});
+
+export const servicesNeededConfig = Config.all({
+  maxPerFamily: Config.integer("SERVICES_NEEDED_MAX_PER_FAMILY").pipe(Config.withDefault(20)),
 });
 
 // Without RESEND_API_KEY the mailer stays in dev log-mode: deliveries are

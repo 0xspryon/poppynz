@@ -13,16 +13,54 @@
 		type ProviderSearchData,
 		type ProviderSearchSort
 	} from '$lib/api/providers';
+	import { getFamilyOnboardingState, type FamilyOnboardingState } from '$lib/api/onboarding';
 	import { getProfile } from '$lib/api/provider-profile';
 	import { listLiveCatalogue } from '$lib/api/service-catalogue';
+	import FamilyGettingStartedModal from '$lib/components/FamilyGettingStartedModal.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import ProviderCard from '$lib/components/ProviderCard.svelte';
 	import { centsToDollars, dollarsToCents } from '$lib/money';
 	import { withQuery } from '$lib/nav';
+	import { startTourOnce } from '$lib/tour';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 
 	const RADIUS_PRESETS = [10, 25, 50];
 	const PER_PAGE = 18;
+
+	const TOUR_KEY = 'poppynz-tour-family-find-v1';
+	const TOUR_STEPS = [
+		{
+			selector: '[data-tour="search"]',
+			title: 'Search anything',
+			description: 'Look up services, helper names, or keywords — "newborn", "after school pickup"…'
+		},
+		{
+			selector: '[data-tour="radius"]',
+			title: 'Search near home',
+			description: 'Results center on your saved home location. Widen the radius to see more helpers.'
+		},
+		{
+			selector: '[data-tour="filters"]',
+			title: 'Narrow it down',
+			description: 'Filter by service, hourly rate, or city.'
+		},
+		{
+			selector: '[data-tour="filters-mobile"]',
+			title: 'Narrow it down',
+			description: 'Filter by service, hourly rate, or city.'
+		},
+		{
+			selector: '[data-tour="sort"]',
+			title: 'Order results',
+			description: 'Sort by distance, price, or newest.'
+		},
+		{
+			selector: '[data-tour="results"]',
+			title: 'Vetted helpers',
+			description:
+				'Everyone listed passed Poppynz identity and background checks. Tap a card for the full profile.'
+		}
+	];
 
 	// --- applied search state (initialized from the URL, mirrored back to it) ---
 	const initial = page.url.searchParams;
@@ -69,6 +107,40 @@
 	let data = $state<ProviderSearchData | null>(null);
 	let retryTick = $state(0);
 	let requestId = 0;
+
+	// --- getting-started modal (landing checklist) + one-time tour ---
+	let onboarding = $state<FamilyOnboardingState | null>(null);
+	let modalOpen = $state(false);
+	let modalDecided = $state(false);
+	let tourStarted = false;
+
+	const dismissKey = (userId: string) => `poppynz-family-getting-started:${userId}`;
+
+	function dismissModal() {
+		if (onboarding) localStorage.setItem(dismissKey(onboarding.userId), '1');
+		modalOpen = false;
+	}
+
+	onMount(() => {
+		void getFamilyOnboardingState().then((result) => {
+			if (result.ok) {
+				onboarding = result.data;
+				const incomplete = result.data.progress.completed < result.data.progress.total;
+				if (incomplete && !localStorage.getItem(dismissKey(result.data.userId))) {
+					modalOpen = true;
+				}
+			}
+			modalDecided = true;
+		});
+	});
+
+	// The tour waits for a settled page (results rendered, modal out of the
+	// way) so its anchors exist; it self-limits to one run via TOUR_KEY.
+	$effect(() => {
+		if (tourStarted || loading || !profileLoaded || !modalDecided || modalOpen) return;
+		tourStarted = true;
+		startTourOnce(TOUR_KEY, TOUR_STEPS);
+	});
 
 	onMount(() => {
 		void getProfile().then((result) => {
@@ -378,7 +450,7 @@
 		onsubmit={submitKeyword}
 	>
 		<div class="flex flex-col gap-3 lg:flex-row lg:items-center">
-			<label class="input flex min-w-0 flex-1 items-center gap-2">
+			<label class="input flex min-w-0 flex-1 items-center gap-2" data-tour="search">
 				<i class="las la-search text-outline" aria-hidden="true"></i>
 				<input
 					type="search"
@@ -420,7 +492,7 @@
 				{/if}
 			</div>
 
-			<div class="join" role="group" aria-label="Search radius">
+			<div class="join" role="group" aria-label="Search radius" data-tour="radius">
 				<button
 					type="button"
 					class="btn join-item btn-sm {radiusKm == null ? 'btn-secondary' : 'btn-ghost border border-outline-variant'}"
@@ -444,11 +516,11 @@
 
 	<div class="flex items-start gap-6">
 		<!-- Desktop filter rail -->
-		<aside class="hidden w-64 shrink-0 flex-col gap-4 lg:flex">
+		<aside class="hidden w-64 shrink-0 flex-col gap-4 lg:flex" data-tour="filters">
 			{@render filterControls()}
 		</aside>
 
-		<section class="min-w-0 flex-1" aria-live="polite">
+		<section class="min-w-0 flex-1" aria-live="polite" data-tour="results">
 			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 				<h1 class="font-display text-xl font-bold text-base-content">
 					{#if loading && !data}
@@ -465,6 +537,7 @@
 					<button
 						type="button"
 						class="btn relative btn-sm lg:hidden"
+						data-tour="filters-mobile"
 						onclick={() => (sheetOpen = true)}
 					>
 						<i class="las la-sliders-h" aria-hidden="true"></i>
@@ -478,7 +551,7 @@
 							</span>
 						{/if}
 					</button>
-					<label class="flex items-center gap-1.5 text-xs text-base-content-muted">
+					<label class="flex items-center gap-1.5 text-xs text-base-content-muted" data-tour="sort">
 						Sort by
 						<select class="select select-sm w-auto" bind:value={sort} onchange={resetToFirstPage}>
 							<option value="relevance">Relevance</option>
@@ -628,6 +701,10 @@
 		</section>
 	</div>
 </div>
+
+{#if onboarding}
+	<FamilyGettingStartedModal open={modalOpen} state={onboarding} onclose={dismissModal} />
+{/if}
 
 <!-- Mobile filter bottom sheet -->
 {#if sheetOpen}

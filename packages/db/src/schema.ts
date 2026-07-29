@@ -18,6 +18,7 @@ export const accessControlRole = appDb.enum("access_control_role", ["family", "s
 export const approvalRequestStatus = appDb.enum("approval_request_status", ["submitted", "approved", "rejected"]);
 export const approvalStatus = appDb.enum("approval_status", ["approved", "rejected"]);
 export const providerSearchOutboxStatus = appDb.enum("provider_search_outbox_status", ["pending", "processing", "processed", "failed", "superseded"]);
+export const familySearchOutboxStatus = appDb.enum("family_search_outbox_status", ["pending", "processing", "processed", "failed", "superseded"]);
 // "all" means every non-admin profile — admins are never shown T&C.
 export const tcAppliesToRole = appDb.enum("tc_applies_to_role", ["all", "family", "service-provider"]);
 export const kycDocumentStatus = appDb.enum("kyc_document_status", [
@@ -258,6 +259,60 @@ export const serviceOffered = appDb.table(
     index("services_offered_user_id_idx").on(table.userId),
     index("services_offered_deleted_at_idx").on(table.deletedAt),
     index("services_offered_catalogue_service_id_idx").on(table.catalogueServiceId),
+  ],
+);
+
+// Services a family is looking for. Mirrors services_offered but carries no
+// rate — families describe needs, providers price them.
+export const serviceNeeded = appDb.table(
+  "services_needed",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    catalogueServiceId: uuid("catalogue_service_id").references(() => serviceCatalogueItem.id, {
+      onDelete: "restrict",
+    }),
+    name: text("name").notNull(),
+    description: text("description"),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("services_needed_user_id_idx").on(table.userId),
+    index("services_needed_deleted_at_idx").on(table.deletedAt),
+    index("services_needed_catalogue_service_id_idx").on(table.catalogueServiceId),
+  ],
+);
+
+export const familySearchOutbox = appDb.table(
+  "family_search_outbox",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: familySearchOutboxStatus("status").default("pending").notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    lastError: text("last_error"),
+    processedAt: timestamp("processed_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("family_search_outbox_user_id_idx").on(table.userId),
+    index("family_search_outbox_status_idx").on(table.status),
+    uniqueIndex("family_search_outbox_user_unresolved_uidx")
+      .on(table.userId)
+      .where(sql`${table.status} in ('pending', 'processing', 'failed')`),
   ],
 );
 
@@ -530,6 +585,7 @@ export const userRelations = relations(user, ({ many }) => ({
   approvalRequests: many(approvalRequest),
   kycDocuments: many(kycDocument),
   servicesOffered: many(serviceOffered),
+  servicesNeeded: many(serviceNeeded),
   tcDocumentAcceptances: many(tcDocumentAcceptance),
 }));
 
@@ -614,8 +670,20 @@ export const serviceOfferedRelations = relations(serviceOffered, ({ one }) => ({
   }),
 }));
 
+export const serviceNeededRelations = relations(serviceNeeded, ({ one }) => ({
+  user: one(user, {
+    fields: [serviceNeeded.userId],
+    references: [user.id],
+  }),
+  catalogueItem: one(serviceCatalogueItem, {
+    fields: [serviceNeeded.catalogueServiceId],
+    references: [serviceCatalogueItem.id],
+  }),
+}));
+
 export const serviceCatalogueItemRelations = relations(serviceCatalogueItem, ({ many }) => ({
   servicesOffered: many(serviceOffered),
+  servicesNeeded: many(serviceNeeded),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

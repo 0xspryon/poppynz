@@ -10,6 +10,7 @@ import { roles, appAc } from './auth-roles'
 import { resolveUiOrigin, trustedUiOrigins } from './ui-origin'
 import {
   db,
+  FamilySearchOutboxRepoDefault,
   ProviderSearchOutboxRepoDefault,
   ReferralRepo,
   ReferralRepoDefault,
@@ -18,9 +19,10 @@ import {
   UserProfileRepo,
   UserProfileRepoDefault,
 } from "@repo/db";
-import { ProviderSearchQueueLive } from "@repo/queue";
+import { FamilySearchQueueLive, ProviderSearchQueueLive } from "@repo/queue";
 import { Cause, Data, Effect, Exit, Layer, ManagedRuntime, Option } from "effect";
 import { Mailer, MailerLive, sendMailBestEffort } from "./mailer";
+import { scheduleFamilySearchReconcile } from "./family-search-jobs";
 import { scheduleProviderSearchReconcile } from "./provider-search-jobs";
 
 export class SignupHookDbError extends Data.TaggedError("SignupHookDbError")<{
@@ -33,6 +35,8 @@ const AuthHookLive = Layer.mergeAll(
   ReferralRepoDefault,
   ProviderSearchOutboxRepoDefault,
   ProviderSearchQueueLive,
+  FamilySearchOutboxRepoDefault,
+  FamilySearchQueueLive,
   MailerLive,
 );
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
@@ -109,6 +113,54 @@ const runSignupHookEffect = async <A>(exitPromise: Promise<Exit.Exit<A, unknown>
       }
     },
   });
+};
+
+/** Welcome mail with role-specific next steps, sent once when the user record
+ * is created (i.e. on the first magic-link verification). Links are rebased
+ * onto the UI origin that initiated the request, like magic links. Best-effort:
+ * a mail failure must never fail account creation. */
+export const sendWelcomeMailEffect = (
+  user: { email: string; name?: string | null; role?: string | null },
+  headers?: Headers,
+) => {
+  const origin = resolveUiOrigin(headers ?? new Headers());
+  const link = (path: string) => new URL(path, origin).toString();
+  const name = user.name || null;
+
+  if (user.role === "family") {
+    return sendMailBestEffort(
+      "family welcome",
+      Effect.flatMap(Mailer, (mailer) =>
+        mailer.sendFamilyWelcome({
+          email: user.email,
+          name,
+          profileLink: link("/family/profile"),
+          needsLink: link("/family/needs"),
+          findLink: link("/family/find"),
+        }),
+      ),
+    );
+  }
+
+  if (user.role === "service-provider") {
+    return sendMailBestEffort(
+      "provider welcome",
+      Effect.flatMap(Mailer, (mailer) =>
+        mailer.sendProviderWelcome({
+          email: user.email,
+          name,
+          profileLink: link("/service-provider/profile"),
+          documentsLink: link("/service-provider/documents"),
+          servicesLink: link("/service-provider/services"),
+          approvalLink: link("/service-provider/approval"),
+          findLink: link("/service-provider/find"),
+        }),
+      ),
+    );
+  }
+
+  // Admins (and any future roles) get no onboarding mail.
+  return Effect.void as Effect.Effect<void, never, Mailer>;
 };
 
 /** Mails a user when an admin bans or unbans them. Keyed off the admin
@@ -198,8 +250,12 @@ export const auth = betterAuth({
         before: async (user) => ({
           data: await runSignupHookEffect(authHookRuntime.runPromiseExit(applySignupIntentToUserEffect(user)), user),
         }),
-        after: async (user) => {
+        after: async (user, ctx) => {
           await runSignupHookEffect(authHookRuntime.runPromiseExit(createProfileAndConsumeSignupIntentEffect(user)), undefined);
+          // The role was applied from the signup intent in the before hook, so
+          // the created row already carries it.
+          const created = user as { id: string; email: string; name?: string | null; role?: string | null };
+          await authHookRuntime.runPromise(sendWelcomeMailEffect(created, ctx?.headers ?? undefined));
         },
       },
       update: {
@@ -221,6 +277,9 @@ export const auth = betterAuth({
           );
           if (updated.role === "service-provider") {
             await authHookRuntime.runPromise(scheduleProviderSearchReconcile(updated.id));
+          }
+          if (updated.role === "family") {
+            await authHookRuntime.runPromise(scheduleFamilySearchReconcile(updated.id));
           }
         },
       },

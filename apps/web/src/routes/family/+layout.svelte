@@ -41,6 +41,7 @@
 
 	const items: Array<SidebarItem> = [
 		{ href: resolve('/family/find'), label: 'Find help', icon: 'la-search' },
+		{ href: resolve('/family/needs'), label: 'Services I need', icon: 'la-clipboard-list' },
 		{ href: resolve('/family/profile'), label: 'Profile', icon: 'la-user' },
 		{ href: resolve('/family/referrals'), label: 'Referrals', icon: 'la-user-plus' }
 	];

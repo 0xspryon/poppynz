@@ -34,7 +34,15 @@ import {
   requestValidationErrorToResponse,
 } from "@/api/lib/schema-validator";
 import { presignProfileImageUrl } from "@/api/lib/profile-image";
+import { scheduleFamilySearchReconcile } from "@/api/lib/family-search-jobs";
 import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
+
+// Each role has its own search index; a profile edit reconciles the one the
+// user can appear in.
+const scheduleSearchReconcile = (profile: { userId: string; role: string | null }) =>
+  profile.role === "family"
+    ? scheduleFamilySearchReconcile(profile.userId)
+    : scheduleProviderSearchReconcile(profile.userId);
 
 export class ProfileRepoError extends Data.TaggedError("ProfileRepoError")<{
   cause: SqlError;
@@ -321,7 +329,7 @@ export const updateProfileRouteProgram = (c: HonoContext<HonoEnv>, headers: Head
     })(authenticated);
 
     const profile = yield* updateProfileProgram(userAndSession, input);
-    yield* scheduleProviderSearchReconcile(profile.userId);
+    yield* scheduleSearchReconcile(profile);
 
     return profile;
   });
@@ -336,7 +344,7 @@ export const updateProfileLocationRouteProgram = (c: HonoContext<HonoEnv>, heade
     })(authenticated);
 
     const profile = yield* updateProfileLocationProgram(userAndSession, input);
-    yield* scheduleProviderSearchReconcile(profile.userId);
+    yield* scheduleSearchReconcile(profile);
 
     return profile;
   });

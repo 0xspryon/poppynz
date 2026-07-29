@@ -12,11 +12,21 @@
 		/** Catalogue ids the provider already offers — shown checked and disabled. */
 		linkedIds: Set<string>;
 		busy?: boolean;
+		/** Line under the title; defaults to the provider services copy. */
+		subtitle?: string;
 		onadd: (ids: Array<string>) => void;
 		oncancel: () => void;
 	}
 
-	let { open, catalogue, linkedIds, busy = false, onadd, oncancel }: Props = $props();
+	let {
+		open,
+		catalogue,
+		linkedIds,
+		busy = false,
+		subtitle = 'Select any service to add it — its base rate is the floor for your rate.',
+		onadd,
+		oncancel
+	}: Props = $props();
 
 	let query = $state('');
 	let category = $state<string | null>(null);
@@ -65,7 +75,7 @@
 					</button>
 				</div>
 				<p class="mt-0.5 mb-3.5 text-[13px] text-base-content-muted">
-					Select any service to add it — its base rate is the floor for your rate.
+					{subtitle}
 				</p>
 				<label class="input mb-3 w-full">
 					<i class="las la-search text-base text-outline" aria-hidden="true"></i>

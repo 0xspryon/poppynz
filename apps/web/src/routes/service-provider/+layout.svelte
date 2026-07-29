@@ -59,6 +59,7 @@
 
 	const items: Array<SidebarItem> = $derived([
 		{ href: resolve('/service-provider/dashboard'), label: 'Dashboard', icon: 'la-th-large' },
+		{ href: resolve('/service-provider/find'), label: 'Find families', icon: 'la-search' },
 		{ href: resolve('/service-provider/profile'), label: 'Profile', icon: 'la-user' },
 		{
 			href: resolve('/service-provider/documents'),

@@ -7,13 +7,16 @@ import { onboardingRoute } from './me/onboarding';
 import { approvalRoute } from './approval/approval';
 import { uploadRoute } from './uploads/upload';
 import { servicesOfferedRoute } from './me/services-offered';
+import { servicesNeededRoute } from './me/services-needed';
 import { kycDocsRoute } from './kyc-docs/kyc-docs';
 import { approvalRequestsRoute } from './approval-requests/approval-requests';
 import { adminApprovalRequestsRoute } from './admin/approval-requests';
 import { adminKycDocsRoute } from './admin/kyc-docs';
 import { geocodingRoute } from './geocoding/geocoding';
 import { providersRoute } from './providers/providers';
+import { familiesRoute } from './families/families';
 import { adminProviderSearchRoute } from './admin/provider-search';
+import { adminFamilySearchRoute } from './admin/family-search';
 import { serviceCatalogueRoute } from './service-catalogue/service-catalogue';
 import { adminServiceCatalogueRoute } from './admin/service-catalogue';
 import { adminUsersRoute } from './admin/users';
@@ -28,6 +31,7 @@ export const appRoutes = new Hono<HonoEnv>()
 .route('/me/profile', profileRoute)
 .route('/me/onboarding', onboardingRoute)
 .route('/me/services-offered', servicesOfferedRoute)
+.route('/me/services-needed', servicesNeededRoute)
 .route('/me/tcs', meTcsRoute)
 .route('/tcs', tcsRoute)
 .route('/admin/tcs', adminTcsRoute)
@@ -37,10 +41,12 @@ export const appRoutes = new Hono<HonoEnv>()
 .route('/admin/approval-requests', adminApprovalRequestsRoute)
 .route('/admin/kyc-docs', adminKycDocsRoute)
 .route('/admin/provider-search', adminProviderSearchRoute)
+.route('/admin/family-search', adminFamilySearchRoute)
 .route('/service-catalogue', serviceCatalogueRoute)
 .route('/admin/service-catalogue', adminServiceCatalogueRoute)
 .route('/admin/users', adminUsersRoute)
 .route('/referrals', referralsRoute)
 .route('/providers', providersRoute)
+.route('/families', familiesRoute)
 .route('/geocoding', geocodingRoute)
 .route('/uploads', uploadRoute)

@@ -10,8 +10,10 @@ import {
   approvalRequestRejectedMail,
   approvalRequestSubmittedMail,
   approvalRevokedMail,
+  familyWelcomeMail,
   magicLinkMail,
   type MailContent,
+  providerWelcomeMail,
   referralInviteMail,
 } from "./templates";
 
@@ -69,6 +71,24 @@ export type ApprovalExpiringMail = {
   link: string;
 };
 
+export type FamilyWelcomeMail = {
+  email: string;
+  name: string | null;
+  profileLink: string;
+  needsLink: string;
+  findLink: string;
+};
+
+export type ProviderWelcomeMail = {
+  email: string;
+  name: string | null;
+  profileLink: string;
+  documentsLink: string;
+  servicesLink: string;
+  approvalLink: string;
+  findLink: string;
+};
+
 export type AccountBannedMail = {
   email: string;
   name: string | null;
@@ -85,6 +105,8 @@ export class Mailer extends Context.Tag("@api/lib/Mailer")<
   Mailer,
   {
     sendMagicLink: (mail: MagicLinkMail) => Effect.Effect<void, MailerError>;
+    sendFamilyWelcome: (mail: FamilyWelcomeMail) => Effect.Effect<void, MailerError>;
+    sendProviderWelcome: (mail: ProviderWelcomeMail) => Effect.Effect<void, MailerError>;
     sendReferralInvite: (mail: ReferralInviteMail) => Effect.Effect<void, MailerError>;
     sendApprovalRequestSubmitted: (mail: ApprovalRequestSubmittedMail) => Effect.Effect<void, MailerError>;
     sendAdminApprovalRequestSubmitted: (mail: AdminApprovalRequestSubmittedMail) => Effect.Effect<void, MailerError>;
@@ -195,6 +217,8 @@ export const makeMailer = (config: {
         ? logLine.pipe(Effect.zipRight(deliver([mail.email], magicLinkMail(mail))))
         : deliver([mail.email], magicLinkMail(mail));
     },
+    sendFamilyWelcome: (mail) => deliver([mail.email], familyWelcomeMail(mail)),
+    sendProviderWelcome: (mail) => deliver([mail.email], providerWelcomeMail(mail)),
     sendReferralInvite: (mail) => deliver([mail.email], referralInviteMail(mail)),
     sendApprovalRequestSubmitted: (mail) => deliver([mail.email], approvalRequestSubmittedMail(mail)),
     sendAdminApprovalRequestSubmitted: (mail) =>
@@ -223,6 +247,8 @@ export const sendMailBestEffort = <A, E, R>(label: string, effect: Effect.Effect
 export const makeMailerTest = (implementation: Partial<Context.Tag.Service<Mailer>>) =>
   Layer.succeed(Mailer, {
     sendMagicLink: () => Effect.void,
+    sendFamilyWelcome: () => Effect.void,
+    sendProviderWelcome: () => Effect.void,
     sendReferralInvite: () => Effect.void,
     sendApprovalRequestSubmitted: () => Effect.void,
     sendAdminApprovalRequestSubmitted: () => Effect.void,

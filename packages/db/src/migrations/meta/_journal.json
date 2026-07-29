@@ -64,6 +64,13 @@
       "when": 1784937600000,
       "tag": "0008_terms_and_conditions",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1785283200000,
+      "tag": "0009_family_search",
+      "breakpoints": true
     }
   ]
 }

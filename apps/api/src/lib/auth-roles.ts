@@ -7,12 +7,14 @@ export const appAc = createAccessControl({
   ...defaultStatements,
   approval: ["write"],
   approvalRequest: ["read", "write"],
+  familySearch: ["read", "reindex"],
   kycDocument: ["read", "write"],
   kycDocumentType: ["read", "write"],
   profile: ["read", "update"],
   providerSearch: ["read", "reindex"],
   referral: ["read", "write"],
   serviceCatalogue: ["read", "write"],
+  serviceNeeded: ["read", "write"],
   serviceOffered: ["read", "write"],
   tcs: ["read", "accept", "write"],
 });
@@ -24,12 +26,16 @@ export const familyRole = appAc.newRole({
   kycDocument: ["write"],
   referral: ["read", "write"],
   serviceCatalogue: ["read"],
+  serviceNeeded: ["read", "write"],
   serviceOffered: ["read", "write"],
   tcs: ["read", "accept"],
 });
 
 export const spRole = appAc.newRole({
   profile: ["read", "update"],
+  // familySearch is additionally gated on a live approval at the route level —
+  // the permission alone doesn't make an unapproved provider a searcher.
+  familySearch: ["read"],
   approvalRequest: ["write"],
   kycDocument: ["write"],
   referral: ["read", "write"],
@@ -44,12 +50,14 @@ export const adminRole = appAc.newRole({
   ...adminAc.statements,
   approval: ["write"],
   approvalRequest: ["read", "write"],
+  familySearch: ["read", "reindex"],
   kycDocument: ["read", "write"],
   kycDocumentType: ["read", "write"],
   profile: ["read", "update"],
   providerSearch: ["read", "reindex"],
   referral: ["read", "write"],
   serviceCatalogue: ["read", "write"],
+  serviceNeeded: ["read", "write"],
   serviceOffered: ["read", "write"],
   tcs: ["read", "accept", "write"],
 });

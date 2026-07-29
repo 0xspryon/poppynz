@@ -423,3 +423,5 @@ export const makeProviderSearchIndexTest = (implementation: Context.Tag.Service<
   Layer.succeed(ProviderSearchIndex, implementation);
 
 export const getProviderSearchMinRadiusKm = providerSearchConfig.pipe(Effect.map((config) => config.minRadiusKm));
+
+export * from "./family";

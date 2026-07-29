@@ -1,9 +1,12 @@
 import type {
   ApprovalRepo,
   ApprovalRequestRepo,
+  FamilySearchOutboxRepo,
+  FamilySearchRepo,
   KycDocumentRepo,
   KycDocumentTypeRepo,
   ServiceCatalogueRepo,
+  ServiceNeededRepo,
   ServiceOfferedRepo,
   SessionRepo,
   TcDocumentRepo,
@@ -17,8 +20,8 @@ import type {
 } from "@repo/db";
 import type { GooglePlaces } from "@repo/google";
 import type { ObjectStorage } from "@repo/objs";
-import type { ProviderSearchQueue } from "@repo/queue";
-import type { ProviderSearchIndex } from "@repo/typesense";
+import type { FamilySearchQueue, ProviderSearchQueue } from "@repo/queue";
+import type { FamilySearchIndex, ProviderSearchIndex } from "@repo/typesense";
 import type { ManagedRuntime } from "effect";
 import type { SigninService } from "./routes/app/auth/signin/signin.handler";
 import type { SignupService } from "./routes/app/auth/signup/signup.handler";
@@ -38,10 +41,13 @@ export type AppServices =
   | KycDocumentRepo
   | KycDocumentTypeRepo
   | ServiceCatalogueRepo
+  | ServiceNeededRepo
   | ServiceOfferedRepo
   | TcDocumentRepo
   | ProviderSearchOutboxRepo
   | ProviderSearchRepo
+  | FamilySearchOutboxRepo
+  | FamilySearchRepo
   | ReferralRepo
   | UserDirectoryRepo
   | Mailer
@@ -49,6 +55,8 @@ export type AppServices =
   | ObjectStorage
   | ProviderSearchQueue
   | ProviderSearchIndex
+  | FamilySearchQueue
+  | FamilySearchIndex
   | AuthService;
 
 export type AppRuntime = ManagedRuntime.ManagedRuntime<

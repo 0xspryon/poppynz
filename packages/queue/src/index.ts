@@ -14,11 +14,22 @@ export const approvalExpiryQueueDefinition = {
   type: "bullmq" as const,
 };
 
-export const queues = [providerSearchQueueDefinition, approvalExpiryQueueDefinition] as const;
+export const familySearchQueueDefinition = {
+  name: "family-search" as const,
+  displayName: "Family Search" as const,
+  type: "bullmq" as const,
+};
+
+export const queues = [providerSearchQueueDefinition, familySearchQueueDefinition, approvalExpiryQueueDefinition] as const;
 
 export const providerSearchJobNames = {
   reconcileProvider: "reconcile-provider",
   reindexAllProviders: "reindex-all-providers",
+} as const;
+
+export const familySearchJobNames = {
+  reconcileFamily: "reconcile-family",
+  reindexAllFamilies: "reindex-all-families",
 } as const;
 
 export const approvalExpiryJobNames = {
@@ -37,6 +48,12 @@ export type ReconcileProviderJob = { outboxId: string | null; userId: string };
 export type ReindexAllProvidersJob = Record<string, never>;
 export type ProviderSearchJobData = ReconcileProviderJob | ReindexAllProvidersJob;
 
+// Family reconciles have no legacy delayed jobs, so every enqueue carries its
+// outbox row id.
+export type ReconcileFamilyJob = { outboxId: string; userId: string };
+export type ReindexAllFamiliesJob = Record<string, never>;
+export type FamilySearchJobData = ReconcileFamilyJob | ReindexAllFamiliesJob;
+
 export type EnqueuedJob = {
   id: string | undefined;
   name: string;
@@ -45,7 +62,15 @@ export type EnqueuedJob = {
 const providerSearchReconcileDeduplicationId = (userId: string) => `provider-search-reconcile-${userId}`;
 const providerSearchReindexDeduplicationId = "provider-search-reindex";
 
+export const familySearchReconcileDeduplicationId = (userId: string) => `family-search-reconcile-${userId}`;
+const familySearchReindexDeduplicationId = "family-search-reindex";
+
 export class ProviderSearchQueueError extends Data.TaggedError("ProviderSearchQueueError")<{
+  operation: "enqueueReconcile" | "enqueueReindex";
+  cause: unknown;
+}> { }
+
+export class FamilySearchQueueError extends Data.TaggedError("FamilySearchQueueError")<{
   operation: "enqueueReconcile" | "enqueueReindex";
   cause: unknown;
 }> { }
@@ -122,3 +147,53 @@ export const ProviderSearchQueueLive = Layer.effect(ProviderSearchQueue, redisCo
 
 export const makeProviderSearchQueueTest = (implementation: Context.Tag.Service<ProviderSearchQueue>) =>
   Layer.succeed(ProviderSearchQueue, implementation);
+
+export const makeFamilySearchQueue = (connection: QueueOptions["connection"]) =>
+  new Queue<FamilySearchJobData>(familySearchQueueDefinition.name, {
+    connection,
+    defaultJobOptions,
+  });
+
+export class FamilySearchQueue extends Context.Tag("@repo/queue/FamilySearchQueue")<
+  FamilySearchQueue,
+  {
+    enqueueReconcile: (input: ReconcileFamilyJob) => Effect.Effect<EnqueuedJob, FamilySearchQueueError>;
+    enqueueReindex: () => Effect.Effect<EnqueuedJob, FamilySearchQueueError>;
+  }
+>() { }
+
+export const FamilySearchQueueLive = Layer.effect(FamilySearchQueue, redisConnectionConfig.pipe(Effect.map((connection) => {
+  const queue = makeFamilySearchQueue(connection);
+
+  return {
+    enqueueReconcile: (input: ReconcileFamilyJob) =>
+      Effect.tryPromise({
+        try: async () => {
+          const job = await queue.add(
+            familySearchJobNames.reconcileFamily,
+            { outboxId: input.outboxId, userId: input.userId },
+            { deduplication: { id: familySearchReconcileDeduplicationId(input.userId) } },
+          );
+
+          return { id: job.id, name: job.name };
+        },
+        catch: (cause) => new FamilySearchQueueError({ operation: "enqueueReconcile", cause }),
+      }),
+    enqueueReindex: () =>
+      Effect.tryPromise({
+        try: async () => {
+          const job = await queue.add(
+            familySearchJobNames.reindexAllFamilies,
+            {},
+            { deduplication: { id: familySearchReindexDeduplicationId } },
+          );
+
+          return { id: job.id, name: job.name };
+        },
+        catch: (cause) => new FamilySearchQueueError({ operation: "enqueueReindex", cause }),
+      }),
+  };
+})));
+
+export const makeFamilySearchQueueTest = (implementation: Context.Tag.Service<FamilySearchQueue>) =>
+  Layer.succeed(FamilySearchQueue, implementation);

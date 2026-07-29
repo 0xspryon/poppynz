@@ -1,10 +1,13 @@
 import {
   ApprovalRepoDefault,
   ApprovalRequestRepoDefault,
+  FamilySearchOutboxRepoDefault,
+  FamilySearchRepoDefault,
   KycDocumentRepoDefault,
   KycDocumentTypeRepoDefault,
   SessionRepoDefault,
   ServiceCatalogueRepoDefault,
+  ServiceNeededRepoDefault,
   ServiceOfferedRepoDefault,
   TcDocumentRepoDefault,
   SignupIntentRepoDefault,
@@ -17,8 +20,8 @@ import {
 } from "@repo/db";
 import { GooglePlacesLive } from "@repo/google";
 import { ObjectStorageLive } from "@repo/objs";
-import { ProviderSearchQueueLive } from "@repo/queue";
-import { ProviderSearchIndexDefault } from "@repo/typesense";
+import { FamilySearchQueueLive, ProviderSearchQueueLive } from "@repo/queue";
+import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from "@repo/typesense";
 import { Layer, ManagedRuntime } from "effect";
 import type { AppRuntime } from "./app-env";
 import { AuthServiceLive } from "./lib/effect-auth";
@@ -36,10 +39,13 @@ export const AppLive = Layer.mergeAll(
   KycDocumentRepoDefault,
   KycDocumentTypeRepoDefault,
   ServiceCatalogueRepoDefault,
+  ServiceNeededRepoDefault,
   ServiceOfferedRepoDefault,
   TcDocumentRepoDefault,
   ProviderSearchOutboxRepoDefault,
   ProviderSearchRepoDefault,
+  FamilySearchOutboxRepoDefault,
+  FamilySearchRepoDefault,
   ReferralRepoDefault,
   UserDirectoryRepoDefault,
   GooglePlacesLive,
@@ -47,6 +53,8 @@ export const AppLive = Layer.mergeAll(
   ObjectStorageLive,
   ProviderSearchQueueLive,
   ProviderSearchIndexDefault,
+  FamilySearchQueueLive,
+  FamilySearchIndexDefault,
   SigninServiceLive,
   SignupServiceLive,
   AuthServiceLive,

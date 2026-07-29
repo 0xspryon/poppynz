@@ -4,24 +4,35 @@ import { Queue, Worker } from "bullmq";
 import { Effect, Layer, ManagedRuntime } from "effect";
 import { trustedOriginsConfig } from "@repo/env";
 import { MailerLive } from "@repo/mail";
-import { ProviderSearchIndexDefault } from "@repo/typesense";
-import { ApprovalRepoDefault, ProviderSearchOutboxRepo, ProviderSearchOutboxRepoDefault } from "@repo/db";
+import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from "@repo/typesense";
+import {
+  ApprovalRepoDefault,
+  FamilySearchOutboxRepo,
+  FamilySearchOutboxRepoDefault,
+  ProviderSearchOutboxRepo,
+  ProviderSearchOutboxRepoDefault,
+} from "@repo/db";
 import {
   approvalExpiryCronPattern,
   approvalExpiryJobNames,
   approvalExpiryQueueDefinition,
   approvalExpirySchedulerId,
+  familySearchJobNames,
+  familySearchQueueDefinition,
   getRedisConnection,
   providerSearchJobNames,
   providerSearchQueueDefinition,
   queues,
 } from "@repo/queue";
 import { processApprovalExpiryNotifications } from "./approval-expiry-processor";
+import { processFamilySearchJob } from "./family-search-processor";
 import { processProviderSearchJob } from "./provider-search-processor";
 
 const WorkerLive = Layer.mergeAll(
   ProviderSearchIndexDefault,
   ProviderSearchOutboxRepoDefault,
+  FamilySearchIndexDefault,
+  FamilySearchOutboxRepoDefault,
   ApprovalRepoDefault,
   MailerLive,
 );
@@ -40,6 +51,17 @@ const providerSearchWorker = new Worker(
   {
     connection,
     concurrency: Number.parseInt(process.env.PROVIDER_SEARCH_WORKER_CONCURRENCY ?? "5", 10),
+  },
+);
+
+const familySearchWorker = new Worker(
+  familySearchQueueDefinition.name,
+  async (job) => {
+    await runtime.runPromise(processFamilySearchJob(job));
+  },
+  {
+    connection,
+    concurrency: Number.parseInt(process.env.FAMILY_SEARCH_WORKER_CONCURRENCY ?? "5", 10),
   },
 );
 
@@ -80,6 +102,7 @@ const queueDashQueues = queues.map((queue) => ({
 }));
 
 const providerSearchQueue = new Queue(providerSearchQueueDefinition.name, { connection });
+const familySearchQueue = new Queue(familySearchQueueDefinition.name, { connection });
 
 const enqueueUnresolvedOutboxRows = async () => {
   const rows = await runtime.runPromise(
@@ -98,6 +121,27 @@ const enqueueUnresolvedOutboxRows = async () => {
 };
 
 void enqueueUnresolvedOutboxRows().catch((cause) => {
+  // TODO: log this failure to Sentry once error reporting is wired.
+  console.error(cause);
+});
+
+const enqueueUnresolvedFamilyOutboxRows = async () => {
+  const rows = await runtime.runPromise(
+    FamilySearchOutboxRepo.pipe(
+      Effect.flatMap((repo) => repo.listUnresolved(1_000)),
+    ),
+  );
+
+  await Promise.all(rows.map((row) =>
+    familySearchQueue.add(
+      familySearchJobNames.reconcileFamily,
+      { outboxId: row.id, userId: row.userId },
+      { deduplication: { id: `family-search-reconcile-${row.userId}` } },
+    ),
+  ));
+};
+
+void enqueueUnresolvedFamilyOutboxRows().catch((cause) => {
   // TODO: log this failure to Sentry once error reporting is wired.
   console.error(cause);
 });
@@ -139,6 +183,8 @@ const shutdown = async () => {
   server.close();
   await providerSearchWorker.close();
   await providerSearchQueue.close();
+  await familySearchWorker.close();
+  await familySearchQueue.close();
   await approvalExpiryWorker.close();
   await approvalExpiryQueue.close();
   await Promise.all(queueDashQueues.map(({ queue }) => queue.close()));

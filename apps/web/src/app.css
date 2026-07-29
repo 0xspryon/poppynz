@@ -10,6 +10,8 @@
  * overrides; the few global adjustments live at the bottom of this file.
  */
 @import 'tailwindcss';
+/* Spotlight walkthroughs (driver.js) — themed in the global block below. */
+@import 'driver.js/dist/driver.css';
 /* Built-in themes off: "poppynz" below is the only theme, so the OS
  * dark-mode preference can't swap the locked palette out. */
 @plugin 'daisyui' {
@@ -154,4 +156,25 @@
 .toggle-credibled:checked,
 .toggle-credibled[aria-checked='true'] {
 	--input-color: var(--color-credibled);
+}
+
+/* Walkthrough popovers (driver.js) follow the card + primary-CTA look. */
+.driver-popover {
+	border-radius: var(--radius-box);
+	color: var(--color-base-content);
+	font-family: var(--font-sans);
+}
+.driver-popover-title {
+	font-family: var(--font-display);
+	color: var(--color-base-content);
+}
+.driver-popover-navigation-btns button {
+	border-radius: var(--radius-pill);
+	background-color: var(--color-primary);
+	color: var(--color-primary-content);
+	border: none;
+	text-shadow: none;
+}
+.driver-popover-progress-text {
+	color: var(--color-base-content-muted);
 }

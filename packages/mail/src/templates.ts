@@ -42,6 +42,119 @@ const paragraph = (html: string) => `<p style="margin:0 0 16px;">${html}</p>`;
 const button = (href: string, label: string) =>
   `<p style="margin:24px 0;"><a href="${escapeHtml(href)}" style="display:inline-block;background:#37b5ff;color:#ffffff;text-decoration:none;border-radius:999px;padding:12px 24px;font-weight:600;">${escapeHtml(label)}</a></p>`;
 
+const numberedSteps = (steps: ReadonlyArray<{ text: string; href: string; linkLabel: string }>) =>
+  `<ol style="margin:0 0 16px;padding-left:20px;">${steps
+    .map(
+      (step) =>
+        `<li style="margin:0 0 12px;">${escapeHtml(step.text)}<br /><a href="${escapeHtml(step.href)}" style="color:#37b5ff;font-weight:600;text-decoration:none;">${escapeHtml(step.linkLabel)}</a></li>`,
+    )
+    .join("")}</ol>`;
+
+const numberedStepsText = (steps: ReadonlyArray<{ text: string; href: string }>) =>
+  steps.flatMap((step, index) => [`${index + 1}. ${step.text}`, `   ${step.href}`]).join("\n");
+
+export const familyWelcomeMail = (mail: {
+  name: string | null;
+  profileLink: string;
+  needsLink: string;
+  findLink: string;
+}): MailContent => {
+  const steps = [
+    {
+      text: "Set your home location. Searches are centered on it, and it lets vetted helpers nearby find your family.",
+      href: mail.profileLink,
+      linkLabel: "Set your location",
+    },
+    {
+      text: "Tell us which services you need — regular childcare, after-school pickup, meal prep, anything you're looking for.",
+      href: mail.needsLink,
+      linkLabel: "List the services you need",
+    },
+    {
+      text: "Browse vetted helpers near you and find the right fit for your family.",
+      href: mail.findLink,
+      linkLabel: "Find help near you",
+    },
+  ];
+  return {
+    subject: "Welcome to Poppynz — here's how to get started",
+    html: layout(
+      paragraph(escapeHtml(greeting(mail.name))) +
+        paragraph(
+          "Welcome to Poppynz! Every helper on our marketplace is identity- and background-vetted before families can find them. Here's how to get set up:",
+        ) +
+        numberedSteps(steps) +
+        button(mail.profileLink, "Get started"),
+    ),
+    text: [
+      greeting(mail.name),
+      "",
+      "Welcome to Poppynz! Every helper on our marketplace is identity- and background-vetted before families can find them. Here's how to get set up:",
+      "",
+      numberedStepsText(steps),
+      "",
+      `Get started: ${mail.profileLink}`,
+    ].join("\n"),
+  };
+};
+
+export const providerWelcomeMail = (mail: {
+  name: string | null;
+  profileLink: string;
+  documentsLink: string;
+  servicesLink: string;
+  approvalLink: string;
+  findLink: string;
+}): MailContent => {
+  const steps = [
+    {
+      text: "Complete your profile, including your location and a short bio families will see.",
+      href: mail.profileLink,
+      linkLabel: "Set up your profile",
+    },
+    {
+      text: "Upload your identity and background documents.",
+      href: mail.documentsLink,
+      linkLabel: "Upload your documents",
+    },
+    {
+      text: "Pick the services you offer and set your rates.",
+      href: mail.servicesLink,
+      linkLabel: "Set up services & rates",
+    },
+    {
+      text: "Submit for approval — our team reviews every helper before they go live.",
+      href: mail.approvalLink,
+      linkLabel: "Request approval",
+    },
+    {
+      text: "Once you're approved, browse families looking for help near you and find a great fit.",
+      href: mail.findLink,
+      linkLabel: "Find families",
+    },
+  ];
+  return {
+    subject: "Welcome to Poppynz — here's how to get started",
+    html: layout(
+      paragraph(escapeHtml(greeting(mail.name))) +
+        paragraph(
+          "Welcome to Poppynz! Families here look for vetted helpers, so a complete, approved profile is how you get found. Here's how to get set up:",
+        ) +
+        numberedSteps(steps) +
+        button(mail.profileLink, "Set up your profile"),
+    ),
+    text: [
+      greeting(mail.name),
+      "",
+      "Welcome to Poppynz! Families here look for vetted helpers, so a complete, approved profile is how you get found. Here's how to get set up:",
+      "",
+      numberedStepsText(steps),
+      "",
+      `Set up your profile: ${mail.profileLink}`,
+    ].join("\n"),
+  };
+};
+
 export const magicLinkMail = (mail: { link: string }): MailContent => ({
   subject: "Your Poppynz sign-in link",
   html: layout(

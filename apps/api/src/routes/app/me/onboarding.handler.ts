@@ -3,6 +3,7 @@ import {
   ApprovalRepo,
   ApprovalRequestRepo,
   type DBNotFoundError,
+  ServiceNeededRepo,
   UserProfileRepo,
   type Approval,
   type ApprovalRequest,
@@ -59,6 +60,11 @@ const toRequestSummary = (request: ApprovalRequest | null) => request
 
 const ensureServiceProvider = <T extends { user: { role: string | null } }>(userAndSession: T) =>
   userAndSession.user.role === "service-provider"
+    ? Effect.succeed(userAndSession)
+    : Effect.fail(new OnboardingRoleError());
+
+const ensureFamily = <T extends { user: { role: string | null } }>(userAndSession: T) =>
+  userAndSession.user.role === "family"
     ? Effect.succeed(userAndSession)
     : Effect.fail(new OnboardingRoleError());
 
@@ -121,6 +127,52 @@ export const getOnboardingRouteProgram = (headers: Headers) =>
     return yield* getOnboardingProgram(userAndSession);
   });
 
+/** The family getting-started checklist: the same steps the welcome email
+ * promises, with completion derived from real data — a saved location and at
+ * least one registered need are exactly what make the family discoverable to
+ * approved providers. */
+export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
+  Effect.gen(function* () {
+    const family = yield* ensureFamily(userAndSession);
+    const userId = family.user.id;
+
+    const profileRepo = yield* UserProfileRepo;
+    const needsRepo = yield* ServiceNeededRepo;
+
+    const [profile, needs] = yield* Effect.all([
+      profileRepo.findByUserId(userId).pipe(
+        Effect.catchTags({
+          DBNotFoundError: () => Effect.fail(new OnboardingProfileNotFoundError()),
+          SqlError: (cause) => Effect.fail(new OnboardingRepoError({ cause })),
+        }),
+      ),
+      mapRepoError(needsRepo.listByUserId(userId)),
+    ], { concurrency: "unbounded" });
+
+    const locationComplete = typeof profile.latitude === "number" && typeof profile.longitude === "number";
+    const needsComplete = needs.length > 0;
+
+    return {
+      userId,
+      firstName: profile.firstName,
+      progress: {
+        completed: (locationComplete ? 1 : 0) + (needsComplete ? 1 : 0),
+        total: 2,
+      },
+      steps: {
+        location: { complete: locationComplete },
+        needs: { complete: needsComplete, count: needs.length },
+      },
+    };
+  });
+
+export const getFamilyOnboardingRouteProgram = (headers: Headers) =>
+  Effect.gen(function* () {
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, { profile: ["read"] })(authenticated);
+    return yield* getFamilyOnboardingProgram(userAndSession);
+  });
+
 export const getOnboardingHistoryProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const provider = yield* ensureServiceProvider(userAndSession);
@@ -164,6 +216,7 @@ export const getOnboardingHistoryRouteProgram = (headers: Headers) =>
 
 export type OnboardingRouteError =
   | Effect.Effect.Error<ReturnType<typeof getOnboardingRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof getFamilyOnboardingRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof getOnboardingHistoryRouteProgram>>;
 
 const onboardingErrorToResponse = (c: HonoContext<HonoEnv>, error: OnboardingRouteError) => {
@@ -174,7 +227,7 @@ const onboardingErrorToResponse = (c: HonoContext<HonoEnv>, error: OnboardingRou
     case "AuthEntityLookupError":
       return authErrorToResponse(c, error);
     case "OnboardingRoleError":
-      return c.json({ error: { code: "ONBOARDING_ROLE_FORBIDDEN" as const, message: "Onboarding state is only available to service providers." } }, 403);
+      return c.json({ error: { code: "ONBOARDING_ROLE_FORBIDDEN" as const, message: "Onboarding state is not available for this account's role." } }, 403);
     case "OnboardingProfileNotFoundError":
       return c.json({ error: { code: "PROFILE_NOT_FOUND" as const, message: "Profile was not found." } }, 404);
     case "OnboardingRepoError":
@@ -201,6 +254,13 @@ export async function getOnboardingHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get("runtime");
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(getOnboardingRouteProgram(headers));
+  return exitToResponse(c, exit);
+}
+
+export async function getFamilyOnboardingHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get("runtime");
+  const headers = c.req.raw.headers;
+  const exit = await runtime.runPromiseExit(getFamilyOnboardingRouteProgram(headers));
   return exitToResponse(c, exit);
 }
 

@@ -35,6 +35,7 @@ const makeLayer = (options: {
         return Effect.void;
       },
       searchProviders: () => Effect.succeed({ providers: [], pagination: { page: 1, perPage: 20, total: 0 } }),
+      listCityFacets: () => Effect.succeed([]),
       getProvider: () => Effect.die("not used"),
       reindexAllProviders: () => {
         options.onReindex?.();

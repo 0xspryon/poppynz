@@ -7,7 +7,16 @@
 		| 'missing'
 		| 'empty'
 		| 'expired'
-		| 'in-progress';
+		| 'in-progress'
+		// Contract lifecycle (16e/16f pills).
+		| 'draft'
+		| 'proposed'
+		| 'awaiting-you'
+		| 'changes-requested'
+		| 'active'
+		| 'declined'
+		| 'ending'
+		| 'ended';
 </script>
 
 <script lang="ts">
@@ -30,7 +39,15 @@
 		missing: 'bg-warning-content text-warning',
 		empty: 'bg-base-300 text-base-content-muted',
 		expired: 'bg-base-300 text-base-content-muted',
-		'in-progress': 'bg-credibled-tint text-credibled-text'
+		'in-progress': 'bg-credibled-tint text-credibled-text',
+		draft: 'bg-base-300 text-base-content-muted',
+		proposed: 'bg-info-content text-info',
+		'awaiting-you': 'bg-accent/15 text-accent',
+		'changes-requested': 'bg-warning-content text-warning',
+		active: 'bg-success-content text-success',
+		declined: 'bg-error-content text-error',
+		ending: 'bg-warning-content text-warning',
+		ended: 'bg-base-300 text-base-content-muted'
 	};
 
 	const defaultLabels: Record<ChipStatus, string> = {
@@ -41,7 +58,15 @@
 		missing: 'Missing',
 		empty: 'Empty',
 		expired: 'Expired',
-		'in-progress': 'In progress'
+		'in-progress': 'In progress',
+		draft: 'Draft',
+		proposed: 'Proposed',
+		'awaiting-you': 'Awaiting you',
+		'changes-requested': 'Changes requested',
+		active: 'Active',
+		declined: 'Declined',
+		ending: 'Ending',
+		ended: 'Ended'
 	};
 </script>
 

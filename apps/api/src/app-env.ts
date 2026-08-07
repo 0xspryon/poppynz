@@ -1,6 +1,7 @@
 import type {
   ApprovalRepo,
   ApprovalRequestRepo,
+  ContractRepo,
   ConversationRepo,
   FamilySearchOutboxRepo,
   FamilySearchRepo,
@@ -53,6 +54,7 @@ export type AppServices =
   | ReferralRepo
   | UserDirectoryRepo
   | ConversationRepo
+  | ContractRepo
   | NotificationHub
   | Mailer
   | GooglePlaces

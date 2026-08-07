@@ -1,6 +1,7 @@
 import type { SqlError } from "@effect/sql/SqlError";
 import {
   ApprovalRepo,
+  ContractRepo,
   ConversationRepo,
   ServiceNeededRepo,
   ServiceOfferedRepo,
@@ -32,6 +33,7 @@ import {
   validateMessageCreateInput,
   validateReachoutCreateInput,
 } from "./conversations.validator";
+import { contractProposalContext, toThreadContractSummary } from "../contracts/contracts.handler";
 
 export class ConversationRepoError extends Data.TaggedError("ConversationRepoError")<{ cause: SqlError }> { }
 
@@ -387,9 +389,26 @@ export const getConversationProgram = (userAndSession: UserAndSession, conversat
     const messages = yield* conversationRepo
       .listMessages(conversationId)
       .pipe((errors) => mapConversationRepoError(errors));
+
+    // The thread renders contract state (the 16h/16j pills) from this summary
+    // — contract rows never enter conversation_messages.
+    const contractRepo = yield* ContractRepo;
+    const contractRow = yield* contractRepo
+      .findByConversationId(conversationId)
+      .pipe((errors) => mapConversationRepoError(errors));
+    let contract: ReturnType<typeof toThreadContractSummary> = null;
+    if (contractRow) {
+      const versions = yield* contractRepo
+        .listVersions(contractRow.id)
+        .pipe((errors) => mapConversationRepoError(errors));
+      const { cutoff } = yield* contractProposalContext;
+      contract = toThreadContractSummary(contractRow, versions, viewer.id, cutoff);
+    }
+
     return {
       conversation: toConversationResponse(row, viewer.id),
       messages: messages.map((message) => toMessageResponse(message, viewer.id)),
+      contract,
     };
   });
 

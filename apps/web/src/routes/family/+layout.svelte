@@ -10,6 +10,7 @@
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
 	import TcGate from '$lib/components/TcGate.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
+	import { contractsBadge } from '$lib/contracts-badge.svelte';
 	import { unread } from '$lib/unread.svelte';
 	import { onMount, type Snippet } from 'svelte';
 
@@ -38,7 +39,10 @@
 	});
 
 	afterNavigate(() => {
-		if (authorized) void unread.refresh();
+		if (authorized) {
+			void unread.refresh();
+			void contractsBadge.refresh();
+		}
 	});
 
 	const email = $derived(session?.email ?? 'family');
@@ -48,6 +52,12 @@
 	const items: Array<SidebarItem> = $derived([
 		{ href: resolve('/family/find'), label: 'Find help', icon: 'la-search' },
 		{ href: resolve('/family/messages'), label: 'Messages', icon: 'la-comment', badge: unread.count },
+		{
+			href: resolve('/family/contracts'),
+			label: 'Contracts',
+			icon: 'la-file-signature',
+			badge: contractsBadge.count
+		},
 		{ href: resolve('/family/needs'), label: 'Services I need', icon: 'la-clipboard-list' },
 		{ href: resolve('/family/profile'), label: 'Profile', icon: 'la-user' },
 		{ href: resolve('/family/referrals'), label: 'Referrals', icon: 'la-user-plus' }

@@ -35,11 +35,40 @@ export type NotificationPayloads = {
     approvalId: string;
     reason: string | null;
   };
+  /** The counterpart proposed contract terms — the initial proposal, a re-send
+   * after decline/changes, or (isAmendment) new terms on an active contract. */
+  "contract.proposed": {
+    contractId: string;
+    counterpartName: string;
+    isAmendment: boolean;
+  };
+  /** The counterpart accepted the viewer's proposed terms. */
+  "contract.accepted": {
+    contractId: string;
+    counterpartName: string;
+    isAmendment: boolean;
+  };
+  /** The counterpart declined the viewer's proposed terms. */
+  "contract.declined": {
+    contractId: string;
+    counterpartName: string;
+    reason: string | null;
+    isAmendment: boolean;
+  };
+  /** The provider asked the family to revise the proposal in chat. */
+  "contract.changes_requested": {
+    contractId: string;
+    counterpartName: string;
+  };
+  /** The counterpart gave 2 weeks' notice; endsOn is the last working day. */
+  "contract.ended": {
+    contractId: string;
+    counterpartName: string;
+    endsOn: string;
+  };
 };
 
 // Planned (not yet published) — future domains follow the same pattern:
-// "contract.proposed" | "contract.accepted" | "contract.declined" |
-// "contract.ended" with { contractId, counterpartName } payloads, and
 // "approval.expiring" with { approvalId, expiresAt }.
 
 export type NotificationType = keyof NotificationPayloads;

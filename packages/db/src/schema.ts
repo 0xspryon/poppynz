@@ -3,6 +3,7 @@ import {
   text,
   timestamp,
   boolean,
+  date,
   doublePrecision,
   integer,
   index,
@@ -23,6 +24,31 @@ export const familySearchOutboxStatus = appDb.enum("family_search_outbox_status"
 // "all" means every non-admin profile — admins are never shown T&C.
 export const tcAppliesToRole = appDb.enum("tc_applies_to_role", ["all", "family", "service-provider"]);
 export const conversationStatus = appDb.enum("conversation_status", ["pending", "active", "ignored"]);
+// "ended" is never written today — an "ending" contract past its ends_on date
+// presents as ended at read time (no cron). The value exists so a future job
+// could materialise it without another enum migration.
+export const contractStatus = appDb.enum("contract_status", [
+  "draft",
+  "proposed",
+  "changes_requested",
+  "declined",
+  "active",
+  "ending",
+  "ended",
+]);
+// Withdrawing a pre-active proposal flips the row back to draft in place;
+// "withdrawn" is the terminal state for a retracted amendment (an active
+// contract has no draft stage to fall back to). "superseded" marks a
+// previously accepted version replaced by an accepted amendment.
+export const contractVersionStatus = appDb.enum("contract_version_status", [
+  "draft",
+  "proposed",
+  "changes_requested",
+  "accepted",
+  "declined",
+  "superseded",
+  "withdrawn",
+]);
 export const kycDocumentStatus = appDb.enum("kyc_document_status", [
   "submitted",
   "approved",
@@ -420,6 +446,107 @@ export const conversationMessage = appDb.table(
   ],
 );
 
+// Snapshot of one provider service as agreed in a contract version, taken when
+// the line item is added so the terms keep rendering (and the rate floor stays
+// auditable) even if the underlying services_offered row is later renamed,
+// repriced or soft-deleted.
+export type ContractServiceItem = {
+  serviceId: string;
+  name: string;
+  listedRateCents: number;
+  rateCents: number;
+  currency: string;
+  hoursPerWeek: number;
+  expectations: string;
+};
+
+// A contract is the stable identity between one family and one provider,
+// created only by the family from their active conversation (the structural
+// anti-spam gate — there is no other entry point). Terms live in
+// contract_versions; declined and ended rows stay live and are revived via a
+// new version, so the partial unique index still guarantees one live contract
+// per conversation.
+export const contract = appDb.table(
+  "contracts",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    familyUserId: text("family_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    providerUserId: text("provider_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: contractStatus("status").default("draft").notNull(),
+    // Ending with 2 weeks' notice: ends_on is the last working day; past it
+    // the contract presents as ended.
+    endsOn: date("ends_on"),
+    endedByUserId: text("ended_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    endNote: text("end_note"),
+    endNoticedAt: timestamp("end_noticed_at"),
+    // Per-side seen markers backing the sidebar Contracts badge.
+    familySeenAt: timestamp("family_seen_at"),
+    providerSeenAt: timestamp("provider_seen_at"),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("contracts_conversation_uidx")
+      .on(table.conversationId)
+      .where(sql`${table.deletedAt} is null`),
+    index("contracts_family_user_id_idx").on(table.familyUserId),
+    index("contracts_provider_user_id_idx").on(table.providerUserId),
+    index("contracts_status_idx").on(table.status),
+  ],
+);
+
+// Every draft, proposal and amendment is a version row. At most one pending
+// (draft/proposed) version and at most one accepted version exist per
+// contract, both enforced by partial unique indexes — the accepted row IS the
+// terms in force, so contracts needs no version pointer that could disagree
+// with the version rows.
+export const contractVersion = appDb.table(
+  "contract_versions",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    contractId: uuid("contract_id")
+      .notNull()
+      .references(() => contract.id, { onDelete: "cascade" }),
+    version: integer("version").notNull(),
+    proposedByUserId: text("proposed_by_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: contractVersionStatus("status").default("draft").notNull(),
+    services: jsonb("services").$type<Array<ContractServiceItem>>().notNull(),
+    schedule: text("schedule"),
+    startsOn: date("starts_on"),
+    sentAt: timestamp("sent_at"),
+    decidedAt: timestamp("decided_at"),
+    declineReason: text("decline_reason"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("contract_versions_contract_version_uidx").on(table.contractId, table.version),
+    uniqueIndex("contract_versions_pending_uidx")
+      .on(table.contractId)
+      .where(sql`${table.status} in ('draft', 'proposed')`),
+    uniqueIndex("contract_versions_accepted_uidx")
+      .on(table.contractId)
+      .where(sql`${table.status} = 'accepted'`),
+    index("contract_versions_contract_id_idx").on(table.contractId),
+  ],
+);
+
 // Admin-managed terms-and-conditions documents. A document is a stable slug
 // (e.g. "terms_of_service"); its text lives in tc_document_versions so every
 // published revision is kept verbatim for the acceptance audit trail.
@@ -783,6 +910,33 @@ export const conversationMessageRelations = relations(conversationMessage, ({ on
   }),
   sender: one(user, {
     fields: [conversationMessage.senderUserId],
+    references: [user.id],
+  }),
+}));
+
+export const contractRelations = relations(contract, ({ one, many }) => ({
+  conversation: one(conversation, {
+    fields: [contract.conversationId],
+    references: [conversation.id],
+  }),
+  familyUser: one(user, {
+    fields: [contract.familyUserId],
+    references: [user.id],
+  }),
+  providerUser: one(user, {
+    fields: [contract.providerUserId],
+    references: [user.id],
+  }),
+  versions: many(contractVersion),
+}));
+
+export const contractVersionRelations = relations(contractVersion, ({ one }) => ({
+  contract: one(contract, {
+    fields: [contractVersion.contractId],
+    references: [contract.id],
+  }),
+  proposer: one(user, {
+    fields: [contractVersion.proposedByUserId],
     references: [user.id],
   }),
 }));

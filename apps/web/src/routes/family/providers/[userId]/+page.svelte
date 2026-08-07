@@ -8,11 +8,13 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { createContract } from '$lib/api/contracts';
 	import { lookupConversation, type ConversationLookup } from '$lib/api/conversations';
 	import { getProvider, type ProviderDetail } from '$lib/api/providers';
 	import ReachoutComposerModal from '$lib/components/messages/ReachoutComposerModal.svelte';
 	import { centsToCompactDollars, rateRangeLabel } from '$lib/money';
 	import { withQuery } from '$lib/nav';
+	import { toast } from '$lib/toast.svelte';
 
 	let provider = $state<ProviderDetail | null>(null);
 	let loading = $state(true);
@@ -67,6 +69,24 @@
 
 	function openConversation(conversationId: string) {
 		void goto(withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversationId)}`));
+	}
+
+	let proposingTerms = $state(false);
+
+	/** 16g: the second CTA once the conversation unlocks — an existing contract
+	 * just navigates to it. */
+	async function handleProposeTerms() {
+		if (!conversation || proposingTerms) return;
+		proposingTerms = true;
+		const result = await createContract(conversation.id);
+		proposingTerms = false;
+		if (result.ok) {
+			void goto(resolve('/family/contracts/[id]', { id: result.data.id }));
+		} else if (result.error.code === 'CONTRACT_EXISTS') {
+			void goto(resolve('/family/contracts/[id]', { id: result.error.contractId }));
+		} else {
+			toast.error('Starting the contract failed. Please try again.');
+		}
 	}
 
 	const name = $derived(
@@ -199,6 +219,16 @@
 							<span class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning">
 								{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
 							</span>
+						{:else if conversation.status === 'active'}
+							<button
+								type="button"
+								class="btn btn-outline"
+								disabled={proposingTerms}
+								onclick={handleProposeTerms}
+							>
+								{#if proposingTerms}<span class="loading loading-xs loading-spinner"></span>{/if}
+								Propose terms
+							</button>
 						{/if}
 					{:else}
 						<button type="button" class="btn btn-primary" onclick={() => (composerOpen = true)}>
@@ -298,12 +328,24 @@
 						{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
 					</span>
 				{/if}
-				<a
-					href={withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversation.id)}`)}
-					class="btn w-full btn-primary"
-				>
-					Message {firstName}
-				</a>
+				<div class="flex w-full gap-2">
+					<a
+						href={withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversation.id)}`)}
+						class="btn flex-1 btn-primary"
+					>
+						Message {firstName}
+					</a>
+					{#if conversation.status === 'active'}
+						<button
+							type="button"
+							class="btn flex-1 btn-outline"
+							disabled={proposingTerms}
+							onclick={handleProposeTerms}
+						>
+							Propose terms
+						</button>
+					{/if}
+				</div>
 			{:else}
 				<button type="button" class="btn w-full btn-primary" onclick={() => (composerOpen = true)}>
 					Contact {firstName}

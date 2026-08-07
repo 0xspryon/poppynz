@@ -3,7 +3,10 @@ import {
   dummyConversation,
   dummyConversationMessage,
   dummyConversationWithContext,
+  dummyContract,
+  dummyContractVersion,
   makeApprovalRepoTest,
+  makeContractRepoTest,
   makeConversationRepoTest,
   makeServiceNeededRepoTest,
   makeServiceOfferedRepoTest,
@@ -12,6 +15,8 @@ import {
   makeUserRepoTest,
   DBNotFoundError,
   type Approval,
+  type Contract,
+  type ContractVersion,
   type Conversation,
   type ConversationWithContext,
   type SafeUserProfile,
@@ -130,6 +135,8 @@ const makeLayer = (options: {
   needed?: Array<ServiceNeeded>;
   markRespondedResult?: Conversation | null;
   markIgnoredResult?: Conversation | null;
+  contractByConversation?: Contract | null;
+  contractVersions?: Array<ContractVersion>;
   published?: Array<Published>;
   onCreate?: (input: unknown) => void;
   onSoftDelete?: (id: string) => void;
@@ -208,6 +215,23 @@ const makeLayer = (options: {
         options.onSoftDelete?.(id);
         return Effect.void;
       },
+    }),
+    makeContractRepoTest({
+      create: () => Effect.die("not used"),
+      findById: () => Effect.succeed(null),
+      findByConversationId: () => Effect.succeed(options.contractByConversation ?? null),
+      findWithContext: () => Effect.succeed(null),
+      listForUser: () => Effect.succeed([]),
+      listVersions: () => Effect.succeed(options.contractVersions ?? []),
+      createVersion: () => Effect.die("not used"),
+      updateVersionTerms: () => Effect.die("not used"),
+      sendPendingVersion: () => Effect.die("not used"),
+      withdrawPendingVersion: () => Effect.die("not used"),
+      withdrawAmendment: () => Effect.die("not used"),
+      acceptPendingVersion: () => Effect.die("not used"),
+      decidePendingVersion: () => Effect.die("not used"),
+      setEnding: () => Effect.die("not used"),
+      markSeen: () => Effect.die("not used"),
     }),
     makeNotificationHubTest({
       publish: (userId, input) => {
@@ -511,6 +535,85 @@ describe("GET /conversations/:id", () => {
       ),
     );
     expect(getFailure(exit)).toMatchObject({ _tag: "ConversationNotFoundError" });
+  });
+
+  it("includes the conversation's contract summary for the chat pill", async () => {
+    const layer = makeLayer({
+      conversationWithContext: { ...dummyConversationWithContext, id: CONVERSATION_ID, status: "active" },
+      contractByConversation: { ...dummyContract, conversationId: CONVERSATION_ID, status: "proposed" },
+      contractVersions: [
+        { ...dummyContractVersion, status: "proposed", sentAt: new Date() },
+      ],
+    });
+    const result = await Effect.runPromise(
+      getConversationRouteProgram(makeContext({ params: { id: CONVERSATION_ID } }), new Headers()).pipe(
+        Effect.provide(layer),
+      ),
+    );
+    expect(result.contract).toMatchObject({
+      id: dummyContract.id,
+      status: "proposed",
+      awaitingYou: false,
+      pendingAmendment: false,
+    });
+  });
+
+  it("hides a family-private draft contract from the provider's thread payload", async () => {
+    const layer = makeLayer({
+      viewer: providerUser(),
+      counterpart: familyUser(),
+      conversationWithContext: { ...dummyConversationWithContext, id: CONVERSATION_ID, status: "active", counterpartUserId: "family-1" },
+      contractByConversation: { ...dummyContract, conversationId: CONVERSATION_ID, status: "draft" },
+      contractVersions: [dummyContractVersion],
+    });
+    const result = await Effect.runPromise(
+      getConversationRouteProgram(makeContext({ params: { id: CONVERSATION_ID } }), new Headers()).pipe(
+        Effect.provide(layer),
+      ),
+    );
+    expect(result.contract).toBeNull();
+  });
+
+  it("flags a proposal awaiting the provider and keeps a revision draft out of their summary", async () => {
+    const layer = makeLayer({
+      viewer: providerUser(),
+      counterpart: familyUser(),
+      conversationWithContext: { ...dummyConversationWithContext, id: CONVERSATION_ID, status: "active", counterpartUserId: "family-1" },
+      contractByConversation: { ...dummyContract, conversationId: CONVERSATION_ID, status: "declined" },
+      contractVersions: [
+        // Declined v1 is the provider-visible truth…
+        { ...dummyContractVersion, id: "version-1", version: 1, status: "declined", decidedAt: new Date() },
+        // …the family's unsent v2 draft must not shape the provider's pill.
+        {
+          ...dummyContractVersion,
+          id: "version-2",
+          version: 2,
+          status: "draft",
+          services: [{ ...dummyContractVersion.services[0], rateCents: 9900, hoursPerWeek: 40 }],
+        },
+      ],
+    });
+    const result = await Effect.runPromise(
+      getConversationRouteProgram(makeContext({ params: { id: CONVERSATION_ID } }), new Headers()).pipe(
+        Effect.provide(layer),
+      ),
+    );
+    // 2600 × 4 from the declined v1 — not 9900 × 40 from the private draft.
+    expect(result.contract).toMatchObject({ status: "declined", weeklyEstimateCents: 10400 });
+
+    const awaiting = makeLayer({
+      viewer: providerUser(),
+      counterpart: familyUser(),
+      conversationWithContext: { ...dummyConversationWithContext, id: CONVERSATION_ID, status: "active", counterpartUserId: "family-1" },
+      contractByConversation: { ...dummyContract, conversationId: CONVERSATION_ID, status: "proposed" },
+      contractVersions: [{ ...dummyContractVersion, status: "proposed", sentAt: new Date() }],
+    });
+    const awaitingResult = await Effect.runPromise(
+      getConversationRouteProgram(makeContext({ params: { id: CONVERSATION_ID } }), new Headers()).pipe(
+        Effect.provide(awaiting),
+      ),
+    );
+    expect(awaitingResult.contract).toMatchObject({ status: "proposed", awaitingYou: true });
   });
 });
 

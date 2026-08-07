@@ -11,6 +11,7 @@
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
 	import TcGate from '$lib/components/TcGate.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
+	import { contractsBadge } from '$lib/contracts-badge.svelte';
 	import { unread } from '$lib/unread.svelte';
 	import { onMount, type Snippet } from 'svelte';
 
@@ -55,6 +56,7 @@
 		if (authorized) {
 			void refreshBadge();
 			void unread.refresh();
+			void contractsBadge.refresh();
 		}
 	});
 
@@ -70,6 +72,12 @@
 			label: 'Messages',
 			icon: 'la-comment',
 			badge: unread.count
+		},
+		{
+			href: resolve('/service-provider/contracts'),
+			label: 'Contracts',
+			icon: 'la-file-signature',
+			badge: contractsBadge.count
 		},
 		{ href: resolve('/service-provider/profile'), label: 'Profile', icon: 'la-user' },
 		{

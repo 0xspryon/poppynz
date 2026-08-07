@@ -13,9 +13,11 @@
 		markConversationRead,
 		respondToReachout,
 		sendMessage,
+		type ConversationDetailData,
 		type ConversationMessage,
 		type ConversationSummary
 	} from '$lib/api/conversations';
+	import { createContract } from '$lib/api/contracts';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import ReachoutCard from '$lib/components/messages/ReachoutCard.svelte';
 	import { notifications } from '$lib/notifications.svelte';
@@ -34,12 +36,13 @@
 	let listLoading = $state(true);
 	let listError = $state(false);
 
-	let thread = $state<{ conversation: ConversationSummary; messages: ConversationMessage[] } | null>(null);
+	let thread = $state<ConversationDetailData | null>(null);
 	let threadLoading = $state(false);
 	let threadError = $state(false);
 	let draft = $state('');
 	let sending = $state(false);
 	let responding = $state(false);
+	let creatingContract = $state(false);
 	let ignoreConfirmOpen = $state(false);
 	let messagesEnd = $state<HTMLElement | null>(null);
 
@@ -56,6 +59,11 @@
 		role === 'family'
 			? resolve('/family/providers/[userId]', { userId })
 			: resolve('/service-provider/families/[userId]', { userId });
+
+	const contractHref = (contractId: string) =>
+		role === 'family'
+			? resolve('/family/contracts/[id]', { id: contractId })
+			: resolve('/service-provider/contracts/[id]', { id: contractId });
 
 	async function refreshList() {
 		const result = await listConversations();
@@ -104,7 +112,22 @@
 				if (event.payload.conversationId === selectedId) {
 					void refreshThread(event.payload.conversationId, { markRead: false });
 				}
-			})
+			}),
+			// Contract events carry a contractId, not a conversationId — refresh
+			// the open thread so its contract pill tracks the latest state.
+			...(
+				[
+					'contract.proposed',
+					'contract.accepted',
+					'contract.declined',
+					'contract.changes_requested',
+					'contract.ended'
+				] as const
+			).map((type) =>
+				notifications.on(type, () => {
+					if (selectedId) void refreshThread(selectedId, { markRead: false });
+				})
+			)
 		];
 		return () => {
 			for (const unsubscribe of unsubscribers) unsubscribe();
@@ -152,7 +175,7 @@
 		if (result.ok) {
 			draft = '';
 			thread = thread && {
-				conversation: thread.conversation,
+				...thread,
 				messages: [...thread.messages, result.data]
 			};
 			void refreshList();
@@ -164,6 +187,59 @@
 			);
 		}
 	}
+
+	/** 16g: the family-side "Propose terms" in an unlocked thread — the only
+	 * place a contract can be created. An existing contract just navigates. */
+	async function handleProposeTerms() {
+		const id = selectedId;
+		if (!id || creatingContract) return;
+		creatingContract = true;
+		const result = await createContract(id);
+		creatingContract = false;
+		if (result.ok) {
+			void goto(contractHref(result.data.id));
+		} else if (result.error.code === 'CONTRACT_EXISTS') {
+			void goto(contractHref(result.error.contractId));
+		} else {
+			toast.error('Starting the contract failed. Please try again.');
+		}
+	}
+
+	const contractPill = $derived.by(() => {
+		const contract = thread?.contract;
+		if (!contract) return null;
+		switch (contract.status) {
+			case 'draft':
+				return { label: 'Contract draft', tone: 'neutral' as const };
+			case 'proposed':
+				return contract.awaitingYou
+					? { label: 'Review proposal', tone: 'accent' as const }
+					: { label: 'Proposal sent', tone: 'neutral' as const };
+			case 'expired':
+				return { label: 'Proposal expired', tone: 'neutral' as const };
+			case 'changes_requested':
+				return { label: 'Changes requested', tone: 'warning' as const };
+			case 'declined':
+				return { label: 'Proposal declined', tone: 'neutral' as const };
+			case 'active':
+				return contract.pendingAmendment
+					? { label: 'Amendment pending', tone: 'accent' as const }
+					: { label: 'Contract active', tone: 'success' as const };
+			case 'ending':
+				return { label: 'Contract ending', tone: 'warning' as const };
+			case 'ended':
+				return { label: 'Contract ended', tone: 'neutral' as const };
+			default:
+				return null;
+		}
+	});
+
+	const pillToneClass = {
+		neutral: 'bg-base-300 text-neutral',
+		accent: 'bg-accent/15 text-accent',
+		warning: 'bg-warning-content text-warning',
+		success: 'bg-success-content text-success'
+	};
 
 	async function handleRespond() {
 		const id = selectedId;
@@ -416,6 +492,30 @@
 						{/if}
 					</p>
 				</div>
+				{#if thread.contract && contractPill}
+					<a
+						href={contractHref(thread.contract.id)}
+						class="ml-auto shrink-0 rounded-pill px-3 py-1.5 text-[11.5px] font-semibold
+							transition-opacity hover:opacity-80 {pillToneClass[contractPill.tone]}"
+					>
+						{contractPill.label}
+					</a>
+				{:else if role === 'family' && thread.conversation.status === 'active'}
+					<!-- 16g: contract creation lives here and nowhere else. -->
+					<button
+						type="button"
+						class="btn ml-auto shrink-0 btn-primary btn-sm"
+						disabled={creatingContract}
+						onclick={handleProposeTerms}
+					>
+						{#if creatingContract}
+							<span class="loading loading-xs loading-spinner"></span>
+						{:else}
+							<i class="las la-file-signature" aria-hidden="true"></i>
+						{/if}
+						Propose terms
+					</button>
+				{/if}
 			</header>
 
 			<div class="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-5 lg:px-6">
@@ -434,6 +534,42 @@
 					onignore={() => (ignoreConfirmOpen = true)}
 					{responding}
 				/>
+
+				{#if thread.contract && ['active', 'declined', 'ending', 'ended'].includes(thread.contract.status)}
+					<!-- 16h/16j: contract state rendered from the thread summary — no
+					     contract rows ever live in the message history. -->
+					<div class="flex justify-center">
+						<span
+							class={[
+								'inline-flex items-center gap-2 rounded-pill py-1.5 pr-1.5 pl-3.5 text-[11.5px]',
+								thread.contract.status === 'active'
+									? 'bg-success-content text-success'
+									: 'bg-base-300 text-neutral'
+							]}
+						>
+							{#if thread.contract.status === 'active'}
+								Contract active
+							{:else if thread.contract.status === 'declined'}
+								Proposal declined
+							{:else if thread.contract.status === 'ending'}
+								Contract ending
+							{:else}
+								Contract ended
+							{/if}
+							<a
+								href={contractHref(thread.contract.id)}
+								class={[
+									'rounded-pill px-3 py-1 text-[11px] font-semibold',
+									thread.contract.status === 'active'
+										? 'bg-success text-success-content'
+										: 'border-[1.5px] border-outline-variant bg-base-100 text-secondary'
+								]}
+							>
+								View
+							</a>
+						</span>
+					</div>
+				{/if}
 
 				{#each messageGroups as group (group.label)}
 					{#if dayLabel(thread.conversation.createdAt) !== group.label}

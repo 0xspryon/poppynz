@@ -1,6 +1,7 @@
 import {
   ApprovalRepoDefault,
   ApprovalRequestRepoDefault,
+  ContractRepoDefault,
   ConversationRepoDefault,
   FamilySearchOutboxRepoDefault,
   FamilySearchRepoDefault,
@@ -51,6 +52,7 @@ export const AppLive = Layer.mergeAll(
   ReferralRepoDefault,
   UserDirectoryRepoDefault,
   ConversationRepoDefault,
+  ContractRepoDefault,
   NotificationHubLive,
   GooglePlacesLive,
   MailerLive,

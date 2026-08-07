@@ -72,6 +72,13 @@ export const reachoutConfig = Config.all({
   ignoreCooldownDays: Config.integer("REACHOUT_IGNORE_COOLDOWN_DAYS").pipe(Config.withDefault(120)),
 });
 
+// How long a sent contract proposal (or amendment) stays acceptable. Past the
+// window it presents as expired and accept is refused — declining, withdrawing
+// and re-proposing remain possible. Computed at read time, no cron.
+export const contractConfig = Config.all({
+  proposalExpiryDays: Config.integer("CONTRACT_PROPOSAL_EXPIRY_DAYS").pipe(Config.withDefault(14)),
+});
+
 export const typesenseConfig = Config.all({
   host: Config.string("TYPESENSE_HOST"),
   port: Config.integer("TYPESENSE_PORT"),

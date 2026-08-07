@@ -7,8 +7,11 @@ const PgLive = PgClient.layerConfig({
   url: Config.string("DATABASE_URL").pipe(Config.map(Redacted.make)),
 });
 
+// provideMerge (not provide) so SqlClient stays visible to repos — compound
+// state transitions (e.g. accepting a contract amendment) need
+// SqlClient.withTransaction around multiple drizzle statements.
 export const DrizzleLive = PgDrizzle.layerWithConfig({ schema } as never).pipe(
-  Layer.provide(PgLive),
+  Layer.provideMerge(PgLive),
 );
 
 export class DBNotFoundError extends Data.TaggedError("DBNotFoundError")<{ entity: string, value: string }>{}

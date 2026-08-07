@@ -1,4 +1,4 @@
-import type { SqlError } from "@effect/sql/SqlError";
+import type { SqlError } from '@effect/sql/SqlError';
 import {
   ContractRepo,
   ConversationRepo,
@@ -8,20 +8,20 @@ import {
   type Contract,
   type ContractServiceItem,
   type ContractVersion,
-  type ContractWithContext,
-} from "@repo/db";
-import { contractConfig } from "@repo/env";
-import { publishNotificationBestEffort } from "@repo/notify";
-import { Cause, Data, Effect, Exit, Option } from "effect";
-import type { HonoContext, HonoEnv } from "../../../app-env";
+  type ContractWithContext
+} from '@repo/db';
+import { contractConfig } from '@repo/env';
+import { publishNotificationBestEffort } from '@repo/notify';
+import { Cause, Data, Effect, Exit, Option } from 'effect';
+import type { HonoContext, HonoEnv } from '../../../app-env';
 import {
   authenticate,
   type UserAndSession,
   requirePermissions,
   authErrorToResponse,
-  handleNever,
-} from "@/api/lib/effect-auth";
-import { parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
+  handleNever
+} from '@/api/lib/effect-auth';
+import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import {
   contractCreateJsonError,
   contractDeclineJsonError,
@@ -32,73 +32,85 @@ import {
   validateContractEndInput,
   validateContractId,
   validateContractTermsInput,
-  type ContractTermsInput,
-} from "./contracts.validator";
+  type ContractTermsInput
+} from './contracts.validator';
 
-export class ContractRepoError extends Data.TaggedError("ContractRepoError")<{ cause: SqlError }> { }
+export class ContractRepoError extends Data.TaggedError('ContractRepoError')<{ cause: SqlError }> {}
 
 /** Covers unknown ids AND non-participants — outsiders can't distinguish a
  * contract that exists from one that doesn't (same posture as conversations).
  * Also covers a provider probing a family-private draft. */
-export class ContractNotFoundError extends Data.TaggedError("ContractNotFoundError")<{}> { }
+export class ContractNotFoundError extends Data.TaggedError('ContractNotFoundError')<{}> {}
 
 /** Contract creation is family-only, checked structurally against the
  * conversation's familyUserId — never against the caller's role. */
-export class NotContractFamilyError extends Data.TaggedError("NotContractFamilyError")<{}> { }
+export class NotContractFamilyError extends Data.TaggedError('NotContractFamilyError')<{}> {}
 
 /** Contracts start from an unlocked conversation only. */
-export class ContractConversationNotActiveError extends Data.TaggedError("ContractConversationNotActiveError")<{}> { }
+export class ContractConversationNotActiveError extends Data.TaggedError(
+  'ContractConversationNotActiveError'
+)<{}> {}
 
-export class ContractExistsError extends Data.TaggedError("ContractExistsError")<{ contractId: string }> { }
+export class ContractExistsError extends Data.TaggedError('ContractExistsError')<{
+  contractId: string;
+}> {}
 
-export class UnknownContractServiceError extends Data.TaggedError("UnknownContractServiceError")<{}> { }
+export class UnknownContractServiceError extends Data.TaggedError(
+  'UnknownContractServiceError'
+)<{}> {}
 
 /** Rates floor at the provider's listed rate; violations name the offending
  * line items so the editor can point at the right rows. */
-export class RateBelowListedError extends Data.TaggedError("RateBelowListedError")<{
+export class RateBelowListedError extends Data.TaggedError('RateBelowListedError')<{
   violations: Array<{ serviceId: string; listedRateCents: number }>;
-}> { }
+}> {}
 
-export class EmptyContractTermsError extends Data.TaggedError("EmptyContractTermsError")<{}> { }
+export class EmptyContractTermsError extends Data.TaggedError('EmptyContractTermsError')<{}> {}
 
 /** The action doesn't apply to the contract's current state (double decide,
  * send without a draft, amend with a pending proposal, …). */
-export class ContractStateError extends Data.TaggedError("ContractStateError")<{}> { }
+export class ContractStateError extends Data.TaggedError('ContractStateError')<{}> {}
 
 /** The caller is a participant but the wrong side for this action. */
-export class NotContractActorError extends Data.TaggedError("NotContractActorError")<{}> { }
+export class NotContractActorError extends Data.TaggedError('NotContractActorError')<{}> {}
 
-export class ContractProposalExpiredError extends Data.TaggedError("ContractProposalExpiredError")<{}> { }
+export class ContractProposalExpiredError extends Data.TaggedError(
+  'ContractProposalExpiredError'
+)<{}> {}
 
 /** Postgres unique-constraint violation (SQLSTATE 23505), possibly nested a
  * few `cause` levels deep depending on the driver wrapping. */
 const isUniqueViolation = (error: SqlError): boolean => {
   let current: unknown = error.cause;
-  for (let depth = 0; depth < 5 && current !== null && typeof current === "object"; depth++) {
-    if ((current as { code?: unknown }).code === "23505") return true;
+  for (let depth = 0; depth < 5 && current !== null && typeof current === 'object'; depth++) {
+    if ((current as { code?: unknown }).code === '23505') return true;
     current = (current as { cause?: unknown }).cause;
   }
   return false;
 };
 
-function mapContractRepoError<A, R>(effect: Effect.Effect<A, SqlError, R>): Effect.Effect<A, ContractRepoError, R> {
-  return effect.pipe(Effect.catchTag("SqlError", (cause) => Effect.fail(new ContractRepoError({ cause }))));
+function mapContractRepoError<A, R>(
+  effect: Effect.Effect<A, SqlError, R>
+): Effect.Effect<A, ContractRepoError, R> {
+  return effect.pipe(
+    Effect.catchTag('SqlError', (cause) => Effect.fail(new ContractRepoError({ cause })))
+  );
 }
 
 /** For version inserts: a lost pending-unique-index race (two concurrent
  * revisions/amendments) is the same 409 the state check produces
  * sequentially, not a 500. */
 function mapVersionInsertError<A, R>(
-  effect: Effect.Effect<A, SqlError, R>,
+  effect: Effect.Effect<A, SqlError, R>
 ): Effect.Effect<A, ContractRepoError | ContractStateError, R> {
   return effect.pipe(
     Effect.catchTag(
-      "SqlError",
+      'SqlError',
       (cause): Effect.Effect<never, ContractRepoError | ContractStateError> =>
         isUniqueViolation(cause)
           ? Effect.fail(new ContractStateError())
-          : Effect.fail(new ContractRepoError({ cause })),
-    ),
+          : Effect.fail(new ContractRepoError({ cause }))
+    )
   );
 }
 
@@ -113,54 +125,61 @@ export const contractProposalContext = contractConfig.pipe(
   Effect.orElseSucceed(() => ({ proposalExpiryDays: 14 })),
   Effect.map(({ proposalExpiryDays }) => ({
     expiryDays: proposalExpiryDays,
-    cutoff: new Date(Date.now() - proposalExpiryDays * 24 * 60 * 60 * 1000),
-  })),
+    cutoff: new Date(Date.now() - proposalExpiryDays * 24 * 60 * 60 * 1000)
+  }))
 );
 
 const isExpired = (version: ContractVersion | null, cutoff: Date) =>
-  version !== null && version.status === "proposed" && version.sentAt !== null && version.sentAt < cutoff;
+  version !== null &&
+  version.status === 'proposed' &&
+  version.sentAt !== null &&
+  version.sentAt < cutoff;
 
 const displayName = (
   profile: { firstName: string | null; lastName: string | null } | null,
-  fallback: string,
-) => [profile?.firstName, profile?.lastName].filter(Boolean).join(" ") || fallback;
+  fallback: string
+) => [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || fallback;
 
 const loadProfileOrNull = (userId: string) =>
   UserProfileRepo.pipe(
     Effect.flatMap((repo) => repo.findByUserId(userId)),
     Effect.catchTags({
       DBNotFoundError: () => Effect.succeed(null),
-      SqlError: (cause) => Effect.fail(new ContractRepoError({ cause })),
-    }),
+      SqlError: (cause) => Effect.fail(new ContractRepoError({ cause }))
+    })
   );
 
-type ContractSide = "family" | "provider";
+type ContractSide = 'family' | 'provider';
 
 const sideOf = (contract: Contract, userId: string): ContractSide =>
-  contract.familyUserId === userId ? "family" : "provider";
+  contract.familyUserId === userId ? 'family' : 'provider';
 
 const isParticipant = (contract: Contract, userId: string) =>
   contract.familyUserId === userId || contract.providerUserId === userId;
 
 const pendingOf = (versions: Array<ContractVersion>) =>
-  versions.find((version) => version.status === "draft" || version.status === "proposed") ?? null;
+  versions.find((version) => version.status === 'draft' || version.status === 'proposed') ?? null;
 
 /** Draft versions are private to their proposer — every viewer-facing shape
  * (detail, list, thread summary) must be built from this set, or a family's
  * unsent revision leaks to the provider through service names and totals. */
 const visibleVersionsFor = (versions: Array<ContractVersion>, viewerUserId: string) =>
-  versions.filter((version) => version.status !== "draft" || version.proposedByUserId === viewerUserId);
+  versions.filter(
+    (version) => version.status !== 'draft' || version.proposedByUserId === viewerUserId
+  );
 
 const acceptedOf = (versions: Array<ContractVersion>) =>
-  versions.find((version) => version.status === "accepted") ?? null;
+  versions.find((version) => version.status === 'accepted') ?? null;
 
 const latestDecidedOf = (versions: Array<ContractVersion>) =>
   [...versions]
     .reverse()
     .find(
       (version) =>
-        (version.status === "accepted" || version.status === "declined" || version.status === "changes_requested") &&
-        version.decidedAt !== null,
+        (version.status === 'accepted' ||
+          version.status === 'declined' ||
+          version.status === 'changes_requested') &&
+        version.decidedAt !== null
     ) ?? null;
 
 export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
@@ -169,14 +188,14 @@ export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
 const todayIsoDate = () => new Date().toISOString().slice(0, 10);
 
 export type PresentedContractStatus =
-  | "draft"
-  | "proposed"
-  | "changes_requested"
-  | "declined"
-  | "expired"
-  | "active"
-  | "ending"
-  | "ended";
+  | 'draft'
+  | 'proposed'
+  | 'changes_requested'
+  | 'declined'
+  | 'expired'
+  | 'active'
+  | 'ending'
+  | 'ended';
 
 /** Read-time states: an "ending" contract past its last working day presents
  * as ended, and an undedecided pre-active proposal past the expiry window
@@ -184,15 +203,19 @@ export type PresentedContractStatus =
 export const presentedContractStatus = (
   contract: Contract,
   pending: ContractVersion | null,
-  cutoff: Date,
+  cutoff: Date
 ): PresentedContractStatus => {
   // Strictly past: endsOn is the LAST WORKING day — the contract is still
   // ending (payments running) for the whole of it.
-  if (contract.status === "ending" && contract.endsOn !== null && contract.endsOn < todayIsoDate()) {
-    return "ended";
+  if (
+    contract.status === 'ending' &&
+    contract.endsOn !== null &&
+    contract.endsOn < todayIsoDate()
+  ) {
+    return 'ended';
   }
-  if (contract.status === "proposed" && isExpired(pending, cutoff)) {
-    return "expired";
+  if (contract.status === 'proposed' && isExpired(pending, cutoff)) {
+    return 'expired';
   }
   return contract.status;
 };
@@ -201,16 +224,24 @@ export const presentedContractStatus = (
  * invisible to the provider. The contract-status invariant makes this a
  * one-liner: status is "draft" exactly when no version was ever decided. */
 const hiddenFromViewer = (contract: Contract, viewerUserId: string) =>
-  contract.status === "draft" && contract.providerUserId === viewerUserId;
+  contract.status === 'draft' && contract.providerUserId === viewerUserId;
 
 const newsAtFor = (row: ContractWithContext, viewerUserId: string): Date | null => {
   const pending = pendingOf(row.versions);
   const lastDecided = latestDecidedOf(row.versions);
   const candidates: Array<Date> = [];
-  if (pending?.status === "proposed" && pending.proposedByUserId !== viewerUserId && pending.sentAt !== null) {
+  if (
+    pending?.status === 'proposed' &&
+    pending.proposedByUserId !== viewerUserId &&
+    pending.sentAt !== null
+  ) {
     candidates.push(pending.sentAt);
   }
-  if (lastDecided !== null && lastDecided.proposedByUserId === viewerUserId && lastDecided.decidedAt !== null) {
+  if (
+    lastDecided !== null &&
+    lastDecided.proposedByUserId === viewerUserId &&
+    lastDecided.decidedAt !== null
+  ) {
     candidates.push(lastDecided.decidedAt);
   }
   if (row.endNoticedAt !== null && row.endedByUserId !== viewerUserId) {
@@ -223,7 +254,7 @@ const newsAtFor = (row: ContractWithContext, viewerUserId: string): Date | null 
 const hasNewsFor = (row: ContractWithContext, viewerUserId: string) => {
   const newsAt = newsAtFor(row, viewerUserId);
   if (newsAt === null) return false;
-  const seenAt = sideOf(row, viewerUserId) === "family" ? row.familySeenAt : row.providerSeenAt;
+  const seenAt = sideOf(row, viewerUserId) === 'family' ? row.familySeenAt : row.providerSeenAt;
   return newsAt > (seenAt ?? new Date(0));
 };
 
@@ -236,29 +267,33 @@ const toTermsResponse = (version: ContractVersion, viewerUserId: string, expiryD
   schedule: version.schedule,
   startsOn: version.startsOn,
   weeklyEstimateCents: weeklyEstimateCents(version.services),
-  currency: version.services[0]?.currency ?? "CAD",
+  currency: version.services[0]?.currency ?? 'CAD',
   sentAt: version.sentAt?.toISOString() ?? null,
   expiresAt:
-    version.status === "proposed" && version.sentAt !== null
+    version.status === 'proposed' && version.sentAt !== null
       ? new Date(version.sentAt.getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString()
       : null,
   decidedAt: version.decidedAt?.toISOString() ?? null,
-  declineReason: version.declineReason,
+  declineReason: version.declineReason
 });
 
 const counterpartResponse = (row: ContractWithContext, viewerUserId: string) => ({
   userId: row.counterpartUserId,
   name: displayName(
     { firstName: row.counterpartFirstName, lastName: row.counterpartLastName },
-    "Poppynz member",
+    'Poppynz member'
   ),
   city: row.counterpartCity,
-  role: (sideOf(row, viewerUserId) === "family" ? "service-provider" : "family") as
-    | "family"
-    | "service-provider",
+  role: (sideOf(row, viewerUserId) === 'family' ? 'service-provider' : 'family') as
+    | 'family'
+    | 'service-provider'
 });
 
-export const toContractListItem = (row: ContractWithContext, viewerUserId: string, cutoff: Date) => {
+export const toContractListItem = (
+  row: ContractWithContext,
+  viewerUserId: string,
+  cutoff: Date
+) => {
   const visible = visibleVersionsFor(row.versions, viewerUserId);
   const pending = pendingOf(row.versions);
   const accepted = acceptedOf(visible);
@@ -268,16 +303,19 @@ export const toContractListItem = (row: ContractWithContext, viewerUserId: strin
     conversationId: row.conversationId,
     status: presentedContractStatus(row, pending, cutoff),
     awaitingYou:
-      pending?.status === "proposed" && pending.proposedByUserId !== viewerUserId && !isExpired(pending, cutoff),
-    pendingAmendment: (row.status === "active" || row.status === "ending") && pending?.status === "proposed",
+      pending?.status === 'proposed' &&
+      pending.proposedByUserId !== viewerUserId &&
+      !isExpired(pending, cutoff),
+    pendingAmendment:
+      (row.status === 'active' || row.status === 'ending') && pending?.status === 'proposed',
     hasNews: hasNewsFor(row, viewerUserId),
     counterpart: counterpartResponse(row, viewerUserId),
     serviceNames: (termsSource?.services ?? []).map((service) => service.name),
     weeklyEstimateCents: termsSource !== null ? weeklyEstimateCents(termsSource.services) : null,
-    currency: termsSource?.services[0]?.currency ?? "CAD",
+    currency: termsSource?.services[0]?.currency ?? 'CAD',
     endsOn: row.endsOn,
     updatedAt: row.updatedAt.toISOString(),
-    createdAt: row.createdAt.toISOString(),
+    createdAt: row.createdAt.toISOString()
   };
 };
 
@@ -287,9 +325,10 @@ export const toThreadContractSummary = (
   contract: Contract,
   versions: Array<ContractVersion>,
   viewerUserId: string,
-  cutoff: Date,
+  cutoff: Date
 ) => {
-  if (!isParticipant(contract, viewerUserId) || hiddenFromViewer(contract, viewerUserId)) return null;
+  if (!isParticipant(contract, viewerUserId) || hiddenFromViewer(contract, viewerUserId))
+    return null;
   const visible = visibleVersionsFor(versions, viewerUserId);
   const pending = pendingOf(versions);
   const accepted = acceptedOf(visible);
@@ -298,10 +337,14 @@ export const toThreadContractSummary = (
     id: contract.id,
     status: presentedContractStatus(contract, pending, cutoff),
     awaitingYou:
-      pending?.status === "proposed" && pending.proposedByUserId !== viewerUserId && !isExpired(pending, cutoff),
-    pendingAmendment: (contract.status === "active" || contract.status === "ending") && pending?.status === "proposed",
+      pending?.status === 'proposed' &&
+      pending.proposedByUserId !== viewerUserId &&
+      !isExpired(pending, cutoff),
+    pendingAmendment:
+      (contract.status === 'active' || contract.status === 'ending') &&
+      pending?.status === 'proposed',
     endsOn: contract.endsOn,
-    weeklyEstimateCents: termsSource ? weeklyEstimateCents(termsSource.services) : null,
+    weeklyEstimateCents: termsSource ? weeklyEstimateCents(termsSource.services) : null
   };
 };
 
@@ -311,8 +354,14 @@ export const toThreadContractSummary = (
 const loadParticipantContract = (contractId: string, viewerUserId: string) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
-    const contract = yield* contractRepo.findById(contractId).pipe((errors) => mapContractRepoError(errors));
-    if (!contract || !isParticipant(contract, viewerUserId) || hiddenFromViewer(contract, viewerUserId)) {
+    const contract = yield* contractRepo
+      .findById(contractId)
+      .pipe((errors) => mapContractRepoError(errors));
+    if (
+      !contract ||
+      !isParticipant(contract, viewerUserId) ||
+      hiddenFromViewer(contract, viewerUserId)
+    ) {
       return yield* Effect.fail(new ContractNotFoundError());
     }
     return contract;
@@ -322,7 +371,7 @@ const loadPendingVersion = (contractId: string) =>
   ContractRepo.pipe(
     Effect.flatMap((repo) => repo.listVersions(contractId)),
     (errors) => mapContractRepoError(errors),
-    Effect.map((versions) => ({ versions, pending: pendingOf(versions) })),
+    Effect.map((versions) => ({ versions, pending: pendingOf(versions) }))
   );
 
 /** Validates requested line items against the provider's current listing and
@@ -332,7 +381,7 @@ const snapshotTerms = (providerUserId: string, input: ContractTermsInput) =>
   Effect.gen(function* () {
     const listed = yield* ServiceOfferedRepo.pipe(
       Effect.flatMap((repo) => repo.listByUserId(providerUserId)),
-      (errors) => mapContractRepoError(errors),
+      (errors) => mapContractRepoError(errors)
     );
     const listedById = new Map(listed.map((service) => [service.id, service]));
     const seen = new Set<string>();
@@ -355,7 +404,7 @@ const snapshotTerms = (providerUserId: string, input: ContractTermsInput) =>
         rateCents: item.rateCents,
         currency: service.currency,
         hoursPerWeek: item.hoursPerWeek,
-        expectations: item.expectations,
+        expectations: item.expectations
       });
     }
     if (violations.length > 0) {
@@ -364,7 +413,10 @@ const snapshotTerms = (providerUserId: string, input: ContractTermsInput) =>
     return services;
   });
 
-export const createContractProgram = (userAndSession: UserAndSession, input: { conversationId: string }) =>
+export const createContractProgram = (
+  userAndSession: UserAndSession,
+  input: { conversationId: string }
+) =>
   Effect.gen(function* () {
     const conversationRepo = yield* ConversationRepo;
     const contractRepo = yield* ContractRepo;
@@ -384,7 +436,7 @@ export const createContractProgram = (userAndSession: UserAndSession, input: { c
     if (conversation.familyUserId !== viewer.id) {
       return yield* Effect.fail(new NotContractFamilyError());
     }
-    if (conversation.status !== "active") {
+    if (conversation.status !== 'active') {
       return yield* Effect.fail(new ContractConversationNotActiveError());
     }
 
@@ -399,26 +451,26 @@ export const createContractProgram = (userAndSession: UserAndSession, input: { c
       .create({
         conversationId: conversation.id,
         familyUserId: conversation.familyUserId,
-        providerUserId: conversation.providerUserId,
+        providerUserId: conversation.providerUserId
       })
       .pipe(
         // The check-then-insert above is not atomic: a duplicate submit loses
         // the partial unique index race. Surface it as the same 409 the check
         // would have produced, not a 500.
-        Effect.catchTag("SqlError", (cause) =>
+        Effect.catchTag('SqlError', (cause) =>
           isUniqueViolation(cause)
             ? contractRepo.findByConversationId(conversation.id).pipe(
-              (errors) => mapContractRepoError(errors),
-              Effect.flatMap((winner) =>
-                Effect.fail(
-                  winner
-                    ? new ContractExistsError({ contractId: winner.id })
-                    : new ContractRepoError({ cause }),
-                ),
-              ),
-            )
-            : Effect.fail(new ContractRepoError({ cause })),
-        ),
+                (errors) => mapContractRepoError(errors),
+                Effect.flatMap((winner) =>
+                  Effect.fail(
+                    winner
+                      ? new ContractExistsError({ contractId: winner.id })
+                      : new ContractRepoError({ cause })
+                  )
+                )
+              )
+            : Effect.fail(new ContractRepoError({ cause }))
+        )
       );
 
     // No notification: a draft is family-private until it is sent.
@@ -428,23 +480,27 @@ export const createContractProgram = (userAndSession: UserAndSession, input: { c
 export const saveTermsProgram = (
   userAndSession: UserAndSession,
   contractId: string,
-  input: ContractTermsInput,
+  input: ContractTermsInput
 ) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
-    if (sideOf(contract, viewer.id) !== "family") {
+    if (sideOf(contract, viewer.id) !== 'family') {
       return yield* Effect.fail(new NotContractActorError());
     }
-    if (contract.status !== "draft" && contract.status !== "declined" && contract.status !== "changes_requested") {
+    if (
+      contract.status !== 'draft' &&
+      contract.status !== 'declined' &&
+      contract.status !== 'changes_requested'
+    ) {
       return yield* Effect.fail(new ContractStateError());
     }
 
     const services = yield* snapshotTerms(contract.providerUserId, input);
     const { versions, pending } = yield* loadPendingVersion(contractId);
 
-    if (pending !== null && pending.status === "proposed") {
+    if (pending !== null && pending.status === 'proposed') {
       // A sent proposal is immutable — the family withdraws first (the UI's
       // "Edit proposal" does exactly that).
       return yield* Effect.fail(new ContractStateError());
@@ -453,7 +509,7 @@ export const saveTermsProgram = (
     const terms = {
       services,
       schedule: input.schedule ?? null,
-      startsOn: input.startsOn ?? null,
+      startsOn: input.startsOn ?? null
     };
 
     if (pending !== null) {
@@ -473,8 +529,8 @@ export const saveTermsProgram = (
         contractId,
         version: nextVersion,
         proposedByUserId: viewer.id,
-        status: "draft",
-        ...terms,
+        status: 'draft',
+        ...terms
       })
       .pipe((errors) => mapVersionInsertError(errors));
     return { id: contract.id, version: created.version };
@@ -485,14 +541,18 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
-    if (sideOf(contract, viewer.id) !== "family") {
+    if (sideOf(contract, viewer.id) !== 'family') {
       return yield* Effect.fail(new NotContractActorError());
     }
-    if (contract.status !== "draft" && contract.status !== "declined" && contract.status !== "changes_requested") {
+    if (
+      contract.status !== 'draft' &&
+      contract.status !== 'declined' &&
+      contract.status !== 'changes_requested'
+    ) {
       return yield* Effect.fail(new ContractStateError());
     }
     const { pending } = yield* loadPendingVersion(contractId);
-    if (pending === null || pending.status !== "draft") {
+    if (pending === null || pending.status !== 'draft') {
       return yield* Effect.fail(new ContractStateError());
     }
     if (pending.services.length === 0) {
@@ -506,7 +566,7 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     // are not comparable).
     const listed = yield* ServiceOfferedRepo.pipe(
       Effect.flatMap((repo) => repo.listByUserId(contract.providerUserId)),
-      (errors) => mapContractRepoError(errors),
+      (errors) => mapContractRepoError(errors)
     );
     const listedById = new Map(listed.map((service) => [service.id, service]));
     const violations: Array<{ serviceId: string; listedRateCents: number }> = [];
@@ -526,7 +586,7 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
       .updateVersionTerms(pending.id, {
         services: refreshed,
         schedule: pending.schedule,
-        startsOn: pending.startsOn,
+        startsOn: pending.startsOn
       })
       .pipe((errors) => mapContractRepoError(errors));
     const sent = yield* contractRepo
@@ -538,15 +598,15 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
 
     const senderProfile = yield* loadProfileOrNull(viewer.id);
     yield* publishNotificationBestEffort(contract.providerUserId, {
-      type: "contract.proposed",
+      type: 'contract.proposed',
       payload: {
         contractId,
         counterpartName: displayName(senderProfile, viewer.name),
-        isAmendment: false,
-      },
+        isAmendment: false
+      }
     });
 
-    return { id: contract.id, status: "proposed" as const, version: sent.version };
+    return { id: contract.id, status: 'proposed' as const, version: sent.version };
   });
 
 export const withdrawContractProgram = (userAndSession: UserAndSession, contractId: string) =>
@@ -555,7 +615,7 @@ export const withdrawContractProgram = (userAndSession: UserAndSession, contract
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
     const { versions, pending } = yield* loadPendingVersion(contractId);
-    if (pending === null || pending.status !== "proposed") {
+    if (pending === null || pending.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
 
@@ -563,7 +623,7 @@ export const withdrawContractProgram = (userAndSession: UserAndSession, contract
     // proposed it), terminal — an active contract has no draft to fall back
     // to. Without this, an ignored amendment past its expiry would block
     // amending forever (accept 409s, and only the counterpart could decline).
-    if (contract.status === "active" || contract.status === "ending") {
+    if (contract.status === 'active' || contract.status === 'ending') {
       if (pending.proposedByUserId !== viewer.id) {
         return yield* Effect.fail(new NotContractActorError());
       }
@@ -577,10 +637,10 @@ export const withdrawContractProgram = (userAndSession: UserAndSession, contract
       return { id: contract.id, status: contract.status };
     }
 
-    if (sideOf(contract, viewer.id) !== "family") {
+    if (sideOf(contract, viewer.id) !== 'family') {
       return yield* Effect.fail(new NotContractActorError());
     }
-    if (contract.status !== "proposed") {
+    if (contract.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
     // The contract falls back to what the negotiation last looked like before
@@ -588,9 +648,9 @@ export const withdrawContractProgram = (userAndSession: UserAndSession, contract
     // state a revision was answering.
     const lastDecided = latestDecidedOf(versions.filter((version) => version.id !== pending.id));
     const restored =
-      lastDecided?.status === "declined" || lastDecided?.status === "changes_requested"
+      lastDecided?.status === 'declined' || lastDecided?.status === 'changes_requested'
         ? lastDecided.status
-        : ("draft" as const);
+        : ('draft' as const);
     const withdrawn = yield* contractRepo
       .withdrawPendingVersion(contractId, pending.id, restored)
       .pipe((errors) => mapContractRepoError(errors));
@@ -607,14 +667,14 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
     const { pending } = yield* loadPendingVersion(contractId);
-    if (pending === null || pending.status !== "proposed") {
+    if (pending === null || pending.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
     if (pending.proposedByUserId === viewer.id) {
       return yield* Effect.fail(new NotContractActorError());
     }
-    const isAmendment = contract.status === "active" || contract.status === "ending";
-    if (!isAmendment && contract.status !== "proposed") {
+    const isAmendment = contract.status === 'active' || contract.status === 'ending';
+    if (!isAmendment && contract.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
     const { cutoff } = yield* contractProposalContext;
@@ -633,35 +693,35 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
 
     const accepterProfile = yield* loadProfileOrNull(viewer.id);
     yield* publishNotificationBestEffort(pending.proposedByUserId, {
-      type: "contract.accepted",
+      type: 'contract.accepted',
       payload: {
         contractId,
         counterpartName: displayName(accepterProfile, viewer.name),
-        isAmendment,
-      },
+        isAmendment
+      }
     });
 
-    return { id: contract.id, status: isAmendment ? contract.status : ("active" as const) };
+    return { id: contract.id, status: isAmendment ? contract.status : ('active' as const) };
   });
 
 export const declineContractProgram = (
   userAndSession: UserAndSession,
   contractId: string,
-  input: { reason?: string | null },
+  input: { reason?: string | null }
 ) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
     const { pending } = yield* loadPendingVersion(contractId);
-    if (pending === null || pending.status !== "proposed") {
+    if (pending === null || pending.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
     if (pending.proposedByUserId === viewer.id) {
       return yield* Effect.fail(new NotContractActorError());
     }
-    const isAmendment = contract.status === "active" || contract.status === "ending";
-    if (!isAmendment && contract.status !== "proposed") {
+    const isAmendment = contract.status === 'active' || contract.status === 'ending';
+    if (!isAmendment && contract.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
 
@@ -671,9 +731,9 @@ export const declineContractProgram = (
     // family may still revise and re-send).
     const declined = yield* contractRepo
       .decidePendingVersion(contractId, pending.id, {
-        status: "declined",
+        status: 'declined',
         declineReason: reason,
-        contractStatus: isAmendment ? null : "declined",
+        contractStatus: isAmendment ? null : 'declined'
       })
       .pipe((errors) => mapContractRepoError(errors));
     if (!declined) {
@@ -682,16 +742,16 @@ export const declineContractProgram = (
 
     const declinerProfile = yield* loadProfileOrNull(viewer.id);
     yield* publishNotificationBestEffort(pending.proposedByUserId, {
-      type: "contract.declined",
+      type: 'contract.declined',
       payload: {
         contractId,
         counterpartName: displayName(declinerProfile, viewer.name),
         reason,
-        isAmendment,
-      },
+        isAmendment
+      }
     });
 
-    return { id: contract.id, status: isAmendment ? contract.status : ("declined" as const) };
+    return { id: contract.id, status: isAmendment ? contract.status : ('declined' as const) };
   });
 
 export const requestChangesProgram = (userAndSession: UserAndSession, contractId: string) =>
@@ -699,23 +759,23 @@ export const requestChangesProgram = (userAndSession: UserAndSession, contractId
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
-    if (sideOf(contract, viewer.id) !== "provider") {
+    if (sideOf(contract, viewer.id) !== 'provider') {
       return yield* Effect.fail(new NotContractActorError());
     }
     // Pre-active only: amendment receivers accept or decline — "request
     // changes" is the provider steering the initial negotiation back to chat.
-    if (contract.status !== "proposed") {
+    if (contract.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
     const { pending } = yield* loadPendingVersion(contractId);
-    if (pending === null || pending.status !== "proposed") {
+    if (pending === null || pending.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
 
     const decided = yield* contractRepo
       .decidePendingVersion(contractId, pending.id, {
-        status: "changes_requested",
-        contractStatus: "changes_requested",
+        status: 'changes_requested',
+        contractStatus: 'changes_requested'
       })
       .pipe((errors) => mapContractRepoError(errors));
     if (!decided) {
@@ -724,27 +784,31 @@ export const requestChangesProgram = (userAndSession: UserAndSession, contractId
 
     const requesterProfile = yield* loadProfileOrNull(viewer.id);
     yield* publishNotificationBestEffort(contract.familyUserId, {
-      type: "contract.changes_requested",
+      type: 'contract.changes_requested',
       payload: {
         contractId,
-        counterpartName: displayName(requesterProfile, viewer.name),
-      },
+        counterpartName: displayName(requesterProfile, viewer.name)
+      }
     });
 
     // conversationId lets the client deep-link straight back into the chat.
-    return { id: contract.id, status: "changes_requested" as const, conversationId: contract.conversationId };
+    return {
+      id: contract.id,
+      status: 'changes_requested' as const,
+      conversationId: contract.conversationId
+    };
   });
 
 export const amendContractProgram = (
   userAndSession: UserAndSession,
   contractId: string,
-  input: ContractTermsInput,
+  input: ContractTermsInput
 ) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
-    if (contract.status !== "active") {
+    if (contract.status !== 'active') {
       return yield* Effect.fail(new ContractStateError());
     }
     const { versions, pending } = yield* loadPendingVersion(contractId);
@@ -764,11 +828,11 @@ export const amendContractProgram = (
         contractId,
         version: nextVersion,
         proposedByUserId: viewer.id,
-        status: "proposed",
+        status: 'proposed',
         services,
         schedule: input.schedule ?? null,
         startsOn: input.startsOn ?? null,
-        sentAt: new Date(),
+        sentAt: new Date()
       })
       .pipe((errors) => mapVersionInsertError(errors));
 
@@ -776,12 +840,12 @@ export const amendContractProgram = (
     const recipientUserId =
       contract.familyUserId === viewer.id ? contract.providerUserId : contract.familyUserId;
     yield* publishNotificationBestEffort(recipientUserId, {
-      type: "contract.proposed",
+      type: 'contract.proposed',
       payload: {
         contractId,
         counterpartName: displayName(proposerProfile, viewer.name),
-        isAmendment: true,
-      },
+        isAmendment: true
+      }
     });
 
     return { id: contract.id, version: created.version };
@@ -790,14 +854,16 @@ export const amendContractProgram = (
 export const endContractProgram = (
   userAndSession: UserAndSession,
   contractId: string,
-  input: { note?: string | null },
+  input: { note?: string | null }
 ) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
 
-    const endsOn = new Date(Date.now() + END_NOTICE_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const endsOn = new Date(Date.now() + END_NOTICE_DAYS * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
     const note = input.note?.trim() ? input.note.trim() : null;
     const updated = yield* contractRepo
       .setEnding(contractId, { endsOn, endedByUserId: viewer.id, endNote: note })
@@ -810,15 +876,15 @@ export const endContractProgram = (
     const recipientUserId =
       contract.familyUserId === viewer.id ? contract.providerUserId : contract.familyUserId;
     yield* publishNotificationBestEffort(recipientUserId, {
-      type: "contract.ended",
+      type: 'contract.ended',
       payload: {
         contractId,
         counterpartName: displayName(enderProfile, viewer.name),
-        endsOn,
-      },
+        endsOn
+      }
     });
 
-    return { id: contract.id, status: "ending" as const, endsOn };
+    return { id: contract.id, status: 'ending' as const, endsOn };
   });
 
 export const markContractSeenProgram = (userAndSession: UserAndSession, contractId: string) =>
@@ -837,10 +903,12 @@ export const listContractsProgram = (userAndSession: UserAndSession) =>
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
     const { cutoff } = yield* contractProposalContext;
-    const rows = yield* contractRepo.listForUser(viewer.id).pipe((errors) => mapContractRepoError(errors));
+    const rows = yield* contractRepo
+      .listForUser(viewer.id)
+      .pipe((errors) => mapContractRepoError(errors));
     const visible = rows.filter((row) => !hiddenFromViewer(row, viewer.id));
     return {
-      contracts: visible.map((row) => toContractListItem(row, viewer.id, cutoff)),
+      contracts: visible.map((row) => toContractListItem(row, viewer.id, cutoff))
     };
   });
 
@@ -848,9 +916,11 @@ export const contractsBadgeCountProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
-    const rows = yield* contractRepo.listForUser(viewer.id).pipe((errors) => mapContractRepoError(errors));
+    const rows = yield* contractRepo
+      .listForUser(viewer.id)
+      .pipe((errors) => mapContractRepoError(errors));
     const total = rows.filter(
-      (row) => !hiddenFromViewer(row, viewer.id) && hasNewsFor(row, viewer.id),
+      (row) => !hiddenFromViewer(row, viewer.id) && hasNewsFor(row, viewer.id)
     ).length;
     return { total };
   });
@@ -881,36 +951,38 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
     // The composer's privacy promise: contact details stay hidden until the
     // contract is active (and stay visible through ending/ended).
     let counterpartContact: { email: string; phone: string | null } | null = null;
-    if (presented === "active" || presented === "ending" || presented === "ended") {
+    if (presented === 'active' || presented === 'ending' || presented === 'ended') {
       const counterpartUser = yield* userRepo.findById(row.counterpartUserId).pipe(
         Effect.catchTags({
           DBNotFoundError: () => Effect.succeed(null),
-          SqlError: (cause) => Effect.fail(new ContractRepoError({ cause })),
-        }),
+          SqlError: (cause) => Effect.fail(new ContractRepoError({ cause }))
+        })
       );
       const counterpartProfile = yield* loadProfileOrNull(row.counterpartUserId);
       counterpartContact = counterpartUser
         ? {
-          email: counterpartUser.email,
-          phone: counterpartProfile?.phoneNumber ?? counterpartUser.phoneNumber ?? null,
-        }
+            email: counterpartUser.email,
+            phone: counterpartProfile?.phoneNumber ?? counterpartUser.phoneNumber ?? null
+          }
         : null;
     }
 
-    const isFamily = viewerSide === "family";
+    const isFamily = viewerSide === 'family';
     const preActiveEditable =
-      row.status === "draft" || row.status === "declined" || row.status === "changes_requested";
-    const isReceiverOfPending = pending?.status === "proposed" && pending.proposedByUserId !== viewer.id;
+      row.status === 'draft' || row.status === 'declined' || row.status === 'changes_requested';
+    const isReceiverOfPending =
+      pending?.status === 'proposed' && pending.proposedByUserId !== viewer.id;
     const decidable =
       isReceiverOfPending &&
-      (row.status === "proposed" || row.status === "active" || row.status === "ending");
+      (row.status === 'proposed' || row.status === 'active' || row.status === 'ending');
 
     // Draft versions are visible only to their proposer (belt and braces — a
     // provider already 404s on a draft-only contract).
     const visibleVersions = row.versions.filter(
-      (version) => version.status !== "draft" || version.proposedByUserId === viewer.id,
+      (version) => version.status !== 'draft' || version.proposedByUserId === viewer.id
     );
-    const pendingVisible = pending !== null && (pending.status !== "draft" || pending.proposedByUserId === viewer.id);
+    const pendingVisible =
+      pending !== null && (pending.status !== 'draft' || pending.proposedByUserId === viewer.id);
 
     return {
       contract: {
@@ -921,8 +993,12 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         viewerSide,
         counterpart: counterpartResponse(row, viewer.id),
         counterpartContact,
-        acceptedVersion: accepted !== null ? toTermsResponse(accepted, viewer.id, expiryDays) : null,
-        pendingVersion: pendingVisible && pending !== null ? toTermsResponse(pending, viewer.id, expiryDays) : null,
+        acceptedVersion:
+          accepted !== null ? toTermsResponse(accepted, viewer.id, expiryDays) : null,
+        pendingVersion:
+          pendingVisible && pending !== null
+            ? toTermsResponse(pending, viewer.id, expiryDays)
+            : null,
         // Newest visible terms regardless of outcome — the declined view keeps
         // the terms dimmed for context, and a revision pre-fills from them.
         latestVersion:
@@ -935,7 +1011,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           proposedByMe: version.proposedByUserId === viewer.id,
           sentAt: version.sentAt?.toISOString() ?? null,
           decidedAt: version.decidedAt?.toISOString() ?? null,
-          declineReason: version.declineReason,
+          declineReason: version.declineReason
         })),
         endsOn: row.endsOn,
         endedByMe: row.endedByUserId === viewer.id,
@@ -943,22 +1019,22 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,
         actions: {
           canEditTerms: isFamily && preActiveEditable,
-          canSend: isFamily && preActiveEditable && pending?.status === "draft",
+          canSend: isFamily && preActiveEditable && pending?.status === 'draft',
           canWithdraw:
-            (isFamily && row.status === "proposed") ||
+            (isFamily && row.status === 'proposed') ||
             // Proposer of a pending amendment may retract it (terminal).
-            ((row.status === "active" || row.status === "ending") &&
-              pending?.status === "proposed" &&
+            ((row.status === 'active' || row.status === 'ending') &&
+              pending?.status === 'proposed' &&
               pending.proposedByUserId === viewer.id),
           canAccept: decidable && !isExpired(pending, cutoff),
           canDecline: decidable,
-          canRequestChanges: !isFamily && row.status === "proposed" && isReceiverOfPending,
-          canAmend: row.status === "active" && pending === null,
-          canEnd: row.status === "active",
+          canRequestChanges: !isFamily && row.status === 'proposed' && isReceiverOfPending,
+          canAmend: row.status === 'active' && pending === null,
+          canEnd: row.status === 'active'
         },
         createdAt: row.createdAt.toISOString(),
-        updatedAt: row.updatedAt.toISOString(),
-      },
+        updatedAt: row.updatedAt.toISOString()
+      }
     };
   });
 
@@ -970,109 +1046,135 @@ export const createContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Hea
     const rawBody = yield* parseJsonBody(c, contractCreateJsonError);
     const input = yield* validateContractCreateInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* createContractProgram(userAndSession, input);
   });
 
 export const listContractsRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["read"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['read'] })(
+      authenticated
+    );
     return yield* listContractsProgram(userAndSession);
   });
 
 export const contractsBadgeCountRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["read"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['read'] })(
+      authenticated
+    );
     return yield* contractsBadgeCountProgram(userAndSession);
   });
 
 export const getContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["read"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['read'] })(
+      authenticated
+    );
     return yield* getContractProgram(userAndSession, contractId);
   });
 
 export const saveTermsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const rawBody = yield* parseJsonBody(c, contractTermsJsonError);
     const input = yield* validateContractTermsInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* saveTermsProgram(userAndSession, contractId, input);
   });
 
 export const sendContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* sendContractProgram(userAndSession, contractId);
   });
 
 export const withdrawContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* withdrawContractProgram(userAndSession, contractId);
   });
 
 export const acceptContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* acceptContractProgram(userAndSession, contractId);
   });
 
 export const declineContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const rawBody = yield* parseJsonBody(c, contractDeclineJsonError);
     const input = yield* validateContractDeclineInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* declineContractProgram(userAndSession, contractId, input);
   });
 
 export const requestChangesRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* requestChangesProgram(userAndSession, contractId);
   });
 
 export const amendContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const rawBody = yield* parseJsonBody(c, contractTermsJsonError);
     const input = yield* validateContractTermsInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* amendContractProgram(userAndSession, contractId, input);
   });
 
 export const endContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const rawBody = yield* parseJsonBody(c, contractEndJsonError);
     const input = yield* validateContractEndInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* endContractProgram(userAndSession, contractId, input);
   });
 
 export const markContractSeenRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param("id"));
+    const contractId = yield* validateContractId(c.req.param('id'));
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
     return yield* markContractSeenProgram(userAndSession, contractId);
   });
 
@@ -1093,111 +1195,119 @@ export type ContractRouteError =
 
 const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRouteError) => {
   switch (error._tag) {
-    case "UnauthorizedError":
-    case "ForbiddenError":
-    case "AuthProviderError":
-    case "AuthEntityLookupError":
+    case 'UnauthorizedError':
+    case 'ForbiddenError':
+    case 'AuthProviderError':
+    case 'AuthEntityLookupError':
       return authErrorToResponse(c, error);
-    case "RequestValidationError":
+    case 'RequestValidationError':
       return requestValidationErrorToResponse(c, error);
-    case "ContractRepoError":
-      return c.json(
-        { error: { code: "CONTRACT_LOOKUP_FAILED" as const, message: "Unable to process the contract." } },
-        500,
-      );
-    case "ContractNotFoundError":
-      return c.json({ error: { code: "CONTRACT_NOT_FOUND" as const, message: "Contract not found." } }, 404);
-    case "NotContractFamilyError":
+    case 'ContractRepoError':
       return c.json(
         {
           error: {
-            code: "NOT_CONTRACT_FAMILY" as const,
-            message: "Only the family in this conversation can propose a contract.",
-          },
+            code: 'CONTRACT_LOOKUP_FAILED' as const,
+            message: 'Unable to process the contract.'
+          }
         },
-        403,
+        500
       );
-    case "ContractConversationNotActiveError":
+    case 'ContractNotFoundError':
+      return c.json(
+        { error: { code: 'CONTRACT_NOT_FOUND' as const, message: 'Contract not found.' } },
+        404
+      );
+    case 'NotContractFamilyError':
       return c.json(
         {
           error: {
-            code: "CONVERSATION_NOT_ACTIVE" as const,
-            message: "Contracts start from an active conversation.",
-          },
+            code: 'NOT_CONTRACT_FAMILY' as const,
+            message: 'Only the family in this conversation can propose a contract.'
+          }
         },
-        409,
+        403
       );
-    case "ContractExistsError":
+    case 'ContractConversationNotActiveError':
       return c.json(
         {
           error: {
-            code: "CONTRACT_EXISTS" as const,
-            message: "You already have a contract with this person.",
-            contractId: error.contractId,
-          },
+            code: 'CONVERSATION_NOT_ACTIVE' as const,
+            message: 'Contracts start from an active conversation.'
+          }
         },
-        409,
+        409
       );
-    case "UnknownContractServiceError":
+    case 'ContractExistsError':
       return c.json(
         {
           error: {
-            code: "UNKNOWN_CONTRACT_SERVICE" as const,
-            message: "Pick services from this provider's current list.",
-          },
+            code: 'CONTRACT_EXISTS' as const,
+            message: 'You already have a contract with this person.',
+            contractId: error.contractId
+          }
         },
-        422,
+        409
       );
-    case "RateBelowListedError":
+    case 'UnknownContractServiceError':
       return c.json(
         {
           error: {
-            code: "RATE_BELOW_LISTED" as const,
+            code: 'UNKNOWN_CONTRACT_SERVICE' as const,
+            message: "Pick services from this provider's current list."
+          }
+        },
+        422
+      );
+    case 'RateBelowListedError':
+      return c.json(
+        {
+          error: {
+            code: 'RATE_BELOW_LISTED' as const,
             message: "Rates start at the provider's listed rate — you can offer more, never less.",
-            violations: error.violations,
-          },
+            violations: error.violations
+          }
         },
-        422,
+        422
       );
-    case "EmptyContractTermsError":
+    case 'EmptyContractTermsError':
       return c.json(
         {
           error: {
-            code: "EMPTY_CONTRACT_TERMS" as const,
-            message: "Add at least one service before sending.",
-          },
+            code: 'EMPTY_CONTRACT_TERMS' as const,
+            message: 'Add at least one service before sending.'
+          }
         },
-        422,
+        422
       );
-    case "ContractStateError":
+    case 'ContractStateError':
       return c.json(
         {
           error: {
-            code: "CONTRACT_STATE_INVALID" as const,
-            message: "This contract has moved on — reload to see its current state.",
-          },
+            code: 'CONTRACT_STATE_INVALID' as const,
+            message: 'This contract has moved on — reload to see its current state.'
+          }
         },
-        409,
+        409
       );
-    case "NotContractActorError":
+    case 'NotContractActorError':
       return c.json(
         {
           error: {
-            code: "NOT_CONTRACT_ACTOR" as const,
-            message: "You can't do this on this contract.",
-          },
+            code: 'NOT_CONTRACT_ACTOR' as const,
+            message: "You can't do this on this contract."
+          }
         },
-        403,
+        403
       );
-    case "ContractProposalExpiredError":
+    case 'ContractProposalExpiredError':
       return c.json(
         {
           error: {
-            code: "CONTRACT_PROPOSAL_EXPIRED" as const,
-            message: "This proposal has expired — ask for new terms instead.",
-          },
+            code: 'CONTRACT_PROPOSAL_EXPIRED' as const,
+            message: 'This proposal has expired — ask for new terms instead.'
+          }
         },
-        409,
+        409
       );
     default:
       return handleNever(c, error);
@@ -1205,9 +1315,15 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
 };
 
 const unexpectedErrorResponse = (c: HonoContext<HonoEnv>) =>
-  c.json({ error: { code: "INTERNAL_SERVER_ERROR" as const, message: "Unexpected server error." } }, 500);
+  c.json(
+    { error: { code: 'INTERNAL_SERVER_ERROR' as const, message: 'Unexpected server error.' } },
+    500
+  );
 
-const exitToResponse = <TData>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TData, ContractRouteError>) =>
+const exitToResponse = <TData>(
+  c: HonoContext<HonoEnv>,
+  exit: Exit.Exit<TData, ContractRouteError>
+) =>
   Exit.match(exit, {
     onSuccess: (data) => c.json(data),
     onFailure: (cause) => {
@@ -1216,83 +1332,83 @@ const exitToResponse = <TData>(c: HonoContext<HonoEnv>, exit: Exit.Exit<TData, C
         return contractRouteErrorToResponse(c, failure.value);
       }
       return unexpectedErrorResponse(c);
-    },
+    }
   });
 
 export async function createContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(createContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function listContractsHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(listContractsRouteProgram(c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function contractsBadgeCountHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(contractsBadgeCountRouteProgram(c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function getContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(getContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function saveTermsHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(saveTermsRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function sendContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(sendContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function withdrawContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(withdrawContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function acceptContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(acceptContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function declineContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(declineContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function requestChangesHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(requestChangesRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function amendContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(amendContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function endContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(endContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 
 export async function markContractSeenHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(markContractSeenRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }

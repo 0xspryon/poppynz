@@ -30,7 +30,9 @@
 	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Contract update">
 		<div class="modal-box max-w-md border border-card-border text-center">
 			{#if decision.kind === 'accepted'}
-				<span class="mx-auto flex size-14 items-center justify-center rounded-full bg-success-content">
+				<span
+					class="mx-auto flex size-14 items-center justify-center rounded-full bg-success-content"
+				>
 					<i class="las la-file-signature text-3xl text-success" aria-hidden="true"></i>
 				</span>
 				<h3 class="mt-3 font-display text-xl font-bold text-base-content">
@@ -40,8 +42,8 @@
 					{#if decision.isAmendment}
 						{decision.counterpartName} accepted the new terms — they're now in effect.
 					{:else}
-						{decision.counterpartName} accepted &amp; signed your proposal. Contact details are now
-						shared and payments run on Poppynz.
+						{decision.counterpartName} accepted &amp; signed your proposal. Contact details are now shared
+						and payments run on Poppynz.
 					{/if}
 				</p>
 			{:else}
@@ -53,10 +55,12 @@
 				</h3>
 				<p class="py-3 text-sm text-base-content-muted">
 					{decision.counterpartName} declined
-					{decision.isAmendment ? 'the new terms — the current ones stay in effect' : 'your proposal'}{decision.reason
-						? `: “${decision.reason}”`
-						: '.'}
-					Your chat stays open{decision.isAmendment ? '.' : ' — you can propose new terms any time.'}
+					{decision.isAmendment
+						? 'the new terms — the current ones stay in effect'
+						: 'your proposal'}{decision.reason ? `: “${decision.reason}”` : '.'}
+					Your chat stays open{decision.isAmendment
+						? '.'
+						: ' — you can propose new terms any time.'}
 				</p>
 			{/if}
 			<div class="modal-action justify-center">

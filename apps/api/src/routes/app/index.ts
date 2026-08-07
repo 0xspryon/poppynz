@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import { signupRoute } from './auth/signup/signup'
-import { signinRoute } from './auth/signin/signin'
+import { signupRoute } from './auth/signup/signup';
+import { signinRoute } from './auth/signin/signin';
 import type { HonoEnv } from '../../app-env';
 import { profileRoute } from './me/profile';
 import { onboardingRoute } from './me/onboarding';
@@ -29,30 +29,30 @@ import { meTcsRoute } from './me/tcs';
 import { adminTcsRoute } from './admin/tcs';
 
 export const appRoutes = new Hono<HonoEnv>()
-.route('/auth', signupRoute)
-.route('/auth', signinRoute)
-.route('/me/profile', profileRoute)
-.route('/me/onboarding', onboardingRoute)
-.route('/me/services-offered', servicesOfferedRoute)
-.route('/me/services-needed', servicesNeededRoute)
-.route('/me/tcs', meTcsRoute)
-.route('/tcs', tcsRoute)
-.route('/admin/tcs', adminTcsRoute)
-.route('/kyc-docs', kycDocsRoute)
-.route('/approval-requests', approvalRequestsRoute)
-.route('/approvals', approvalRoute)
-.route('/admin/approval-requests', adminApprovalRequestsRoute)
-.route('/admin/kyc-docs', adminKycDocsRoute)
-.route('/admin/provider-search', adminProviderSearchRoute)
-.route('/admin/family-search', adminFamilySearchRoute)
-.route('/service-catalogue', serviceCatalogueRoute)
-.route('/admin/service-catalogue', adminServiceCatalogueRoute)
-.route('/admin/users', adminUsersRoute)
-.route('/referrals', referralsRoute)
-.route('/contracts', contractsRoute)
-.route('/conversations', conversationsRoute)
-.route('/notifications', notificationsRoute)
-.route('/providers', providersRoute)
-.route('/families', familiesRoute)
-.route('/geocoding', geocodingRoute)
-.route('/uploads', uploadRoute)
+  .route('/auth', signupRoute)
+  .route('/auth', signinRoute)
+  .route('/me/profile', profileRoute)
+  .route('/me/onboarding', onboardingRoute)
+  .route('/me/services-offered', servicesOfferedRoute)
+  .route('/me/services-needed', servicesNeededRoute)
+  .route('/me/tcs', meTcsRoute)
+  .route('/tcs', tcsRoute)
+  .route('/admin/tcs', adminTcsRoute)
+  .route('/kyc-docs', kycDocsRoute)
+  .route('/approval-requests', approvalRequestsRoute)
+  .route('/approvals', approvalRoute)
+  .route('/admin/approval-requests', adminApprovalRequestsRoute)
+  .route('/admin/kyc-docs', adminKycDocsRoute)
+  .route('/admin/provider-search', adminProviderSearchRoute)
+  .route('/admin/family-search', adminFamilySearchRoute)
+  .route('/service-catalogue', serviceCatalogueRoute)
+  .route('/admin/service-catalogue', adminServiceCatalogueRoute)
+  .route('/admin/users', adminUsersRoute)
+  .route('/referrals', referralsRoute)
+  .route('/contracts', contractsRoute)
+  .route('/conversations', conversationsRoute)
+  .route('/notifications', notificationsRoute)
+  .route('/providers', providersRoute)
+  .route('/families', familiesRoute)
+  .route('/geocoding', geocodingRoute)
+  .route('/uploads', uploadRoute);

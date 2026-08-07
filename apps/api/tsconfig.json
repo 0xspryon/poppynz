@@ -5,7 +5,7 @@
     "jsx": "react-jsx",
     "jsxImportSource": "hono/jsx",
     "paths": {
-			"@/api/*": ["./src/*"]
-		}
+      "@/api/*": ["./src/*"]
+    }
   }
 }

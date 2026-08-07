@@ -1,30 +1,52 @@
-import type { SqlError } from "@effect/sql/SqlError";
-import { DBNotFoundError, ServiceCatalogueRepo, type ServiceCatalogueItem, ServiceOfferedRepo } from "@repo/db";
-import { servicesOfferedConfig } from "@repo/env";
-import { Cause, Data, Effect, Exit, Option } from "effect";
-import type { HonoContext, HonoEnv } from "@/api/app-env";
-import { authErrorToResponse, authenticate, handleNever, requirePermissions } from "@/api/lib/effect-auth";
-import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
-import { parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
+import type { SqlError } from '@effect/sql/SqlError';
+import {
+  DBNotFoundError,
+  ServiceCatalogueRepo,
+  type ServiceCatalogueItem,
+  ServiceOfferedRepo
+} from '@repo/db';
+import { servicesOfferedConfig } from '@repo/env';
+import { Cause, Data, Effect, Exit, Option } from 'effect';
+import type { HonoContext, HonoEnv } from '@/api/app-env';
+import {
+  authErrorToResponse,
+  authenticate,
+  handleNever,
+  requirePermissions
+} from '@/api/lib/effect-auth';
+import { scheduleProviderSearchReconcile } from '@/api/lib/provider-search-jobs';
+import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import {
   serviceOfferedJsonError,
   validateServiceOfferedCreateInput,
-  validateServiceOfferedUpdateInput,
-} from "./services-offered.validator";
+  validateServiceOfferedUpdateInput
+} from './services-offered.validator';
 
 const unexpected = (c: HonoContext<HonoEnv>) =>
-  c.json({ error: { code: "INTERNAL_SERVER_ERROR" as const, message: "Unexpected server error." } }, 500);
+  c.json(
+    { error: { code: 'INTERNAL_SERVER_ERROR' as const, message: 'Unexpected server error.' } },
+    500
+  );
 
-class ServiceCatalogueItemNotFoundError extends Data.TaggedError("ServiceCatalogueItemNotFoundError")<{ id: string }> { }
-class ServiceCatalogueItemHiddenError extends Data.TaggedError("ServiceCatalogueItemHiddenError")<{ id: string }> { }
-class ServiceRateBelowFloorError extends Data.TaggedError("ServiceRateBelowFloorError")<{ floorCents: number; currency: string }> { }
-class ServicesOfferedLimitReachedError extends Data.TaggedError("ServicesOfferedLimitReachedError")<{ max: number }> { }
+class ServiceCatalogueItemNotFoundError extends Data.TaggedError(
+  'ServiceCatalogueItemNotFoundError'
+)<{ id: string }> {}
+class ServiceCatalogueItemHiddenError extends Data.TaggedError('ServiceCatalogueItemHiddenError')<{
+  id: string;
+}> {}
+class ServiceRateBelowFloorError extends Data.TaggedError('ServiceRateBelowFloorError')<{
+  floorCents: number;
+  currency: string;
+}> {}
+class ServicesOfferedLimitReachedError extends Data.TaggedError(
+  'ServicesOfferedLimitReachedError'
+)<{ max: number }> {}
 
 // Same defensive shape as the provider-search min-radius config: the env
 // default (20) applies when the variable is absent or malformed.
 const maxServicesPerProvider = servicesOfferedConfig.pipe(
   Effect.map((config) => config.maxPerProvider),
-  Effect.orElseSucceed(() => 20),
+  Effect.orElseSucceed(() => 20)
 );
 
 // Catch the catalogue repo's DBNotFoundError here so it can't fall through to
@@ -32,7 +54,9 @@ const maxServicesPerProvider = servicesOfferedConfig.pipe(
 const findCatalogueItem = (id: string) =>
   ServiceCatalogueRepo.pipe(
     Effect.flatMap((catalogue) => catalogue.findActiveById(id)),
-    Effect.catchTag("DBNotFoundError", () => Effect.fail(new ServiceCatalogueItemNotFoundError({ id }))),
+    Effect.catchTag('DBNotFoundError', () =>
+      Effect.fail(new ServiceCatalogueItemNotFoundError({ id }))
+    )
   );
 
 // For a service's EXISTING link: a soft-deleted catalogue item behaves like a
@@ -41,30 +65,41 @@ const findCatalogueItem = (id: string) =>
 const findCatalogueItemIncludingDeleted = (id: string) =>
   ServiceCatalogueRepo.pipe(
     Effect.flatMap((catalogue) => catalogue.findById(id)),
-    Effect.catchTag("DBNotFoundError", () => Effect.fail(new ServiceCatalogueItemNotFoundError({ id }))),
+    Effect.catchTag('DBNotFoundError', () =>
+      Effect.fail(new ServiceCatalogueItemNotFoundError({ id }))
+    )
   );
 
 const ensureRateMeetsFloor = (item: ServiceCatalogueItem, hourlyRateCents: number) =>
   hourlyRateCents >= item.baseHourlyRateCents
     ? Effect.void
-    : Effect.fail(new ServiceRateBelowFloorError({ floorCents: item.baseHourlyRateCents, currency: item.currency }));
+    : Effect.fail(
+        new ServiceRateBelowFloorError({
+          floorCents: item.baseHourlyRateCents,
+          currency: item.currency
+        })
+      );
 
 const ensureItemIsLive = (item: ServiceCatalogueItem) =>
   item.isLive ? Effect.void : Effect.fail(new ServiceCatalogueItemHiddenError({ id: item.id }));
 
 const formatCents = (cents: number) => `$${(cents / 100).toFixed(2)}`;
 
-const toResponse = <T extends { createdAt: Date; updatedAt: Date; deletedAt: Date | null }>(service: T) => ({
+const toResponse = <T extends { createdAt: Date; updatedAt: Date; deletedAt: Date | null }>(
+  service: T
+) => ({
   ...service,
   createdAt: service.createdAt.toISOString(),
   updatedAt: service.updatedAt.toISOString(),
-  deletedAt: service.deletedAt?.toISOString() ?? null,
+  deletedAt: service.deletedAt?.toISOString() ?? null
 });
 
 export const listServicesOfferedRouteProgram = (headers: Headers) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { serviceOffered: ["read"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { serviceOffered: ['read'] })(
+      authenticated
+    );
     const repo = yield* ServiceOfferedRepo;
     const services = yield* repo.listByUserId(userAndSession.user.id);
     const maxServicesOffered = yield* maxServicesPerProvider;
@@ -73,11 +108,13 @@ export const listServicesOfferedRouteProgram = (headers: Headers) =>
   });
 
 export const createServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const rawBody = yield* parseJsonBody(c, serviceOfferedJsonError);
     const input = yield* validateServiceOfferedCreateInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { serviceOffered: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { serviceOffered: ['write'] })(
+      authenticated
+    );
     if (input.catalogueServiceId != null) {
       const item = yield* findCatalogueItem(input.catalogueServiceId);
       yield* ensureItemIsLive(item);
@@ -95,19 +132,25 @@ export const createServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
       name: input.name,
       description: input.description ?? null,
       hourlyRateCents: input.hourlyRateCents,
-      currency: input.currency ?? "CAD",
+      currency: input.currency ?? 'CAD'
     });
     yield* scheduleProviderSearchReconcile(service.userId);
 
     return toResponse(service);
   });
 
-export const updateServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers, serviceId: string) =>
-  Effect.gen(function*() {
+export const updateServiceOfferedRouteProgram = (
+  c: HonoContext<HonoEnv>,
+  headers: Headers,
+  serviceId: string
+) =>
+  Effect.gen(function* () {
     const rawBody = yield* parseJsonBody(c, serviceOfferedJsonError);
     const input = yield* validateServiceOfferedUpdateInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { serviceOffered: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { serviceOffered: ['write'] })(
+      authenticated
+    );
     const repo = yield* ServiceOfferedRepo;
     const existing = yield* repo.findByIdForUser(serviceId, userAndSession.user.id);
     // Design rules: rates are re-validated against the CURRENT floor whenever
@@ -115,9 +158,17 @@ export const updateServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
     // (or soft-deleted) item stays valid, but LINKING to one is rejected.
     // Strict comparisons matter: `undefined` = field absent (keep as-is),
     // explicit `null` = unlink — loose equality conflates the two.
-    const effectiveLink = input.catalogueServiceId === undefined ? existing.catalogueServiceId : input.catalogueServiceId;
-    if (effectiveLink != null && (input.hourlyRateCents !== undefined || input.catalogueServiceId !== undefined)) {
-      const linkChanged = input.catalogueServiceId !== undefined && input.catalogueServiceId !== existing.catalogueServiceId;
+    const effectiveLink =
+      input.catalogueServiceId === undefined
+        ? existing.catalogueServiceId
+        : input.catalogueServiceId;
+    if (
+      effectiveLink != null &&
+      (input.hourlyRateCents !== undefined || input.catalogueServiceId !== undefined)
+    ) {
+      const linkChanged =
+        input.catalogueServiceId !== undefined &&
+        input.catalogueServiceId !== existing.catalogueServiceId;
       const item = linkChanged
         ? yield* findCatalogueItem(effectiveLink)
         : yield* findCatalogueItemIncludingDeleted(effectiveLink);
@@ -128,7 +179,7 @@ export const updateServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
     }
     const service = yield* repo.updateByIdForUser(serviceId, userAndSession.user.id, {
       ...input,
-      description: input.description === undefined ? undefined : input.description,
+      description: input.description === undefined ? undefined : input.description
     });
     yield* scheduleProviderSearchReconcile(service.userId);
 
@@ -136,9 +187,11 @@ export const updateServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
   });
 
 export const deleteServiceOfferedRouteProgram = (headers: Headers, serviceId: string) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { serviceOffered: ["write"] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { serviceOffered: ['write'] })(
+      authenticated
+    );
     const repo = yield* ServiceOfferedRepo;
     const service = yield* repo.softDeleteByIdForUser(serviceId, userAndSession.user.id);
     yield* scheduleProviderSearchReconcile(service.userId);
@@ -154,63 +207,88 @@ export type ServiceOfferedRouteError =
 
 const repoErrorToResponse = (c: HonoContext<HonoEnv>, error: SqlError | DBNotFoundError) => {
   switch (error._tag) {
-    case "DBNotFoundError":
-      return c.json({ error: { code: "SERVICE_OFFERED_NOT_FOUND" as const, message: "Service offered was not found." } }, 404);
-    case "SqlError":
-      return c.json({ error: { code: "SERVICE_OFFERED_REPO_ERROR" as const, message: "Unable to process service offered request." } }, 500);
+    case 'DBNotFoundError':
+      return c.json(
+        {
+          error: {
+            code: 'SERVICE_OFFERED_NOT_FOUND' as const,
+            message: 'Service offered was not found.'
+          }
+        },
+        404
+      );
+    case 'SqlError':
+      return c.json(
+        {
+          error: {
+            code: 'SERVICE_OFFERED_REPO_ERROR' as const,
+            message: 'Unable to process service offered request.'
+          }
+        },
+        500
+      );
     default:
       return handleNever(c, error);
   }
 };
 
-const serviceOfferedErrorToResponse = (c: HonoContext<HonoEnv>, error: ServiceOfferedRouteError) => {
+const serviceOfferedErrorToResponse = (
+  c: HonoContext<HonoEnv>,
+  error: ServiceOfferedRouteError
+) => {
   switch (error._tag) {
-    case "UnauthorizedError":
-    case "ForbiddenError":
-    case "AuthProviderError":
-    case "AuthEntityLookupError":
+    case 'UnauthorizedError':
+    case 'ForbiddenError':
+    case 'AuthProviderError':
+    case 'AuthEntityLookupError':
       return authErrorToResponse(c, error);
-    case "RequestValidationError":
+    case 'RequestValidationError':
       return requestValidationErrorToResponse(c, error);
-    case "ServiceCatalogueItemNotFoundError":
-      return c.json(
-        { error: { code: "SERVICE_CATALOGUE_ITEM_NOT_FOUND" as const, message: "Service catalogue item was not found." } },
-        404,
-      );
-    case "ServiceCatalogueItemHiddenError":
+    case 'ServiceCatalogueItemNotFoundError':
       return c.json(
         {
           error: {
-            code: "SERVICE_CATALOGUE_ITEM_HIDDEN" as const,
-            message: "This service is no longer available in the catalogue and can't be newly added.",
-          },
+            code: 'SERVICE_CATALOGUE_ITEM_NOT_FOUND' as const,
+            message: 'Service catalogue item was not found.'
+          }
         },
-        422,
+        404
       );
-    case "ServiceRateBelowFloorError":
+    case 'ServiceCatalogueItemHiddenError':
       return c.json(
         {
           error: {
-            code: "SERVICE_RATE_BELOW_FLOOR" as const,
+            code: 'SERVICE_CATALOGUE_ITEM_HIDDEN' as const,
+            message:
+              "This service is no longer available in the catalogue and can't be newly added."
+          }
+        },
+        422
+      );
+    case 'ServiceRateBelowFloorError':
+      return c.json(
+        {
+          error: {
+            code: 'SERVICE_RATE_BELOW_FLOOR' as const,
             message: `Hourly rate is below the base rate for this service (${formatCents(error.floorCents)}/hr ${error.currency}).`,
-            floorCents: error.floorCents,
-          },
+            floorCents: error.floorCents
+          }
         },
-        422,
+        422
       );
-    case "ServicesOfferedLimitReachedError":
+    case 'ServicesOfferedLimitReachedError':
       return c.json(
         {
           error: {
-            code: "SERVICES_OFFERED_LIMIT_REACHED" as const,
+            code: 'SERVICES_OFFERED_LIMIT_REACHED' as const,
             message: `You can offer up to ${error.max} services — remove one to add another.`,
-            max: error.max,
-          },
+            max: error.max
+          }
         },
-        422,
+        422
       );
-    case "DBNotFoundError":
-    case "SqlError":
+    case 'DBNotFoundError':
+    case 'SqlError':
       return repoErrorToResponse(c, error);
     default:
       return handleNever(c, error);
@@ -228,47 +306,41 @@ const exitToResponse = <T>(c: HonoContext<HonoEnv>, exit: Exit.Exit<T, ServiceOf
       }
 
       return unexpected(c);
-    },
+    }
   });
 
 export async function listServicesOfferedHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
-  const exit = await runtime.runPromiseExit(
-    listServicesOfferedRouteProgram(headers),
-  );
+  const exit = await runtime.runPromiseExit(listServicesOfferedRouteProgram(headers));
 
   return exitToResponse(c, exit);
 }
 
 export async function createServiceOfferedHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
-  const exit = await runtime.runPromiseExit(
-    createServiceOfferedRouteProgram(c, headers),
-  );
+  const exit = await runtime.runPromiseExit(createServiceOfferedRouteProgram(c, headers));
 
   return exitToResponse(c, exit);
 }
 
 export async function updateServiceOfferedHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
-  const serviceId = c.req.param("id") ?? "";
+  const serviceId = c.req.param('id') ?? '';
   const exit = await runtime.runPromiseExit(
-    updateServiceOfferedRouteProgram(c, headers, serviceId),
+    updateServiceOfferedRouteProgram(c, headers, serviceId)
   );
 
   return exitToResponse(c, exit);
 }
 
 export async function deleteServiceOfferedHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get("runtime");
+  const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
-  const serviceId = c.req.param("id") ?? "";
-  const exit = await runtime.runPromiseExit(
-    deleteServiceOfferedRouteProgram(headers, serviceId),
-  );
+  const serviceId = c.req.param('id') ?? '';
+  const exit = await runtime.runPromiseExit(deleteServiceOfferedRouteProgram(headers, serviceId));
 
   return exitToResponse(c, exit);
 }

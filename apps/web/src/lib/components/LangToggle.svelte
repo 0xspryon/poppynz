@@ -15,8 +15,8 @@
 <span
 	class="flex gap-0.5 rounded-md p-0.5 text-xs font-semibold
 		{tone === 'dark'
-			? 'border border-secondary-content/30'
-			: 'border border-outline-variant bg-base-100'}"
+		? 'border border-secondary-content/30'
+		: 'border border-outline-variant bg-base-100'}"
 	role="group"
 	aria-label="Language"
 >

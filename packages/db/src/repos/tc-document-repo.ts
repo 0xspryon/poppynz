@@ -1,5 +1,5 @@
-import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
+import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import type { SqlError } from '@effect/sql/SqlError';
 import {
   and,
   desc,
@@ -9,34 +9,34 @@ import {
   isNull,
   or,
   type InferInsertModel,
-  type InferSelectModel,
-} from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
-import { DBNotFoundError, DrizzleLive } from "../effect-db";
-import { tcDocument, tcDocumentAcceptance, tcDocumentVersion } from "../schema";
+  type InferSelectModel
+} from 'drizzle-orm';
+import { Context, Effect, Layer } from 'effect';
+import { DBNotFoundError, DrizzleLive } from '../effect-db';
+import { tcDocument, tcDocumentAcceptance, tcDocumentVersion } from '../schema';
 
 export type TcDocument = InferSelectModel<typeof tcDocument>;
 export type TcDocumentVersion = InferSelectModel<typeof tcDocumentVersion>;
 export type TcDocumentAcceptance = InferSelectModel<typeof tcDocumentAcceptance>;
 export type TcDocumentCreateInput = Pick<
   InferInsertModel<typeof tcDocument>,
-  "slug" | "title" | "appliesToRole"
+  'slug' | 'title' | 'appliesToRole'
 >;
-export type TcDocumentUpdateInput = Partial<Pick<TcDocument, "title" | "appliesToRole">>;
+export type TcDocumentUpdateInput = Partial<Pick<TcDocument, 'title' | 'appliesToRole'>>;
 export type TcDraftInput = Pick<
   InferInsertModel<typeof tcDocumentVersion>,
-  "description" | "content" | "checkboxLabel"
+  'description' | 'content' | 'checkboxLabel'
 >;
 export type TcDraftUpdateInput = Partial<TcDraftInput>;
 export type TcAcceptanceInput = Pick<
   InferInsertModel<typeof tcDocumentAcceptance>,
-  "documentId" | "slug" | "versionId" | "version"
+  'documentId' | 'slug' | 'versionId' | 'version'
 >;
 /** A live document paired with its latest published version. */
 export type TcPublishedDocument = { document: TcDocument; version: TcDocumentVersion };
-export type TcAudienceRole = Exclude<TcDocument["appliesToRole"], "all">;
+export type TcAudienceRole = Exclude<TcDocument['appliesToRole'], 'all'>;
 
-export class TcDocumentRepo extends Context.Tag("@repo/db/TcDocumentRepo")<
+export class TcDocumentRepo extends Context.Tag('@repo/db/TcDocumentRepo')<
   TcDocumentRepo,
   {
     listActive: () => Effect.Effect<Array<TcDocument>, SqlError>;
@@ -45,45 +45,47 @@ export class TcDocumentRepo extends Context.Tag("@repo/db/TcDocumentRepo")<
     createDocument: (input: TcDocumentCreateInput) => Effect.Effect<TcDocument, SqlError>;
     updateDocument: (
       id: string,
-      input: TcDocumentUpdateInput,
+      input: TcDocumentUpdateInput
     ) => Effect.Effect<TcDocument, SqlError | DBNotFoundError>;
     softDeleteDocument: (id: string) => Effect.Effect<TcDocument, SqlError | DBNotFoundError>;
     /** All versions of a document, newest first. */
     listVersions: (documentId: string) => Effect.Effect<Array<TcDocumentVersion>, SqlError>;
     /** Versions for many documents in one query — for the admin list page. */
     listVersionsByDocumentIds: (
-      documentIds: Array<string>,
+      documentIds: Array<string>
     ) => Effect.Effect<Array<TcDocumentVersion>, SqlError>;
     /** Opens the document's single draft; version is assigned here (latest + 1). */
     createDraft: (
       documentId: string,
-      input: TcDraftInput,
+      input: TcDraftInput
     ) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
     /** Edits the open draft only — published versions are immutable by design. */
     updateDraft: (
       documentId: string,
-      input: TcDraftUpdateInput,
+      input: TcDraftUpdateInput
     ) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
-    publishDraft: (documentId: string) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
+    publishDraft: (
+      documentId: string
+    ) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
     findLatestPublished: (
-      documentId: string,
+      documentId: string
     ) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
     /** Live documents whose audience matches `role` (or "all"), latest published version each. */
     listPublishedForRole: (
-      role: TcAudienceRole,
+      role: TcAudienceRole
     ) => Effect.Effect<Array<TcPublishedDocument>, SqlError>;
     /** Subset of listPublishedForRole the user has not accepted at the latest version. */
     listPendingForUser: (
       userId: string,
-      role: TcAudienceRole,
+      role: TcAudienceRole
     ) => Effect.Effect<Array<TcPublishedDocument>, SqlError>;
     listAcceptancesForUser: (
-      userId: string,
+      userId: string
     ) => Effect.Effect<Array<TcDocumentAcceptance>, SqlError>;
     /** Append-only; re-accepting an already accepted version is a no-op. */
     insertAcceptances: (
       userId: string,
-      items: Array<TcAcceptanceInput>,
+      items: Array<TcAcceptanceInput>
     ) => Effect.Effect<Array<TcDocumentAcceptance>, SqlError>;
   }
 >() {}
@@ -97,14 +99,14 @@ export const TcDocumentRepoLive = Layer.effect(
         return Effect.succeed(rows[0]);
       }
 
-      return Effect.fail(new DBNotFoundError({ entity: "tcDocument", value }));
+      return Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value }));
     };
     const versionOrNotFound = (value: string) => (rows: Array<TcDocumentVersion>) => {
       if (rows[0]) {
         return Effect.succeed(rows[0]);
       }
 
-      return Effect.fail(new DBNotFoundError({ entity: "tcDocumentVersion", value }));
+      return Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value }));
     };
     const listPublishedForRole = (role: TcAudienceRole) =>
       Effect.gen(function* () {
@@ -114,8 +116,8 @@ export const TcDocumentRepoLive = Layer.effect(
           .where(
             and(
               isNull(tcDocument.deletedAt),
-              or(eq(tcDocument.appliesToRole, role), eq(tcDocument.appliesToRole, "all")),
-            ),
+              or(eq(tcDocument.appliesToRole, role), eq(tcDocument.appliesToRole, 'all'))
+            )
           );
         if (documents.length === 0) {
           return [];
@@ -128,10 +130,10 @@ export const TcDocumentRepoLive = Layer.effect(
             and(
               inArray(
                 tcDocumentVersion.documentId,
-                documents.map((document) => document.id),
+                documents.map((document) => document.id)
               ),
-              isNotNull(tcDocumentVersion.publishedAt),
-            ),
+              isNotNull(tcDocumentVersion.publishedAt)
+            )
           )
           .orderBy(desc(tcDocumentVersion.version));
 
@@ -211,7 +213,7 @@ export const TcDocumentRepoLive = Layer.effect(
             .values({
               documentId: document.id,
               version: (latest[0]?.version ?? 0) + 1,
-              ...input,
+              ...input
             })
             .returning()
             .pipe(Effect.map((rows) => rows[0]));
@@ -221,10 +223,7 @@ export const TcDocumentRepoLive = Layer.effect(
           .update(tcDocumentVersion)
           .set({ ...input, updatedAt: new Date() })
           .where(
-            and(
-              eq(tcDocumentVersion.documentId, documentId),
-              isNull(tcDocumentVersion.publishedAt),
-            ),
+            and(eq(tcDocumentVersion.documentId, documentId), isNull(tcDocumentVersion.publishedAt))
           )
           .returning()
           .pipe(Effect.flatMap(versionOrNotFound(documentId))),
@@ -233,10 +232,7 @@ export const TcDocumentRepoLive = Layer.effect(
           .update(tcDocumentVersion)
           .set({ publishedAt: new Date(), updatedAt: new Date() })
           .where(
-            and(
-              eq(tcDocumentVersion.documentId, documentId),
-              isNull(tcDocumentVersion.publishedAt),
-            ),
+            and(eq(tcDocumentVersion.documentId, documentId), isNull(tcDocumentVersion.publishedAt))
           )
           .returning()
           .pipe(Effect.flatMap(versionOrNotFound(documentId))),
@@ -247,8 +243,8 @@ export const TcDocumentRepoLive = Layer.effect(
           .where(
             and(
               eq(tcDocumentVersion.documentId, documentId),
-              isNotNull(tcDocumentVersion.publishedAt),
-            ),
+              isNotNull(tcDocumentVersion.publishedAt)
+            )
           )
           .orderBy(desc(tcDocumentVersion.version))
           .limit(1)
@@ -269,9 +265,9 @@ export const TcDocumentRepoLive = Layer.effect(
                 eq(tcDocumentAcceptance.userId, userId),
                 inArray(
                   tcDocumentAcceptance.versionId,
-                  published.map((entry) => entry.version.id),
-                ),
-              ),
+                  published.map((entry) => entry.version.id)
+                )
+              )
             );
           const acceptedVersionIds = new Set(accepted.map((row) => row.versionId));
 
@@ -290,9 +286,9 @@ export const TcDocumentRepoLive = Layer.effect(
               .insert(tcDocumentAcceptance)
               .values(items.map((item) => ({ ...item, userId })))
               .onConflictDoNothing()
-              .returning(),
+              .returning()
     };
-  }),
+  })
 );
 
 export const TcDocumentRepoDefault = TcDocumentRepoLive.pipe(Layer.provide(DrizzleLive));
@@ -302,19 +298,21 @@ export const makeTcDocumentRepoTest = (implementation: Context.Tag.Service<TcDoc
 
 export const EmptyTcDocumentRepoTest = makeTcDocumentRepoTest({
   listActive: () => Effect.succeed([]),
-  findActiveById: () => Effect.fail(new DBNotFoundError({ entity: "tcDocument", value: "" })),
-  findActiveBySlug: () => Effect.fail(new DBNotFoundError({ entity: "tcDocument", value: "" })),
-  createDocument: () => Effect.fail(new DBNotFoundError({ entity: "tcDocument", value: "" }) as never),
-  updateDocument: () => Effect.fail(new DBNotFoundError({ entity: "tcDocument", value: "" })),
-  softDeleteDocument: () => Effect.fail(new DBNotFoundError({ entity: "tcDocument", value: "" })),
+  findActiveById: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: '' })),
+  findActiveBySlug: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: '' })),
+  createDocument: () =>
+    Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: '' }) as never),
+  updateDocument: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: '' })),
+  softDeleteDocument: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: '' })),
   listVersions: () => Effect.succeed([]),
   listVersionsByDocumentIds: () => Effect.succeed([]),
-  createDraft: () => Effect.fail(new DBNotFoundError({ entity: "tcDocument", value: "" })),
-  updateDraft: () => Effect.fail(new DBNotFoundError({ entity: "tcDocumentVersion", value: "" })),
-  publishDraft: () => Effect.fail(new DBNotFoundError({ entity: "tcDocumentVersion", value: "" })),
-  findLatestPublished: () => Effect.fail(new DBNotFoundError({ entity: "tcDocumentVersion", value: "" })),
+  createDraft: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: '' })),
+  updateDraft: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value: '' })),
+  publishDraft: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value: '' })),
+  findLatestPublished: () =>
+    Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value: '' })),
   listPublishedForRole: () => Effect.succeed([]),
   listPendingForUser: () => Effect.succeed([]),
   listAcceptancesForUser: () => Effect.succeed([]),
-  insertAcceptances: () => Effect.succeed([]),
+  insertAcceptances: () => Effect.succeed([])
 });

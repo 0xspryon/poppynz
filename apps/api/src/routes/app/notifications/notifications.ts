@@ -1,9 +1,9 @@
-import { NotificationHub, type AppNotification, type NotificationSubscription } from "@repo/notify";
-import { Effect, Exit } from "effect";
-import { Hono } from "hono";
-import { streamSSE } from "hono/streaming";
-import type { HonoEnv } from "../../../app-env";
-import { authenticate } from "@/api/lib/effect-auth";
+import { NotificationHub, type AppNotification, type NotificationSubscription } from '@repo/notify';
+import { Effect, Exit } from 'effect';
+import { Hono } from 'hono';
+import { streamSSE } from 'hono/streaming';
+import type { HonoEnv } from '../../../app-env';
+import { authenticate } from '@/api/lib/effect-auth';
 
 // Keep well below server/proxy idle timeouts so quiet streams stay open.
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -17,17 +17,20 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 // returns JSON on success, only a long-lived event stream. EventSource can't
 // send custom headers, so auth is the same better-auth session cookie the rest
 // of the API uses.
-export const notificationsRoute = new Hono<HonoEnv>().get("/stream", async (c) => {
-  const runtime = c.get("runtime");
+export const notificationsRoute = new Hono<HonoEnv>().get('/stream', async (c) => {
+  const runtime = c.get('runtime');
   const authExit = await runtime.runPromiseExit(authenticate(c.req.raw.headers));
   if (Exit.isFailure(authExit)) {
-    return c.json({ error: { code: "UNAUTHORIZED" as const, message: "Sign in to receive notifications." } }, 401);
+    return c.json(
+      { error: { code: 'UNAUTHORIZED' as const, message: 'Sign in to receive notifications.' } },
+      401
+    );
   }
   const userId = authExit.value.user.id;
 
   return streamSSE(c, async (stream) => {
     const pending: Array<AppNotification> = [];
-    let notify = () => { };
+    let notify = () => {};
     let open = true;
     let subscription: NotificationSubscription | null = null;
 
@@ -46,13 +49,16 @@ export const notificationsRoute = new Hono<HonoEnv>().get("/stream", async (c) =
             hub.subscribe(userId, (notification) => {
               pending.push(notification);
               notify();
-            }),
-          ),
-        ),
+            })
+          )
+        )
       );
       if (!open || stream.aborted) return;
 
-      await stream.writeSSE({ event: "connected", data: JSON.stringify({ at: new Date().toISOString() }) });
+      await stream.writeSSE({
+        event: 'connected',
+        data: JSON.stringify({ at: new Date().toISOString() })
+      });
 
       while (open && !stream.aborted) {
         while (pending.length > 0) {
@@ -60,7 +66,7 @@ export const notificationsRoute = new Hono<HonoEnv>().get("/stream", async (c) =
           await stream.writeSSE({
             id: notification.id,
             event: notification.type,
-            data: JSON.stringify(notification),
+            data: JSON.stringify(notification)
           });
         }
         if (!open) break;
@@ -69,12 +75,12 @@ export const notificationsRoute = new Hono<HonoEnv>().get("/stream", async (c) =
           const timer = setTimeout(resolve, HEARTBEAT_INTERVAL_MS);
           notify = () => {
             clearTimeout(timer);
-            notify = () => { };
+            notify = () => {};
             resolve();
           };
         });
         if (open && pending.length === 0) {
-          await stream.writeSSE({ event: "heartbeat", data: "" });
+          await stream.writeSSE({ event: 'heartbeat', data: '' });
         }
       }
     } finally {

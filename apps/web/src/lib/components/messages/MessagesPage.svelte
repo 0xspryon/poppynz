@@ -298,9 +298,7 @@
 	const isUnread = (conversation: ConversationSummary) =>
 		conversation.unreadCount > 0 || conversation.awaitingMyResponse;
 
-	const threadFirstName = $derived(
-		thread?.conversation.counterpart.name.split(/\s+/)[0] ?? ''
-	);
+	const threadFirstName = $derived(thread?.conversation.counterpart.name.split(/\s+/)[0] ?? '');
 	const composerState = $derived.by((): 'active' | 'awaiting-me' | 'awaiting-them' => {
 		if (!thread || thread.conversation.status === 'active') return 'active';
 		return thread.conversation.awaitingMyResponse ? 'awaiting-me' : 'awaiting-them';
@@ -382,9 +380,7 @@
 							type="button"
 							class={[
 								'flex w-full gap-3 border-l-[3px] px-5 py-3.5 text-left transition-colors',
-								active
-									? 'border-primary bg-base-300'
-									: 'border-transparent hover:bg-base-200'
+								active ? 'border-primary bg-base-300' : 'border-transparent hover:bg-base-200'
 							]}
 							onclick={() => openConversation(conversation.id)}
 						>
@@ -468,8 +464,14 @@
 				</button>
 			</div>
 		{:else if thread}
-			<header class="flex items-center gap-3 border-b border-card-border bg-base-100 px-4 py-3 lg:px-6">
-				<a href={listHref} class="btn btn-circle btn-ghost btn-sm lg:hidden" aria-label="Back to messages">
+			<header
+				class="flex items-center gap-3 border-b border-card-border bg-base-100 px-4 py-3 lg:px-6"
+			>
+				<a
+					href={listHref}
+					class="btn btn-circle btn-ghost btn-sm lg:hidden"
+					aria-label="Back to messages"
+				>
 					<i class="las la-angle-left text-xl" aria-hidden="true"></i>
 				</a>
 				<span
@@ -582,7 +584,9 @@
 						</div>
 					{/if}
 					{#each group.messages as message (message.id)}
-						<div class={['max-w-[76%] lg:max-w-[64%]', message.sentByMe ? 'self-end' : 'self-start']}>
+						<div
+							class={['max-w-[76%] lg:max-w-[64%]', message.sentByMe ? 'self-end' : 'self-start']}
+						>
 							<div
 								class={[
 									'px-3.5 py-2.5 text-[13.5px] leading-relaxed whitespace-pre-line text-base-content',
@@ -593,7 +597,12 @@
 							>
 								{message.body}
 							</div>
-							<div class={['mt-1 text-[10.5px] text-outline', message.sentByMe ? 'text-right' : 'ml-1']}>
+							<div
+								class={[
+									'mt-1 text-[10.5px] text-outline',
+									message.sentByMe ? 'text-right' : 'ml-1'
+								]}
+							>
 								{timeLabel(message.at)}
 							</div>
 						</div>

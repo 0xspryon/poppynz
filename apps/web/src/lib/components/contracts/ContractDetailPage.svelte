@@ -157,7 +157,9 @@
 		// A back/forward id switch may race these responses — only the fetch
 		// still owning the key may land. A failure clears the key so the next
 		// render (or Retry) refetches instead of demanding a full reload.
-		const applyServices = (services: Array<{ id: string; name: string; hourlyRateCents: number }>) => {
+		const applyServices = (
+			services: Array<{ id: string; name: string; hourlyRateCents: number }>
+		) => {
 			if (loadedServicesFor !== key) return;
 			editorServices = services.map((service) => ({
 				id: service.id,
@@ -183,7 +185,9 @@
 
 	const termsErrorToast = (error: { code: string; message: string }) => {
 		if (error.code === 'RATE_BELOW_LISTED') {
-			toast.error(`Some rates are below ${firstName}'s current listed rate — raise them and retry.`);
+			toast.error(
+				`Some rates are below ${firstName}'s current listed rate — raise them and retry.`
+			);
 		} else if (error.code === 'UNKNOWN_CONTRACT_SERVICE') {
 			toast.error(`Pick services from ${firstName}'s current list.`);
 		} else if (error.code === 'EMPTY_CONTRACT_TERMS') {
@@ -361,13 +365,17 @@
 	// disagree with the date the server will store.
 	const noticeEndsOn = $derived(
 		endOpen
-			? formatDateWithWeekday(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10))
+			? formatDateWithWeekday(
+					new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+				)
 			: ''
 	);
 
 	const isAmendmentContext = $derived(
 		contract !== null &&
-			(contract.status === 'active' || contract.status === 'ending' || contract.status === 'ended') &&
+			(contract.status === 'active' ||
+				contract.status === 'ending' ||
+				contract.status === 'ended') &&
 			contract.pendingVersion !== null
 	);
 
@@ -375,12 +383,17 @@
 	 * already be the family's fresh revision draft, which never carries the
 	 * decline reason. */
 	const latestDeclined = $derived(
-		[...(contract?.versions ?? [])].reverse().find((version) => version.status === 'declined') ?? null
+		[...(contract?.versions ?? [])].reverse().find((version) => version.status === 'declined') ??
+			null
 	);
 
 	const chip = $derived.by((): { status: ChipStatus; label?: string } => {
 		if (!contract) return { status: 'empty' };
-		if (contract.pendingVersion && !contract.pendingVersion.proposedByMe && contract.actions.canDecline) {
+		if (
+			contract.pendingVersion &&
+			!contract.pendingVersion.proposedByMe &&
+			contract.actions.canDecline
+		) {
 			return { status: 'awaiting-you' };
 		}
 		if (isAmendmentContext) return { status: 'proposed', label: 'Amendment pending' };
@@ -457,7 +470,10 @@
 </svelte:head>
 
 <div class="mx-auto flex max-w-5xl flex-col gap-4">
-	<a href={listHref} class="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-primary">
+	<a
+		href={listHref}
+		class="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-primary"
+	>
 		<i class="las la-angle-left" aria-hidden="true"></i>
 		Contracts
 	</a>
@@ -467,9 +483,15 @@
 			<span class="loading loading-lg loading-spinner text-primary"></span>
 		</div>
 	{:else if loadError && !contract}
-		<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
 			<p class="text-sm font-medium text-error" role="alert">This contract didn't load.</p>
-			<button type="button" class="btn btn-primary btn-sm" onclick={() => (retryTick = retryTick + 1)}>
+			<button
+				type="button"
+				class="btn btn-primary btn-sm"
+				onclick={() => (retryTick = retryTick + 1)}
+			>
 				<i class="las la-redo-alt" aria-hidden="true"></i>
 				Retry
 			</button>
@@ -515,12 +537,13 @@
 				</p>
 			</div>
 		{:else if contract.status === 'changes_requested'}
-			<div class="flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning-content px-4 py-3">
+			<div
+				class="flex items-start gap-2.5 rounded-lg border border-warning/40 bg-warning-content px-4 py-3"
+			>
 				<i class="las la-comment-dots mt-0.5 shrink-0 text-warning" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-warning">
 					{#if contract.viewerSide === 'family'}
-						{firstName} asked for changes — the details are in your chat. Revise the terms below
-						and re-send.
+						{firstName} asked for changes — the details are in your chat. Revise the terms below and re-send.
 					{:else}
 						You asked {firstName} for changes in chat. The revised proposal will appear here.
 					{/if}
@@ -528,7 +551,9 @@
 			</div>
 		{:else if contract.status === 'declined'}
 			{#if latestDeclined?.proposedByMe}
-				<div class="flex items-start gap-2.5 rounded-lg border border-error/30 bg-error-content px-4 py-3">
+				<div
+					class="flex items-start gap-2.5 rounded-lg border border-error/30 bg-error-content px-4 py-3"
+				>
 					<i class="las la-times-circle mt-0.5 shrink-0 text-error" aria-hidden="true"></i>
 					<p class="text-[12.5px] leading-relaxed text-error">
 						{firstName} declined{latestDeclined?.declineReason
@@ -539,18 +564,21 @@
 				</div>
 			{:else}
 				<!-- 16j: the decliner gets a quiet neutral state, not an alarm. -->
-				<div class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3">
+				<div
+					class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3"
+				>
 					<i class="las la-info-circle mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 					<p class="text-[12.5px] leading-relaxed text-neutral">
 						You declined{latestDeclined?.declineReason
 							? ` with the reason “${latestDeclined.declineReason}”`
-							: ''}. {firstName} was notified and can propose new terms; the conversation stays
-						open.
+							: ''}. {firstName} was notified and can propose new terms; the conversation stays open.
 					</p>
 				</div>
 			{/if}
 		{:else if contract.status === 'active' && !isAmendmentContext}
-			<div class="flex items-start gap-2.5 rounded-lg border border-success/30 bg-success-content px-4 py-3">
+			<div
+				class="flex items-start gap-2.5 rounded-lg border border-success/30 bg-success-content px-4 py-3"
+			>
 				<i class="las la-check-circle mt-0.5 shrink-0 text-success" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-success">
 					{#if contract.viewerSide === 'family'}
@@ -563,7 +591,9 @@
 				</p>
 			</div>
 		{:else if contract.status === 'ending' || contract.status === 'ended'}
-			<div class="flex items-start gap-2.5 rounded-lg border border-error/30 bg-error-content px-4 py-3">
+			<div
+				class="flex items-start gap-2.5 rounded-lg border border-error/30 bg-error-content px-4 py-3"
+			>
 				<i class="las la-clock mt-0.5 shrink-0 text-error" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-error">
 					{contract.endedByMe ? 'You' : firstName} gave 2 weeks' notice
@@ -571,8 +601,8 @@
 						on {formatDate(contract.endNoticedAt)}{/if}.
 					{#if contract.endsOn}
 						{contract.status === 'ended' ? 'The last working day was' : 'The last working day is'}
-						<strong>{formatDateWithWeekday(contract.endsOn)}</strong> — payments run until then and
-						stop after.
+						<strong>{formatDateWithWeekday(contract.endsOn)}</strong> — payments run until then and stop
+						after.
 					{/if}
 					{#if contract.endNote && !contract.endedByMe}
 						Note: “{contract.endNote}”
@@ -584,20 +614,22 @@
 		<div class="flex flex-col gap-4 lg:grid lg:grid-cols-[1fr_300px] lg:items-start">
 			<div class="flex min-w-0 flex-col gap-4">
 				{#if amendmentOpen}
-				<!-- The open editor outranks everything: a counterpart's amendment
+					<!-- The open editor outranks everything: a counterpart's amendment
 				     arriving via realtime must not silently unmount typed input —
 				     sending will 409 and the toast explains. -->
-				<ContractTermsEditor
-					providerServices={editorServices}
-					initial={contract.acceptedVersion}
-					mode="amendment"
-					listingLabel={contract.viewerSide === 'family' ? `${firstName}'s listing` : 'your listing'}
-					counterpartFirstName={firstName}
-					{busy}
-					onsend={handleAmend}
-					oncancel={() => (amendmentOpen = false)}
-				/>
-			{:else if isAmendmentContext && contract.pendingVersion}
+					<ContractTermsEditor
+						providerServices={editorServices}
+						initial={contract.acceptedVersion}
+						mode="amendment"
+						listingLabel={contract.viewerSide === 'family'
+							? `${firstName}'s listing`
+							: 'your listing'}
+						counterpartFirstName={firstName}
+						{busy}
+						onsend={handleAmend}
+						oncancel={() => (amendmentOpen = false)}
+					/>
+				{:else if isAmendmentContext && contract.pendingVersion}
 					{#if displayTerms}
 						<ContractTermsView terms={displayTerms} heading="Current terms" />
 					{/if}
@@ -635,8 +667,7 @@
 								</p>
 							{:else}
 								<p class="text-[12px] text-base-content-muted">
-									Waiting for {firstName} to review the new terms — the current ones stay in
-									effect meanwhile.
+									Waiting for {firstName} to review the new terms — the current ones stay in effect meanwhile.
 								</p>
 								{#if contract.actions.canWithdraw}
 									<button
@@ -778,7 +809,10 @@
 						</h3>
 						<p class="flex items-center gap-2 text-[13px] text-base-content">
 							<i class="las la-envelope text-outline" aria-hidden="true"></i>
-							<a class="truncate hover:underline" href={`mailto:${contract.counterpartContact.email}`}>
+							<a
+								class="truncate hover:underline"
+								href={`mailto:${contract.counterpartContact.email}`}
+							>
 								{contract.counterpartContact.email}
 							</a>
 						</p>
@@ -790,11 +824,13 @@
 						{/if}
 					</div>
 				{:else}
-					<div class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3">
+					<div
+						class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3"
+					>
 						<i class="las la-user-shield mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 						<p class="text-[12px] leading-relaxed text-neutral">
-							Signing activates the contract — contact details are shared and payments are set up
-							on Poppynz.
+							Signing activates the contract — contact details are shared and payments are set up on
+							Poppynz.
 						</p>
 					</div>
 				{/if}
@@ -840,7 +876,7 @@
 		: 'Signing activates the contract — contact details are shared and weekly payments are set up on Poppynz.'}
 	confirmLabel={isAmendmentContext ? 'Accept new terms' : 'Accept & sign'}
 	confirmClass="btn-primary"
-	busy={busy}
+	{busy}
 	onconfirm={handleAccept}
 	oncancel={() => (acceptConfirmOpen = false)}
 />
@@ -852,7 +888,7 @@
 		? `The current terms stay in effect — ${firstName} isn't notified.`
 		: `It returns to a draft only you can see — ${firstName} isn't notified.`}
 	confirmLabel="Withdraw"
-	busy={busy}
+	{busy}
 	onconfirm={handleWithdraw}
 	oncancel={() => (withdrawConfirmOpen = false)}
 />
@@ -863,7 +899,7 @@
 	body="This doesn't open an editor — it takes you back to the chat with {firstName}, and they revise the proposal from their side."
 	confirmLabel="Request changes"
 	confirmClass="btn-primary"
-	busy={busy}
+	{busy}
 	onconfirm={handleRequestChanges}
 	oncancel={() => (requestChangesConfirmOpen = false)}
 />
@@ -879,7 +915,10 @@
 					? `The current terms stay in effect. ${firstName} is notified.`
 					: `${firstName} is notified, and your chat stays open — declining a contract never closes the conversation.`}
 			</p>
-			<label class="mb-1 block text-[11px] font-semibold tracking-[0.08em] text-outline uppercase" for="decline-reason">
+			<label
+				class="mb-1 block text-[11px] font-semibold tracking-[0.08em] text-outline uppercase"
+				for="decline-reason"
+			>
 				Reason (optional, shared)
 			</label>
 			<textarea
@@ -891,7 +930,12 @@
 				bind:value={declineReason}
 			></textarea>
 			<div class="modal-action">
-				<button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (declineOpen = false)}>
+				<button
+					type="button"
+					class="btn btn-ghost"
+					disabled={busy}
+					onclick={() => (declineOpen = false)}
+				>
 					Cancel
 				</button>
 				<button type="button" class="btn btn-error" disabled={busy} onclick={handleDecline}>
@@ -900,7 +944,12 @@
 				</button>
 			</div>
 		</div>
-		<button type="button" class="modal-backdrop" onclick={() => (declineOpen = false)} aria-label="Close"></button>
+		<button
+			type="button"
+			class="modal-backdrop"
+			onclick={() => (declineOpen = false)}
+			aria-label="Close"
+		></button>
 	</div>
 {/if}
 
@@ -910,8 +959,8 @@
 			<h3 class="font-display text-xl font-bold text-base-content">End this contract?</h3>
 			<p class="py-3 text-sm text-base-content-muted">
 				Your 2 weeks' notice starts today. The last working day is
-				<strong class="text-base-content">{noticeEndsOn}</strong> — {firstName} is notified now,
-				payments run until then and stop after. This can't be undone.
+				<strong class="text-base-content">{noticeEndsOn}</strong> — {firstName} is notified now, payments
+				run until then and stop after. This can't be undone.
 			</p>
 			<textarea
 				class="textarea w-full text-[13px]"
@@ -921,7 +970,12 @@
 				bind:value={endNote}
 			></textarea>
 			<div class="modal-action">
-				<button type="button" class="btn btn-ghost" disabled={busy} onclick={() => (endOpen = false)}>
+				<button
+					type="button"
+					class="btn btn-ghost"
+					disabled={busy}
+					onclick={() => (endOpen = false)}
+				>
 					Keep contract
 				</button>
 				<button type="button" class="btn btn-error" disabled={busy} onclick={handleEnd}>
@@ -930,6 +984,11 @@
 				</button>
 			</div>
 		</div>
-		<button type="button" class="modal-backdrop" onclick={() => (endOpen = false)} aria-label="Close"></button>
+		<button
+			type="button"
+			class="modal-backdrop"
+			onclick={() => (endOpen = false)}
+			aria-label="Close"
+		></button>
 	</div>
 {/if}

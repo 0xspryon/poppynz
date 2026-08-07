@@ -1,4 +1,4 @@
-name: "poppynz_dev"
+name: 'poppynz_dev'
 services:
   api:
     container_name: api
@@ -8,7 +8,7 @@ services:
     restart: unless-stopped
     working_dir: /usr/src/app
     command: sh -c "bun install --frozen-lockfile && bun --cwd /usr/src/app/apps/api dev"
-    env_file: "./apps/api/.env"
+    env_file: './apps/api/.env'
     environment:
       RUSTFS_ENDPOINT: http://rustfs:9000
       TYPESENSE_HOST: typesense
@@ -19,7 +19,7 @@ services:
     networks:
       - app-net
     ports:
-      - "127.0.0.1:3000:3000"
+      - '127.0.0.1:3000:3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -42,7 +42,7 @@ services:
     restart: unless-stopped
     working_dir: /usr/src/app
     command: sh -c "bun install --frozen-lockfile && bun --cwd /usr/src/app/apps/worker dev"
-    env_file: "./apps/worker/.env"
+    env_file: './apps/worker/.env'
     environment:
       TYPESENSE_HOST: typesense
       REDIS_URL: redis://redis:6379
@@ -53,7 +53,7 @@ services:
     networks:
       - app-net
     ports:
-      - "127.0.0.1:3001:3001"
+      - '127.0.0.1:3001:3001'
     depends_on:
       postgres:
         condition: service_healthy
@@ -71,9 +71,9 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile.migrations.dev
-    restart: "no"
+    restart: 'no'
     working_dir: /usr/src/app
-    env_file: "./apps/api/.env"
+    env_file: './apps/api/.env'
     # environment:
     #   - DATABASE_URL=postgres://${DB_USER}:${DB_PASS}@postgres:5432/${DB_NAME}
     volumes:
@@ -90,10 +90,10 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile.migrations.dev
-    restart: "no"
+    restart: 'no'
     working_dir: /usr/src/app
     command: sh -c "bun install --frozen-lockfile && sh /usr/src/app/scripts/run-seeds.sh"
-    env_file: "./apps/api/.env"
+    env_file: './apps/api/.env'
     volumes:
       - .:/usr/src/app
       - ./bun_node_modules:/usr/src/app/node_modules
@@ -126,7 +126,7 @@ services:
     ports:
       - 5432:5432
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER} -d ${DB_NAME}']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -147,7 +147,7 @@ services:
       - ./rustfs_logs:/logs
     networks:
       - app-net
-    restart: "no"
+    restart: 'no'
 
   rustfs:
     container_name: rustfs
@@ -175,16 +175,16 @@ services:
     networks:
       - app-net
     ports:
-      - "127.0.0.1:9000:9000"
-      - "127.0.0.1:9001:9001"
+      - '127.0.0.1:9000:9000'
+      - '127.0.0.1:9001:9001'
     depends_on:
       rustfs-permissions:
         condition: service_completed_successfully
     healthcheck:
       test:
         [
-          "CMD-SHELL",
-          "curl -fsS http://127.0.0.1:9000/health && curl -fsS http://127.0.0.1:9001/rustfs/console/health",
+          'CMD-SHELL',
+          'curl -fsS http://127.0.0.1:9000/health && curl -fsS http://127.0.0.1:9001/rustfs/console/health'
         ]
       interval: 30s
       timeout: 10s
@@ -198,9 +198,9 @@ services:
     networks:
       - app-net
     ports:
-      - "127.0.0.1:6379:6379"
+      - '127.0.0.1:6379:6379'
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -208,20 +208,20 @@ services:
     container_name: typesense
     image: typesense/typesense:30.2
     restart: unless-stopped
-    command: "--data-dir /data --api-key=${TYPESENSE_API_KEY:-typesense-dev-key} --enable-cors"
+    command: '--data-dir /data --api-key=${TYPESENSE_API_KEY:-typesense-dev-key} --enable-cors'
     networks:
       - app-net
     ports:
-      - "8108:8108"
+      - '8108:8108'
     volumes:
       - ./typesense-data:/data
     healthcheck:
       test:
         [
-          "CMD",
-          "bash",
-          "-c",
-          "exec 3<>/dev/tcp/127.0.0.1/8108 && printf 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && timeout 3 grep -q '\"ok\":true' <&3",
+          'CMD',
+          'bash',
+          '-c',
+          "exec 3<>/dev/tcp/127.0.0.1/8108 && printf 'GET /health HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && timeout 3 grep -q '\"ok\":true' <&3"
         ]
       interval: 10s
       timeout: 5s

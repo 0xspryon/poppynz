@@ -70,8 +70,6 @@
 	};
 </script>
 
-<span
-	class="rounded-sm px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap {styles[status]}"
->
+<span class="rounded-sm px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap {styles[status]}">
 	{label ?? defaultLabels[status]}
 </span>

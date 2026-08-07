@@ -19,10 +19,7 @@
 </script>
 
 <section
-	class={[
-		'rounded-xl border border-card-border bg-base-100 px-5 py-4',
-		dimmed ? 'opacity-70' : ''
-	]}
+	class={['rounded-xl border border-card-border bg-base-100 px-5 py-4', dimmed ? 'opacity-70' : '']}
 >
 	<h3 class="mb-2 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
 		{heading}

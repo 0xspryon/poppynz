@@ -131,7 +131,9 @@
 	{:else if errorMessage}
 		<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
 	{:else if filtered.length === 0}
-		<p class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm text-base-content-muted">
+		<p
+			class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm text-base-content-muted"
+		>
 			{search.trim() || filter !== 'all'
 				? 'No applications match this view.'
 				: 'No applications yet.'}

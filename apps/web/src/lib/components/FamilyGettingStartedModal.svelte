@@ -15,7 +15,9 @@
 
 	let { open, state, onclose }: Props = $props();
 
-	const greeting = $derived(state.firstName ? `Welcome, ${state.firstName}!` : 'Welcome to Poppynz!');
+	const greeting = $derived(
+		state.firstName ? `Welcome, ${state.firstName}!` : 'Welcome to Poppynz!'
+	);
 	const steps = $derived([
 		{
 			complete: state.steps.location.complete,
@@ -82,7 +84,9 @@
 						{/if}
 					</li>
 				{/each}
-				<li class="flex items-start gap-3 rounded-lg border border-dashed border-primary bg-base-200 p-3.5">
+				<li
+					class="flex items-start gap-3 rounded-lg border border-dashed border-primary bg-base-200 p-3.5"
+				>
 					<span
 						class="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full
 							border-[1.5px] border-outline-variant text-xs font-bold text-base-content-muted"

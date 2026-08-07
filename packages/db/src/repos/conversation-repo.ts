@@ -1,9 +1,9 @@
-import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
-import { and, asc, count, eq, inArray, isNull, ne, sql, type InferSelectModel } from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
-import { DrizzleLive } from "../effect-db";
-import { conversation, conversationMessage, userProfile, type ReachoutService } from "../schema";
+import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import type { SqlError } from '@effect/sql/SqlError';
+import { and, asc, count, eq, inArray, isNull, ne, sql, type InferSelectModel } from 'drizzle-orm';
+import { Context, Effect, Layer } from 'effect';
+import { DrizzleLive } from '../effect-db';
+import { conversation, conversationMessage, userProfile, type ReachoutService } from '../schema';
 
 export type Conversation = InferSelectModel<typeof conversation>;
 export type ConversationMessage = InferSelectModel<typeof conversationMessage>;
@@ -22,7 +22,7 @@ export type ConversationWithContext = Conversation & {
   unreadCount: number;
 };
 
-export class ConversationRepo extends Context.Tag("@repo/db/ConversationRepo")<
+export class ConversationRepo extends Context.Tag('@repo/db/ConversationRepo')<
   ConversationRepo,
   {
     create: (input: {
@@ -32,16 +32,22 @@ export class ConversationRepo extends Context.Tag("@repo/db/ConversationRepo")<
       reachoutMessage: string;
       reachoutServices: Array<ReachoutService>;
     }) => Effect.Effect<Conversation, SqlError>;
-    findByPair: (familyUserId: string, providerUserId: string) => Effect.Effect<Conversation | null, SqlError>;
+    findByPair: (
+      familyUserId: string,
+      providerUserId: string
+    ) => Effect.Effect<Conversation | null, SqlError>;
     findById: (id: string) => Effect.Effect<Conversation | null, SqlError>;
     /** `ignoredCutoff`: rows ignored before this instant are expired and
      * treated as nonexistent (the reach-out cool-down has lapsed). */
     findWithContext: (
       id: string,
       viewerUserId: string,
-      ignoredCutoff: Date,
+      ignoredCutoff: Date
     ) => Effect.Effect<ConversationWithContext | null, SqlError>;
-    listForUser: (viewerUserId: string, ignoredCutoff: Date) => Effect.Effect<Array<ConversationWithContext>, SqlError>;
+    listForUser: (
+      viewerUserId: string,
+      ignoredCutoff: Date
+    ) => Effect.Effect<Array<ConversationWithContext>, SqlError>;
     listMessages: (conversationId: string) => Effect.Effect<Array<ConversationMessage>, SqlError>;
     createMessage: (input: {
       conversationId: string;
@@ -53,10 +59,10 @@ export class ConversationRepo extends Context.Tag("@repo/db/ConversationRepo")<
     markResponded: (id: string) => Effect.Effect<Conversation | null, SqlError>;
     /** pending → ignored; resolves null when the conversation was not pending. */
     markIgnored: (id: string) => Effect.Effect<Conversation | null, SqlError>;
-    markRead: (id: string, side: "family" | "provider", at: Date) => Effect.Effect<void, SqlError>;
+    markRead: (id: string, side: 'family' | 'provider', at: Date) => Effect.Effect<void, SqlError>;
     softDeleteById: (id: string) => Effect.Effect<void, SqlError>;
   }
->() { }
+>() {}
 
 export const ConversationRepoLive = Layer.effect(
   ConversationRepo,
@@ -76,7 +82,7 @@ export const ConversationRepoLive = Layer.effect(
       and(
         isNull(conversation.deletedAt),
         sql`(${conversation.familyUserId} = ${viewerUserId} or ${conversation.providerUserId} = ${viewerUserId})`,
-        sql`not (${conversation.status} = 'ignored' and ${conversation.ignoredAt} < ${ignoredCutoff})`,
+        sql`not (${conversation.status} = 'ignored' and ${conversation.ignoredAt} < ${ignoredCutoff})`
       );
 
     /** The list additionally hides ignored threads from the ignorer — the
@@ -85,10 +91,19 @@ export const ConversationRepoLive = Layer.effect(
     const listedFor = (viewerUserId: string, ignoredCutoff: Date) =>
       and(
         visibleTo(viewerUserId, ignoredCutoff),
-        sql`not (${conversation.status} = 'ignored' and ${conversation.initiatorUserId} <> ${viewerUserId})`,
+        sql`not (${conversation.status} = 'ignored' and ${conversation.initiatorUserId} <> ${viewerUserId})`
       );
 
-    const withContext = (viewerUserId: string, rows: Array<{ conversation: Conversation; counterpartUserId: string; counterpartFirstName: string | null; counterpartLastName: string | null; counterpartCity: string | null }>) =>
+    const withContext = (
+      viewerUserId: string,
+      rows: Array<{
+        conversation: Conversation;
+        counterpartUserId: string;
+        counterpartFirstName: string | null;
+        counterpartLastName: string | null;
+        counterpartCity: string | null;
+      }>
+    ) =>
       Effect.gen(function* () {
         if (rows.length === 0) return [];
         const ids = rows.map((row) => row.conversation.id);
@@ -96,7 +111,12 @@ export const ConversationRepoLive = Layer.effect(
         const lastMessages = yield* db
           .selectDistinctOn([conversationMessage.conversationId])
           .from(conversationMessage)
-          .where(and(inArray(conversationMessage.conversationId, ids), isNull(conversationMessage.deletedAt)))
+          .where(
+            and(
+              inArray(conversationMessage.conversationId, ids),
+              isNull(conversationMessage.deletedAt)
+            )
+          )
           .orderBy(conversationMessage.conversationId, sql`${conversationMessage.createdAt} desc`);
 
         const unreadCounts = yield* db
@@ -108,8 +128,8 @@ export const ConversationRepoLive = Layer.effect(
               inArray(conversationMessage.conversationId, ids),
               isNull(conversationMessage.deletedAt),
               ne(conversationMessage.senderUserId, viewerUserId),
-              sql`${conversationMessage.createdAt} > coalesce(${viewerLastReadAt(viewerUserId)}, 'epoch'::timestamp)`,
-            ),
+              sql`${conversationMessage.createdAt} > coalesce(${viewerLastReadAt(viewerUserId)}, 'epoch'::timestamp)`
+            )
           )
           .groupBy(conversationMessage.conversationId);
 
@@ -128,12 +148,13 @@ export const ConversationRepoLive = Layer.effect(
               lastMessageBody: last?.body ?? null,
               lastMessageAt: last?.createdAt ?? null,
               lastMessageSenderUserId: last?.senderUserId ?? null,
-              unreadCount: unreadById.get(row.conversation.id) ?? 0,
+              unreadCount: unreadById.get(row.conversation.id) ?? 0
             };
           })
           .sort(
             (a, b) =>
-              (b.lastMessageAt ?? b.createdAt).getTime() - (a.lastMessageAt ?? a.createdAt).getTime(),
+              (b.lastMessageAt ?? b.createdAt).getTime() -
+              (a.lastMessageAt ?? a.createdAt).getTime()
           );
       });
 
@@ -144,7 +165,7 @@ export const ConversationRepoLive = Layer.effect(
           counterpartUserId: counterpartId(viewerUserId),
           counterpartFirstName: userProfile.firstName,
           counterpartLastName: userProfile.lastName,
-          counterpartCity: userProfile.city,
+          counterpartCity: userProfile.city
         })
         .from(conversation)
         .leftJoin(userProfile, eq(userProfile.userId, counterpartId(viewerUserId)));
@@ -158,7 +179,7 @@ export const ConversationRepoLive = Layer.effect(
             providerUserId: input.providerUserId,
             initiatorUserId: input.initiatorUserId,
             reachoutMessage: input.reachoutMessage,
-            reachoutServices: input.reachoutServices,
+            reachoutServices: input.reachoutServices
           })
           .returning()
           .pipe(Effect.map((rows) => rows[0])),
@@ -170,8 +191,8 @@ export const ConversationRepoLive = Layer.effect(
             and(
               eq(conversation.familyUserId, familyUserId),
               eq(conversation.providerUserId, providerUserId),
-              isNull(conversation.deletedAt),
-            ),
+              isNull(conversation.deletedAt)
+            )
           )
           .limit(1)
           .pipe(Effect.map((rows) => rows[0] ?? null)),
@@ -188,7 +209,7 @@ export const ConversationRepoLive = Layer.effect(
           .limit(1)
           .pipe(
             Effect.flatMap((rows) => withContext(viewerUserId, rows)),
-            Effect.map((rows) => rows[0] ?? null),
+            Effect.map((rows) => rows[0] ?? null)
           ),
       listForUser: (viewerUserId, ignoredCutoff) =>
         selectWithCounterpart(viewerUserId)
@@ -198,7 +219,12 @@ export const ConversationRepoLive = Layer.effect(
         db
           .select()
           .from(conversationMessage)
-          .where(and(eq(conversationMessage.conversationId, conversationId), isNull(conversationMessage.deletedAt)))
+          .where(
+            and(
+              eq(conversationMessage.conversationId, conversationId),
+              isNull(conversationMessage.deletedAt)
+            )
+          )
           .orderBy(asc(conversationMessage.createdAt)),
       createMessage: (input) =>
         db
@@ -206,40 +232,49 @@ export const ConversationRepoLive = Layer.effect(
           .values({
             conversationId: input.conversationId,
             senderUserId: input.senderUserId,
-            body: input.body,
+            body: input.body
           })
           .returning()
           .pipe(
             Effect.map((rows) => rows[0]),
             Effect.tap(() =>
               // Bump the conversation so list ordering follows activity.
-              db.update(conversation).set({ updatedAt: new Date() }).where(eq(conversation.id, input.conversationId)),
-            ),
+              db
+                .update(conversation)
+                .set({ updatedAt: new Date() })
+                .where(eq(conversation.id, input.conversationId))
+            )
           ),
       markResponded: (id) =>
         db
           .update(conversation)
-          .set({ status: "active", respondedAt: new Date(), ignoredAt: null })
+          .set({ status: 'active', respondedAt: new Date(), ignoredAt: null })
           .where(
             and(
               eq(conversation.id, id),
               sql`${conversation.status} in ('pending', 'ignored')`,
-              isNull(conversation.deletedAt),
-            ),
+              isNull(conversation.deletedAt)
+            )
           )
           .returning()
           .pipe(Effect.map((rows) => rows[0] ?? null)),
       markIgnored: (id) =>
         db
           .update(conversation)
-          .set({ status: "ignored", ignoredAt: new Date() })
-          .where(and(eq(conversation.id, id), eq(conversation.status, "pending"), isNull(conversation.deletedAt)))
+          .set({ status: 'ignored', ignoredAt: new Date() })
+          .where(
+            and(
+              eq(conversation.id, id),
+              eq(conversation.status, 'pending'),
+              isNull(conversation.deletedAt)
+            )
+          )
           .returning()
           .pipe(Effect.map((rows) => rows[0] ?? null)),
       markRead: (id, side, at) =>
         db
           .update(conversation)
-          .set(side === "family" ? { familyLastReadAt: at } : { providerLastReadAt: at })
+          .set(side === 'family' ? { familyLastReadAt: at } : { providerLastReadAt: at })
           .where(eq(conversation.id, id))
           .pipe(Effect.asVoid),
       softDeleteById: (id) =>
@@ -247,9 +282,9 @@ export const ConversationRepoLive = Layer.effect(
           .update(conversation)
           .set({ deletedAt: new Date() })
           .where(and(eq(conversation.id, id), isNull(conversation.deletedAt)))
-          .pipe(Effect.asVoid),
+          .pipe(Effect.asVoid)
     };
-  }),
+  })
 );
 
 export const ConversationRepoDefault = ConversationRepoLive.pipe(Layer.provide(DrizzleLive));
@@ -258,42 +293,42 @@ export const makeConversationRepoTest = (implementation: Context.Tag.Service<Con
   Layer.succeed(ConversationRepo, implementation);
 
 export const dummyConversation: Conversation = {
-  id: "conversation-1",
-  familyUserId: "family-1",
-  providerUserId: "provider-1",
-  initiatorUserId: "family-1",
-  status: "pending",
+  id: 'conversation-1',
+  familyUserId: 'family-1',
+  providerUserId: 'provider-1',
+  initiatorUserId: 'family-1',
+  status: 'pending',
   reachoutMessage: "Hi Maria — I'd like to work with you.",
-  reachoutServices: [{ serviceId: "service-1", name: "Childcare" }],
+  reachoutServices: [{ serviceId: 'service-1', name: 'Childcare' }],
   respondedAt: null,
   ignoredAt: null,
   familyLastReadAt: null,
   providerLastReadAt: null,
   deletedAt: null,
-  createdAt: new Date("2026-08-01T00:00:00.000Z"),
-  updatedAt: new Date("2026-08-01T00:00:00.000Z"),
+  createdAt: new Date('2026-08-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-08-01T00:00:00.000Z')
 };
 
 export const dummyConversationWithContext: ConversationWithContext = {
   ...dummyConversation,
-  counterpartUserId: "provider-1",
-  counterpartFirstName: "Maria",
-  counterpartLastName: "S.",
-  counterpartCity: "Toronto",
+  counterpartUserId: 'provider-1',
+  counterpartFirstName: 'Maria',
+  counterpartLastName: 'S.',
+  counterpartCity: 'Toronto',
   lastMessageBody: null,
   lastMessageAt: null,
   lastMessageSenderUserId: null,
-  unreadCount: 0,
+  unreadCount: 0
 };
 
 export const dummyConversationMessage: ConversationMessage = {
-  id: "message-1",
-  conversationId: "conversation-1",
-  senderUserId: "provider-1",
-  body: "Hi Priya! Thanks for reaching out.",
+  id: 'message-1',
+  conversationId: 'conversation-1',
+  senderUserId: 'provider-1',
+  body: 'Hi Priya! Thanks for reaching out.',
   deletedAt: null,
-  createdAt: new Date("2026-08-01T09:32:00.000Z"),
-  updatedAt: new Date("2026-08-01T09:32:00.000Z"),
+  createdAt: new Date('2026-08-01T09:32:00.000Z'),
+  updatedAt: new Date('2026-08-01T09:32:00.000Z')
 };
 
 export const EmptyConversationRepoTest = makeConversationRepoTest({
@@ -307,5 +342,5 @@ export const EmptyConversationRepoTest = makeConversationRepoTest({
   markResponded: () => Effect.succeed(null),
   markIgnored: () => Effect.succeed(null),
   markRead: () => Effect.void,
-  softDeleteById: () => Effect.void,
+  softDeleteById: () => Effect.void
 });

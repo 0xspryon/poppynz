@@ -37,7 +37,8 @@
 		{
 			selector: '[data-tour="radius"]',
 			title: 'Search near home',
-			description: 'Results center on your saved home location. Widen the radius to see more helpers.'
+			description:
+				'Results center on your saved home location. Widen the radius to see more helpers.'
 		},
 		{
 			selector: '[data-tour="filters"]',
@@ -366,9 +367,13 @@
 				</span>
 			</label>
 		{/if}
-		<div class="flex max-h-[78px] flex-col gap-1 overflow-y-auto overscroll-contain lg:max-h-[136px]">
+		<div
+			class="flex max-h-[78px] flex-col gap-1 overflow-y-auto overscroll-contain lg:max-h-[136px]"
+		>
 			{#each filteredCatalogue as name (name)}
-				<label class="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-base-300">
+				<label
+					class="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 text-sm hover:bg-base-300"
+				>
 					<input
 						type="checkbox"
 						class="checkbox checkbox-primary checkbox-xs"
@@ -480,7 +485,8 @@
 						</button>
 					{/if}
 				{:else if hasLocation}
-					<span class="truncate">Near <strong class="text-base-content">{originLabel}</strong></span>
+					<span class="truncate">Near <strong class="text-base-content">{originLabel}</strong></span
+					>
 					<a href={resolve('/family/profile')} class="shrink-0 text-xs font-semibold text-primary">
 						Change
 					</a>
@@ -495,7 +501,9 @@
 			<div class="join" role="group" aria-label="Search radius" data-tour="radius">
 				<button
 					type="button"
-					class="btn join-item btn-sm {radiusKm == null ? 'btn-secondary' : 'btn-ghost border border-outline-variant'}"
+					class="btn join-item btn-sm {radiusKm == null
+						? 'btn-secondary'
+						: 'btn-ghost border border-outline-variant'}"
 					onclick={() => pickRadius(null)}
 				>
 					Anywhere
@@ -503,7 +511,9 @@
 				{#each RADIUS_PRESETS as preset (preset)}
 					<button
 						type="button"
-						class="btn join-item btn-sm {radiusKm === preset ? 'btn-secondary' : 'btn-ghost border border-outline-variant'}"
+						class="btn join-item btn-sm {radiusKm === preset
+							? 'btn-secondary'
+							: 'btn-ghost border border-outline-variant'}"
 						disabled={!hasLocation}
 						onclick={() => pickRadius(preset)}
 					>
@@ -569,22 +579,51 @@
 			{#if filtersActive}
 				<div class="mb-4 flex flex-wrap items-center gap-1.5">
 					{#if q}
-						<button type="button" class="badge gap-1 border-none bg-base-400 text-secondary" onclick={() => { q = ''; qInput = ''; resetToFirstPage(); }}>
+						<button
+							type="button"
+							class="badge gap-1 border-none bg-base-400 text-secondary"
+							onclick={() => {
+								q = '';
+								qInput = '';
+								resetToFirstPage();
+							}}
+						>
 							“{q}” <i class="las la-times" aria-hidden="true"></i>
 						</button>
 					{/if}
 					{#if service}
-						<button type="button" class="badge gap-1 border-none bg-base-400 text-secondary" onclick={() => toggleService(service)}>
+						<button
+							type="button"
+							class="badge gap-1 border-none bg-base-400 text-secondary"
+							onclick={() => toggleService(service)}
+						>
 							{service} <i class="las la-times" aria-hidden="true"></i>
 						</button>
 					{/if}
 					{#if city}
-						<button type="button" class="badge gap-1 border-none bg-base-400 text-secondary" onclick={() => { city = ''; resetToFirstPage(); }}>
+						<button
+							type="button"
+							class="badge gap-1 border-none bg-base-400 text-secondary"
+							onclick={() => {
+								city = '';
+								resetToFirstPage();
+							}}
+						>
 							{city} <i class="las la-times" aria-hidden="true"></i>
 						</button>
 					{/if}
 					{#if rateChipLabel}
-						<button type="button" class="badge gap-1 border-none bg-base-400 text-secondary" onclick={() => { minCents = null; maxCents = null; rateMinInput = ''; rateMaxInput = ''; resetToFirstPage(); }}>
+						<button
+							type="button"
+							class="badge gap-1 border-none bg-base-400 text-secondary"
+							onclick={() => {
+								minCents = null;
+								maxCents = null;
+								rateMinInput = '';
+								rateMaxInput = '';
+								resetToFirstPage();
+							}}
+						>
 							{rateChipLabel} <i class="las la-times" aria-hidden="true"></i>
 						</button>
 					{/if}
@@ -615,7 +654,9 @@
 					{/each}
 				</div>
 			{:else if searchError}
-				<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+				<div
+					class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+				>
 					<span class="flex size-14 items-center justify-center rounded-full bg-error-content">
 						<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
 					</span>
@@ -625,13 +666,19 @@
 					<p class="max-w-sm text-sm text-base-content-muted">
 						Your search didn't load. Your filters are safe — try again in a moment.
 					</p>
-					<button type="button" class="btn btn-primary btn-sm" onclick={() => (retryTick = retryTick + 1)}>
+					<button
+						type="button"
+						class="btn btn-primary btn-sm"
+						onclick={() => (retryTick = retryTick + 1)}
+					>
 						<i class="las la-redo-alt" aria-hidden="true"></i>
 						Retry search
 					</button>
 				</div>
 			{:else if total === 0 && filtersActive}
-				<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+				<div
+					class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+				>
 					<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
 						<i class="las la-search text-2xl text-neutral" aria-hidden="true"></i>
 					</span>
@@ -659,7 +706,9 @@
 					</div>
 				</div>
 			{:else if total === 0}
-				<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+				<div
+					class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+				>
 					<span class="flex size-14 items-center justify-center rounded-full bg-warning-content">
 						<i class="las la-seedling text-2xl text-warning" aria-hidden="true"></i>
 					</span>
@@ -671,7 +720,11 @@
 						radius to see who's a little further out.
 					</p>
 					{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
-						<button type="button" class="btn btn-primary btn-sm" onclick={() => pickRadius(RADIUS_PRESETS[RADIUS_PRESETS.length - 1])}>
+						<button
+							type="button"
+							class="btn btn-primary btn-sm"
+							onclick={() => pickRadius(RADIUS_PRESETS[RADIUS_PRESETS.length - 1])}
+						>
 							Search within {RADIUS_PRESETS[RADIUS_PRESETS.length - 1]} km
 						</button>
 					{/if}
@@ -708,7 +761,12 @@
 
 <!-- Mobile filter bottom sheet -->
 {#if sheetOpen}
-	<div class="modal modal-bottom modal-open lg:hidden" role="dialog" aria-modal="true" aria-label="Filters">
+	<div
+		class="modal modal-bottom modal-open lg:hidden"
+		role="dialog"
+		aria-modal="true"
+		aria-label="Filters"
+	>
 		<div class="modal-box rounded-t-2xl">
 			<div class="mx-auto mb-3 h-1 w-10 rounded-pill bg-outline-variant"></div>
 			<div class="mb-3 flex items-center justify-between">
@@ -722,7 +780,9 @@
 					<div class="join" role="group" aria-label="Search radius">
 						<button
 							type="button"
-							class="btn join-item btn-sm {radiusKm == null ? 'btn-secondary' : 'btn-ghost border border-outline-variant'}"
+							class="btn join-item btn-sm {radiusKm == null
+								? 'btn-secondary'
+								: 'btn-ghost border border-outline-variant'}"
 							onclick={() => pickRadius(null)}
 						>
 							Anywhere
@@ -730,7 +790,9 @@
 						{#each RADIUS_PRESETS as preset (preset)}
 							<button
 								type="button"
-								class="btn join-item btn-sm {radiusKm === preset ? 'btn-secondary' : 'btn-ghost border border-outline-variant'}"
+								class="btn join-item btn-sm {radiusKm === preset
+									? 'btn-secondary'
+									: 'btn-ghost border border-outline-variant'}"
 								onclick={() => pickRadius(preset)}
 							>
 								{preset} km
@@ -750,6 +812,11 @@
 				</button>
 			</div>
 		</div>
-		<button type="button" class="modal-backdrop" onclick={() => (sheetOpen = false)} aria-label="Close filters"></button>
+		<button
+			type="button"
+			class="modal-backdrop"
+			onclick={() => (sheetOpen = false)}
+			aria-label="Close filters"
+		></button>
 	</div>
 {/if}

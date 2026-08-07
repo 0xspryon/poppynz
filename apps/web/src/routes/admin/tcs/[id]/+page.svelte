@@ -45,7 +45,9 @@
 
 	let viewing = $state<AdminTcVersion | null>(null);
 
-	const serverDraft = $derived(doc?.versions.find((version) => version.publishedAt === null) ?? null);
+	const serverDraft = $derived(
+		doc?.versions.find((version) => version.publishedAt === null) ?? null
+	);
 	const latestPublished = $derived(
 		doc?.versions.find((version) => version.publishedAt !== null) ?? null
 	);
@@ -320,11 +322,7 @@
 					<p class="truncate text-[11px] text-base-content-muted">☐ {version.checkboxLabel}</p>
 				</div>
 				<div class="mt-2 flex justify-end lg:mt-0">
-					<button
-						type="button"
-						class="btn btn-ghost btn-sm"
-						onclick={() => (viewing = version)}
-					>
+					<button type="button" class="btn btn-ghost btn-sm" onclick={() => (viewing = version)}>
 						View
 					</button>
 				</div>

@@ -51,7 +51,12 @@
 
 	const items: Array<SidebarItem> = $derived([
 		{ href: resolve('/family/find'), label: 'Find help', icon: 'la-search' },
-		{ href: resolve('/family/messages'), label: 'Messages', icon: 'la-comment', badge: unread.count },
+		{
+			href: resolve('/family/messages'),
+			label: 'Messages',
+			icon: 'la-comment',
+			badge: unread.count
+		},
 		{
 			href: resolve('/family/contracts'),
 			label: 'Contracts',

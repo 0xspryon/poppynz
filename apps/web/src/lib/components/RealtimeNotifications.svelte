@@ -35,7 +35,9 @@
 		role === 'family' ? resolve('/family/messages') : resolve('/service-provider/messages')
 	);
 	// Families have no approval page (yet) — for them the modal always shows.
-	const approvalHref = $derived(role === 'service-provider' ? resolve('/service-provider/approval') : null);
+	const approvalHref = $derived(
+		role === 'service-provider' ? resolve('/service-provider/approval') : null
+	);
 	const contractsHref = $derived(
 		role === 'family' ? resolve('/family/contracts') : resolve('/service-provider/contracts')
 	);
@@ -72,9 +74,12 @@
 			notifications.on('conversation.unlocked', (event) => {
 				void unread.refresh();
 				if (!onMessagesPage()) {
-					toast.success(`${event.payload.responderName} responded — your conversation is unlocked.`, {
-						title: 'Reach-out accepted'
-					});
+					toast.success(
+						`${event.payload.responderName} responded — your conversation is unlocked.`,
+						{
+							title: 'Reach-out accepted'
+						}
+					);
 				}
 			}),
 			notifications.on('approval.decided', (event) => {

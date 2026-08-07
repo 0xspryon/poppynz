@@ -1,9 +1,9 @@
-import type { SqlError } from "@effect/sql/SqlError";
-import { type Session, SessionRepo, type User, UserRepo } from "@repo/db";
-import { Context, Data, Effect, Layer } from "effect";
-import { auth } from "./auth";
-import type { HonoContext, HonoEnv } from "../app-env";
-import { isSupportedRole, type Role } from "./auth-roles";
+import type { SqlError } from '@effect/sql/SqlError';
+import { type Session, SessionRepo, type User, UserRepo } from '@repo/db';
+import { Context, Data, Effect, Layer } from 'effect';
+import { auth } from './auth';
+import type { HonoContext, HonoEnv } from '../app-env';
+import { isSupportedRole, type Role } from './auth-roles';
 
 export type AuthSession = {
   user: {
@@ -21,63 +21,63 @@ export type UserAndSession = {
 
 export type Permissions = Record<string, Array<string>>;
 
-export class AuthProviderError extends Data.TaggedError("AuthProviderError")<{
+export class AuthProviderError extends Data.TaggedError('AuthProviderError')<{
   cause: unknown;
-}> { }
+}> {}
 
-export class AuthEntityLookupError extends Data.TaggedError("AuthEntityLookupError")<{
+export class AuthEntityLookupError extends Data.TaggedError('AuthEntityLookupError')<{
   cause: SqlError;
-}> { }
+}> {}
 
-export class UnauthorizedError extends Data.TaggedError("UnauthorizedError")<{}> { }
+export class UnauthorizedError extends Data.TaggedError('UnauthorizedError')<{}> {}
 
-export class ForbiddenError extends Data.TaggedError("ForbiddenError")<{}> { }
+export class ForbiddenError extends Data.TaggedError('ForbiddenError')<{}> {}
 
-export class AuthService extends Context.Tag("@api/lib/AuthService")<
+export class AuthService extends Context.Tag('@api/lib/AuthService')<
   AuthService,
   {
     getSession: (headers: Headers) => Effect.Effect<AuthSession | null, AuthProviderError>;
     userHasPermission: (
       headers: Headers,
-      permissions: Permissions,
+      permissions: Permissions
     ) => Effect.Effect<boolean, AuthProviderError>;
   }
->() { }
+>() {}
 
 export const AuthServiceLive = Layer.succeed(AuthService, {
   getSession: (headers) =>
     Effect.tryPromise({
       try: async () => auth.api.getSession({ headers }),
-      catch: (cause) => new AuthProviderError({ cause }),
+      catch: (cause) => new AuthProviderError({ cause })
     }).pipe(
       Effect.map((session) =>
         session
           ? {
-            user: { id: session.user.id },
-            session: { id: session.session.id },
-          }
-          : null,
-      ),
+              user: { id: session.user.id },
+              session: { id: session.session.id }
+            }
+          : null
+      )
     ),
   userHasPermission: (headers, permissions) =>
     Effect.tryPromise({
       try: async () => {
         const result = await auth.api.userHasPermission({
           headers,
-          body: { permissions },
+          body: { permissions }
         });
 
         return result.success;
       },
-      catch: (cause) => new AuthProviderError({ cause }),
-    }),
+      catch: (cause) => new AuthProviderError({ cause })
+    })
 });
 
 export const makeAuthServiceTest = (implementation: Context.Tag.Service<AuthService>) =>
   Layer.succeed(AuthService, implementation);
 
 export const authenticate = (headers: Headers) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const authService = yield* AuthService;
     const userRepo = yield* UserRepo;
     const sessionRepo = yield* SessionRepo;
@@ -89,45 +89,44 @@ export const authenticate = (headers: Headers) =>
 
     const [user, session] = yield* Effect.all(
       [
-        userRepo
-          .findById(authSession.user.id)
-          .pipe(
-            Effect.catchTags({
-              SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
-              DBNotFoundError: () => Effect.fail(new UnauthorizedError())
-            })
-          ),
-        sessionRepo
-          .findById(authSession.session.id)
-          .pipe(
-            Effect.catchTags({
-              SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
-              DBNotFoundError: () => Effect.fail(new UnauthorizedError())
-            })
-          )
+        userRepo.findById(authSession.user.id).pipe(
+          Effect.catchTags({
+            SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
+            DBNotFoundError: () => Effect.fail(new UnauthorizedError())
+          })
+        ),
+        sessionRepo.findById(authSession.session.id).pipe(
+          Effect.catchTags({
+            SqlError: (cause) => Effect.fail(new AuthEntityLookupError({ cause })),
+            DBNotFoundError: () => Effect.fail(new UnauthorizedError())
+          })
+        )
       ],
-      { concurrency: 'unbounded' },
+      { concurrency: 'unbounded' }
     );
     return { user, session };
   });
 
-export const requirePermissions = (headers: Headers, permissions: Permissions) => (userAndSession: { user: User, session: Session }) =>
-  Effect.gen(function*() {
-    const authService = yield* AuthService;
-    const allowed = yield* authService.userHasPermission(headers, permissions);
+export const requirePermissions =
+  (headers: Headers, permissions: Permissions) =>
+  (userAndSession: { user: User; session: Session }) =>
+    Effect.gen(function* () {
+      const authService = yield* AuthService;
+      const allowed = yield* authService.userHasPermission(headers, permissions);
 
-    if (!allowed) {
-      return yield* Effect.fail(new ForbiddenError());
-    }
-    const role = userAndSession.user.role
-    if (role && !isSupportedRole(role)
-    ) {
-      yield* Effect.fail(new ForbiddenError())
-    }
-    return userAndSession as UserAndSession;
-  });
+      if (!allowed) {
+        return yield* Effect.fail(new ForbiddenError());
+      }
+      const role = userAndSession.user.role;
+      if (role && !isSupportedRole(role)) {
+        yield* Effect.fail(new ForbiddenError());
+      }
+      return userAndSession as UserAndSession;
+    });
 
-export type AuthError = Effect.Effect.Error<ReturnType<typeof authenticate>> | Effect.Effect.Error<ReturnType<ReturnType<typeof requirePermissions>>>;
+export type AuthError =
+  | Effect.Effect.Error<ReturnType<typeof authenticate>>
+  | Effect.Effect.Error<ReturnType<ReturnType<typeof requirePermissions>>>;
 
 export const isAuthError = (error: unknown): error is AuthError =>
   error instanceof AuthProviderError ||
@@ -136,51 +135,55 @@ export const isAuthError = (error: unknown): error is AuthError =>
   error instanceof ForbiddenError;
 
 export function handleNever(c: HonoContext<HonoEnv>, _: never) {
-  return c.json({ error: { code: 'INTERNAL_SERVER_ERROR' as const, message: 'internal server error' } }, 500)
+  return c.json(
+    { error: { code: 'INTERNAL_SERVER_ERROR' as const, message: 'internal server error' } },
+    500
+  );
 }
 
 export const authErrorToResponse = (c: HonoContext<HonoEnv>, error: AuthError) => {
   switch (error._tag) {
-    case "UnauthorizedError":
+    case 'UnauthorizedError':
       return c.json(
         {
           error: {
-            code: "UNAUTHORIZED" as const,
-            message: "Authentication is required.",
-          },
+            code: 'UNAUTHORIZED' as const,
+            message: 'Authentication is required.'
+          }
         },
-        401,
+        401
       );
-    case "ForbiddenError":
+    case 'ForbiddenError':
       return c.json(
         {
           error: {
-            code: "FORBIDDEN" as const,
-            message: "You do not have permission to access this resource.",
-          },
+            code: 'FORBIDDEN' as const,
+            message: 'You do not have permission to access this resource.'
+          }
         },
-        403,
+        403
       );
-    case "AuthProviderError":
+    case 'AuthProviderError':
       return c.json(
         {
           error: {
-            code: "AUTH_PROVIDER_FAILED" as const,
-            message: "Unable to verify authentication.",
-          },
+            code: 'AUTH_PROVIDER_FAILED' as const,
+            message: 'Unable to verify authentication.'
+          }
         },
-        500,
+        500
       );
-    case "AuthEntityLookupError":
+    case 'AuthEntityLookupError':
       return c.json(
         {
           error: {
-            code: "AUTH_ENTITY_LOOKUP_FAILED" as const,
-            message: "Unable to verify authentication.",
-          },
+            code: 'AUTH_ENTITY_LOOKUP_FAILED' as const,
+            message: 'Unable to verify authentication.'
+          }
         },
-        500,
+        500
       );
-    default: return handleNever(c, error)
+    default:
+      return handleNever(c, error);
   }
 };

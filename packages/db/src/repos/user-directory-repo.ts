@@ -1,9 +1,9 @@
-import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
-import { desc, eq } from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
-import { DrizzleLive } from "../effect-db";
-import { user, userProfile } from "../schema";
+import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import type { SqlError } from '@effect/sql/SqlError';
+import { desc, eq } from 'drizzle-orm';
+import { Context, Effect, Layer } from 'effect';
+import { DrizzleLive } from '../effect-db';
+import { user, userProfile } from '../schema';
 
 /** One row of the admin user directory: the auth user plus profile names.
  * Kept as its own repo (not UserRepo) so the admin listing can grow joins
@@ -20,12 +20,12 @@ export type DirectoryUser = {
   lastName: string | null;
 };
 
-export class UserDirectoryRepo extends Context.Tag("@repo/db/UserDirectoryRepo")<
+export class UserDirectoryRepo extends Context.Tag('@repo/db/UserDirectoryRepo')<
   UserDirectoryRepo,
   {
     listAll: () => Effect.Effect<Array<DirectoryUser>, SqlError>;
   }
->() { }
+>() {}
 
 export const UserDirectoryRepoLive = Layer.effect(
   UserDirectoryRepo,
@@ -44,18 +44,14 @@ export const UserDirectoryRepoLive = Layer.effect(
             banReason: user.banReason,
             createdAt: user.createdAt,
             firstName: userProfile.firstName,
-            lastName: userProfile.lastName,
+            lastName: userProfile.lastName
           })
           .from(user)
           .leftJoin(userProfile, eq(userProfile.userId, user.id))
           .orderBy(desc(user.createdAt))
-          .pipe(
-            Effect.map((rows) =>
-              rows.map((row) => ({ ...row, banned: row.banned ?? false })),
-            ),
-          ),
+          .pipe(Effect.map((rows) => rows.map((row) => ({ ...row, banned: row.banned ?? false }))))
     };
-  }),
+  })
 );
 
 export const UserDirectoryRepoDefault = UserDirectoryRepoLive.pipe(Layer.provide(DrizzleLive));

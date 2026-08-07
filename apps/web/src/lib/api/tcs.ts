@@ -120,7 +120,9 @@ export async function updateTcDocument(
 ): Promise<ApiResult<TcDocumentSummary, ErrorsOf<typeof adminUpdateEndpoint>>> {
 	// The API reads PATCH bodies via parseJsonBody (no hono validator), so the
 	// RPC input type omits `json` — the client still serializes it at runtime.
-	const args = { param: { id }, json: patch } as unknown as Parameters<typeof adminUpdateEndpoint>[0];
+	const args = { param: { id }, json: patch } as unknown as Parameters<
+		typeof adminUpdateEndpoint
+	>[0];
 	return call(adminUpdateEndpoint(args));
 }
 
@@ -145,7 +147,9 @@ export async function updateTcDraft(
 	id: string,
 	patch: Partial<TcVersionDraft>
 ): Promise<ApiResult<AdminTcVersion, ErrorsOf<typeof adminUpdateDraftEndpoint>>> {
-	const args = { param: { id }, json: patch } as unknown as Parameters<typeof adminUpdateDraftEndpoint>[0];
+	const args = { param: { id }, json: patch } as unknown as Parameters<
+		typeof adminUpdateDraftEndpoint
+	>[0];
 	return call(adminUpdateDraftEndpoint(args));
 }
 

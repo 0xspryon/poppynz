@@ -52,9 +52,12 @@
 		submitting = true;
 		const result = await submitApprovalRequest();
 		if (result.ok) {
-			toast.success('Your application is with our review team — expect a decision within ~2 days.', {
-				title: 'Submitted for review'
-			});
+			toast.success(
+				'Your application is with our review team — expect a decision within ~2 days.',
+				{
+					title: 'Submitted for review'
+				}
+			);
 			await load();
 		} else {
 			toast.error(submitErrorText(result.error), { title: 'Submission failed' });
@@ -250,10 +253,7 @@
 					<p class="mt-0.5 mb-4 text-xs leading-relaxed text-secondary-content-muted">
 						Families can find you. Everything here stays editable.
 					</p>
-					<a
-						href={resolve('/service-provider/approval')}
-						class="btn mt-auto btn-primary"
-					>
+					<a href={resolve('/service-provider/approval')} class="btn mt-auto btn-primary">
 						View approval
 					</a>
 				{:else if requestStatus === 'submitted'}

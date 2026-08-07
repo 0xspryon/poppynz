@@ -11,13 +11,13 @@ http:
       value: sOOxSjScpCFYEdjITTVJKvylcHfuPMPI
       type: query
     - name: callbackURL
-      value: "%2Fonboarding"
+      value: '%2Fonboarding'
       type: query
     - name: newUserCallbackURL
-      value: "%2Fservice-provider%2Fonboarding"
+      value: '%2Fservice-provider%2Fonboarding'
       type: query
     - name: errorCallbackURL
-      value: "%2Fauth%2Fsign-up%2Ferror"
+      value: '%2Fauth%2Fsign-up%2Ferror'
       type: query
   auth: inherit
 

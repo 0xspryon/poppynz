@@ -3,9 +3,9 @@ import {
   KycDocumentTypeRepo,
   ServiceOfferedRepo,
   type KycDocument,
-  type KycDocumentType,
-} from "@repo/db";
-import { Effect } from "effect";
+  type KycDocumentType
+} from '@repo/db';
+import { Effect } from 'effect';
 
 // Shared assembly of the provider's document checklist (active types merged
 // with submitted documents) and the advisory warnings derived from it. Used by
@@ -16,7 +16,7 @@ export const buildDocumentChecklist = (types: Array<KycDocumentType>, docs: Arra
   const docsByTypeId = new Map(docs.map((doc) => [doc.documentTypeId, doc]));
 
   return types
-    .filter((type) => type.appliesToRole === "service-provider")
+    .filter((type) => type.appliesToRole === 'service-provider')
     .map((type) => {
       const document = docsByTypeId.get(type.id) ?? null;
 
@@ -26,27 +26,30 @@ export const buildDocumentChecklist = (types: Array<KycDocumentType>, docs: Arra
         isOptional: type.isOptional,
         requiresExpiryDate: type.requiresExpiryDate,
         isFetchable: type.isFetchable,
-        status: document ? document.status : ("missing" as const),
+        status: document ? document.status : ('missing' as const),
         document: document
           ? {
-            id: document.id,
-            filename: document.filename,
-            expiryDate: document.expiryDate?.toISOString() ?? null,
-            reason: document.reason,
-            submittedAt: document.createdAt.toISOString(),
-          }
-          : null,
+              id: document.id,
+              filename: document.filename,
+              expiryDate: document.expiryDate?.toISOString() ?? null,
+              reason: document.reason,
+              submittedAt: document.createdAt.toISOString()
+            }
+          : null
       };
     });
 };
 
 export type DocumentChecklistEntry = ReturnType<typeof buildDocumentChecklist>[number];
 
-export const checklistWarnings = (checklist: Array<DocumentChecklistEntry>, servicesCount: number) => ({
+export const checklistWarnings = (
+  checklist: Array<DocumentChecklistEntry>,
+  servicesCount: number
+) => ({
   missingRequiredDocuments: checklist
-    .filter((entry) => !entry.isOptional && entry.status === "missing")
+    .filter((entry) => !entry.isOptional && entry.status === 'missing')
     .map((entry) => ({ documentTypeId: entry.documentTypeId, name: entry.name })),
-  missingServicesOffered: servicesCount === 0,
+  missingServicesOffered: servicesCount === 0
 });
 
 export const loadProviderChecklist = (userId: string) =>
@@ -63,15 +66,15 @@ export const loadProviderChecklistWithTypes = (types: Array<KycDocumentType>) =>
   Effect.gen(function* () {
     const docRepo = yield* KycDocumentRepo;
     const serviceRepo = yield* ServiceOfferedRepo;
-    const [docs, services] = yield* Effect.all([
-      docRepo.findByUserId(userId),
-      serviceRepo.listByUserId(userId),
-    ], { concurrency: "unbounded" });
+    const [docs, services] = yield* Effect.all(
+      [docRepo.findByUserId(userId), serviceRepo.listByUserId(userId)],
+      { concurrency: 'unbounded' }
+    );
     const checklist = buildDocumentChecklist(types, docs);
 
     return {
       checklist,
       services,
-      warnings: checklistWarnings(checklist, services.length),
+      warnings: checklistWarnings(checklist, services.length)
     };
   });

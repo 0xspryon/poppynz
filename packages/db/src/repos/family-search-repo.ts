@@ -1,9 +1,9 @@
-import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
-import { and, eq, inArray, type InferSelectModel, isNull } from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
-import { DBNotFoundError, DrizzleLive } from "../effect-db";
-import { serviceNeeded, user, userProfile } from "../schema";
+import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import type { SqlError } from '@effect/sql/SqlError';
+import { and, eq, inArray, type InferSelectModel, isNull } from 'drizzle-orm';
+import { Context, Effect, Layer } from 'effect';
+import { DBNotFoundError, DrizzleLive } from '../effect-db';
+import { serviceNeeded, user, userProfile } from '../schema';
 
 export type FamilySearchProfile = InferSelectModel<typeof userProfile> & {
   email: string;
@@ -20,18 +20,22 @@ export type FamilySearchCandidate = {
   services: Array<FamilySearchService>;
 };
 
-export class FamilySearchRepo extends Context.Tag("@repo/db/FamilySearchRepo")<
+export class FamilySearchRepo extends Context.Tag('@repo/db/FamilySearchRepo')<
   FamilySearchRepo,
   {
-    findCandidateByUserId: (userId: string) => Effect.Effect<FamilySearchCandidate, SqlError | DBNotFoundError>;
-    listCandidatesByUserIds: (userIds: Array<string>) => Effect.Effect<Array<FamilySearchCandidate>, SqlError>;
+    findCandidateByUserId: (
+      userId: string
+    ) => Effect.Effect<FamilySearchCandidate, SqlError | DBNotFoundError>;
+    listCandidatesByUserIds: (
+      userIds: Array<string>
+    ) => Effect.Effect<Array<FamilySearchCandidate>, SqlError>;
     listFamilyUserIds: () => Effect.Effect<Array<string>, SqlError>;
   }
->() { }
+>() {}
 
 export const FamilySearchRepoLive = Layer.effect(
   FamilySearchRepo,
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle;
 
     const profileSelection = {
@@ -40,16 +44,23 @@ export const FamilySearchRepoLive = Layer.effect(
       role: user.role,
       image: user.image,
       banned: user.banned,
-      banExpires: user.banExpires,
+      banExpires: user.banExpires
     };
 
-    const toProfile = (row: { profile: InferSelectModel<typeof userProfile>; email: string; role: string | null; image: string | null; banned: boolean | null; banExpires: Date | null }): FamilySearchProfile => ({
+    const toProfile = (row: {
+      profile: InferSelectModel<typeof userProfile>;
+      email: string;
+      role: string | null;
+      image: string | null;
+      banned: boolean | null;
+      banExpires: Date | null;
+    }): FamilySearchProfile => ({
       ...row.profile,
       email: row.email,
       role: row.role,
       image: row.image,
       banned: row.banned,
-      banExpires: row.banExpires,
+      banExpires: row.banExpires
     });
 
     const findProfile = (userId: string) =>
@@ -63,8 +74,8 @@ export const FamilySearchRepoLive = Layer.effect(
           Effect.flatMap((rows) => {
             const row = rows[0];
             if (row) return Effect.succeed(toProfile(row));
-            return Effect.fail(new DBNotFoundError({ entity: "userProfile", value: userId }));
-          }),
+            return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }));
+          })
         );
 
     const listServices = (userId: string) =>
@@ -73,7 +84,9 @@ export const FamilySearchRepoLive = Layer.effect(
         .from(serviceNeeded)
         .where(and(eq(serviceNeeded.userId, userId), isNull(serviceNeeded.deletedAt)));
 
-    const listCandidatesByUserIds = (userIds: Array<string>): Effect.Effect<Array<FamilySearchCandidate>, SqlError> => {
+    const listCandidatesByUserIds = (
+      userIds: Array<string>
+    ): Effect.Effect<Array<FamilySearchCandidate>, SqlError> => {
       if (userIds.length === 0) return Effect.succeed([]);
 
       return Effect.all(
@@ -86,9 +99,9 @@ export const FamilySearchRepoLive = Layer.effect(
           services: db
             .select()
             .from(serviceNeeded)
-            .where(and(inArray(serviceNeeded.userId, userIds), isNull(serviceNeeded.deletedAt))),
+            .where(and(inArray(serviceNeeded.userId, userIds), isNull(serviceNeeded.deletedAt)))
         },
-        { concurrency: "unbounded" },
+        { concurrency: 'unbounded' }
       ).pipe(
         Effect.map(({ profiles, services }) => {
           const servicesByUserId = new Map<string, Array<FamilySearchService>>();
@@ -100,9 +113,9 @@ export const FamilySearchRepoLive = Layer.effect(
 
           return profiles.map((row) => ({
             profile: toProfile(row),
-            services: servicesByUserId.get(row.profile.userId) ?? [],
+            services: servicesByUserId.get(row.profile.userId) ?? []
           }));
-        }),
+        })
       );
     };
 
@@ -111,19 +124,19 @@ export const FamilySearchRepoLive = Layer.effect(
         Effect.all(
           {
             profile: findProfile(userId),
-            services: listServices(userId),
+            services: listServices(userId)
           },
-          { concurrency: "unbounded" },
+          { concurrency: 'unbounded' }
         ),
       listCandidatesByUserIds,
       listFamilyUserIds: () =>
         db
           .select({ id: user.id })
           .from(user)
-          .where(eq(user.role, "family"))
-          .pipe(Effect.map((rows) => rows.map((row) => row.id))),
+          .where(eq(user.role, 'family'))
+          .pipe(Effect.map((rows) => rows.map((row) => row.id)))
     };
-  }),
+  })
 );
 
 export const FamilySearchRepoDefault = FamilySearchRepoLive.pipe(Layer.provide(DrizzleLive));

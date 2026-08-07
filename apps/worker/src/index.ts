@@ -1,17 +1,17 @@
-import express from "express";
-import { createQueueDashExpressMiddleware } from "@queuedash/api";
-import { Queue, Worker } from "bullmq";
-import { Effect, Layer, ManagedRuntime } from "effect";
-import { trustedOriginsConfig } from "@repo/env";
-import { MailerLive } from "@repo/mail";
-import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from "@repo/typesense";
+import express from 'express';
+import { createQueueDashExpressMiddleware } from '@queuedash/api';
+import { Queue, Worker } from 'bullmq';
+import { Effect, Layer, ManagedRuntime } from 'effect';
+import { trustedOriginsConfig } from '@repo/env';
+import { MailerLive } from '@repo/mail';
+import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import {
   ApprovalRepoDefault,
   FamilySearchOutboxRepo,
   FamilySearchOutboxRepoDefault,
   ProviderSearchOutboxRepo,
-  ProviderSearchOutboxRepoDefault,
-} from "@repo/db";
+  ProviderSearchOutboxRepoDefault
+} from '@repo/db';
 import {
   approvalExpiryCronPattern,
   approvalExpiryJobNames,
@@ -22,11 +22,11 @@ import {
   getRedisConnection,
   providerSearchJobNames,
   providerSearchQueueDefinition,
-  queues,
-} from "@repo/queue";
-import { processApprovalExpiryNotifications } from "./approval-expiry-processor";
-import { processFamilySearchJob } from "./family-search-processor";
-import { processProviderSearchJob } from "./provider-search-processor";
+  queues
+} from '@repo/queue';
+import { processApprovalExpiryNotifications } from './approval-expiry-processor';
+import { processFamilySearchJob } from './family-search-processor';
+import { processProviderSearchJob } from './provider-search-processor';
 
 const WorkerLive = Layer.mergeAll(
   ProviderSearchIndexDefault,
@@ -34,14 +34,16 @@ const WorkerLive = Layer.mergeAll(
   FamilySearchIndexDefault,
   FamilySearchOutboxRepoDefault,
   ApprovalRepoDefault,
-  MailerLive,
+  MailerLive
 );
 const runtime = ManagedRuntime.make(WorkerLive);
 const connection = getRedisConnection();
 
 // Expiry mails link back to the primary UI (first trusted origin).
 const uiOrigin = Effect.runSync(trustedOriginsConfig)
-  .trustedOrigins.split(";")[0]!.trim().replace(/\/$/, "");
+  .trustedOrigins.split(';')[0]!
+  .trim()
+  .replace(/\/$/, '');
 
 const providerSearchWorker = new Worker(
   providerSearchQueueDefinition.name,
@@ -50,8 +52,8 @@ const providerSearchWorker = new Worker(
   },
   {
     connection,
-    concurrency: Number.parseInt(process.env.PROVIDER_SEARCH_WORKER_CONCURRENCY ?? "5", 10),
-  },
+    concurrency: Number.parseInt(process.env.PROVIDER_SEARCH_WORKER_CONCURRENCY ?? '5', 10)
+  }
 );
 
 const familySearchWorker = new Worker(
@@ -61,21 +63,21 @@ const familySearchWorker = new Worker(
   },
   {
     connection,
-    concurrency: Number.parseInt(process.env.FAMILY_SEARCH_WORKER_CONCURRENCY ?? "5", 10),
-  },
+    concurrency: Number.parseInt(process.env.FAMILY_SEARCH_WORKER_CONCURRENCY ?? '5', 10)
+  }
 );
 
 const approvalExpiryWorker = new Worker(
   approvalExpiryQueueDefinition.name,
   async () => {
     const summary = await runtime.runPromise(
-      processApprovalExpiryNotifications(new Date(), uiOrigin),
+      processApprovalExpiryNotifications(new Date(), uiOrigin)
     );
     console.log(
-      `approval-expiry sweep: ${summary.notified} notified, ${summary.skipped} skipped, ${summary.failed} failed of ${summary.candidates} candidates`,
+      `approval-expiry sweep: ${summary.notified} notified, ${summary.skipped} skipped, ${summary.failed} failed of ${summary.candidates} candidates`
     );
   },
-  { connection, concurrency: 1 },
+  { connection, concurrency: 1 }
 );
 
 const approvalExpiryQueue = new Queue(approvalExpiryQueueDefinition.name, { connection });
@@ -86,7 +88,7 @@ const scheduleApprovalExpirySweep = async () => {
   await approvalExpiryQueue.upsertJobScheduler(
     approvalExpirySchedulerId,
     { pattern: approvalExpiryCronPattern },
-    { name: approvalExpiryJobNames.notifyExpiring, data: {} },
+    { name: approvalExpiryJobNames.notifyExpiring, data: {} }
   );
 };
 
@@ -98,7 +100,7 @@ void scheduleApprovalExpirySweep().catch((cause) => {
 const queueDashQueues = queues.map((queue) => ({
   queue: new Queue(queue.name, { connection }),
   displayName: queue.displayName,
-  type: queue.type,
+  type: queue.type
 }));
 
 const providerSearchQueue = new Queue(providerSearchQueueDefinition.name, { connection });
@@ -106,18 +108,18 @@ const familySearchQueue = new Queue(familySearchQueueDefinition.name, { connecti
 
 const enqueueUnresolvedOutboxRows = async () => {
   const rows = await runtime.runPromise(
-    ProviderSearchOutboxRepo.pipe(
-      Effect.flatMap((repo) => repo.listUnresolved(1_000)),
-    ),
+    ProviderSearchOutboxRepo.pipe(Effect.flatMap((repo) => repo.listUnresolved(1_000)))
   );
 
-  await Promise.all(rows.map((row) =>
-    providerSearchQueue.add(
-      providerSearchJobNames.reconcileProvider,
-      { outboxId: row.id, userId: row.userId },
-      { deduplication: { id: `provider-search-reconcile-${row.userId}` } },
-    ),
-  ));
+  await Promise.all(
+    rows.map((row) =>
+      providerSearchQueue.add(
+        providerSearchJobNames.reconcileProvider,
+        { outboxId: row.id, userId: row.userId },
+        { deduplication: { id: `provider-search-reconcile-${row.userId}` } }
+      )
+    )
+  );
 };
 
 void enqueueUnresolvedOutboxRows().catch((cause) => {
@@ -127,18 +129,18 @@ void enqueueUnresolvedOutboxRows().catch((cause) => {
 
 const enqueueUnresolvedFamilyOutboxRows = async () => {
   const rows = await runtime.runPromise(
-    FamilySearchOutboxRepo.pipe(
-      Effect.flatMap((repo) => repo.listUnresolved(1_000)),
-    ),
+    FamilySearchOutboxRepo.pipe(Effect.flatMap((repo) => repo.listUnresolved(1_000)))
   );
 
-  await Promise.all(rows.map((row) =>
-    familySearchQueue.add(
-      familySearchJobNames.reconcileFamily,
-      { outboxId: row.id, userId: row.userId },
-      { deduplication: { id: `family-search-reconcile-${row.userId}` } },
-    ),
-  ));
+  await Promise.all(
+    rows.map((row) =>
+      familySearchQueue.add(
+        familySearchJobNames.reconcileFamily,
+        { outboxId: row.id, userId: row.userId },
+        { deduplication: { id: `family-search-reconcile-${row.userId}` } }
+      )
+    )
+  );
 };
 
 void enqueueUnresolvedFamilyOutboxRows().catch((cause) => {
@@ -148,33 +150,33 @@ void enqueueUnresolvedFamilyOutboxRows().catch((cause) => {
 
 const app = express();
 
-app.get("/health", (_req, res) => {
-  res.json({ status: "ok" });
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok' });
 });
 
-app.use("/queues", (req, res, next) => {
+app.use('/queues', (req, res, next) => {
   const username = process.env.QUEUE_UI_USERNAME;
   const password = process.env.QUEUE_UI_PASSWORD;
 
   if (!username || !password) return next();
 
   const header = req.headers.authorization;
-  const expected = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+  const expected = `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
 
   if (header === expected) return next();
 
-  res.setHeader("WWW-Authenticate", "Basic realm=\"Queue UI\"");
-  res.status(401).send("Unauthorized");
+  res.setHeader('WWW-Authenticate', 'Basic realm="Queue UI"');
+  res.status(401).send('Unauthorized');
 });
 
 app.use(
-  "/queues",
+  '/queues',
   createQueueDashExpressMiddleware({
-    ctx: { queues: queueDashQueues },
-  }),
+    ctx: { queues: queueDashQueues }
+  })
 );
 
-const port = Number.parseInt(process.env.WORKER_HTTP_PORT ?? "3001", 10);
+const port = Number.parseInt(process.env.WORKER_HTTP_PORT ?? '3001', 10);
 const server = app.listen(port, () => {
   console.log(`Worker HTTP server listening on ${port}`);
 });
@@ -191,10 +193,10 @@ const shutdown = async () => {
   await runtime.dispose();
 };
 
-process.on("SIGTERM", () => {
+process.on('SIGTERM', () => {
   void shutdown().then(() => process.exit(0));
 });
 
-process.on("SIGINT", () => {
+process.on('SIGINT', () => {
   void shutdown().then(() => process.exit(0));
 });

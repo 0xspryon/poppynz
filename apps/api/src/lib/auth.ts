@@ -1,13 +1,13 @@
-import { betterAuth } from "better-auth";
-import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { magicLink } from "better-auth/plugins";
-import { admin } from "better-auth/plugins";
-import { apiKey } from "@better-auth/api-key";
-import { organization } from "better-auth/plugins";
-import { i18n } from "@better-auth/i18n";
-import { openAPI } from "better-auth/plugins";
-import { roles, appAc } from './auth-roles'
-import { resolveUiOrigin, trustedUiOrigins } from './ui-origin'
+import { betterAuth } from 'better-auth';
+import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { magicLink } from 'better-auth/plugins';
+import { admin } from 'better-auth/plugins';
+import { apiKey } from '@better-auth/api-key';
+import { organization } from 'better-auth/plugins';
+import { i18n } from '@better-auth/i18n';
+import { openAPI } from 'better-auth/plugins';
+import { roles, appAc } from './auth-roles';
+import { resolveUiOrigin, trustedUiOrigins } from './ui-origin';
 import {
   db,
   FamilySearchOutboxRepoDefault,
@@ -17,17 +17,17 @@ import {
   SignupIntentRepo,
   SignupIntentRepoDefault,
   UserProfileRepo,
-  UserProfileRepoDefault,
-} from "@repo/db";
-import { FamilySearchQueueLive, ProviderSearchQueueLive } from "@repo/queue";
-import { Cause, Data, Effect, Exit, Layer, ManagedRuntime, Option } from "effect";
-import { Mailer, MailerLive, sendMailBestEffort } from "./mailer";
-import { scheduleFamilySearchReconcile } from "./family-search-jobs";
-import { scheduleProviderSearchReconcile } from "./provider-search-jobs";
+  UserProfileRepoDefault
+} from '@repo/db';
+import { FamilySearchQueueLive, ProviderSearchQueueLive } from '@repo/queue';
+import { Cause, Data, Effect, Exit, Layer, ManagedRuntime, Option } from 'effect';
+import { Mailer, MailerLive, sendMailBestEffort } from './mailer';
+import { scheduleFamilySearchReconcile } from './family-search-jobs';
+import { scheduleProviderSearchReconcile } from './provider-search-jobs';
 
-export class SignupHookDbError extends Data.TaggedError("SignupHookDbError")<{
+export class SignupHookDbError extends Data.TaggedError('SignupHookDbError')<{
   cause: unknown;
-}> { }
+}> {}
 
 const AuthHookLive = Layer.mergeAll(
   SignupIntentRepoDefault,
@@ -37,12 +37,12 @@ const AuthHookLive = Layer.mergeAll(
   ProviderSearchQueueLive,
   FamilySearchOutboxRepoDefault,
   FamilySearchQueueLive,
-  MailerLive,
+  MailerLive
 );
 const authHookRuntime = ManagedRuntime.make(AuthHookLive);
 
 export const applySignupIntentToUserEffect = <TUser extends { email: string }>(user: TUser) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const signupIntentRepo = yield* SignupIntentRepo;
     const intent = yield* signupIntentRepo
       .findValidByEmail(user.email)
@@ -54,12 +54,12 @@ export const applySignupIntentToUserEffect = <TUser extends { email: string }>(u
 
     return {
       ...user,
-      role: intent.role,
+      role: intent.role
     };
   });
 
 export const createProfileAndConsumeSignupIntentEffect = (user: { id: string; email: string }) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const signupIntentRepo = yield* SignupIntentRepo;
     const userProfileRepo = yield* UserProfileRepo;
     const referralRepo = yield* ReferralRepo;
@@ -94,24 +94,24 @@ const runSignupHookEffect = async <A>(exitPromise: Promise<Exit.Exit<A, unknown>
       const failure = Cause.failureOption(cause);
 
       switch (
-      Option.isSome(failure) &&
-        typeof failure.value === "object" &&
+        Option.isSome(failure) &&
+        typeof failure.value === 'object' &&
         failure.value !== null &&
-        "_tag" in failure.value
-        ? failure.value._tag
-        : "UnexpectedHookDefect"
+        '_tag' in failure.value
+          ? failure.value._tag
+          : 'UnexpectedHookDefect'
       ) {
-        case "SignupHookDbError":
+        case 'SignupHookDbError':
           // TODO: log this failure to Sentry once error reporting is wired.
           return fallback;
-        case "UnexpectedHookDefect":
+        case 'UnexpectedHookDefect':
           // TODO: log this defect to Sentry once error reporting is wired.
           return fallback;
         default:
           // TODO: log this unexpected hook error to Sentry once error reporting is wired.
           return fallback;
       }
-    },
+    }
   });
 };
 
@@ -121,41 +121,41 @@ const runSignupHookEffect = async <A>(exitPromise: Promise<Exit.Exit<A, unknown>
  * a mail failure must never fail account creation. */
 export const sendWelcomeMailEffect = (
   user: { email: string; name?: string | null; role?: string | null },
-  headers?: Headers,
+  headers?: Headers
 ) => {
   const origin = resolveUiOrigin(headers ?? new Headers());
   const link = (path: string) => new URL(path, origin).toString();
   const name = user.name || null;
 
-  if (user.role === "family") {
+  if (user.role === 'family') {
     return sendMailBestEffort(
-      "family welcome",
+      'family welcome',
       Effect.flatMap(Mailer, (mailer) =>
         mailer.sendFamilyWelcome({
           email: user.email,
           name,
-          profileLink: link("/family/profile"),
-          needsLink: link("/family/needs"),
-          findLink: link("/family/find"),
-        }),
-      ),
+          profileLink: link('/family/profile'),
+          needsLink: link('/family/needs'),
+          findLink: link('/family/find')
+        })
+      )
     );
   }
 
-  if (user.role === "service-provider") {
+  if (user.role === 'service-provider') {
     return sendMailBestEffort(
-      "provider welcome",
+      'provider welcome',
       Effect.flatMap(Mailer, (mailer) =>
         mailer.sendProviderWelcome({
           email: user.email,
           name,
-          profileLink: link("/service-provider/profile"),
-          documentsLink: link("/service-provider/documents"),
-          servicesLink: link("/service-provider/services"),
-          approvalLink: link("/service-provider/approval"),
-          findLink: link("/service-provider/find"),
-        }),
-      ),
+          profileLink: link('/service-provider/profile'),
+          documentsLink: link('/service-provider/documents'),
+          servicesLink: link('/service-provider/services'),
+          approvalLink: link('/service-provider/approval'),
+          findLink: link('/service-provider/find')
+        })
+      )
     );
   }
 
@@ -170,43 +170,43 @@ export const sendWelcomeMailEffect = (
 export const notifyBanStatusChangeEffect = (
   user: { email: string; name?: string | null; banReason?: string | null },
   endpointPath: string | undefined,
-  headers?: Headers,
+  headers?: Headers
 ) => {
-  if (endpointPath !== "/admin/ban-user" && endpointPath !== "/admin/unban-user") {
+  if (endpointPath !== '/admin/ban-user' && endpointPath !== '/admin/unban-user') {
     return Effect.void as Effect.Effect<void, never, Mailer>;
   }
 
   const name = user.name || null;
-  return endpointPath === "/admin/ban-user"
+  return endpointPath === '/admin/ban-user'
     ? sendMailBestEffort(
-      "account banned",
-      Effect.flatMap(Mailer, (mailer) =>
-        mailer.sendAccountBanned({ email: user.email, name, reason: user.banReason ?? null }),
-      ),
-    )
+        'account banned',
+        Effect.flatMap(Mailer, (mailer) =>
+          mailer.sendAccountBanned({ email: user.email, name, reason: user.banReason ?? null })
+        )
+      )
     : sendMailBestEffort(
-      "account unbanned",
-      Effect.flatMap(Mailer, (mailer) =>
-        mailer.sendAccountUnbanned({
-          email: user.email,
-          name,
-          link: new URL("/auth/sign-in", resolveUiOrigin(headers ?? new Headers())).toString(),
-        }),
-      ),
-    );
+        'account unbanned',
+        Effect.flatMap(Mailer, (mailer) =>
+          mailer.sendAccountUnbanned({
+            email: user.email,
+            name,
+            link: new URL('/auth/sign-in', resolveUiOrigin(headers ?? new Headers())).toString()
+          })
+        )
+      );
 };
 
 export const auth = betterAuth({
-  appName: "Poppynz",
+  appName: 'Poppynz',
   // Allows magic-link callback URLs to point back at the calling UI app.
   trustedOrigins: [...trustedUiOrigins],
   emailAndPassword: {
-    enabled: false,
+    enabled: false
   },
   plugins: [
     admin({
       ac: appAc,
-      roles,
+      roles
     }),
     openAPI(),
     apiKey(),
@@ -214,16 +214,16 @@ export const auth = betterAuth({
     i18n({
       translations: {
         fr: {
-          USER_NOT_FOUND: "Utilisateur non trouvé",
-          INVALID_EMAIL_OR_PASSWORD: "Email ou mot de passe invalide",
-          INVALID_PASSWORD: "Mot de passe invalide",
+          USER_NOT_FOUND: 'Utilisateur non trouvé',
+          INVALID_EMAIL_OR_PASSWORD: 'Email ou mot de passe invalide',
+          INVALID_PASSWORD: 'Mot de passe invalide'
         },
         de: {
-          USER_NOT_FOUND: "Benutzer nicht gefunden",
-          INVALID_EMAIL_OR_PASSWORD: "Ungültige E-Mail oder Passwort",
-          INVALID_PASSWORD: "Ungültiges Passwort",
-        },
-      },
+          USER_NOT_FOUND: 'Benutzer nicht gefunden',
+          INVALID_EMAIL_OR_PASSWORD: 'Ungültige E-Mail oder Passwort',
+          INVALID_PASSWORD: 'Ungültiges Passwort'
+        }
+      }
     }),
     magicLink({
       sendMagicLink: async ({ email, url }, ctx) => {
@@ -237,26 +237,37 @@ export const auth = betterAuth({
         // Failures propagate so better-auth reports the send error instead of
         // silently succeeding while no mail goes out.
         await authHookRuntime.runPromise(
-          Effect.flatMap(Mailer, (mailer) =>
-            mailer.sendMagicLink({ email, link: link.toString() }),
-          ),
+          Effect.flatMap(Mailer, (mailer) => mailer.sendMagicLink({ email, link: link.toString() }))
         );
-      },
+      }
     })
   ],
   databaseHooks: {
     user: {
       create: {
         before: async (user) => ({
-          data: await runSignupHookEffect(authHookRuntime.runPromiseExit(applySignupIntentToUserEffect(user)), user),
+          data: await runSignupHookEffect(
+            authHookRuntime.runPromiseExit(applySignupIntentToUserEffect(user)),
+            user
+          )
         }),
         after: async (user, ctx) => {
-          await runSignupHookEffect(authHookRuntime.runPromiseExit(createProfileAndConsumeSignupIntentEffect(user)), undefined);
+          await runSignupHookEffect(
+            authHookRuntime.runPromiseExit(createProfileAndConsumeSignupIntentEffect(user)),
+            undefined
+          );
           // The role was applied from the signup intent in the before hook, so
           // the created row already carries it.
-          const created = user as { id: string; email: string; name?: string | null; role?: string | null };
-          await authHookRuntime.runPromise(sendWelcomeMailEffect(created, ctx?.headers ?? undefined));
-        },
+          const created = user as {
+            id: string;
+            email: string;
+            name?: string | null;
+            role?: string | null;
+          };
+          await authHookRuntime.runPromise(
+            sendWelcomeMailEffect(created, ctx?.headers ?? undefined)
+          );
+        }
       },
       update: {
         // Fires for better-auth admin mutations (ban/unban, role changes).
@@ -273,19 +284,19 @@ export const auth = betterAuth({
             banReason?: string | null;
           };
           await authHookRuntime.runPromise(
-            notifyBanStatusChangeEffect(updated, ctx?.path, ctx?.headers ?? undefined),
+            notifyBanStatusChangeEffect(updated, ctx?.path, ctx?.headers ?? undefined)
           );
-          if (updated.role === "service-provider") {
+          if (updated.role === 'service-provider') {
             await authHookRuntime.runPromise(scheduleProviderSearchReconcile(updated.id));
           }
-          if (updated.role === "family") {
+          if (updated.role === 'family') {
             await authHookRuntime.runPromise(scheduleFamilySearchReconcile(updated.id));
           }
-        },
-      },
-    },
+        }
+      }
+    }
   },
   database: drizzleAdapter(db, {
-    provider: "pg", // or "mysql", "sqlite"
-  }),
+    provider: 'pg' // or "mysql", "sqlite"
+  })
 });

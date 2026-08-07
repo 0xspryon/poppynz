@@ -250,7 +250,9 @@
 		Each service is set up in its own dialog — Edit reopens it pre-filled.
 	</p>
 
-	<div class="mt-3 grid grid-cols-[90px_1fr] items-center gap-x-4 gap-y-2 border-t border-base-300 pt-3">
+	<div
+		class="mt-3 grid grid-cols-[90px_1fr] items-center gap-x-4 gap-y-2 border-t border-base-300 pt-3"
+	>
 		<label class="text-[13px] text-base-content-muted" for="contract-schedule">Schedule</label>
 		<input
 			id="contract-schedule"

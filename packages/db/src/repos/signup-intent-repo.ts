@@ -1,14 +1,22 @@
-import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
-import { and, desc, eq, gt, type InferInsertModel, type InferSelectModel, isNull } from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
-import { DrizzleLive } from "../effect-db";
-import { signupIntent } from "../schema";
+import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import type { SqlError } from '@effect/sql/SqlError';
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  type InferInsertModel,
+  type InferSelectModel,
+  isNull
+} from 'drizzle-orm';
+import { Context, Effect, Layer } from 'effect';
+import { DrizzleLive } from '../effect-db';
+import { signupIntent } from '../schema';
 
 export type SignupIntent = InferSelectModel<typeof signupIntent>;
 export type NewSignupIntent = InferInsertModel<typeof signupIntent>;
 
-export class SignupIntentRepo extends Context.Tag("@repo/db/SignupIntentRepo")<
+export class SignupIntentRepo extends Context.Tag('@repo/db/SignupIntentRepo')<
   SignupIntentRepo,
   {
     create: (input: {
@@ -20,7 +28,7 @@ export class SignupIntentRepo extends Context.Tag("@repo/db/SignupIntentRepo")<
     findValidByEmail: (email: string) => Effect.Effect<SignupIntent | null, SqlError>;
     consumeByEmail: (email: string) => Effect.Effect<SignupIntent, SqlError>;
   }
->() { }
+>() {}
 
 export const SignupIntentRepoLive = Layer.effect(
   SignupIntentRepo,
@@ -36,7 +44,7 @@ export const SignupIntentRepoLive = Layer.effect(
             email: input.email.toLowerCase(),
             role: input.role,
             language: input.language,
-            expiresAt: input.expiresAt,
+            expiresAt: input.expiresAt
           })
           .returning()
           .pipe(Effect.map((rows) => rows[0])),
@@ -48,8 +56,8 @@ export const SignupIntentRepoLive = Layer.effect(
             and(
               eq(signupIntent.email, email.toLowerCase()),
               gt(signupIntent.expiresAt, new Date()),
-              isNull(signupIntent.consumedAt),
-            ),
+              isNull(signupIntent.consumedAt)
+            )
           )
           .orderBy(desc(signupIntent.createdAt))
           .limit(1)
@@ -62,13 +70,13 @@ export const SignupIntentRepoLive = Layer.effect(
             and(
               eq(signupIntent.email, email.toLowerCase()),
               gt(signupIntent.expiresAt, new Date()),
-              isNull(signupIntent.consumedAt),
-            ),
+              isNull(signupIntent.consumedAt)
+            )
           )
           .returning()
-          .pipe(Effect.map((rows) => rows[0])),
+          .pipe(Effect.map((rows) => rows[0]))
     };
-  }),
+  })
 );
 
 export const SignupIntentRepoDefault = SignupIntentRepoLive.pipe(Layer.provide(DrizzleLive));
@@ -77,16 +85,16 @@ export const makeSignupIntentRepoTest = (implementation: Context.Tag.Service<Sig
   Layer.succeed(SignupIntentRepo, implementation);
 
 const dummySignupIntent = {
-  id: "signup-intent-1",
-  email: "user@example.com",
-  role: "family",
-  language: "en",
+  id: 'signup-intent-1',
+  email: 'user@example.com',
+  role: 'family',
+  language: 'en',
   expiresAt: new Date(),
   consumedAt: null,
-  createdAt: new Date("2026-06-12T00:00:00.000Z"),
-}
+  createdAt: new Date('2026-06-12T00:00:00.000Z')
+};
 export const EmptySignupIntentRepoTest = makeSignupIntentRepoTest({
   create: () => Effect.succeed(dummySignupIntent),
   findValidByEmail: () => Effect.succeed(null),
-  consumeByEmail: () => Effect.succeed(dummySignupIntent),
-})
+  consumeByEmail: () => Effect.succeed(dummySignupIntent)
+});

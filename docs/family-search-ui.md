@@ -33,6 +33,7 @@ ratings/reviews, availability, response time, years of experience, verified-hour
 The family's main discovery surface. Reached from the family dashboard via a prominent "Find help" entry point (also design that dashboard tile/nav item).
 
 **Search controls:**
+
 - Keyword search input — searches names, bios, and service names ("newborn", "after school pickup", a provider's name). Prominent, top of page.
 - Location control — defaults to the family's saved home location (captured during onboarding). Shows the current search origin as a readable label (e.g. "Near Ponsonby, Auckland") with the ability to change it via Google Place autocomplete. Paired with a **radius selector** (e.g. 5 / 10 / 25 / 50 km presets).
 - Filters:
@@ -43,12 +44,14 @@ The family's main discovery surface. Reached from the family dashboard via a pro
 - Active filters shown as dismissible chips with a "clear all".
 
 **Results:**
+
 - Result count ("34 vetted providers near you").
 - Card list/grid (see card spec below), paginated (page-number pagination; ~12–20 per page).
 - Desktop: filters in a left rail or top filter bar; results as a 2–3 column card grid or generous single-column list — designer's call.
 - Mobile: single-column cards; filters collapse into a bottom sheet / drawer behind a "Filters" button showing an active-filter count badge.
 
 **States (design all of these):**
+
 - Loading — skeleton cards.
 - Empty (no matches) — friendly illustration + suggestions: widen the radius, remove filters, try a different term. One-tap "expand radius" action.
 - Empty (new area, no providers at all) — softer message: "We're growing in your area"; no self-blame framing.
@@ -57,6 +60,7 @@ The family's main discovery surface. Reached from the family dashboard via a pro
 ### 2. Provider card (within results)
 
 Each card shows:
+
 - Profile photo (initials-avatar fallback when the provider has none)
 - Name (or fallback), with a **"Vetted" badge** — every listed provider is admin-approved; the badge reinforces trust rather than differentiating
 - Location line: "Suburb/City, Region" + distance chip when geo-searching ("2.3 km away")

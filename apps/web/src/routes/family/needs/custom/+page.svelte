@@ -47,17 +47,15 @@
 
 <div class="mx-auto max-w-3xl">
 	<nav class="mb-4 flex items-center gap-2 text-[12.5px] font-medium text-outline">
-		<a href={resolve('/family/needs')} class="font-semibold text-primary">
-			Services I need
-		</a>
+		<a href={resolve('/family/needs')} class="font-semibold text-primary"> Services I need </a>
 		<i class="las la-angle-right text-xs" aria-hidden="true"></i>
 		<span>Something else</span>
 	</nav>
 
 	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Add something else</h1>
 	<p class="mt-1 mb-6 max-w-xl text-sm text-base-content-muted">
-		Looking for help that isn't on the common list? Describe it in your own words — helpers see
-		this exactly as you write it.
+		Looking for help that isn't on the common list? Describe it in your own words — helpers see this
+		exactly as you write it.
 	</p>
 
 	<form

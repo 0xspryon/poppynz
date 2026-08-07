@@ -142,8 +142,7 @@
 			Document types
 		</h1>
 		<p class="text-sm text-base-content-muted">
-			The checklist every provider sees during onboarding. Changes apply to new uploads
-			immediately.
+			The checklist every provider sees during onboarding. Changes apply to new uploads immediately.
 		</p>
 	</div>
 	<button type="button" class="btn btn-primary" onclick={openCreate}>
@@ -262,8 +261,8 @@
 			px-4 py-3 text-xs text-info"
 	>
 		<i class="las la-info-circle text-base" aria-hidden="true"></i>
-		Deleting a type is a soft delete — existing submitted documents keep their history. This list
-		directly shapes the provider's upload step.
+		Deleting a type is a soft delete — existing submitted documents keep their history. This list directly
+		shapes the provider's upload step.
 	</p>
 {/if}
 

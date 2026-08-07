@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { requestSignInLink, requestSignUpLink, verifyMagicLink, type SignInLinkError } from './auth';
+import {
+	requestSignInLink,
+	requestSignUpLink,
+	verifyMagicLink,
+	type SignInLinkError
+} from './auth';
 import { matchError, type UnexpectedError } from './client';
 
 describe('requestSignUpLink / requestSignInLink', () => {

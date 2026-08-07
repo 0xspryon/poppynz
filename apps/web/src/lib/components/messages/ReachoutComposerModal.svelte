@@ -60,7 +60,10 @@
 	async function send() {
 		if (sending || selected.length === 0) return;
 		sending = true;
-		const result = await createReachout({ recipientUserId: recipient.userId, serviceIds: selected });
+		const result = await createReachout({
+			recipientUserId: recipient.userId,
+			serviceIds: selected
+		});
 		sending = false;
 		if (result.ok) {
 			toast.success(`${firstName} can now respond to your reach-out.`, { title: 'Reach-out sent' });
@@ -68,8 +71,7 @@
 			onclose();
 			return;
 		}
-		const genericError = () =>
-			toast.error('The reach-out could not be sent. Please try again.');
+		const genericError = () => toast.error('The reach-out could not be sent. Please try again.');
 		matchError(result.error, {
 			CONVERSATION_EXISTS: (error) => {
 				onconversation(error.conversationId);
@@ -102,7 +104,12 @@
 </script>
 
 {#if open}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Reach out to {recipient.name}">
+	<div
+		class="modal modal-open"
+		role="dialog"
+		aria-modal="true"
+		aria-label="Reach out to {recipient.name}"
+	>
 		<div class="modal-box max-w-xl border border-card-border p-0">
 			<div class="flex items-center gap-2.5 border-b border-base-300 px-6 py-4">
 				<span
@@ -172,13 +179,14 @@
 					</div>
 				</div>
 
-				<div class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-3.5 py-2.5">
+				<div
+					class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-3.5 py-2.5"
+				>
 					<i class="las la-user-shield mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 					<p class="text-xs leading-relaxed text-neutral">
 						{firstName} will see your
 						<strong>{senderRole === 'family' ? 'family profile' : 'profile'}</strong>
-						and the services you selected. Your contact details stay hidden until you have an
-						active contract.
+						and the services you selected. Your contact details stay hidden until you have an active contract.
 					</p>
 				</div>
 			</div>

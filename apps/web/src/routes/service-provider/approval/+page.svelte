@@ -43,9 +43,12 @@
 		submitting = true;
 		const result = await submitApprovalRequest();
 		if (result.ok) {
-			toast.success('Your application is with our review team — expect a decision within ~2 days.', {
-				title: 'Submitted for review'
-			});
+			toast.success(
+				'Your application is with our review team — expect a decision within ~2 days.',
+				{
+					title: 'Submitted for review'
+				}
+			);
 			await load();
 		} else {
 			toast.error(
@@ -140,7 +143,9 @@
 		return latest?.status === 'rejected' ? latest : null;
 	});
 	const daysRemaining = $derived(
-		approval ? Math.max(0, Math.floor((new Date(approval.expiresAt).getTime() - Date.now()) / DAY_MS)) : 0
+		approval
+			? Math.max(0, Math.floor((new Date(approval.expiresAt).getTime() - Date.now()) / DAY_MS))
+			: 0
 	);
 
 	function formatDate(iso: string): string {
@@ -182,7 +187,8 @@
 				</span>
 				<div class="min-w-0 flex-1">
 					<div class="flex flex-wrap items-center gap-2.5">
-						<span class="font-display text-lg font-bold text-base-content">Verified Mom Helper</span>
+						<span class="font-display text-lg font-bold text-base-content">Verified Mom Helper</span
+						>
 						<StatusChip status="approved" />
 					</div>
 					<p class="mt-0.5 text-[13px] text-base-content-muted">
@@ -201,7 +207,9 @@
 				class="mb-6 flex flex-wrap items-center gap-4 rounded-lg border border-info-content
 					bg-base-100 px-6 py-5"
 			>
-				<span class="flex size-13 shrink-0 items-center justify-center rounded-full bg-info-content">
+				<span
+					class="flex size-13 shrink-0 items-center justify-center rounded-full bg-info-content"
+				>
 					<i class="las la-hourglass-half text-2xl text-info" aria-hidden="true"></i>
 				</span>
 				<div class="min-w-0 flex-1">
@@ -210,8 +218,8 @@
 						<StatusChip status="submitted" />
 					</div>
 					<p class="mt-0.5 text-[13px] text-base-content-muted">
-						Submitted {formatDate(latestRequest.submittedAt)} — an admin usually reviews within ~2
-						days. We'll email you.
+						Submitted {formatDate(latestRequest.submittedAt)} — an admin usually reviews within ~2 days.
+						We'll email you.
 					</p>
 				</div>
 			</div>
@@ -257,9 +265,7 @@
 				{/if}
 			</div>
 		{:else if latestRequest?.status === 'rejected'}
-			<div
-				class="mb-6 rounded-lg border border-error-content bg-base-100 px-6 py-5"
-			>
+			<div class="mb-6 rounded-lg border border-error-content bg-base-100 px-6 py-5">
 				<div class="flex flex-wrap items-center gap-4">
 					<span
 						class="flex size-13 shrink-0 items-center justify-center rounded-full bg-error-content"
@@ -368,7 +374,9 @@
 				{/each}
 			</div>
 		{:else}
-			<p class="rounded-lg border border-card-border bg-base-100 p-6 text-sm text-base-content-muted">
+			<p
+				class="rounded-lg border border-card-border bg-base-100 p-6 text-sm text-base-content-muted"
+			>
 				No history yet — your submissions and decisions will appear here.
 			</p>
 		{/if}

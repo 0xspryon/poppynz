@@ -8,13 +8,19 @@ const familyStateEndpoint = apiClient.me.onboarding.family.$get;
 const historyEndpoint = apiClient.me.onboarding.history.$get;
 const submitEndpoint = apiClient['approval-requests'].$post;
 
-export type OnboardingState = Extract<Awaited<ReturnType<typeof getOnboardingState>>, { ok: true }>['data'];
+export type OnboardingState = Extract<
+	Awaited<ReturnType<typeof getOnboardingState>>,
+	{ ok: true }
+>['data'];
 export type OnboardingDocument = OnboardingState['documents'][number];
 export type FamilyOnboardingState = Extract<
 	Awaited<ReturnType<typeof getFamilyOnboardingState>>,
 	{ ok: true }
 >['data'];
-export type OnboardingHistory = Extract<Awaited<ReturnType<typeof getOnboardingHistory>>, { ok: true }>['data'];
+export type OnboardingHistory = Extract<
+	Awaited<ReturnType<typeof getOnboardingHistory>>,
+	{ ok: true }
+>['data'];
 export type OnboardingStateError = ErrorsOf<typeof stateEndpoint>;
 export type FamilyOnboardingStateError = ErrorsOf<typeof familyStateEndpoint>;
 export type OnboardingHistoryError = ErrorsOf<typeof historyEndpoint>;

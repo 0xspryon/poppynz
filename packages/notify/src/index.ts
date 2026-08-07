@@ -1,36 +1,39 @@
-import { redisConfig } from "@repo/env";
-import { Context, Data, Effect, Layer } from "effect";
-import { Redis } from "ioredis";
-import type { AppNotification, NotificationInput } from "./events";
+import { redisConfig } from '@repo/env';
+import { Context, Data, Effect, Layer } from 'effect';
+import { Redis } from 'ioredis';
+import type { AppNotification, NotificationInput } from './events';
 
-export * from "./events";
+export * from './events';
 
 // Per-user realtime notification hub, backed by Redis pub/sub so it stays
 // correct when the API runs more than one instance: publishes go to Redis and
 // every instance's subscribers see them, wherever the SSE connection lives.
 
-export class NotificationPublishError extends Data.TaggedError("NotificationPublishError")<{
+export class NotificationPublishError extends Data.TaggedError('NotificationPublishError')<{
   cause: unknown;
-}> { }
+}> {}
 
-export class NotificationSubscribeError extends Data.TaggedError("NotificationSubscribeError")<{
+export class NotificationSubscribeError extends Data.TaggedError('NotificationSubscribeError')<{
   cause: unknown;
-}> { }
+}> {}
 
 export type NotificationSubscription = {
   unsubscribe: () => Promise<void>;
 };
 
-export class NotificationHub extends Context.Tag("@repo/notify/NotificationHub")<
+export class NotificationHub extends Context.Tag('@repo/notify/NotificationHub')<
   NotificationHub,
   {
-    publish: (userId: string, input: NotificationInput) => Effect.Effect<void, NotificationPublishError>;
+    publish: (
+      userId: string,
+      input: NotificationInput
+    ) => Effect.Effect<void, NotificationPublishError>;
     subscribe: (
       userId: string,
-      onNotification: (notification: AppNotification) => void,
+      onNotification: (notification: AppNotification) => void
     ) => Effect.Effect<NotificationSubscription, NotificationSubscribeError>;
   }
->() { }
+>() {}
 
 const userChannel = (userId: string) => `notify:user:${userId}`;
 
@@ -47,7 +50,7 @@ export const makeNotificationHub = (redisUrl: string): Context.Tag.Service<Notif
   const getSubscriber = () => {
     if (subscriber) return subscriber;
     subscriber = new Redis(redisUrl);
-    subscriber.on("message", (channel: string, raw: string) => {
+    subscriber.on('message', (channel: string, raw: string) => {
       const channelHandlers = handlers.get(channel);
       if (!channelHandlers || channelHandlers.size === 0) return;
       let notification: AppNotification;
@@ -69,11 +72,11 @@ export const makeNotificationHub = (redisUrl: string): Context.Tag.Service<Notif
             id: crypto.randomUUID(),
             type: input.type,
             createdAt: new Date().toISOString(),
-            payload: input.payload,
+            payload: input.payload
           } as AppNotification;
           await getPublisher().publish(userChannel(userId), JSON.stringify(notification));
         },
-        catch: (cause) => new NotificationPublishError({ cause }),
+        catch: (cause) => new NotificationPublishError({ cause })
       }).pipe(Effect.asVoid),
     subscribe: (userId, onNotification) =>
       Effect.tryPromise({
@@ -106,17 +109,17 @@ export const makeNotificationHub = (redisUrl: string): Context.Tag.Service<Notif
                 handlers.delete(channel);
                 await redis.unsubscribe(channel);
               }
-            },
+            }
           };
         },
-        catch: (cause) => new NotificationSubscribeError({ cause }),
-      }),
+        catch: (cause) => new NotificationSubscribeError({ cause })
+      })
   };
 };
 
 export const NotificationHubLive = Layer.effect(
   NotificationHub,
-  redisConfig.pipe(Effect.map((config) => makeNotificationHub(config.url))),
+  redisConfig.pipe(Effect.map((config) => makeNotificationHub(config.url)))
 );
 
 export const makeNotificationHubTest = (implementation: Context.Tag.Service<NotificationHub>) =>
@@ -124,7 +127,7 @@ export const makeNotificationHubTest = (implementation: Context.Tag.Service<Noti
 
 export const NoopNotificationHubTest = makeNotificationHubTest({
   publish: () => Effect.void,
-  subscribe: () => Effect.succeed({ unsubscribe: async () => { } }),
+  subscribe: () => Effect.succeed({ unsubscribe: async () => {} })
 });
 
 /** Realtime notifications are an accelerator, never a source of truth: losing
@@ -133,6 +136,6 @@ export const NoopNotificationHubTest = makeNotificationHubTest({
 export const publishNotificationBestEffort = (userId: string, input: NotificationInput) =>
   NotificationHub.pipe(
     Effect.flatMap((hub) => hub.publish(userId, input)),
-    Effect.catchAllCause((cause) => Effect.logWarning("notification publish failed", cause)),
-    Effect.asVoid,
+    Effect.catchAllCause((cause) => Effect.logWarning('notification publish failed', cause)),
+    Effect.asVoid
   );

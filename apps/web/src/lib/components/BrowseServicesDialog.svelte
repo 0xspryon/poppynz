@@ -119,11 +119,7 @@
 					>
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full
-								{inList
-								? 'bg-success'
-								: isSelected
-									? 'bg-primary'
-									: 'border-[1.5px] border-outline-variant'}"
+								{inList ? 'bg-success' : isSelected ? 'bg-primary' : 'border-[1.5px] border-outline-variant'}"
 						>
 							{#if inList || isSelected}
 								<i class="las la-check text-xs text-primary-content" aria-hidden="true"></i>

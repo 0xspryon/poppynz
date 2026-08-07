@@ -42,9 +42,7 @@
 
 	const requiredDocs = $derived(onboarding?.documents.filter((doc) => !doc.isOptional) ?? []);
 	const optionalDocs = $derived(onboarding?.documents.filter((doc) => doc.isOptional) ?? []);
-	const requiredSubmitted = $derived(
-		requiredDocs.filter((doc) => doc.status !== 'missing').length
-	);
+	const requiredSubmitted = $derived(requiredDocs.filter((doc) => doc.status !== 'missing').length);
 
 	function chipStatus(doc: OnboardingDocument): ChipStatus {
 		return doc.status === 'missing' ? 'missing' : doc.status;
@@ -191,11 +189,7 @@
 					Upload yourself
 				</button>
 			{:else}
-				<button
-					type="button"
-					class="btn btn-outline btn-sm"
-					onclick={() => openUpload(doc)}
-				>
+				<button type="button" class="btn btn-outline btn-sm" onclick={() => openUpload(doc)}>
 					Replace
 				</button>
 			{/if}
@@ -256,7 +250,9 @@
 				{@render documentRow(doc)}
 			{/each}
 			{#if requiredDocs.length === 0}
-				<p class="rounded-lg border border-card-border bg-base-100 p-5 text-sm text-base-content-muted">
+				<p
+					class="rounded-lg border border-card-border bg-base-100 p-5 text-sm text-base-content-muted"
+				>
 					No required documents right now.
 				</p>
 			{/if}

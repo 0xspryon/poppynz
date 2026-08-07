@@ -28,8 +28,8 @@
 		<form class="modal-box" onsubmit={submit}>
 			<h2 class="text-lg font-bold">Reject this application</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				The reason is <b>shown to the provider verbatim</b> — write something specific and
-				actionable so they can fix it and resubmit.
+				The reason is <b>shown to the provider verbatim</b> — write something specific and actionable
+				so they can fix it and resubmit.
 			</p>
 
 			<fieldset class="fieldset mt-4">

@@ -107,7 +107,9 @@
 		</span>
 		<div class="min-w-0 leading-tight">
 			<div class="truncate text-xs font-semibold text-secondary-content">{email}</div>
-			<div class="text-[11px] {impersonated ? 'text-warning-content' : 'text-secondary-content-faint'}">
+			<div
+				class="text-[11px] {impersonated ? 'text-warning-content' : 'text-secondary-content-faint'}"
+			>
 				{impersonated ? 'via admin (impersonated)' : roleLabel}
 			</div>
 		</div>

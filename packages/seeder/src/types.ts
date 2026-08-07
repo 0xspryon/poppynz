@@ -1,6 +1,6 @@
-import type { NodePgQueryResultHKT } from "drizzle-orm/node-postgres";
-import type { PgDatabase } from "drizzle-orm/pg-core";
-import type * as schema from "@repo/db/schema";
+import type { NodePgQueryResultHKT } from 'drizzle-orm/node-postgres';
+import type { PgDatabase } from 'drizzle-orm/pg-core';
+import type * as schema from '@repo/db/schema';
 
 /** Accepts both the root database handle and the per-seed transaction. */
 export type SeederDb = PgDatabase<NodePgQueryResultHKT, typeof schema>;

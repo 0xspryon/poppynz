@@ -1,5 +1,5 @@
-import { sql } from "drizzle-orm";
-import type { SeederDb } from "./types";
+import { sql } from 'drizzle-orm';
+import type { SeederDb } from './types';
 
 // Same schema drizzle uses for its migration journal, so all bookkeeping
 // tables live together.

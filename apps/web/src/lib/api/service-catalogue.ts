@@ -8,9 +8,14 @@ const updateEndpoint = apiClient.admin['service-catalogue'][':id'].$patch;
 const removeEndpoint = apiClient.admin['service-catalogue'][':id'].$delete;
 const liveListEndpoint = apiClient['service-catalogue'].$get;
 
-export type CatalogueItem = Extract<Awaited<ReturnType<typeof listCatalogue>>, { ok: true }>['data'][number];
+export type CatalogueItem = Extract<
+	Awaited<ReturnType<typeof listCatalogue>>,
+	{ ok: true }
+>['data'][number];
 export type CatalogueListError = ErrorsOf<typeof adminListEndpoint>;
-export type CatalogueMutationError = ErrorsOf<typeof createEndpoint> | ErrorsOf<typeof updateEndpoint>;
+export type CatalogueMutationError =
+	| ErrorsOf<typeof createEndpoint>
+	| ErrorsOf<typeof updateEndpoint>;
 
 export interface CatalogueItemDraft {
 	name: string;

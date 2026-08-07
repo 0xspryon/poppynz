@@ -111,12 +111,8 @@
           "tableFrom": "account",
           "tableTo": "user",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -426,12 +422,8 @@
           "tableFrom": "approvals",
           "tableTo": "user",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -440,12 +432,8 @@
           "tableFrom": "approvals",
           "tableTo": "user",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "approved_by"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["approved_by"],
+          "columnsTo": ["id"],
           "onDelete": "set null",
           "onUpdate": "no action"
         }
@@ -549,12 +537,8 @@
           "tableFrom": "invitation",
           "tableTo": "organization",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -563,12 +547,8 @@
           "tableFrom": "invitation",
           "tableTo": "user",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "inviter_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["inviter_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -687,12 +667,8 @@
           "tableFrom": "kyc_documents",
           "tableTo": "user",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -777,12 +753,8 @@
           "tableFrom": "member",
           "tableTo": "organization",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "organization_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["organization_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
@@ -791,12 +763,8 @@
           "tableFrom": "member",
           "tableTo": "user",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -871,9 +839,7 @@
         "organization_slug_unique": {
           "name": "organization_slug_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "slug"
-          ]
+          "columns": ["slug"]
         }
       },
       "policies": {},
@@ -969,12 +935,8 @@
           "tableFrom": "session",
           "tableTo": "user",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -984,9 +946,7 @@
         "session_token_unique": {
           "name": "session_token_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "token"
-          ]
+          "columns": ["token"]
         }
       },
       "policies": {},
@@ -1167,16 +1127,12 @@
         "user_email_unique": {
           "name": "user_email_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "email"
-          ]
+          "columns": ["email"]
         },
         "user_phone_number_unique": {
           "name": "user_phone_number_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "phone_number"
-          ]
+          "columns": ["phone_number"]
         }
       },
       "policies": {},
@@ -1274,12 +1230,8 @@
           "tableFrom": "user_profile",
           "tableTo": "user",
           "schemaTo": "app_db",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
+          "columnsFrom": ["user_id"],
+          "columnsTo": ["id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
         }
@@ -1362,36 +1314,22 @@
     "app_db.approval_status": {
       "name": "approval_status",
       "schema": "app_db",
-      "values": [
-        "approved",
-        "rejected"
-      ]
+      "values": ["approved", "rejected"]
     },
     "app_db.approval_type": {
       "name": "approval_type",
       "schema": "app_db",
-      "values": [
-        "service-provider",
-        "family"
-      ]
+      "values": ["service-provider", "family"]
     },
     "app_db.gender": {
       "name": "gender",
       "schema": "app_db",
-      "values": [
-        "male",
-        "female"
-      ]
+      "values": ["male", "female"]
     },
     "app_db.kyc_document_status": {
       "name": "kyc_document_status",
       "schema": "app_db",
-      "values": [
-        "missing",
-        "uploaded",
-        "approved",
-        "rejected"
-      ]
+      "values": ["missing", "uploaded", "approved", "rejected"]
     },
     "app_db.kyc_document_type": {
       "name": "kyc_document_type",

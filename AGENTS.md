@@ -29,11 +29,11 @@ These project-specific rules exist to prevent repeat mistakes from prior impleme
 - When adapting repo/infrastructure errors into route-specific errors, pipe the effect through the mapper instead of wrapping the call in it. Preferred:
 
   ```ts
-  const items = yield* repo.listLive()
-    .pipe((errors) => mapCatalogueRepoError(errors));
+  const items = yield * repo.listLive().pipe((errors) => mapCatalogueRepoError(errors));
   ```
 
   over `yield* mapCatalogueRepoError(repo.listLive())`.
+
 - Rationale: the pipeline reads in data-flow order — the operation first, then how its failures are translated — and keeps the repo call visually prominent rather than nested inside an adapter.
 - Existing wrapped-call sites don't need to be rewritten preemptively; use the piped form for new code and when already touching a line.
 
@@ -45,4 +45,5 @@ These project-specific rules exist to prevent repeat mistakes from prior impleme
 - Tests for access denial should usually deny permissions rather than asserting on a user role, unless the feature explicitly requires role-based logic.
 
 ## User interface
+
 Use toast messages where appropriate in lieu of showing inline messages (sucess/error messages)

@@ -5,7 +5,10 @@ import { apiClient, call, type ApiResult, type ErrorsOf, type UnexpectedError } 
 
 const listEndpoint = apiClient.admin.users.$get;
 
-export type AdminUserList = Extract<Awaited<ReturnType<typeof listAdminUsers>>, { ok: true }>['data'];
+export type AdminUserList = Extract<
+	Awaited<ReturnType<typeof listAdminUsers>>,
+	{ ok: true }
+>['data'];
 export type AdminUser = AdminUserList['users'][number];
 export type AdminUserListError = ErrorsOf<typeof listEndpoint>;
 
@@ -28,7 +31,10 @@ async function authAdminPost<TData>(
 			body: JSON.stringify(body)
 		});
 	} catch {
-		return { ok: false, error: { code: 'UNEXPECTED', message: 'The request could not be sent.', status: null } };
+		return {
+			ok: false,
+			error: { code: 'UNEXPECTED', message: 'The request could not be sent.', status: null }
+		};
 	}
 	let parsed: unknown = null;
 	try {
@@ -47,7 +53,10 @@ async function authAdminPost<TData>(
 }
 
 export async function banUser(userId: string, banReason?: string) {
-	return authAdminPost<{ user: unknown }>('ban-user', { userId, ...(banReason ? { banReason } : {}) });
+	return authAdminPost<{ user: unknown }>('ban-user', {
+		userId,
+		...(banReason ? { banReason } : {})
+	});
 }
 
 export async function unbanUser(userId: string) {

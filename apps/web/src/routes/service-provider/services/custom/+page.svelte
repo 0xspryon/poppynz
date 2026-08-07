@@ -91,7 +91,9 @@
 		<fieldset class="fieldset mt-3">
 			<legend class="fieldset-legend">Hourly rate</legend>
 			<div class="flex items-center gap-2.5">
-				<span class="flex items-center overflow-hidden rounded-md border-[1.5px] border-outline-variant">
+				<span
+					class="flex items-center overflow-hidden rounded-md border-[1.5px] border-outline-variant"
+				>
 					<span
 						class="border-r border-base-300 bg-base-200 px-3 py-2.5 text-[13.5px] font-semibold
 							text-base-content-muted"

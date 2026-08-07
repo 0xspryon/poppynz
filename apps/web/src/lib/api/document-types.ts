@@ -6,9 +6,14 @@ const createEndpoint = apiClient['kyc-docs'].types.$post;
 const updateEndpoint = apiClient['kyc-docs'].types[':id'].$patch;
 const removeEndpoint = apiClient['kyc-docs'].types[':id'].$delete;
 
-export type DocumentType = Extract<Awaited<ReturnType<typeof listDocumentTypes>>, { ok: true }>['data'][number];
+export type DocumentType = Extract<
+	Awaited<ReturnType<typeof listDocumentTypes>>,
+	{ ok: true }
+>['data'][number];
 export type DocumentTypeListError = ErrorsOf<typeof listEndpoint>;
-export type DocumentTypeMutationError = ErrorsOf<typeof createEndpoint> | ErrorsOf<typeof updateEndpoint>;
+export type DocumentTypeMutationError =
+	| ErrorsOf<typeof createEndpoint>
+	| ErrorsOf<typeof updateEndpoint>;
 
 export interface DocumentTypeDraft {
 	name: string;

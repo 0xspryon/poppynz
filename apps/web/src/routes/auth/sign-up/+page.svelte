@@ -123,7 +123,11 @@
 		</p>
 	{/if}
 
-	<button type="submit" class="btn btn-lg btn-primary btn-block" disabled={!canSubmit || submitting}>
+	<button
+		type="submit"
+		class="btn btn-lg btn-primary btn-block"
+		disabled={!canSubmit || submitting}
+	>
 		{#if submitting}
 			<span class="loading loading-spinner"></span>
 		{/if}

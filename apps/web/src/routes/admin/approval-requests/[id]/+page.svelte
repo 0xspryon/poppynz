@@ -164,7 +164,9 @@
 			await load();
 		} else {
 			toast.error(
-				result.error.code === 'INVALID_APPROVAL_REQUEST_INPUT' ? result.error.message : RETRY_MESSAGE,
+				result.error.code === 'INVALID_APPROVAL_REQUEST_INPUT'
+					? result.error.message
+					: RETRY_MESSAGE,
 				{ title: 'Rejection failed' }
 			);
 		}
@@ -264,7 +266,11 @@
 			</div>
 			{#if detail.approvalRequest.status === 'submitted'}
 				<div class="flex shrink-0 gap-2.5">
-					<button type="button" class="btn btn-outline btn-error" onclick={() => (rejectOpen = true)}>
+					<button
+						type="button"
+						class="btn btn-outline btn-error"
+						onclick={() => (rejectOpen = true)}
+					>
 						Reject…
 					</button>
 					<button type="button" class="btn btn-primary" onclick={openApprove}>Approve…</button>
@@ -448,10 +454,12 @@
 						</div>
 					{/each}
 				</div>
-				<p class="mt-3.5 flex items-center gap-2 border-t border-base-300 pt-3.5 text-xs text-outline">
+				<p
+					class="mt-3.5 flex items-center gap-2 border-t border-base-300 pt-3.5 text-xs text-outline"
+				>
 					<i class="las la-info-circle text-sm" aria-hidden="true"></i>
-					The decision is on the whole request — documents are submitted or missing. Expiry dates
-					can be corrected from the fullscreen viewer.
+					The decision is on the whole request — documents are submitted or missing. Expiry dates can
+					be corrected from the fullscreen viewer.
 				</p>
 			</div>
 		</div>

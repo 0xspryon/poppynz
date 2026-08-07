@@ -1,4 +1,3 @@
-
 **POPPYNZ**
 
 **Terms of Service and Payment Policy**
@@ -10,8 +9,6 @@
 **Website:** https://poppynz.com
 
 **Contact:** support@poppynz.com
-
- 
 
 These Terms of Service and Payment Policy (the “Terms”) form a binding agreement between you and Full St3am Ahead Inc., doing business as Poppynz (“Poppynz,” “we,” “us,” or “our”). They govern your access to and use of the Poppynz website, applications, communications, payment features, daycare interest-list services, and related offerings (collectively, the “Platform”).
 
@@ -121,9 +118,9 @@ Important: Poppynz is a marketplace platform. Except where Poppynz expressly ent
 
 **9.5** Before a Client confirms a Booking, the Platform will display the Caregiver Charges, the 5% Family Service Fee, applicable taxes, other disclosed charges, and the total amount to be authorized or charged.
 
-| Example transaction | Client pays | Poppynz fee | Mom Helper payout |
-| :---- | :---- | :---- | :---- |
-| $100.00 Caregiver Charges | $105.00 \+ tax | $15.00 from Caregiver Charges \+ $5.00 Family Service Fee | $85.00 |
+| Example transaction       | Client pays    | Poppynz fee                                               | Mom Helper payout |
+| :------------------------ | :------------- | :-------------------------------------------------------- | :---------------- |
+| $100.00 Caregiver Charges | $105.00 \+ tax | $15.00 from Caregiver Charges \+ $5.00 Family Service Fee | $85.00            |
 
 **9.6** Applicable taxes are calculated and displayed where required. The tax treatment of the Caregiver Charges, Family Service Fee, Caregiver Service Fee, and payouts may differ.
 

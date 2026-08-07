@@ -1,4 +1,4 @@
-import type { Seed } from "./types";
+import type { Seed } from './types';
 
 /**
  * The seeds that still need to run, in registry order. Throws on duplicate
@@ -6,7 +6,7 @@ import type { Seed } from "./types";
  */
 export const selectPending = (
   seeds: ReadonlyArray<Seed>,
-  applied: ReadonlySet<string>,
+  applied: ReadonlySet<string>
 ): ReadonlyArray<Seed> => {
   const names = new Set<string>();
   for (const seed of seeds) {

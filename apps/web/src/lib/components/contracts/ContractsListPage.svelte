@@ -136,11 +136,10 @@
 	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Contracts</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
 		{#if role === 'family'}
-			Contracts start in <strong class="text-secondary">Messages</strong> — propose terms from a
-			conversation and they appear here.
+			Contracts start in <strong class="text-secondary">Messages</strong> — propose terms from a conversation
+			and they appear here.
 		{:else}
-			Families you're talking with can propose a contract — proposals land here to review and
-			sign.
+			Families you're talking with can propose a contract — proposals land here to review and sign.
 		{/if}
 	</p>
 
@@ -167,7 +166,9 @@
 			<span class="loading loading-lg loading-spinner text-primary"></span>
 		</div>
 	{:else if loadError}
-		<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
 			<p class="text-sm font-medium text-error" role="alert">Your contracts didn't load.</p>
 			<button
 				type="button"
@@ -182,18 +183,19 @@
 			</button>
 		</div>
 	{:else if contracts.length === 0}
-		<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
 			<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
 				<i class="las la-file-signature text-2xl text-neutral" aria-hidden="true"></i>
 			</span>
 			<h2 class="font-display text-lg font-bold text-base-content">Contracts start in Messages</h2>
 			<p class="max-w-sm text-sm text-base-content-muted">
 				{#if role === 'family'}
-					Propose terms from a conversation with a provider — the contract appears here to track
-					and sign.
-				{:else}
-					Families you're talking with can propose a contract — it appears here to review and
+					Propose terms from a conversation with a provider — the contract appears here to track and
 					sign.
+				{:else}
+					Families you're talking with can propose a contract — it appears here to review and sign.
 				{/if}
 			</p>
 			<a href={messagesHref} class="btn btn-primary btn-sm">Go to Messages</a>

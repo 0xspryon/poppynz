@@ -133,22 +133,22 @@
 			<div class="skeleton h-4 w-2/3"></div>
 		</div>
 	{:else if notFound}
-		<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
 			<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
 				<i class="las la-user-slash text-2xl text-neutral" aria-hidden="true"></i>
 			</span>
-			<h1 class="font-display text-lg font-bold text-base-content">
-				This helper isn't available
-			</h1>
+			<h1 class="font-display text-lg font-bold text-base-content">This helper isn't available</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
 				They may have paused their profile. Head back to the results to keep browsing.
 			</p>
-			<a href={backHref} class="btn btn-primary btn-sm">
-				Back to results
-			</a>
+			<a href={backHref} class="btn btn-primary btn-sm"> Back to results </a>
 		</div>
 	{:else if loadError}
-		<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
 			<span class="flex size-14 items-center justify-center rounded-full bg-error-content">
 				<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
 			</span>
@@ -158,7 +158,11 @@
 			<p class="max-w-sm text-sm text-base-content-muted">
 				This profile didn't load. Try again in a moment.
 			</p>
-			<button type="button" class="btn btn-primary btn-sm" onclick={() => (retryTick = retryTick + 1)}>
+			<button
+				type="button"
+				class="btn btn-primary btn-sm"
+				onclick={() => (retryTick = retryTick + 1)}
+			>
 				<i class="las la-redo-alt" aria-hidden="true"></i>
 				Retry
 			</button>
@@ -166,9 +170,15 @@
 	{:else if provider}
 		<!-- Header card -->
 		<div class="rounded-xl border border-card-border bg-base-100 p-6">
-			<div class="flex flex-col items-center gap-5 text-center lg:flex-row lg:items-start lg:text-left">
+			<div
+				class="flex flex-col items-center gap-5 text-center lg:flex-row lg:items-start lg:text-left"
+			>
 				{#if provider.image}
-					<img src={provider.image} alt="" class="size-[112px] shrink-0 rounded-full object-cover" />
+					<img
+						src={provider.image}
+						alt=""
+						class="size-[112px] shrink-0 rounded-full object-cover"
+					/>
 				{:else}
 					<span
 						class="flex size-[112px] shrink-0 items-center justify-center rounded-full bg-base-500
@@ -210,13 +220,18 @@
 					{/if}
 					{#if conversation}
 						<a
-							href={withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversation.id)}`)}
+							href={withQuery(
+								resolve('/family/messages'),
+								`c=${encodeURIComponent(conversation.id)}`
+							)}
 							class="btn btn-primary"
 						>
 							Message {firstName}
 						</a>
 						{#if conversation.status === 'pending'}
-							<span class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning">
+							<span
+								class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning"
+							>
 								{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
 							</span>
 						{:else if conversation.status === 'active'}
@@ -290,7 +305,9 @@
 					>
 						<span class="absolute size-24 rounded-full bg-primary/20"></span>
 						<span class="absolute size-12 rounded-full bg-primary/25"></span>
-						<span class="relative z-10 rounded-pill bg-base-100 px-2.5 py-1 text-[11px] font-semibold text-neutral">
+						<span
+							class="relative z-10 rounded-pill bg-base-100 px-2.5 py-1 text-[11px] font-semibold text-neutral"
+						>
 							Approximate area
 						</span>
 					</div>
@@ -309,9 +326,9 @@
 						What “Vetted” means
 					</h2>
 					<p class="text-[13px] leading-relaxed text-success">
-						{firstName === 'this helper' ? "This helper's" : `${firstName}'s`} identity and
-						background documents were reviewed and approved by the Poppynz team before their
-						profile went live. Every helper you can find here has passed the same checks.
+						{firstName === 'this helper' ? "This helper's" : `${firstName}'s`} identity and background
+						documents were reviewed and approved by the Poppynz team before their profile went live. Every
+						helper you can find here has passed the same checks.
 					</p>
 				</section>
 			</div>
@@ -324,13 +341,18 @@
 		>
 			{#if conversation}
 				{#if conversation.status === 'pending'}
-					<span class="rounded-pill bg-warning-content px-2.5 py-0.5 text-[11px] font-bold text-warning">
+					<span
+						class="rounded-pill bg-warning-content px-2.5 py-0.5 text-[11px] font-bold text-warning"
+					>
 						{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
 					</span>
 				{/if}
 				<div class="flex w-full gap-2">
 					<a
-						href={withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversation.id)}`)}
+						href={withQuery(
+							resolve('/family/messages'),
+							`c=${encodeURIComponent(conversation.id)}`
+						)}
 						class="btn flex-1 btn-primary"
 					>
 						Message {firstName}

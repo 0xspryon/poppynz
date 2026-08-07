@@ -111,22 +111,22 @@
 			<div class="skeleton h-4 w-2/3"></div>
 		</div>
 	{:else if notFound}
-		<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
 			<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
 				<i class="las la-user-slash text-2xl text-neutral" aria-hidden="true"></i>
 			</span>
-			<h1 class="font-display text-lg font-bold text-base-content">
-				This family isn't available
-			</h1>
+			<h1 class="font-display text-lg font-bold text-base-content">This family isn't available</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
 				They may have paused their listing. Head back to the results to keep browsing.
 			</p>
-			<a href={backHref} class="btn btn-primary btn-sm">
-				Back to results
-			</a>
+			<a href={backHref} class="btn btn-primary btn-sm"> Back to results </a>
 		</div>
 	{:else if loadError}
-		<div class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center">
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
 			<span class="flex size-14 items-center justify-center rounded-full bg-error-content">
 				<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
 			</span>
@@ -136,7 +136,11 @@
 			<p class="max-w-sm text-sm text-base-content-muted">
 				This profile didn't load. Try again in a moment.
 			</p>
-			<button type="button" class="btn btn-primary btn-sm" onclick={() => (retryTick = retryTick + 1)}>
+			<button
+				type="button"
+				class="btn btn-primary btn-sm"
+				onclick={() => (retryTick = retryTick + 1)}
+			>
 				<i class="las la-redo-alt" aria-hidden="true"></i>
 				Retry
 			</button>
@@ -144,7 +148,9 @@
 	{:else if family}
 		<!-- Header card -->
 		<div class="rounded-xl border border-card-border bg-base-100 p-6">
-			<div class="flex flex-col items-center gap-5 text-center lg:flex-row lg:items-start lg:text-left">
+			<div
+				class="flex flex-col items-center gap-5 text-center lg:flex-row lg:items-start lg:text-left"
+			>
 				{#if family.image}
 					<img src={family.image} alt="" class="size-[112px] shrink-0 rounded-full object-cover" />
 				{:else}
@@ -187,7 +193,9 @@
 							Message {firstName}
 						</a>
 						{#if conversation.status === 'pending'}
-							<span class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning">
+							<span
+								class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning"
+							>
 								{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
 							</span>
 						{/if}
@@ -246,7 +254,9 @@
 					>
 						<span class="absolute size-24 rounded-full bg-primary/20"></span>
 						<span class="absolute size-12 rounded-full bg-primary/25"></span>
-						<span class="relative z-10 rounded-pill bg-base-100 px-2.5 py-1 text-[11px] font-semibold text-neutral">
+						<span
+							class="relative z-10 rounded-pill bg-base-100 px-2.5 py-1 text-[11px] font-semibold text-neutral"
+						>
 							Approximate area
 						</span>
 					</div>
@@ -268,7 +278,9 @@
 		>
 			{#if conversation}
 				{#if conversation.status === 'pending'}
-					<span class="rounded-pill bg-warning-content px-2.5 py-0.5 text-[11px] font-bold text-warning">
+					<span
+						class="rounded-pill bg-warning-content px-2.5 py-0.5 text-[11px] font-bold text-warning"
+					>
 						{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
 					</span>
 				{/if}

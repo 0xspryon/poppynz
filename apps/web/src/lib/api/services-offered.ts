@@ -14,7 +14,9 @@ export type ServicesOfferedList = Extract<
 >['data'];
 export type ServiceOffered = ServicesOfferedList['services'][number];
 export type ServicesListError = ErrorsOf<typeof listEndpoint>;
-export type ServiceMutationError = ErrorsOf<typeof createEndpoint> | ErrorsOf<typeof updateEndpoint>;
+export type ServiceMutationError =
+	| ErrorsOf<typeof createEndpoint>
+	| ErrorsOf<typeof updateEndpoint>;
 export type ServiceRemoveError = ErrorsOf<typeof removeEndpoint>;
 
 export interface ServiceOfferedDraft {

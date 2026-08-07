@@ -36,7 +36,15 @@
 			class="absolute inset-y-0 left-0 flex w-[292px] flex-col gap-1 bg-secondary p-4 shadow-panel"
 			aria-label="Navigation"
 		>
-			<SidebarNav {kicker} {items} {email} {roleLabel} {impersonated} onnavigate={onclose} {onclose} />
+			<SidebarNav
+				{kicker}
+				{items}
+				{email}
+				{roleLabel}
+				{impersonated}
+				onnavigate={onclose}
+				{onclose}
+			/>
 		</aside>
 	</div>
 {/if}

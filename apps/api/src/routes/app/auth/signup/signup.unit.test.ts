@@ -1,7 +1,13 @@
-import { SqlError } from "@effect/sql/SqlError";
-import { DBNotFoundError, makeSignupIntentRepoTest, makeUserRepoTest, type SignupIntent, type User } from "@repo/db";
-import { Cause, Effect, Exit, Layer, Option, Schema } from "effect";
-import { describe, expect, it, vi } from "vitest";
+import { SqlError } from '@effect/sql/SqlError';
+import {
+  DBNotFoundError,
+  makeSignupIntentRepoTest,
+  makeUserRepoTest,
+  type SignupIntent,
+  type User
+} from '@repo/db';
+import { Cause, Effect, Exit, Layer, Option, Schema } from 'effect';
+import { describe, expect, it, vi } from 'vitest';
 import {
   makeSignupServiceTest,
   requestSignupProgram,
@@ -9,18 +15,18 @@ import {
   SignupIntentError,
   SignupUserAlreadyExistsError,
   SignupUserLookupError,
-  type SignupRole,
-} from "./signup.handler";
-import { signupInputSchema } from './signup.validator'
+  type SignupRole
+} from './signup.handler';
+import { signupInputSchema } from './signup.validator';
 
 const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
   if (!Exit.isFailure(exit)) {
-    throw new Error("Expected effect to fail");
+    throw new Error('Expected effect to fail');
   }
 
   const failure = Cause.failureOption(exit.cause);
   if (Option.isNone(failure)) {
-    throw new Error("Expected typed failure");
+    throw new Error('Expected typed failure');
   }
 
   return failure.value;
@@ -30,8 +36,12 @@ const decodeSignupInput = Schema.decodeUnknownSync(signupInputSchema);
 const isSignupInput = Schema.is(signupInputSchema);
 
 const makeLayer = (options: {
-  create: Parameters<typeof makeSignupIntentRepoTest>[0]["create"];
-  sendSignupLink: (input: { email: string; role: SignupRole; headers: Headers }) => Effect.Effect<void, SignupAuthError>;
+  create: Parameters<typeof makeSignupIntentRepoTest>[0]['create'];
+  sendSignupLink: (input: {
+    email: string;
+    role: SignupRole;
+    headers: Headers;
+  }) => Effect.Effect<void, SignupAuthError>;
   existingUser?: User | null;
 }) =>
   Layer.mergeAll(
@@ -41,21 +51,21 @@ const makeLayer = (options: {
       consumeByEmail: () =>
         Effect.succeed(
           makeSignupIntent({
-            email: "user@example.com",
-            role: "family",
-            language: "en",
-            expiresAt: new Date(),
-          }),
-        ),
-      }),
-      makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
-      makeUserRepoTest({
-        findById: (id: string) => Effect.fail(new DBNotFoundError({ entity: "user", value: id })),
-        findByEmail: (email: string) =>
-          options.existingUser
-            ? Effect.succeed(options.existingUser)
-            : Effect.fail(new DBNotFoundError({ entity: "user", value: email.toLowerCase() })),
-      }),
+            email: 'user@example.com',
+            role: 'family',
+            language: 'en',
+            expiresAt: new Date()
+          })
+        )
+    }),
+    makeSignupServiceTest({ sendSignupLink: options.sendSignupLink }),
+    makeUserRepoTest({
+      findById: (id: string) => Effect.fail(new DBNotFoundError({ entity: 'user', value: id })),
+      findByEmail: (email: string) =>
+        options.existingUser
+          ? Effect.succeed(options.existingUser)
+          : Effect.fail(new DBNotFoundError({ entity: 'user', value: email.toLowerCase() }))
+    })
   );
 
 const makeSignupIntent = (input: {
@@ -64,35 +74,35 @@ const makeSignupIntent = (input: {
   language: string;
   expiresAt: Date;
 }): SignupIntent => ({
-  id: "signup-intent-1",
+  id: 'signup-intent-1',
   email: input.email,
   role: input.role,
   language: input.language,
   expiresAt: input.expiresAt,
   consumedAt: null,
-  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  createdAt: new Date('2026-06-12T00:00:00.000Z')
 });
 
 const makeUser = (overrides: Partial<User> = {}): User => ({
-  id: "user-1",
-  name: "Existing User",
-  email: "provider@example.com",
+  id: 'user-1',
+  name: 'Existing User',
+  email: 'provider@example.com',
   emailVerified: true,
   image: null,
-  createdAt: new Date("2026-06-12T00:00:00.000Z"),
-  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  createdAt: new Date('2026-06-12T00:00:00.000Z'),
+  updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   isAnonymous: false,
-  role: "service-provider",
+  role: 'service-provider',
   banned: false,
   banReason: null,
   banExpires: null,
   phoneNumber: null,
   phoneNumberVerified: null,
-  ...overrides,
+  ...overrides
 });
 
-describe("requestSignupProgram", () => {
-  it("creates a lowercase signup intent and sends a signup link", async () => {
+describe('requestSignupProgram', () => {
+  it('creates a lowercase signup intent and sends a signup link', async () => {
     const createdIntents: Array<{
       email: string;
       role: string;
@@ -105,13 +115,12 @@ describe("requestSignupProgram", () => {
     const result = await Effect.runPromise(
       requestSignupProgram(
         decodeSignupInput({
-           email: "Provider@Example.com",
-           role: "service-provider"
+          email: 'Provider@Example.com',
+          role: 'service-provider'
         }),
         new Headers(),
-        "es"
-      )
-      .pipe(
+        'es'
+      ).pipe(
         Effect.provide(
           makeLayer({
             create: (input) => {
@@ -121,87 +130,85 @@ describe("requestSignupProgram", () => {
             sendSignupLink: ({ email, role }) => {
               sentLinks.push({ email, role });
               return Effect.void;
-            },
-          }),
-        ),
-      ),
+            }
+          })
+        )
+      )
     );
 
     expect(result).toEqual({ ok: true });
     expect(createdIntents).toHaveLength(1);
-    expect(createdIntents[0]?.email).toBe("provider@example.com");
-    expect(createdIntents[0]?.role).toBe("service-provider");
-    expect(createdIntents[0]?.language).toBe("es");
-    expect(createdIntents[0]?.expiresAt.getTime()).toBeGreaterThanOrEqual(before + 5 * 60 * 1000 - 1_000);
-    expect(createdIntents[0]?.expiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 5 * 60 * 1000 + 1_000);
-    expect(sentLinks).toEqual([{ email: "provider@example.com", role: "service-provider" }]);
+    expect(createdIntents[0]?.email).toBe('provider@example.com');
+    expect(createdIntents[0]?.role).toBe('service-provider');
+    expect(createdIntents[0]?.language).toBe('es');
+    expect(createdIntents[0]?.expiresAt.getTime()).toBeGreaterThanOrEqual(
+      before + 5 * 60 * 1000 - 1_000
+    );
+    expect(createdIntents[0]?.expiresAt.getTime()).toBeLessThanOrEqual(
+      Date.now() + 5 * 60 * 1000 + 1_000
+    );
+    expect(sentLinks).toEqual([{ email: 'provider@example.com', role: 'service-provider' }]);
   });
 
-  it("validates signup input with Effect Schema", () => {
-    const valid = decodeSignupInput(
-      { email: " Provider@Example.com ", role: "service-provider" }
-    );
+  it('validates signup input with Effect Schema', () => {
+    const valid = decodeSignupInput({ email: ' Provider@Example.com ', role: 'service-provider' });
 
-    expect(valid).toEqual(
-      { email: "provider@example.com", role: "service-provider" }
-    );
+    expect(valid).toEqual({ email: 'provider@example.com', role: 'service-provider' });
 
     const invalidInputs = [
-      { role: "family" },
-      { email: "not-an-email", role: "family" },
-      { email: "family@example.com", role: "admin" },
+      { role: 'family' },
+      { email: 'not-an-email', role: 'family' },
+      { email: 'family@example.com', role: 'admin' }
     ];
 
     for (const input of invalidInputs) {
       expect(isSignupInput(input)).toBe(false);
     }
   });
-  it("protects against punycode emails", () => {
-    const valid = decodeSignupInput(
-      { email: " user@münchen.de ", role: 'service-provider' }
-    );
+  it('protects against punycode emails', () => {
+    const valid = decodeSignupInput({ email: ' user@münchen.de ', role: 'service-provider' });
 
-    expect(valid).toEqual(
-      { email: "user@xn--mnchen-3ya.de", role: 'service-provider' }
-    );
+    expect(valid).toEqual({ email: 'user@xn--mnchen-3ya.de', role: 'service-provider' });
   });
 
-  it("calls sendSignupLink during signup", async () => {
-    const headers = new Headers({ "x-test-header": "test-value" });
+  it('calls sendSignupLink during signup', async () => {
+    const headers = new Headers({ 'x-test-header': 'test-value' });
     const sendSignupLink = vi.fn(
       (_: { email: string; role: SignupRole; headers: Headers }) => Effect.void
     );
 
     await Effect.runPromise(
       requestSignupProgram(
-        decodeSignupInput(
-          { email: "Provider@Example.com", role: "service-provider" }
-        ),
+        decodeSignupInput({ email: 'Provider@Example.com', role: 'service-provider' }),
         headers,
-        "en"
+        'en'
       ).pipe(
         Effect.provide(
           makeLayer({
             create: (input) => Effect.succeed(makeSignupIntent(input)),
-            sendSignupLink,
-          }),
-        ),
-      ),
+            sendSignupLink
+          })
+        )
+      )
     );
 
     expect(sendSignupLink).toHaveBeenCalledTimes(1);
     expect(sendSignupLink).toHaveBeenCalledWith({
-      email: "provider@example.com",
-      role: "service-provider",
-      headers,
+      email: 'provider@example.com',
+      role: 'service-provider',
+      headers
     });
   });
 
-  it("does not create a signup intent when user already exists", async () => {
+  it('does not create a signup intent when user already exists', async () => {
     const createdIntents: Array<unknown> = [];
     const sentLinks: Array<unknown> = [];
     const exit = await Effect.runPromise(
-      requestSignupProgram({ email: "provider@example.com", role: "family" }, new Headers(), "en").pipe(
+      requestSignupProgram(
+        { email: 'provider@example.com', role: 'family' },
+        new Headers(),
+        'en'
+      ).pipe(
         Effect.provide(
           makeLayer({
             existingUser: makeUser(),
@@ -212,11 +219,11 @@ describe("requestSignupProgram", () => {
             sendSignupLink: (input) => {
               sentLinks.push(input);
               return Effect.void;
-            },
-          }),
+            }
+          })
         ),
-        Effect.exit,
-      ),
+        Effect.exit
+      )
     );
 
     const failure = getFailure(exit);
@@ -226,12 +233,16 @@ describe("requestSignupProgram", () => {
     expect(sentLinks).toEqual([]);
   });
 
-  it("does not create a signup intent or send email when user lookup fails", async () => {
-    const sqlError = new SqlError({ message: "db down" });
+  it('does not create a signup intent or send email when user lookup fails', async () => {
+    const sqlError = new SqlError({ message: 'db down' });
     const createdIntents: Array<unknown> = [];
     const sentLinks: Array<unknown> = [];
     const exit = await Effect.runPromise(
-      requestSignupProgram({ email: "provider@example.com", role: "family" }, new Headers(), "en").pipe(
+      requestSignupProgram(
+        { email: 'provider@example.com', role: 'family' },
+        new Headers(),
+        'en'
+      ).pipe(
         Effect.provide(
           Layer.mergeAll(
             makeSignupIntentRepoTest({
@@ -240,27 +251,31 @@ describe("requestSignupProgram", () => {
                 return Effect.succeed(makeSignupIntent(input));
               },
               findValidByEmail: () => Effect.succeed(null),
-              consumeByEmail: () => Effect.succeed(makeSignupIntent({
-                email: "user@example.com",
-                role: "family",
-                language: "en",
-                expiresAt: new Date(),
-              })),
+              consumeByEmail: () =>
+                Effect.succeed(
+                  makeSignupIntent({
+                    email: 'user@example.com',
+                    role: 'family',
+                    language: 'en',
+                    expiresAt: new Date()
+                  })
+                )
             }),
             makeSignupServiceTest({
               sendSignupLink: (input) => {
                 sentLinks.push(input);
                 return Effect.void;
-              },
+              }
             }),
             makeUserRepoTest({
-              findById: (id: string) => Effect.fail(new DBNotFoundError({ entity: "user", value: id })),
-              findByEmail: () => Effect.fail(sqlError),
-            }),
-          ),
+              findById: (id: string) =>
+                Effect.fail(new DBNotFoundError({ entity: 'user', value: id })),
+              findByEmail: () => Effect.fail(sqlError)
+            })
+          )
         ),
-        Effect.exit,
-      ),
+        Effect.exit
+      )
     );
 
     const failure = getFailure(exit);
@@ -271,18 +286,22 @@ describe("requestSignupProgram", () => {
     expect(sentLinks).toEqual([]);
   });
 
-  it("maps signup intent repo failures", async () => {
-    const sqlError = new SqlError({ message: "db down" });
+  it('maps signup intent repo failures', async () => {
+    const sqlError = new SqlError({ message: 'db down' });
     const exit = await Effect.runPromise(
-      requestSignupProgram({ email: "family@example.com", role: "family" }, new Headers(), "en").pipe(
+      requestSignupProgram(
+        { email: 'family@example.com', role: 'family' },
+        new Headers(),
+        'en'
+      ).pipe(
         Effect.provide(
           makeLayer({
             create: () => Effect.fail(sqlError),
-            sendSignupLink: () => Effect.void,
-          }),
+            sendSignupLink: () => Effect.void
+          })
         ),
-        Effect.exit,
-      ),
+        Effect.exit
+      )
     );
 
     const failure = getFailure(exit);
@@ -291,18 +310,22 @@ describe("requestSignupProgram", () => {
     expect(failure.cause).toBe(sqlError);
   });
 
-  it("maps magic-link failures", async () => {
-    const authError = new SignupAuthError({ cause: new Error("auth down") });
+  it('maps magic-link failures', async () => {
+    const authError = new SignupAuthError({ cause: new Error('auth down') });
     const exit = await Effect.runPromise(
-      requestSignupProgram({ email: "family@example.com", role: "family" }, new Headers(), "en").pipe(
+      requestSignupProgram(
+        { email: 'family@example.com', role: 'family' },
+        new Headers(),
+        'en'
+      ).pipe(
         Effect.provide(
           makeLayer({
             create: (input) => Effect.succeed(makeSignupIntent(input)),
-            sendSignupLink: () => Effect.fail(authError),
-          }),
+            sendSignupLink: () => Effect.fail(authError)
+          })
         ),
-        Effect.exit,
-      ),
+        Effect.exit
+      )
     );
 
     const failure = getFailure(exit);

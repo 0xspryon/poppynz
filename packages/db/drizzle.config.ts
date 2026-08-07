@@ -1,7 +1,7 @@
-import { defineConfig } from 'drizzle-kit'
+import { defineConfig } from 'drizzle-kit';
 
-const url = process.env.DATABASE_URL ?? ''
-console.log({ url })
+const url = process.env.DATABASE_URL ?? '';
+console.log({ url });
 
 export default defineConfig({
   out: './src/migrations',
@@ -15,4 +15,4 @@ export default defineConfig({
     table: '__drizzle_migrations_app',
     schema: 'drizzle_app_db'
   }
-})
+});

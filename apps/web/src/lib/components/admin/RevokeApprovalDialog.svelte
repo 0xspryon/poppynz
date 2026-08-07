@@ -29,8 +29,8 @@
 		<form class="modal-box" onsubmit={submit}>
 			<h2 class="text-lg font-bold">Revoke {applicantName}'s approval</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				This takes effect immediately: the provider loses verified status and is removed from
-				family search. The reason is <b>shown to the provider verbatim</b>.
+				This takes effect immediately: the provider loses verified status and is removed from family
+				search. The reason is <b>shown to the provider verbatim</b>.
 			</p>
 
 			<fieldset class="fieldset mt-4">

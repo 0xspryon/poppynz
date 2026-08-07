@@ -57,7 +57,8 @@
 			const message: string = matchError(result.error, {
 				REFERRAL_ALREADY_INVITED: () => 'You already have a pending invite for this email.',
 				REFERRAL_EMAIL_ALREADY_MEMBER: () => 'This person is already on Poppynz.',
-				INVALID_REFERRAL_INPUT: () => "That email address doesn't look right. Check it and try again.",
+				INVALID_REFERRAL_INPUT: () =>
+					"That email address doesn't look right. Check it and try again.",
 				REFERRAL_INVITE_SEND_FAILED: () => "We couldn't send the invite. Please try again.",
 				REFERRAL_LOOKUP_FAILED: () => RETRY_MESSAGE,
 				UNAUTHORIZED: () => 'You need to be signed in to send invites.',
@@ -123,20 +124,12 @@
 		profiles.
 	</p>
 
-	<form
-		class="mb-5 rounded-xl border border-card-border bg-base-100 p-5 lg:p-6"
-		onsubmit={send}
-	>
+	<form class="mb-5 rounded-xl border border-card-border bg-base-100 p-5 lg:p-6" onsubmit={send}>
 		<div class="mb-3 text-[15px] font-bold text-base-content">Invite by email</div>
 		<div class="flex flex-col gap-2.5 sm:flex-row">
 			<label class="input min-w-0 flex-1">
 				<i class="las la-envelope text-base text-outline" aria-hidden="true"></i>
-				<input
-					type="email"
-					placeholder="their.email@example.com"
-					required
-					bind:value={email}
-				/>
+				<input type="email" placeholder="their.email@example.com" required bind:value={email} />
 			</label>
 			<select class="select sm:w-44" bind:value={role} aria-label="Invite as">
 				<option value="service-provider">As a caregiver</option>
@@ -198,9 +191,7 @@
 					>
 						<span
 							class="flex size-9 shrink-0 items-center justify-center rounded-full text-[13px]
-								font-bold {entry.status === 'expired'
-								? 'bg-base-300 text-outline'
-								: 'bg-base-400 text-secondary'}"
+								font-bold {entry.status === 'expired' ? 'bg-base-300 text-outline' : 'bg-base-400 text-secondary'}"
 						>
 							{initials(entry)}
 						</span>

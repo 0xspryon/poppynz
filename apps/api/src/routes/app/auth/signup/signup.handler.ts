@@ -1,39 +1,37 @@
-import type { SqlError } from "@effect/sql/SqlError";
-import { SignupIntentRepo, UserRepo } from "@repo/db";
-import { Cause, Context, Data, Effect, Exit, Layer, Option } from "effect";
-import type { HonoContext, HonoEnv } from "../../../../app-env";
-import { auth } from "../../../../lib/auth";
-import { resolveUiOrigin } from "../../../../lib/ui-origin";
-import { validLanguages, signupIntentTtlMs, validRoles } from "../../../../lib/constants";
-import {
-  signupValidationError,
-  validateSignupInput,
-  type SignupInput,
-} from "./signup.validator";
+import type { SqlError } from '@effect/sql/SqlError';
+import { SignupIntentRepo, UserRepo } from '@repo/db';
+import { Cause, Context, Data, Effect, Exit, Layer, Option } from 'effect';
+import type { HonoContext, HonoEnv } from '../../../../app-env';
+import { auth } from '../../../../lib/auth';
+import { resolveUiOrigin } from '../../../../lib/ui-origin';
+import { validLanguages, signupIntentTtlMs, validRoles } from '../../../../lib/constants';
+import { signupValidationError, validateSignupInput, type SignupInput } from './signup.validator';
 import {
   isRequestValidationError,
   parseJsonBody,
-  requestValidationErrorToResponse,
-} from "@/api/lib/schema-validator";
+  requestValidationErrorToResponse
+} from '@/api/lib/schema-validator';
 
 export type SignupRole = (typeof validRoles)[number];
 export type SignupLanguage = (typeof validLanguages)[number];
 
-export class SignupIntentError extends Data.TaggedError("SignupIntentError")<{
+export class SignupIntentError extends Data.TaggedError('SignupIntentError')<{
   cause: SqlError;
 }> {}
 
-export class SignupUserLookupError extends Data.TaggedError("SignupUserLookupError")<{
+export class SignupUserLookupError extends Data.TaggedError('SignupUserLookupError')<{
   cause: SqlError;
 }> {}
 
-export class SignupUserAlreadyExistsError extends Data.TaggedError("SignupUserAlreadyExistsError")<{}> {}
+export class SignupUserAlreadyExistsError extends Data.TaggedError(
+  'SignupUserAlreadyExistsError'
+)<{}> {}
 
-export class SignupAuthError extends Data.TaggedError("SignupAuthError")<{
+export class SignupAuthError extends Data.TaggedError('SignupAuthError')<{
   cause: unknown;
 }> {}
 
-export class SignupService extends Context.Tag("@api/routes/auth/signup/SignupService")<
+export class SignupService extends Context.Tag('@api/routes/auth/signup/SignupService')<
   SignupService,
   {
     sendSignupLink: (input: {
@@ -54,33 +52,33 @@ export const SignupServiceLive = Layer.succeed(SignupService, {
             email,
             callbackURL: `${uiOrigin}/onboarding`,
             newUserCallbackURL:
-              role === "service-provider"
+              role === 'service-provider'
                 ? `${uiOrigin}/service-provider/onboarding`
                 : `${uiOrigin}/family/onboarding`,
             errorCallbackURL: `${uiOrigin}/auth/sign-up/error`,
-            metadata: { signupRole: role },
+            metadata: { signupRole: role }
           },
-          headers,
+          headers
         });
       },
-      catch: (cause) => new SignupAuthError({ cause }),
-    }),
+      catch: (cause) => new SignupAuthError({ cause })
+    })
 });
 
 export const makeSignupServiceTest = (implementation: Context.Tag.Service<SignupService>) =>
   Layer.succeed(SignupService, implementation);
 
 export const EmptySignupServiceTest = makeSignupServiceTest({
-  sendSignupLink: (_: { email: string; role: SignupRole; headers: Headers }) => Effect.void,
-})
+  sendSignupLink: (_: { email: string; role: SignupRole; headers: Headers }) => Effect.void
+});
 
 const ensureSignupUserDoesNotExist = (email: string) =>
   Effect.gen(function* () {
     const userRepo = yield* UserRepo;
 
     const existingUser = yield* userRepo.findByEmail(email).pipe(
-      Effect.catchTag("DBNotFoundError", () => Effect.succeed(null)),
-      Effect.mapError((cause) => new SignupUserLookupError({ cause })),
+      Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)),
+      Effect.mapError((cause) => new SignupUserLookupError({ cause }))
     );
 
     if (existingUser) {
@@ -88,11 +86,15 @@ const ensureSignupUserDoesNotExist = (email: string) =>
     }
   });
 
-export const requestSignupProgram = (body: SignupInput, headers: Headers, language: SignupLanguage) =>
+export const requestSignupProgram = (
+  body: SignupInput,
+  headers: Headers,
+  language: SignupLanguage
+) =>
   Effect.gen(function* () {
     const intentRepo = yield* SignupIntentRepo;
     const signupService = yield* SignupService;
-    const email = body.email
+    const email = body.email;
 
     yield* ensureSignupUserDoesNotExist(email);
 
@@ -101,7 +103,7 @@ export const requestSignupProgram = (body: SignupInput, headers: Headers, langua
         email,
         role: body.role,
         language: language,
-        expiresAt: new Date(Date.now() + signupIntentTtlMs),
+        expiresAt: new Date(Date.now() + signupIntentTtlMs)
       })
       .pipe(Effect.mapError((cause) => new SignupIntentError({ cause })));
 
@@ -114,48 +116,48 @@ export type SignupError = Effect.Effect.Error<ReturnType<typeof requestSignupPro
 
 const signupErrorToResponse = (c: HonoContext<HonoEnv>, error: SignupError) => {
   switch (error._tag) {
-    case "SignupIntentError":
+    case 'SignupIntentError':
       return c.json(
         {
           error: {
-            code: "SIGNUP_INTENT_FAILED" as const,
-            message: "Unable to start signup.",
-          },
+            code: 'SIGNUP_INTENT_FAILED' as const,
+            message: 'Unable to start signup.'
+          }
         },
-        500,
+        500
       );
 
-    case "SignupUserLookupError":
+    case 'SignupUserLookupError':
       return c.json(
         {
           error: {
-            code: "SIGNUP_USER_LOOKUP_FAILED" as const,
-            message: "Unable to start signup.",
-          },
+            code: 'SIGNUP_USER_LOOKUP_FAILED' as const,
+            message: 'Unable to start signup.'
+          }
         },
-        500,
+        500
       );
 
-    case "SignupUserAlreadyExistsError":
+    case 'SignupUserAlreadyExistsError':
       return c.json(
         {
           error: {
-            code: "USER_ALREADY_EXISTS" as const,
-            message: "An account already exists for this email.",
-          },
+            code: 'USER_ALREADY_EXISTS' as const,
+            message: 'An account already exists for this email.'
+          }
         },
-        409,
+        409
       );
 
-    case "SignupAuthError":
+    case 'SignupAuthError':
       return c.json(
         {
           error: {
-            code: "SIGNUP_LINK_FAILED" as const,
-            message: "Unable to send signup link.",
-          },
+            code: 'SIGNUP_LINK_FAILED' as const,
+            message: 'Unable to send signup link.'
+          }
         },
-        500,
+        500
       );
   }
 };
@@ -164,11 +166,11 @@ const unexpectedErrorResponse = (c: HonoContext<HonoEnv>) =>
   c.json(
     {
       error: {
-        code: "INTERNAL_SERVER_ERROR" as const,
-        message: "Unexpected server error.",
-      },
+        code: 'INTERNAL_SERVER_ERROR' as const,
+        message: 'Unexpected server error.'
+      }
     },
-    500,
+    500
   );
 
 const isSignupError = (error: unknown): error is SignupError =>
@@ -178,16 +180,16 @@ const isSignupError = (error: unknown): error is SignupError =>
   error instanceof SignupAuthError;
 
 export async function signupHandler(c: HonoContext<HonoEnv>) {
-  const headers = c.req.raw.headers
-  const runtime = c.get('runtime')
-  const language = c.get('language')
+  const headers = c.req.raw.headers;
+  const runtime = c.get('runtime');
+  const language = c.get('language');
   const exit = await runtime.runPromiseExit(
     Effect.gen(function* () {
       const rawBody = yield* parseJsonBody(c, signupValidationError);
       const input = yield* validateSignupInput(rawBody);
 
       return yield* requestSignupProgram(input, headers, language);
-    }),
+    })
   );
 
   return Exit.match(exit, {
@@ -206,6 +208,6 @@ export async function signupHandler(c: HonoContext<HonoEnv>) {
       }
 
       return unexpectedErrorResponse(c);
-    },
+    }
   });
-};
+}

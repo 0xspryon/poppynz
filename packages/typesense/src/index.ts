@@ -1,7 +1,12 @@
-import { providerSearchConfig, typesenseConfig } from "@repo/env";
-import { DBNotFoundError, ProviderSearchRepo, ProviderSearchRepoDefault, type ProviderSearchCandidate } from "@repo/db";
-import { Cause, Context, Data, Effect, Layer } from "effect";
-import Typesense from "typesense";
+import { providerSearchConfig, typesenseConfig } from '@repo/env';
+import {
+  DBNotFoundError,
+  ProviderSearchRepo,
+  ProviderSearchRepoDefault,
+  type ProviderSearchCandidate
+} from '@repo/db';
+import { Cause, Context, Data, Effect, Layer } from 'effect';
+import Typesense from 'typesense';
 
 export type ProviderSearchDocument = {
   id: string;
@@ -37,7 +42,7 @@ export type ProviderSearchInput = {
   center?: [number, number];
   minHourlyRateCents?: number;
   maxHourlyRateCents?: number;
-  sort?: "relevance" | "distance" | "price_asc" | "price_desc" | "newest";
+  sort?: 'relevance' | 'distance' | 'price_asc' | 'price_desc' | 'newest';
   page: number;
   perPage: number;
 };
@@ -49,35 +54,53 @@ export type ProviderSearchResult = {
 
 export type ProviderCityFacet = { value: string; count: number };
 
-export class ProviderSearchIndexError extends Data.TaggedError("ProviderSearchIndexError")<{
-  operation: "ensureCollection" | "upsert" | "delete" | "search" | "get" | "reindex" | "listDocuments";
+export class ProviderSearchIndexError extends Data.TaggedError('ProviderSearchIndexError')<{
+  operation:
+    | 'ensureCollection'
+    | 'upsert'
+    | 'delete'
+    | 'search'
+    | 'get'
+    | 'reindex'
+    | 'listDocuments';
   cause: unknown;
-}> { }
+}> {}
 
-export class ProviderSearchValidationError extends Data.TaggedError("ProviderSearchValidationError")<{
+export class ProviderSearchValidationError extends Data.TaggedError(
+  'ProviderSearchValidationError'
+)<{
   message: string;
-}> { }
+}> {}
 
-export class ProviderSearchIndex extends Context.Tag("@repo/typesense/ProviderSearchIndex")<
+export class ProviderSearchIndex extends Context.Tag('@repo/typesense/ProviderSearchIndex')<
   ProviderSearchIndex,
   {
     ensureCollection: () => Effect.Effect<void, ProviderSearchIndexError>;
     reconcileProvider: (userId: string) => Effect.Effect<void, ProviderSearchIndexError>;
-    searchProviders: (input: ProviderSearchInput) => Effect.Effect<ProviderSearchResult, ProviderSearchIndexError>;
-    listCityFacets: (input: ProviderSearchInput) => Effect.Effect<Array<ProviderCityFacet>, ProviderSearchIndexError>;
-    getProvider: (userId: string) => Effect.Effect<ProviderSearchDocument, ProviderSearchIndexError | DBNotFoundError>;
-    reindexAllProviders: () => Effect.Effect<{ indexed: number; deletedStale: number }, ProviderSearchIndexError>;
+    searchProviders: (
+      input: ProviderSearchInput
+    ) => Effect.Effect<ProviderSearchResult, ProviderSearchIndexError>;
+    listCityFacets: (
+      input: ProviderSearchInput
+    ) => Effect.Effect<Array<ProviderCityFacet>, ProviderSearchIndexError>;
+    getProvider: (
+      userId: string
+    ) => Effect.Effect<ProviderSearchDocument, ProviderSearchIndexError | DBNotFoundError>;
+    reindexAllProviders: () => Effect.Effect<
+      { indexed: number; deletedStale: number },
+      ProviderSearchIndexError
+    >;
   }
->() { }
+>() {}
 
 const isNotFound = (cause: unknown) => {
-  if (!cause || typeof cause !== "object") return false;
+  if (!cause || typeof cause !== 'object') return false;
   const error = cause as { httpStatus?: number; status?: number };
   return error.httpStatus === 404 || error.status === 404;
 };
 
 const displayName = (firstName: string | null, lastName: string | null) => {
-  const name = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const name = [firstName, lastName].filter(Boolean).join(' ').trim();
   return name.length > 0 ? name : null;
 };
 
@@ -87,15 +110,18 @@ const unique = (values: Array<string>) => Array.from(new Set(values));
  * lowercase, while the original-cased fields stay for display. */
 const normalizeForMatch = (value: string) => value.trim().toLowerCase();
 
-export const buildProviderSearchDocument = (candidate: ProviderSearchCandidate): ProviderSearchDocument | null => {
+export const buildProviderSearchDocument = (
+  candidate: ProviderSearchCandidate
+): ProviderSearchDocument | null => {
   const { profile, approval, services } = candidate;
   const activeServices = services.filter((service) => service.deletedAt === null);
 
-  if (profile.role !== "service-provider") return null;
+  if (profile.role !== 'service-provider') return null;
   // A ban with no expiry is permanent; an expiry in the past means the ban has lapsed.
-  if (profile.banned === true && (profile.banExpires === null || profile.banExpires > new Date())) return null;
+  if (profile.banned === true && (profile.banExpires === null || profile.banExpires > new Date()))
+    return null;
   if (!approval || approval.expiresAt <= new Date()) return null;
-  if (typeof profile.latitude !== "number" || typeof profile.longitude !== "number") return null;
+  if (typeof profile.latitude !== 'number' || typeof profile.longitude !== 'number') return null;
   if (!profile.city || !profile.stateProvince) return null;
   if (activeServices.length === 0) return null;
 
@@ -121,66 +147,70 @@ export const buildProviderSearchDocument = (candidate: ProviderSearchCandidate):
     services: servicesNames,
     servicesNormalized: unique(servicesNames.map(normalizeForMatch)),
     serviceDescriptions,
-    serviceNamesText: servicesNames.join(" "),
+    serviceNamesText: servicesNames.join(' '),
     minHourlyRateCents: Math.min(...rates),
     maxHourlyRateCents: Math.max(...rates),
     currencies: unique(activeServices.map((service) => service.currency)),
     approvalExpiresAt: approval.expiresAt.getTime(),
-    updatedAt: Date.now(),
+    updatedAt: Date.now()
   };
 };
 
 const toPublicDocument = (document: ProviderSearchDocument, distanceKm?: number) => ({
   ...document,
-  distanceKm,
+  distanceKm
 });
 
 const collectionSchema = (name: string) => ({
   name,
   fields: [
-    { name: "userId", type: "string" as const, facet: false },
-    { name: "displayName", type: "string" as const, optional: true },
-    { name: "firstName", type: "string" as const, optional: true },
-    { name: "lastName", type: "string" as const, optional: true },
-    { name: "shortBio", type: "string" as const, optional: true },
-    { name: "image", type: "string" as const, optional: true, index: false },
-    { name: "city", type: "string" as const, facet: true },
-    { name: "cityNormalized", type: "string" as const, facet: true },
-    { name: "stateProvince", type: "string" as const, facet: true },
-    { name: "country", type: "string" as const, facet: true, optional: true },
-    { name: "location", type: "geopoint" as const },
-    { name: "services", type: "string[]" as const, facet: true },
-    { name: "servicesNormalized", type: "string[]" as const, facet: true },
-    { name: "serviceDescriptions", type: "string[]" as const, optional: true },
-    { name: "serviceNamesText", type: "string" as const },
-    { name: "minHourlyRateCents", type: "int32" as const, facet: true },
-    { name: "maxHourlyRateCents", type: "int32" as const, facet: true },
-    { name: "currencies", type: "string[]" as const, facet: true },
-    { name: "approvalExpiresAt", type: "int64" as const, facet: true },
-    { name: "updatedAt", type: "int64" as const, facet: true },
+    { name: 'userId', type: 'string' as const, facet: false },
+    { name: 'displayName', type: 'string' as const, optional: true },
+    { name: 'firstName', type: 'string' as const, optional: true },
+    { name: 'lastName', type: 'string' as const, optional: true },
+    { name: 'shortBio', type: 'string' as const, optional: true },
+    { name: 'image', type: 'string' as const, optional: true, index: false },
+    { name: 'city', type: 'string' as const, facet: true },
+    { name: 'cityNormalized', type: 'string' as const, facet: true },
+    { name: 'stateProvince', type: 'string' as const, facet: true },
+    { name: 'country', type: 'string' as const, facet: true, optional: true },
+    { name: 'location', type: 'geopoint' as const },
+    { name: 'services', type: 'string[]' as const, facet: true },
+    { name: 'servicesNormalized', type: 'string[]' as const, facet: true },
+    { name: 'serviceDescriptions', type: 'string[]' as const, optional: true },
+    { name: 'serviceNamesText', type: 'string' as const },
+    { name: 'minHourlyRateCents', type: 'int32' as const, facet: true },
+    { name: 'maxHourlyRateCents', type: 'int32' as const, facet: true },
+    { name: 'currencies', type: 'string[]' as const, facet: true },
+    { name: 'approvalExpiresAt', type: 'int64' as const, facet: true },
+    { name: 'updatedAt', type: 'int64' as const, facet: true }
   ],
-  default_sorting_field: "updatedAt",
+  default_sorting_field: 'updatedAt'
 });
 
 // Wrap a facet value in Typesense's backtick literal syntax so user input
 // can't inject filter operators (`||`, `:`, geo predicates). JSON.stringify
 // is NOT enough here — it only escapes for JSON, not the filter grammar.
-const filterString = (value: string) => `\`${value.replace(/`/g, "\\`")}\``;
+const filterString = (value: string) => `\`${value.replace(/`/g, '\\`')}\``;
 
 export const buildFilter = (input: ProviderSearchInput) => {
   const filters = [`approvalExpiresAt:>${Date.now()}`];
   if (input.city) filters.push(`cityNormalized:=${filterString(normalizeForMatch(input.city))}`);
-  if (input.service) filters.push(`servicesNormalized:=${filterString(normalizeForMatch(input.service))}`);
-  if (typeof input.minHourlyRateCents === "number") filters.push(`maxHourlyRateCents:>=${input.minHourlyRateCents}`);
-  if (typeof input.maxHourlyRateCents === "number") filters.push(`minHourlyRateCents:<=${input.maxHourlyRateCents}`);
-  if (input.radiusKm && input.center) filters.push(`location:(${input.center[0]}, ${input.center[1]}, ${input.radiusKm} km)`);
-  return filters.join(" && ");
+  if (input.service)
+    filters.push(`servicesNormalized:=${filterString(normalizeForMatch(input.service))}`);
+  if (typeof input.minHourlyRateCents === 'number')
+    filters.push(`maxHourlyRateCents:>=${input.minHourlyRateCents}`);
+  if (typeof input.maxHourlyRateCents === 'number')
+    filters.push(`minHourlyRateCents:<=${input.maxHourlyRateCents}`);
+  if (input.radiusKm && input.center)
+    filters.push(`location:(${input.center[0]}, ${input.center[1]}, ${input.radiusKm} km)`);
+  return filters.join(' && ');
 };
 
 const distanceFromHit = (hit: { geo_distance_meters?: Record<string, number> }) => {
   const meters = hit.geo_distance_meters?.location;
   // Rounding up to the nearest 0.1KM
-  return typeof meters === "number" ? Math.round((meters / 1000) * 10) / 10 : undefined;
+  return typeof meters === 'number' ? Math.round((meters / 1000) * 10) / 10 : undefined;
 };
 
 const chunksOf = <T>(items: Array<T>, size: number) => {
@@ -194,23 +224,36 @@ const chunksOf = <T>(items: Array<T>, size: number) => {
 };
 
 const sortBy = (input: ProviderSearchInput) => {
-  if (input.center && (input.sort === undefined || input.sort === "distance")) return `location(${input.center[0]}, ${input.center[1]}):asc`;
+  if (input.center && (input.sort === undefined || input.sort === 'distance'))
+    return `location(${input.center[0]}, ${input.center[1]}):asc`;
   switch (input.sort) {
-    case "price_asc": return "minHourlyRateCents:asc";
-    case "price_desc": return "minHourlyRateCents:desc";
-    case "newest": return "updatedAt:desc";
-    default: return undefined;
+    case 'price_asc':
+      return 'minHourlyRateCents:asc';
+    case 'price_desc':
+      return 'minHourlyRateCents:desc';
+    case 'newest':
+      return 'updatedAt:desc';
+    default:
+      return undefined;
   }
 };
 
-const makeProviderSearchIndex = (config: { host: string; port: number; protocol: string; apiKey: string; providerCollection: string; providerCollectionAlias: string; providerCollectionVersion: string }) => {
+const makeProviderSearchIndex = (config: {
+  host: string;
+  port: number;
+  protocol: string;
+  apiKey: string;
+  providerCollection: string;
+  providerCollectionAlias: string;
+  providerCollectionVersion: string;
+}) => {
   const client = new Typesense.Client({
     nodes: [{ host: config.host, port: config.port, protocol: config.protocol }],
     apiKey: config.apiKey,
-    connectionTimeoutSeconds: 5,
+    connectionTimeoutSeconds: 5
   });
 
-  return Effect.gen(function*() {
+  return Effect.gen(function* () {
     const repo = yield* ProviderSearchRepo;
     const writeCollection = config.providerCollectionVersion || config.providerCollection;
     const readCollection = config.providerCollectionAlias || writeCollection;
@@ -227,7 +270,7 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
 
           await client.aliases().upsert(readCollection, { collection_name: writeCollection });
         },
-        catch: (cause) => new ProviderSearchIndexError({ operation: "ensureCollection", cause }),
+        catch: (cause) => new ProviderSearchIndexError({ operation: 'ensureCollection', cause })
       });
 
     const deleteProvider = (userId: string) =>
@@ -239,7 +282,7 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
             if (!isNotFound(cause)) throw cause;
           }
         },
-        catch: (cause) => new ProviderSearchIndexError({ operation: "delete", cause }),
+        catch: (cause) => new ProviderSearchIndexError({ operation: 'delete', cause })
       });
 
     const deleteProviders = (userIds: Array<string>) =>
@@ -254,8 +297,8 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
               .collections(writeCollection)
               .documents()
               .delete({
-                filter_by: `id:=[${chunk.map(filterString).join(",")}]`,
-                batch_size: 250,
+                filter_by: `id:=[${chunk.map(filterString).join(',')}]`,
+                batch_size: 250
               });
 
             deleted += response.num_deleted;
@@ -263,21 +306,21 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
 
           return deleted;
         },
-        catch: (cause) => new ProviderSearchIndexError({ operation: "delete", cause }),
+        catch: (cause) => new ProviderSearchIndexError({ operation: 'delete', cause })
       });
 
     const upsertProvider = (document: ProviderSearchDocument) =>
       Effect.tryPromise({
         try: () => client.collections(writeCollection).documents().upsert(document),
-        catch: (cause) => new ProviderSearchIndexError({ operation: "upsert", cause }),
+        catch: (cause) => new ProviderSearchIndexError({ operation: 'upsert', cause })
       }).pipe(Effect.asVoid);
 
     const reconcileProvider = (userId: string) =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* ensureCollection();
         const candidate = yield* repo.findCandidateByUserId(userId).pipe(
-          Effect.catchTag("DBNotFoundError", () => Effect.succeed(null)),
-          Effect.mapError((cause) => new ProviderSearchIndexError({ operation: "get", cause })),
+          Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)),
+          Effect.mapError((cause) => new ProviderSearchIndexError({ operation: 'get', cause }))
         );
         const document = candidate ? buildProviderSearchDocument(candidate) : null;
 
@@ -293,62 +336,83 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
       Effect.tryPromise({
         try: async () => {
           const searchParams = {
-            q: input.q?.trim() || "*",
-            query_by: "displayName,shortBio,services,serviceDescriptions,serviceNamesText,city,stateProvince,country",
+            q: input.q?.trim() || '*',
+            query_by:
+              'displayName,shortBio,services,serviceDescriptions,serviceNamesText,city,stateProvince,country',
             filter_by: buildFilter(input),
             page: input.page,
             per_page: input.perPage,
-            ...(sortBy(input) ? { sort_by: sortBy(input) } : {}),
+            ...(sortBy(input) ? { sort_by: sortBy(input) } : {})
           };
-          const response = await client.collections(readCollection).documents().search(searchParams);
-          const hits = (response.hits ?? []) as Array<{ document: ProviderSearchDocument; geo_distance_meters?: Record<string, number> }>;
+          const response = await client
+            .collections(readCollection)
+            .documents()
+            .search(searchParams);
+          const hits = (response.hits ?? []) as Array<{
+            document: ProviderSearchDocument;
+            geo_distance_meters?: Record<string, number>;
+          }>;
 
           return {
             providers: hits.map((hit) => toPublicDocument(hit.document, distanceFromHit(hit))),
-            pagination: { page: input.page, perPage: input.perPage, total: response.found ?? 0 },
+            pagination: { page: input.page, perPage: input.perPage, total: response.found ?? 0 }
           };
         },
-        catch: (cause) => new ProviderSearchIndexError({ operation: "search", cause }),
+        catch: (cause) => new ProviderSearchIndexError({ operation: 'search', cause })
       });
 
     const listCityFacets = (input: ProviderSearchInput) =>
       Effect.tryPromise({
         try: async () => {
-          const response = await client.collections(readCollection).documents().search({
-            q: input.q?.trim() || "*",
-            query_by: "displayName,shortBio,services,serviceDescriptions,serviceNamesText,city,stateProvince,country",
-            // Drop the city AND geo clauses: the dropdown must list every city
-            // with providers (not just those inside the current radius) so it
-            // can act as a "jump to this place" control, and selecting a city
-            // must not collapse the list to that one option. Other filters
-            // (q, service, rate) still scope the counts.
-            filter_by: buildFilter({ ...input, city: undefined, radiusKm: undefined, center: undefined }),
-            facet_by: "city",
-            max_facet_values: 250,
-            per_page: 0,
-            page: 1,
-          });
-          const facet = (response.facet_counts ?? []).find((entry) => entry.field_name === "city");
+          const response = await client
+            .collections(readCollection)
+            .documents()
+            .search({
+              q: input.q?.trim() || '*',
+              query_by:
+                'displayName,shortBio,services,serviceDescriptions,serviceNamesText,city,stateProvince,country',
+              // Drop the city AND geo clauses: the dropdown must list every city
+              // with providers (not just those inside the current radius) so it
+              // can act as a "jump to this place" control, and selecting a city
+              // must not collapse the list to that one option. Other filters
+              // (q, service, rate) still scope the counts.
+              filter_by: buildFilter({
+                ...input,
+                city: undefined,
+                radiusKm: undefined,
+                center: undefined
+              }),
+              facet_by: 'city',
+              max_facet_values: 250,
+              per_page: 0,
+              page: 1
+            });
+          const facet = (response.facet_counts ?? []).find((entry) => entry.field_name === 'city');
           const counts = (facet?.counts ?? []) as Array<{ value: string; count: number }>;
           return counts
             .map((entry) => ({ value: entry.value, count: entry.count }))
             .sort((a, b) => a.value.localeCompare(b.value));
         },
-        catch: (cause) => new ProviderSearchIndexError({ operation: "search", cause }),
+        catch: (cause) => new ProviderSearchIndexError({ operation: 'search', cause })
       });
 
     const getProvider = (userId: string) =>
       Effect.tryPromise({
         try: async () => {
-          const document = await client.collections(readCollection).documents(userId).retrieve() as ProviderSearchDocument;
-          if (document.approvalExpiresAt <= Date.now()) throw new DBNotFoundError({ entity: "providerSearchDocument", value: userId });
+          const document = (await client
+            .collections(readCollection)
+            .documents(userId)
+            .retrieve()) as ProviderSearchDocument;
+          if (document.approvalExpiresAt <= Date.now())
+            throw new DBNotFoundError({ entity: 'providerSearchDocument', value: userId });
           return document;
         },
-        catch: (cause) => isNotFound(cause)
-          ? new DBNotFoundError({ entity: "providerSearchDocument", value: userId })
-          : cause instanceof DBNotFoundError
-            ? cause
-            : new ProviderSearchIndexError({ operation: "get", cause }),
+        catch: (cause) =>
+          isNotFound(cause)
+            ? new DBNotFoundError({ entity: 'providerSearchDocument', value: userId })
+            : cause instanceof DBNotFoundError
+              ? cause
+              : new ProviderSearchIndexError({ operation: 'get', cause })
       });
 
     const listIndexedIds = () =>
@@ -359,7 +423,10 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
           const perPage = 250;
 
           while (true) {
-            const response = await client.collections(writeCollection).documents().search({ q: "*", query_by: "userId", page, per_page: perPage });
+            const response = await client
+              .collections(writeCollection)
+              .documents()
+              .search({ q: '*', query_by: 'userId', page, per_page: perPage });
             const hits = (response.hits ?? []) as Array<{ document: ProviderSearchDocument }>;
             ids.push(...hits.map((hit) => hit.document.userId));
 
@@ -369,34 +436,42 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
 
           return ids;
         },
-        catch: (cause) => new ProviderSearchIndexError({ operation: "listDocuments", cause }),
+        catch: (cause) => new ProviderSearchIndexError({ operation: 'listDocuments', cause })
       });
 
     const reindexAllProviders = () =>
-      Effect.gen(function*() {
+      Effect.gen(function* () {
         yield* ensureCollection();
         // MVP tradeoff: this loads all service-provider IDs and reconciles each provider with
         // bounded concurrency. For larger datasets, paginate IDs and batch/aggregate DB reads.
-        const userIds = yield* repo.listServiceProviderUserIds().pipe(
-          Effect.mapError((cause) => new ProviderSearchIndexError({ operation: "reindex", cause })),
-        );
+        const userIds = yield* repo
+          .listServiceProviderUserIds()
+          .pipe(
+            Effect.mapError(
+              (cause) => new ProviderSearchIndexError({ operation: 'reindex', cause })
+            )
+          );
         let indexed = 0;
         const eligibleIds = new Set<string>();
 
         yield* Effect.forEach(
           userIds,
           (userId) =>
-            Effect.gen(function*() {
-              const candidate = yield* repo.findCandidateByUserId(userId).pipe(
-                Effect.mapError((cause) => new ProviderSearchIndexError({ operation: "reindex", cause })),
-              );
+            Effect.gen(function* () {
+              const candidate = yield* repo
+                .findCandidateByUserId(userId)
+                .pipe(
+                  Effect.mapError(
+                    (cause) => new ProviderSearchIndexError({ operation: 'reindex', cause })
+                  )
+                );
               const document = buildProviderSearchDocument(candidate);
               if (!document) return;
               yield* upsertProvider(document);
               eligibleIds.add(userId);
               indexed += 1;
             }),
-          { concurrency: 5, discard: true },
+          { concurrency: 5, discard: true }
         );
 
         const indexedIds = yield* listIndexedIds();
@@ -405,23 +480,39 @@ const makeProviderSearchIndex = (config: { host: string; port: number; protocol:
 
         return { indexed, deletedStale };
       }).pipe(
-        Effect.catchAllCause((cause) => Effect.fail(new ProviderSearchIndexError({ operation: "reindex", cause: Cause.pretty(cause) }))),
+        Effect.catchAllCause((cause) =>
+          Effect.fail(
+            new ProviderSearchIndexError({ operation: 'reindex', cause: Cause.pretty(cause) })
+          )
+        )
       );
 
-    return { ensureCollection, reconcileProvider, searchProviders, listCityFacets, getProvider, reindexAllProviders };
+    return {
+      ensureCollection,
+      reconcileProvider,
+      searchProviders,
+      listCityFacets,
+      getProvider,
+      reindexAllProviders
+    };
   });
 };
 
 export const ProviderSearchIndexLive = Layer.effect(
   ProviderSearchIndex,
-  typesenseConfig.pipe(Effect.flatMap(makeProviderSearchIndex)),
+  typesenseConfig.pipe(Effect.flatMap(makeProviderSearchIndex))
 );
 
-export const ProviderSearchIndexDefault = ProviderSearchIndexLive.pipe(Layer.provide(ProviderSearchRepoDefault));
+export const ProviderSearchIndexDefault = ProviderSearchIndexLive.pipe(
+  Layer.provide(ProviderSearchRepoDefault)
+);
 
-export const makeProviderSearchIndexTest = (implementation: Context.Tag.Service<ProviderSearchIndex>) =>
-  Layer.succeed(ProviderSearchIndex, implementation);
+export const makeProviderSearchIndexTest = (
+  implementation: Context.Tag.Service<ProviderSearchIndex>
+) => Layer.succeed(ProviderSearchIndex, implementation);
 
-export const getProviderSearchMinRadiusKm = providerSearchConfig.pipe(Effect.map((config) => config.minRadiusKm));
+export const getProviderSearchMinRadiusKm = providerSearchConfig.pipe(
+  Effect.map((config) => config.minRadiusKm)
+);
 
-export * from "./family";
+export * from './family';

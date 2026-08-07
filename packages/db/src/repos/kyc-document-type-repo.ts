@@ -1,26 +1,35 @@
-import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
-import { and, eq, type InferInsertModel, type InferSelectModel, isNull } from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
-import { DBNotFoundError, DrizzleLive } from "../effect-db";
-import { kycDocumentType } from "../schema";
+import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import type { SqlError } from '@effect/sql/SqlError';
+import { and, eq, type InferInsertModel, type InferSelectModel, isNull } from 'drizzle-orm';
+import { Context, Effect, Layer } from 'effect';
+import { DBNotFoundError, DrizzleLive } from '../effect-db';
+import { kycDocumentType } from '../schema';
 
 export type KycDocumentType = InferSelectModel<typeof kycDocumentType>;
 export type KycDocumentTypeInsert = InferInsertModel<typeof kycDocumentType>;
-export type KycDocumentTypeCreateInput = Pick<KycDocumentTypeInsert, "name" | "isOptional" | "requiresExpiryDate" | "isFetchable"> & {
-  appliesToRole?: KycDocumentType["appliesToRole"];
+export type KycDocumentTypeCreateInput = Pick<
+  KycDocumentTypeInsert,
+  'name' | 'isOptional' | 'requiresExpiryDate' | 'isFetchable'
+> & {
+  appliesToRole?: KycDocumentType['appliesToRole'];
 };
 export type KycDocumentTypeUpdateInput = Partial<
-  Pick<KycDocumentType, "name" | "isOptional" | "requiresExpiryDate" | "isFetchable" | "appliesToRole">
+  Pick<
+    KycDocumentType,
+    'name' | 'isOptional' | 'requiresExpiryDate' | 'isFetchable' | 'appliesToRole'
+  >
 >;
 
-export class KycDocumentTypeRepo extends Context.Tag("@repo/db/KycDocumentTypeRepo")<
+export class KycDocumentTypeRepo extends Context.Tag('@repo/db/KycDocumentTypeRepo')<
   KycDocumentTypeRepo,
   {
     listActive: () => Effect.Effect<Array<KycDocumentType>, SqlError>;
     findActiveById: (id: string) => Effect.Effect<KycDocumentType, SqlError | DBNotFoundError>;
     create: (input: KycDocumentTypeCreateInput) => Effect.Effect<KycDocumentType, SqlError>;
-    update: (id: string, input: KycDocumentTypeUpdateInput) => Effect.Effect<KycDocumentType, SqlError | DBNotFoundError>;
+    update: (
+      id: string,
+      input: KycDocumentTypeUpdateInput
+    ) => Effect.Effect<KycDocumentType, SqlError | DBNotFoundError>;
     softDelete: (id: string) => Effect.Effect<KycDocumentType, SqlError | DBNotFoundError>;
   }
 >() {}
@@ -34,7 +43,7 @@ export const KycDocumentTypeRepoLive = Layer.effect(
         return Effect.succeed(rows[0]);
       }
 
-      return Effect.fail(new DBNotFoundError({ entity: "kycDocumentType", value: id }));
+      return Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id }));
     };
 
     return {
@@ -49,7 +58,7 @@ export const KycDocumentTypeRepoLive = Layer.effect(
       create: (input) =>
         db
           .insert(kycDocumentType)
-          .values({ ...input, appliesToRole: input.appliesToRole ?? "service-provider" })
+          .values({ ...input, appliesToRole: input.appliesToRole ?? 'service-provider' })
           .returning()
           .pipe(Effect.map((rows) => rows[0])),
       update: (id, input) =>
@@ -65,20 +74,21 @@ export const KycDocumentTypeRepoLive = Layer.effect(
           .set({ deletedAt: new Date(), updatedAt: new Date() })
           .where(eq(kycDocumentType.id, id))
           .returning()
-          .pipe(Effect.flatMap(oneOrNotFound(id))),
+          .pipe(Effect.flatMap(oneOrNotFound(id)))
     };
-  }),
+  })
 );
 
 export const KycDocumentTypeRepoDefault = KycDocumentTypeRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makeKycDocumentTypeRepoTest = (implementation: Context.Tag.Service<KycDocumentTypeRepo>) =>
-  Layer.succeed(KycDocumentTypeRepo, implementation);
+export const makeKycDocumentTypeRepoTest = (
+  implementation: Context.Tag.Service<KycDocumentTypeRepo>
+) => Layer.succeed(KycDocumentTypeRepo, implementation);
 
 export const EmptyKycDocumentTypeRepoTest = makeKycDocumentTypeRepoTest({
   listActive: () => Effect.succeed([]),
-  findActiveById: () => Effect.fail(new DBNotFoundError({ entity: "kycDocumentType", value: "" })),
-  create: () => Effect.fail(new DBNotFoundError({ entity: "kycDocumentType", value: "" }) as never),
-  update: () => Effect.fail(new DBNotFoundError({ entity: "kycDocumentType", value: "" })),
-  softDelete: () => Effect.fail(new DBNotFoundError({ entity: "kycDocumentType", value: "" })),
+  findActiveById: () => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: '' })),
+  create: () => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: '' }) as never),
+  update: () => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: '' })),
+  softDelete: () => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: '' }))
 });

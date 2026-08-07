@@ -11,75 +11,78 @@ import {
   makeUserRepoTest,
   type KycDocumentType,
   type Session,
-  type User,
-} from "@repo/db";
-import { makeGooglePlacesTest } from "@repo/google";
-import { makeObjectStorageTest, type PresignedPutInput } from "@repo/objs";
-import { Effect, Layer, ManagedRuntime } from "effect";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createApp } from "../../../index";
-import { makeAuthServiceTest, type AuthSession } from "../../../lib/effect-auth";
-import { EmptySigninServiceTest } from "../auth/signin/signin.handler";
-import { EmptySignupServiceTest, type SignupRole } from "../auth/signup/signup.handler";
+  type User
+} from '@repo/db';
+import { makeGooglePlacesTest } from '@repo/google';
+import { makeObjectStorageTest, type PresignedPutInput } from '@repo/objs';
+import { Effect, Layer, ManagedRuntime } from 'effect';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { createApp } from '../../../index';
+import { makeAuthServiceTest, type AuthSession } from '../../../lib/effect-auth';
+import { EmptySigninServiceTest } from '../auth/signin/signin.handler';
+import { EmptySignupServiceTest, type SignupRole } from '../auth/signup/signup.handler';
 
 const makeUser = (overrides: Partial<User> = {}): User => ({
-  id: "user-1",
-  name: "Test User",
-  email: "user@example.com",
+  id: 'user-1',
+  name: 'Test User',
+  email: 'user@example.com',
   emailVerified: true,
   image: null,
-  createdAt: new Date("2026-06-12T00:00:00.000Z"),
-  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  createdAt: new Date('2026-06-12T00:00:00.000Z'),
+  updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   isAnonymous: false,
-  role: "service-provider",
+  role: 'service-provider',
   banned: false,
   banReason: null,
   banExpires: null,
   phoneNumber: null,
   phoneNumberVerified: null,
-  ...overrides,
+  ...overrides
 });
 
 const makeSession = (overrides: Partial<Session> = {}): Session => ({
-  id: "session-1",
-  expiresAt: new Date("2026-06-13T00:00:00.000Z"),
-  token: "session-token",
-  createdAt: new Date("2026-06-12T00:00:00.000Z"),
-  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
+  id: 'session-1',
+  expiresAt: new Date('2026-06-13T00:00:00.000Z'),
+  token: 'session-token',
+  createdAt: new Date('2026-06-12T00:00:00.000Z'),
+  updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   ipAddress: null,
   userAgent: null,
-  userId: "user-1",
+  userId: 'user-1',
   impersonatedBy: null,
   activeOrganizationId: null,
-  ...overrides,
+  ...overrides
 });
 
 const makeDocumentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType => ({
-  id: "document-type-1",
-  name: "Government ID",
-  appliesToRole: "service-provider",
+  id: 'document-type-1',
+  name: 'Government ID',
+  appliesToRole: 'service-provider',
   isOptional: false,
   requiresExpiryDate: true,
   deletedAt: null,
-  createdAt: new Date("2026-06-12T00:00:00.000Z"),
-  updatedAt: new Date("2026-06-12T00:00:00.000Z"),
-  ...overrides,
+  createdAt: new Date('2026-06-12T00:00:00.000Z'),
+  updatedAt: new Date('2026-06-12T00:00:00.000Z'),
+  ...overrides
 });
 
-const makeApp = (options: {
-  authSession?: AuthSession | null;
-  user?: User;
-  onPresign?: (input: PresignedPutInput) => void;
-} = {}) => {
+const makeApp = (
+  options: {
+    authSession?: AuthSession | null;
+    user?: User;
+    onPresign?: (input: PresignedPutInput) => void;
+  } = {}
+) => {
   const user = options.user ?? makeUser();
-  const authSession = options.authSession === undefined
-    ? { user: { id: user.id }, session: { id: "session-1" } }
-    : options.authSession;
+  const authSession =
+    options.authSession === undefined
+      ? { user: { id: user.id }, session: { id: 'session-1' } }
+      : options.authSession;
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
       makeAuthServiceTest({
         getSession: () => Effect.succeed(authSession),
-        userHasPermission: () => Effect.succeed(true),
+        userHasPermission: () => Effect.succeed(true)
       }),
       EmptySignupIntentRepoTest,
       EmptySigninServiceTest,
@@ -88,142 +91,153 @@ const makeApp = (options: {
         findById: (id: string) =>
           id === user.id
             ? Effect.succeed(user)
-            : Effect.fail(new DBNotFoundError({ entity: "user", value: id })),
-        findByEmail: () => Effect.fail(new DBNotFoundError({ entity: "user", value: "email" })),
+            : Effect.fail(new DBNotFoundError({ entity: 'user', value: id })),
+        findByEmail: () => Effect.fail(new DBNotFoundError({ entity: 'user', value: 'email' }))
       }),
       makeSessionRepoTest({
         findById: (id: string) =>
-          id === "session-1"
+          id === 'session-1'
             ? Effect.succeed(makeSession({ userId: user.id }))
-            : Effect.fail(new DBNotFoundError({ entity: "session", value: id })),
+            : Effect.fail(new DBNotFoundError({ entity: 'session', value: id }))
       }),
       EmptyUserProfileRepoTest,
       EmptyApprovalRepoTest,
       EmptyApprovalRequestRepoTest,
       EmptyKycDocumentRepoTest,
       EmptyServiceOfferedRepoTest,
-      makeGooglePlacesTest({ lookupPlaceById: () => Effect.die("not used"), autocompletePlaces: () => Effect.succeed([]) }),
+      makeGooglePlacesTest({
+        lookupPlaceById: () => Effect.die('not used'),
+        autocompletePlaces: () => Effect.succeed([])
+      }),
       makeKycDocumentTypeRepoTest({
         listActive: () => Effect.succeed([makeDocumentType()]),
-        findActiveById: (id) => id === "document-type-1"
-          ? Effect.succeed(makeDocumentType())
-          : Effect.fail(new DBNotFoundError({ entity: "kycDocumentType", value: id })),
+        findActiveById: (id) =>
+          id === 'document-type-1'
+            ? Effect.succeed(makeDocumentType())
+            : Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id })),
         create: () => Effect.succeed(makeDocumentType()),
         update: () => Effect.succeed(makeDocumentType()),
-        softDelete: () => Effect.succeed(makeDocumentType({ deletedAt: new Date() })),
+        softDelete: () => Effect.succeed(makeDocumentType({ deletedAt: new Date() }))
       }),
       makeObjectStorageTest({
         ensureBucketExists: () => Effect.void,
         ensurePublicReadBucket: () => Effect.void,
-        createPresignedGetUrl: () => Effect.succeed({ url: "https://example.com", expiresAt: new Date() }),
+        createPresignedGetUrl: () =>
+          Effect.succeed({ url: 'https://example.com', expiresAt: new Date() }),
         createPresignedPutUrl: (input) => {
           options.onPresign?.(input);
 
           return Effect.succeed({
             uploadUrl: `https://uploads.example.com/${input.bucket}/${input.key}`,
-            expiresAt: new Date("2026-06-12T00:10:00.000Z"),
+            expiresAt: new Date('2026-06-12T00:10:00.000Z')
           });
-        },
-      }),
-    ),
+        }
+      })
+    )
   );
 
   return createApp(runtime);
 };
 
-describe("/uploads/presigned-url", () => {
+describe('/uploads/presigned-url', () => {
   beforeEach(() => {
-    process.env.OBJS_KYC_BUCKET = "kyc-documents";
-    process.env.OBJS_PUBLIC_BUCKET = "public-assets";
-    vi.spyOn(crypto, "randomUUID").mockReturnValue("up-lo-ad-id-dummy");
+    process.env.OBJS_KYC_BUCKET = 'kyc-documents';
+    process.env.OBJS_PUBLIC_BUCKET = 'public-assets';
+    vi.spyOn(crypto, 'randomUUID').mockReturnValue('up-lo-ad-id-dummy');
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
   });
 
-  it("returns a presigned URL for service-provider KYC uploads", async () => {
+  it('returns a presigned URL for service-provider KYC uploads', async () => {
     let presignInput: PresignedPutInput | null = null;
-    const app = makeApp({ onPresign: (input) => { presignInput = input; } });
+    const app = makeApp({
+      onPresign: (input) => {
+        presignInput = input;
+      }
+    });
 
-    const res = await app.request("/api/v1/uploads/presigned-url", {
-      method: "POST",
+    const res = await app.request('/api/v1/uploads/presigned-url', {
+      method: 'POST',
       body: JSON.stringify({
-        target: "kyc-document",
-        documentTypeId: "document-type-1",
-        fileName: "Government ID.pdf",
-        contentType: "application/pdf",
-        sizeBytes: 1234,
+        target: 'kyc-document',
+        documentTypeId: 'document-type-1',
+        fileName: 'Government ID.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1234
       }),
-      headers: { "content-type": "application/json" },
+      headers: { 'content-type': 'application/json' }
     });
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.bucket).toBe("kyc-documents");
-    expect(body.fileKey).toBe("users/user-1/kyc/document-type-1/up-lo-ad-id-dummy-Government-ID.pdf");
-    expect(body.uploadUrl).toContain("https://uploads.example.com/kyc-documents/");
-    expect(body.expiresAt).toBe("2026-06-12T00:10:00.000Z");
+    expect(body.bucket).toBe('kyc-documents');
+    expect(body.fileKey).toBe(
+      'users/user-1/kyc/document-type-1/up-lo-ad-id-dummy-Government-ID.pdf'
+    );
+    expect(body.uploadUrl).toContain('https://uploads.example.com/kyc-documents/');
+    expect(body.expiresAt).toBe('2026-06-12T00:10:00.000Z');
     expect(presignInput).toEqual({
-      bucket: "kyc-documents",
-      key: "users/user-1/kyc/document-type-1/up-lo-ad-id-dummy-Government-ID.pdf",
-      contentType: "application/pdf",
-      expiresInSeconds: 600,
+      bucket: 'kyc-documents',
+      key: 'users/user-1/kyc/document-type-1/up-lo-ad-id-dummy-Government-ID.pdf',
+      contentType: 'application/pdf',
+      expiresInSeconds: 600
     });
   });
 
-  it("returns a presigned URL for public profile pictures", async () => {
-    const app = makeApp({ user: makeUser({ role: "family" }) });
+  it('returns a presigned URL for public profile pictures', async () => {
+    const app = makeApp({ user: makeUser({ role: 'family' }) });
 
-    const res = await app.request("/api/v1/uploads/presigned-url", {
-      method: "POST",
+    const res = await app.request('/api/v1/uploads/presigned-url', {
+      method: 'POST',
       body: JSON.stringify({
-        target: "public-profile-picture",
-        fileName: "avatar.png",
-        contentType: "image/png",
-        sizeBytes: 1234,
+        target: 'public-profile-picture',
+        fileName: 'avatar.png',
+        contentType: 'image/png',
+        sizeBytes: 1234
       }),
-      headers: { "content-type": "application/json" },
+      headers: { 'content-type': 'application/json' }
     });
     const body = await res.json();
 
     expect(res.status).toBe(200);
-    expect(body.bucket).toBe("public-assets");
-    expect(body.fileKey).toBe("users/user-1/public/profile-pictures/up-lo-ad-id-dummy-avatar.png");
+    expect(body.bucket).toBe('public-assets');
+    expect(body.fileKey).toBe('users/user-1/public/profile-pictures/up-lo-ad-id-dummy-avatar.png');
   });
 
-  it("rejects KYC uploads from non-service-provider users", async () => {
-    const app = makeApp({ user: makeUser({ role: "family" }) });
+  it('rejects KYC uploads from non-service-provider users', async () => {
+    const app = makeApp({ user: makeUser({ role: 'family' }) });
 
-    const res = await app.request("/api/v1/uploads/presigned-url", {
-      method: "POST",
+    const res = await app.request('/api/v1/uploads/presigned-url', {
+      method: 'POST',
       body: JSON.stringify({
-        target: "kyc-document",
-        documentTypeId: "document-type-1",
-        fileName: "id.pdf",
-        contentType: "application/pdf",
-        sizeBytes: 1234,
+        target: 'kyc-document',
+        documentTypeId: 'document-type-1',
+        fileName: 'id.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1234
       }),
-      headers: { "content-type": "application/json" },
+      headers: { 'content-type': 'application/json' }
     });
     const body = await res.json();
 
     expect(res.status).toBe(400);
-    expect(body.error.code).toBe("INVALID_UPLOAD");
+    expect(body.error.code).toBe('INVALID_UPLOAD');
   });
 
-  it("returns 401 when unauthenticated", async () => {
+  it('returns 401 when unauthenticated', async () => {
     const app = makeApp({ authSession: null });
 
-    const res = await app.request("/api/v1/uploads/presigned-url", {
-      method: "POST",
+    const res = await app.request('/api/v1/uploads/presigned-url', {
+      method: 'POST',
       body: JSON.stringify({
-        target: "public-profile-picture",
-        fileName: "avatar.png",
-        contentType: "image/png",
-        sizeBytes: 1234,
+        target: 'public-profile-picture',
+        fileName: 'avatar.png',
+        contentType: 'image/png',
+        sizeBytes: 1234
       }),
-      headers: { "content-type": "application/json" },
+      headers: { 'content-type': 'application/json' }
     });
 
     expect(res.status).toBe(401);

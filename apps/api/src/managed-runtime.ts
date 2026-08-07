@@ -18,19 +18,19 @@ import {
   ReferralRepoDefault,
   UserDirectoryRepoDefault,
   UserProfileRepoDefault,
-  UserRepoDefault,
-} from "@repo/db";
-import { GooglePlacesLive } from "@repo/google";
-import { NotificationHubLive } from "@repo/notify";
-import { ObjectStorageLive } from "@repo/objs";
-import { FamilySearchQueueLive, ProviderSearchQueueLive } from "@repo/queue";
-import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from "@repo/typesense";
-import { Layer, ManagedRuntime } from "effect";
-import type { AppRuntime } from "./app-env";
-import { AuthServiceLive } from "./lib/effect-auth";
-import { MailerLive } from "./lib/mailer";
-import { SigninServiceLive } from "./routes/app/auth/signin/signin.handler";
-import { SignupServiceLive } from "./routes/app/auth/signup/signup.handler";
+  UserRepoDefault
+} from '@repo/db';
+import { GooglePlacesLive } from '@repo/google';
+import { NotificationHubLive } from '@repo/notify';
+import { ObjectStorageLive } from '@repo/objs';
+import { FamilySearchQueueLive, ProviderSearchQueueLive } from '@repo/queue';
+import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
+import { Layer, ManagedRuntime } from 'effect';
+import type { AppRuntime } from './app-env';
+import { AuthServiceLive } from './lib/effect-auth';
+import { MailerLive } from './lib/mailer';
+import { SigninServiceLive } from './routes/app/auth/signin/signin.handler';
+import { SignupServiceLive } from './routes/app/auth/signup/signup.handler';
 
 export const AppLive = Layer.mergeAll(
   SignupIntentRepoDefault,
@@ -63,7 +63,7 @@ export const AppLive = Layer.mergeAll(
   FamilySearchIndexDefault,
   SigninServiceLive,
   SignupServiceLive,
-  AuthServiceLive,
+  AuthServiceLive
 );
 
 export const makeAppRuntime = (): AppRuntime => ManagedRuntime.make(AppLive) as AppRuntime;

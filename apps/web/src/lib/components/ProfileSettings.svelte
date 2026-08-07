@@ -157,10 +157,7 @@
 	{:else if errorMessage}
 		<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
 	{:else}
-		<form
-			class="rounded-lg border border-card-border bg-base-100 p-6 lg:p-7"
-			onsubmit={save}
-		>
+		<form class="rounded-lg border border-card-border bg-base-100 p-6 lg:p-7" onsubmit={save}>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">First name</legend>

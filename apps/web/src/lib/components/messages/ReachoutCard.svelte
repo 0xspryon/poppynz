@@ -57,13 +57,17 @@
 			</span>
 			<!-- Keyed by id: names are user-authored and may repeat. -->
 			{#each conversation.reachout.services as service (service.serviceId)}
-				<span class="rounded-pill bg-info-content px-2.5 py-0.5 text-[11.5px] font-semibold text-info">
+				<span
+					class="rounded-pill bg-info-content px-2.5 py-0.5 text-[11.5px] font-semibold text-info"
+				>
 					{service.name}
 				</span>
 			{/each}
 		</div>
 		{#if showActions}
-			<div class="flex flex-col gap-2 border-t border-base-300 px-4 py-3 sm:flex-row sm:items-center">
+			<div
+				class="flex flex-col gap-2 border-t border-base-300 px-4 py-3 sm:flex-row sm:items-center"
+			>
 				<button
 					type="button"
 					class="btn btn-primary btn-sm"

@@ -3,10 +3,7 @@
 	 * edit the expiry date in the sidebar. Shows a loading modal while the
 	 * signed URL is fetched; owns the expiry-save flow and calls `onsaved`
 	 * so the parent can refresh its data. */
-	import {
-		updateKycDocumentExpiry,
-		type KycFileView
-	} from '$lib/api/admin-approvals';
+	import { updateKycDocumentExpiry, type KycFileView } from '$lib/api/admin-approvals';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { toast } from '$lib/toast.svelte';
 

@@ -1,9 +1,17 @@
-import * as PgDrizzle from "@effect/sql-drizzle/Pg";
-import type { SqlError } from "@effect/sql/SqlError";
-import { and, desc, eq, gt, type InferInsertModel, type InferSelectModel, isNull } from "drizzle-orm";
-import { Context, Effect, Layer } from "effect";
-import { DrizzleLive } from "../effect-db";
-import { approval, referral, userProfile } from "../schema";
+import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import type { SqlError } from '@effect/sql/SqlError';
+import {
+  and,
+  desc,
+  eq,
+  gt,
+  type InferInsertModel,
+  type InferSelectModel,
+  isNull
+} from 'drizzle-orm';
+import { Context, Effect, Layer } from 'effect';
+import { DrizzleLive } from '../effect-db';
+import { approval, referral, userProfile } from '../schema';
 
 export type Referral = InferSelectModel<typeof referral>;
 export type NewReferral = InferInsertModel<typeof referral>;
@@ -17,7 +25,7 @@ export type ReferralWithReferred = Referral & {
   referredVerified: boolean;
 };
 
-export class ReferralRepo extends Context.Tag("@repo/db/ReferralRepo")<
+export class ReferralRepo extends Context.Tag('@repo/db/ReferralRepo')<
   ReferralRepo,
   {
     create: (input: {
@@ -26,14 +34,19 @@ export class ReferralRepo extends Context.Tag("@repo/db/ReferralRepo")<
       role: string;
       expiresAt: Date;
     }) => Effect.Effect<Referral, SqlError>;
-    listByReferrer: (referrerUserId: string) => Effect.Effect<Array<ReferralWithReferred>, SqlError>;
+    listByReferrer: (
+      referrerUserId: string
+    ) => Effect.Effect<Array<ReferralWithReferred>, SqlError>;
     findPendingByReferrerAndEmail: (
       referrerUserId: string,
-      email: string,
+      email: string
     ) => Effect.Effect<Referral | null, SqlError>;
-    markJoinedByEmail: (email: string, referredUserId: string) => Effect.Effect<Array<Referral>, SqlError>;
+    markJoinedByEmail: (
+      email: string,
+      referredUserId: string
+    ) => Effect.Effect<Array<Referral>, SqlError>;
   }
->() { }
+>() {}
 
 export const ReferralRepoLive = Layer.effect(
   ReferralRepo,
@@ -49,7 +62,7 @@ export const ReferralRepoLive = Layer.effect(
             referrerUserId: input.referrerUserId,
             email: input.email.toLowerCase(),
             role: input.role,
-            expiresAt: input.expiresAt,
+            expiresAt: input.expiresAt
           })
           .returning()
           .pipe(Effect.map((rows) => rows[0])),
@@ -59,7 +72,7 @@ export const ReferralRepoLive = Layer.effect(
             referral,
             referredFirstName: userProfile.firstName,
             referredLastName: userProfile.lastName,
-            currentApprovalId: approval.id,
+            currentApprovalId: approval.id
           })
           .from(referral)
           .leftJoin(userProfile, eq(userProfile.userId, referral.referredUserId))
@@ -67,9 +80,9 @@ export const ReferralRepoLive = Layer.effect(
             approval,
             and(
               eq(approval.userId, referral.referredUserId),
-              eq(approval.status, "approved"),
-              gt(approval.expiresAt, new Date()),
-            ),
+              eq(approval.status, 'approved'),
+              gt(approval.expiresAt, new Date())
+            )
           )
           .where(eq(referral.referrerUserId, referrerUserId))
           .orderBy(desc(referral.createdAt))
@@ -87,11 +100,11 @@ export const ReferralRepoLive = Layer.effect(
                   ...row.referral,
                   referredFirstName: row.referredFirstName,
                   referredLastName: row.referredLastName,
-                  referredVerified: row.currentApprovalId !== null,
+                  referredVerified: row.currentApprovalId !== null
                 });
               }
               return [...byId.values()];
-            }),
+            })
           ),
       findPendingByReferrerAndEmail: (referrerUserId, email) =>
         db
@@ -102,8 +115,8 @@ export const ReferralRepoLive = Layer.effect(
               eq(referral.referrerUserId, referrerUserId),
               eq(referral.email, email.toLowerCase()),
               isNull(referral.joinedAt),
-              gt(referral.expiresAt, new Date()),
-            ),
+              gt(referral.expiresAt, new Date())
+            )
           )
           .limit(1)
           .pipe(Effect.map((rows) => rows[0] ?? null)),
@@ -115,12 +128,12 @@ export const ReferralRepoLive = Layer.effect(
             and(
               eq(referral.email, email.toLowerCase()),
               isNull(referral.joinedAt),
-              gt(referral.expiresAt, new Date()),
-            ),
+              gt(referral.expiresAt, new Date())
+            )
           )
-          .returning(),
+          .returning()
     };
-  }),
+  })
 );
 
 export const ReferralRepoDefault = ReferralRepoLive.pipe(Layer.provide(DrizzleLive));
@@ -129,19 +142,19 @@ export const makeReferralRepoTest = (implementation: Context.Tag.Service<Referra
   Layer.succeed(ReferralRepo, implementation);
 
 export const dummyReferral: Referral = {
-  id: "referral-1",
-  referrerUserId: "user-1",
-  email: "invitee@example.com",
-  role: "service-provider",
+  id: 'referral-1',
+  referrerUserId: 'user-1',
+  email: 'invitee@example.com',
+  role: 'service-provider',
   referredUserId: null,
-  expiresAt: new Date("2026-07-01T00:00:00.000Z"),
+  expiresAt: new Date('2026-07-01T00:00:00.000Z'),
   joinedAt: null,
-  createdAt: new Date("2026-06-12T00:00:00.000Z"),
+  createdAt: new Date('2026-06-12T00:00:00.000Z')
 };
 
 export const EmptyReferralRepoTest = makeReferralRepoTest({
   create: () => Effect.succeed(dummyReferral),
   listByReferrer: () => Effect.succeed([]),
   findPendingByReferrerAndEmail: () => Effect.succeed(null),
-  markJoinedByEmail: () => Effect.succeed([]),
+  markJoinedByEmail: () => Effect.succeed([])
 });

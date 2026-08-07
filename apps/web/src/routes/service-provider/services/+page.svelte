@@ -339,7 +339,9 @@
 		{/if}
 
 		{#if services.length === 0}
-			<p class="rounded-lg border border-card-border bg-base-100 p-6 text-sm text-base-content-muted">
+			<p
+				class="rounded-lg border border-card-border bg-base-100 p-6 text-sm text-base-content-muted"
+			>
 				Nothing listed yet — pick a common service above or add a custom one.
 			</p>
 		{:else}
@@ -352,9 +354,7 @@
 							{rowError ? 'border-[1.5px] border-error' : 'border-card-border'}"
 					>
 						<div class="flex flex-wrap items-center gap-3.5">
-							<span
-								class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-base-400"
-							>
+							<span class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-base-400">
 								<i class="las la-heart text-lg text-secondary" aria-hidden="true"></i>
 							</span>
 							<div class="min-w-0 flex-1">

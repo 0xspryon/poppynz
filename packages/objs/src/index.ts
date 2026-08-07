@@ -6,11 +6,11 @@ import {
   PutBucketPolicyCommand,
   PutObjectCommand,
   S3Client,
-  type S3ClientConfig,
-} from "@aws-sdk/client-s3";
-import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { rustfsConfig } from "@repo/env";
-import { Context, Data, Effect, Either, Layer } from "effect";
+  type S3ClientConfig
+} from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { rustfsConfig } from '@repo/env';
+import { Context, Data, Effect, Either, Layer } from 'effect';
 
 export type ObjectStorageConfig = {
   endpoint: string;
@@ -46,14 +46,14 @@ export type PresignedGetResult = {
   expiresAt: Date;
 };
 
-export class ObjectStorageError extends Data.TaggedError("ObjectStorageError")<{
+export class ObjectStorageError extends Data.TaggedError('ObjectStorageError')<{
   operation:
-    | "headBucket"
-    | "createBucket"
-    | "getBucketPolicy"
-    | "putBucketPolicy"
-    | "presignPutObject"
-    | "presignGetObject";
+    | 'headBucket'
+    | 'createBucket'
+    | 'getBucketPolicy'
+    | 'putBucketPolicy'
+    | 'presignPutObject'
+    | 'presignGetObject';
   bucket: string;
   key?: string;
   cause: unknown;
@@ -61,13 +61,17 @@ export class ObjectStorageError extends Data.TaggedError("ObjectStorageError")<{
 
 export type ObjectStorageFailure = ObjectStorageError;
 
-export class ObjectStorage extends Context.Tag("@repo/objs/ObjectStorage")<
+export class ObjectStorage extends Context.Tag('@repo/objs/ObjectStorage')<
   ObjectStorage,
   {
     ensureBucketExists: (bucket: string) => Effect.Effect<void, ObjectStorageError>;
     ensurePublicReadBucket: (bucket: string) => Effect.Effect<void, ObjectStorageError>;
-    createPresignedPutUrl: (input: PresignedPutInput) => Effect.Effect<PresignedPutResult, ObjectStorageError>;
-    createPresignedGetUrl: (input: PresignedGetInput) => Effect.Effect<PresignedGetResult, ObjectStorageError>;
+    createPresignedPutUrl: (
+      input: PresignedPutInput
+    ) => Effect.Effect<PresignedPutResult, ObjectStorageError>;
+    createPresignedGetUrl: (
+      input: PresignedGetInput
+    ) => Effect.Effect<PresignedGetResult, ObjectStorageError>;
   }
 >() {}
 
@@ -78,48 +82,52 @@ const makeS3Client = (config: ObjectStorageConfig, endpoint: string) => {
     forcePathStyle: true,
     credentials: {
       accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-    },
+      secretAccessKey: config.secretAccessKey
+    }
   };
 
   return new S3Client(clientConfig);
 };
 
 const isMissingBucketError = (cause: unknown) => {
-  if (!cause || typeof cause !== "object") {
-    return false;
-  }
-
-  const error = cause as { name?: string; $metadata?: { httpStatusCode?: number } };
-
-  return error.name === "NotFound" || error.name === "NoSuchBucket" || error.$metadata?.httpStatusCode === 404;
-};
-
-const isAlreadyExistsError = (cause: unknown) => {
-  if (!cause || typeof cause !== "object") {
+  if (!cause || typeof cause !== 'object') {
     return false;
   }
 
   const error = cause as { name?: string; $metadata?: { httpStatusCode?: number } };
 
   return (
-    error.name === "BucketAlreadyOwnedByYou" ||
-    error.name === "BucketAlreadyExists" ||
+    error.name === 'NotFound' ||
+    error.name === 'NoSuchBucket' ||
+    error.$metadata?.httpStatusCode === 404
+  );
+};
+
+const isAlreadyExistsError = (cause: unknown) => {
+  if (!cause || typeof cause !== 'object') {
+    return false;
+  }
+
+  const error = cause as { name?: string; $metadata?: { httpStatusCode?: number } };
+
+  return (
+    error.name === 'BucketAlreadyOwnedByYou' ||
+    error.name === 'BucketAlreadyExists' ||
     error.$metadata?.httpStatusCode === 409
   );
 };
 
 const publicReadPolicy = (bucket: string) =>
   JSON.stringify({
-    Version: "2012-10-17",
+    Version: '2012-10-17',
     Statement: [
       {
-        Effect: "Allow",
-        Principal: "*",
-        Action: ["s3:GetObject"],
-        Resource: [`arn:aws:s3:::${bucket}/*`],
-      },
-    ],
+        Effect: 'Allow',
+        Principal: '*',
+        Action: ['s3:GetObject'],
+        Resource: [`arn:aws:s3:::${bucket}/*`]
+      }
+    ]
   });
 
 const makeObjectStorage = (config: ObjectStorageConfig): Context.Tag.Service<ObjectStorage> => {
@@ -134,7 +142,7 @@ const makeObjectStorage = (config: ObjectStorageConfig): Context.Tag.Service<Obj
           return;
         } catch (cause) {
           if (!isMissingBucketError(cause)) {
-            throw new ObjectStorageError({ operation: "headBucket", bucket, cause });
+            throw new ObjectStorageError({ operation: 'headBucket', bucket, cause });
           }
         }
 
@@ -145,13 +153,13 @@ const makeObjectStorage = (config: ObjectStorageConfig): Context.Tag.Service<Obj
             return;
           }
 
-          throw new ObjectStorageError({ operation: "createBucket", bucket, cause });
+          throw new ObjectStorageError({ operation: 'createBucket', bucket, cause });
         }
       },
       catch: (cause) =>
         cause instanceof ObjectStorageError
           ? cause
-          : new ObjectStorageError({ operation: "createBucket", bucket, cause }),
+          : new ObjectStorageError({ operation: 'createBucket', bucket, cause })
     });
 
   return {
@@ -162,30 +170,20 @@ const makeObjectStorage = (config: ObjectStorageConfig): Context.Tag.Service<Obj
 
         const desiredPolicy = publicReadPolicy(bucket);
         const currentPolicy = yield* Effect.tryPromise({
-          try: () => internalClient.send(
-            new GetBucketPolicyCommand({ Bucket: bucket })
-          ),
-          catch: (cause) => new ObjectStorageError(
-            { operation: "getBucketPolicy", bucket, cause }
-          ),
+          try: () => internalClient.send(new GetBucketPolicyCommand({ Bucket: bucket })),
+          catch: (cause) => new ObjectStorageError({ operation: 'getBucketPolicy', bucket, cause })
         }).pipe(Effect.either);
 
-        if (
-          Either.isRight(currentPolicy) &&
-          currentPolicy.right.Policy === desiredPolicy
-        ) {
+        if (Either.isRight(currentPolicy) && currentPolicy.right.Policy === desiredPolicy) {
           return;
         }
 
         yield* Effect.tryPromise({
-          try: () => internalClient.send(
-            new PutBucketPolicyCommand(
-              { Bucket: bucket, Policy: desiredPolicy }
-            )
-          ),
-          catch: (cause) => new ObjectStorageError(
-            { operation: "putBucketPolicy", bucket, cause }
-          ),
+          try: () =>
+            internalClient.send(
+              new PutBucketPolicyCommand({ Bucket: bucket, Policy: desiredPolicy })
+            ),
+          catch: (cause) => new ObjectStorageError({ operation: 'putBucketPolicy', bucket, cause })
         });
       }),
     createPresignedPutUrl: (input) =>
@@ -196,23 +194,23 @@ const makeObjectStorage = (config: ObjectStorageConfig): Context.Tag.Service<Obj
             new PutObjectCommand({
               Bucket: input.bucket,
               Key: input.key,
-              ContentType: input.contentType,
+              ContentType: input.contentType
             }),
-            { expiresIn: input.expiresInSeconds },
+            { expiresIn: input.expiresInSeconds }
           );
 
           return {
             uploadUrl,
-            expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000),
+            expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000)
           };
         },
         catch: (cause) =>
           new ObjectStorageError({
-            operation: "presignPutObject",
+            operation: 'presignPutObject',
             bucket: input.bucket,
             key: input.key,
-            cause,
-          }),
+            cause
+          })
       }),
     createPresignedGetUrl: (input) =>
       Effect.tryPromise({
@@ -224,30 +222,30 @@ const makeObjectStorage = (config: ObjectStorageConfig): Context.Tag.Service<Obj
               Key: input.key,
               ...(input.contentDisposition
                 ? { ResponseContentDisposition: input.contentDisposition }
-                : {}),
+                : {})
             }),
-            { expiresIn: input.expiresInSeconds },
+            { expiresIn: input.expiresInSeconds }
           );
 
           return {
             url,
-            expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000),
+            expiresAt: new Date(Date.now() + input.expiresInSeconds * 1000)
           };
         },
         catch: (cause) =>
           new ObjectStorageError({
-            operation: "presignGetObject",
+            operation: 'presignGetObject',
             bucket: input.bucket,
             key: input.key,
-            cause,
-          }),
-      }),
+            cause
+          })
+      })
   };
 };
 
 export const ObjectStorageLive = Layer.effect(
   ObjectStorage,
-  rustfsConfig.pipe(Effect.map(makeObjectStorage)),
+  rustfsConfig.pipe(Effect.map(makeObjectStorage))
 );
 
 export const makeObjectStorageTest = (implementation: Context.Tag.Service<ObjectStorage>) =>

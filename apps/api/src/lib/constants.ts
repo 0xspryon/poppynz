@@ -1,6 +1,6 @@
-export const validRoles = ["service-provider", "family"] as const;
-export const validApprovalRequestStatuses = ["submitted", "approved", "rejected"] as const;
-export const validKycDocumentStatuses = ["submitted", "approved", "rejected"] as const;
-export const validLanguages = ["en", "es"] as const;
+export const validRoles = ['service-provider', 'family'] as const;
+export const validApprovalRequestStatuses = ['submitted', 'approved', 'rejected'] as const;
+export const validKycDocumentStatuses = ['submitted', 'approved', 'rejected'] as const;
+export const validLanguages = ['en', 'es'] as const;
 export const signupIntentTtlMs = 5 * 60 * 1000;
 export const referralInviteTtlMs = 14 * 24 * 60 * 60 * 1000;

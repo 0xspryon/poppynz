@@ -1,43 +1,45 @@
-import { Hono } from "hono";
-import { languageDetector } from "hono/language";
-import type { BaseAppEnv, AppRuntime } from "./app-env";
-import type { ManagedRuntime } from "effect";
-import { auth } from "./lib/auth";
-import { hasMalformedCallbackParam } from "./lib/magic-link-guard";
-import { resolveUiOrigin } from "./lib/ui-origin";
-import { appRoutes } from "./routes/app/index";
-import { requestId } from "hono/request-id";
-import { makeAppRuntime } from "./managed-runtime";
-import { ensureInitialAppState } from "./startup";
-import { API_BASE_PATH } from "./hc";
+import { Hono } from 'hono';
+import { languageDetector } from 'hono/language';
+import type { BaseAppEnv, AppRuntime } from './app-env';
+import type { ManagedRuntime } from 'effect';
+import { auth } from './lib/auth';
+import { hasMalformedCallbackParam } from './lib/magic-link-guard';
+import { resolveUiOrigin } from './lib/ui-origin';
+import { appRoutes } from './routes/app/index';
+import { requestId } from 'hono/request-id';
+import { makeAppRuntime } from './managed-runtime';
+import { ensureInitialAppState } from './startup';
+import { API_BASE_PATH } from './hc';
 
-export const createApp = (runtime: AppRuntime | ManagedRuntime.ManagedRuntime<any, never> = makeAppRuntime()) => {
+export const createApp = (
+  runtime: AppRuntime | ManagedRuntime.ManagedRuntime<any, never> = makeAppRuntime()
+) => {
   const app = new Hono<BaseAppEnv>()
-    .use("*", async (c, next) => {
-      c.set("runtime", runtime as AppRuntime);
+    .use('*', async (c, next) => {
+      c.set('runtime', runtime as AppRuntime);
       await next();
     })
     .use('*', requestId())
     .use(
-      "*",
+      '*',
       languageDetector({
-        supportedLanguages: ["en", "es"],
-        fallbackLanguage: "en",
-      }),
+        supportedLanguages: ['en', 'es'],
+        fallbackLanguage: 'en'
+      })
     )
 
-    .get("/health", (c) => {
-      return c.text("Up!");
+    .get('/health', (c) => {
+      return c.text('Up!');
     })
 
-    .all("/api/auth/*", (c) => {
+    .all('/api/auth/*', (c) => {
       // Mangled magic links would otherwise 500 inside better-auth.
       if (
-        c.req.path.endsWith("/magic-link/verify") &&
+        c.req.path.endsWith('/magic-link/verify') &&
         hasMalformedCallbackParam((key) => c.req.query(key))
       ) {
         return c.redirect(
-          `${resolveUiOrigin(c.req.raw.headers)}/auth/sign-in/error?error=INVALID_TOKEN`,
+          `${resolveUiOrigin(c.req.raw.headers)}/auth/sign-in/error?error=INVALID_TOKEN`
         );
       }
       return auth.handler(c.req.raw);
@@ -50,13 +52,13 @@ export const createApp = (runtime: AppRuntime | ManagedRuntime.ManagedRuntime<an
       return c.json(
         {
           error: {
-            code: "INTERNAL_SERVER_ERROR",
-            message: "Unexpected server error.",
-          },
+            code: 'INTERNAL_SERVER_ERROR',
+            message: 'Unexpected server error.'
+          }
         },
-        500,
+        500
       );
-    })
+    });
 
   return app;
 };
@@ -66,7 +68,7 @@ export type AppType = ReturnType<typeof createApp>;
 
 const runtime = makeAppRuntime();
 
-if (process.env.NODE_ENV !== "test") {
+if (process.env.NODE_ENV !== 'test') {
   await runtime.runPromise(ensureInitialAppState);
 }
 
@@ -77,5 +79,5 @@ export default {
   // Bun's default idleTimeout (10s) closes connections with no traffic —
   // including SSE notification streams sitting between heartbeats. Keep it
   // comfortably above the stream's heartbeat interval.
-  idleTimeout: 120,
+  idleTimeout: 120
 };

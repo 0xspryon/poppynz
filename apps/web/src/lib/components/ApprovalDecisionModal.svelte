@@ -32,7 +32,9 @@
 	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Approval update">
 		<div class="modal-box max-w-md border border-card-border text-center">
 			{#if decision.kind === 'approved'}
-				<span class="mx-auto flex size-14 items-center justify-center rounded-full bg-success-content">
+				<span
+					class="mx-auto flex size-14 items-center justify-center rounded-full bg-success-content"
+				>
 					<i class="las la-check-circle text-3xl text-success" aria-hidden="true"></i>
 				</span>
 				<h3 class="mt-3 font-display text-xl font-bold text-base-content">You're approved!</h3>
@@ -42,7 +44,9 @@
 						— your approval is valid until <strong>{expiryLabel(decision.expiresAt)}</strong>{/if}.
 				</p>
 			{:else if decision.kind === 'rejected'}
-				<span class="mx-auto flex size-14 items-center justify-center rounded-full bg-warning-content">
+				<span
+					class="mx-auto flex size-14 items-center justify-center rounded-full bg-warning-content"
+				>
 					<i class="las la-info-circle text-3xl text-warning" aria-hidden="true"></i>
 				</span>
 				<h3 class="mt-3 font-display text-xl font-bold text-base-content">
@@ -52,7 +56,9 @@
 					{decision.reason ?? 'Our review team declined your approval request.'}
 				</p>
 			{:else}
-				<span class="mx-auto flex size-14 items-center justify-center rounded-full bg-error-content">
+				<span
+					class="mx-auto flex size-14 items-center justify-center rounded-full bg-error-content"
+				>
 					<i class="las la-exclamation-circle text-3xl text-error" aria-hidden="true"></i>
 				</span>
 				<h3 class="mt-3 font-display text-xl font-bold text-base-content">Approval revoked</h3>

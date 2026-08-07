@@ -1,164 +1,164 @@
-**PROJECT PROPOSAL** 
+**PROJECT PROPOSAL**
 
-**Custom Web Application \- Poppynz MVP** 
+**Custom Web Application \- Poppynz MVP**
 
-***Project Overview*** 
+**_Project Overview_**
 
-The client requires an MVP (Minimum Viable Product) for a caregiving service platform similar to TaskRabbit, where families can hire caregivers ("Mom Helpers") based on their availability and services offered. The platform will include user registration, caregiver profiles, family profiles, job bookings, Stripe-powered payment processing, an admin dashboard, and a daycare matching service. 
+The client requires an MVP (Minimum Viable Product) for a caregiving service platform similar to TaskRabbit, where families can hire caregivers ("Mom Helpers") based on their availability and services offered. The platform will include user registration, caregiver profiles, family profiles, job bookings, Stripe-powered payment processing, an admin dashboard, and a daycare matching service.
 
-This proposal outlines the development phases, including design, front-end and back-end development, Stripe integration, testing and deployment. 
+This proposal outlines the development phases, including design, front-end and back-end development, Stripe integration, testing and deployment.
 
-***Project Goals*** 
+**_Project Goals_**
 
-● Develop a responsive and user-friendly web platform for caregivers and families. ● Implement user authentication and profile management. 
+● Develop a responsive and user-friendly web platform for caregivers and families. ● Implement user authentication and profile management.
 
-● Enable job booking and caregiver selection. 
+● Enable job booking and caregiver selection.
 
-● Integrate secure **Stripe payment processing**. 
+● Integrate secure **Stripe payment processing**.
 
-● Create an **Admin Dashboard** for platform management. 
+● Create an **Admin Dashboard** for platform management.
 
-● Implement a **Daycare Matching Service** with a subscription model. 
+● Implement a **Daycare Matching Service** with a subscription model.
 
 ● Ensure rigorous testing and successful deployment.  
-***Recommended Tech Stack*** 
+**_Recommended Tech Stack_**
 
-● **Frontend Framework:** Next.js 
+● **Frontend Framework:** Next.js
 
-● **UI Library:** MUI/Tailwind CSS 
+● **UI Library:** MUI/Tailwind CSS
 
-● **Backend:** Next.js 
+● **Backend:** Next.js
 
-● **Database:** PostgreSQL 
+● **Database:** PostgreSQL
 
-● **Authentication:** NextAuth or BetterAuth 
+● **Authentication:** NextAuth or BetterAuth
 
-● **Payments:** Stripe API 
+● **Payments:** Stripe API
 
-● **Hosting:** Render 
+● **Hosting:** Render
 
-***Phase-wise Project Breakdown*** 
+**_Phase-wise Project Breakdown_**
 
-***Phase 1: Project Setup*** 
+**_Phase 1: Project Setup_**
 
-**Objective:** Set up the development environment, repositories, and core configurations. **Tasks:** 
+**Objective:** Set up the development environment, repositories, and core configurations. **Tasks:**
 
-● Configure **Next.js framework** with Tailwind CSS and MUI. 
+● Configure **Next.js framework** with Tailwind CSS and MUI.
 
-● Set up **NextAuth or BetterAuth** for authentication. 
+● Set up **NextAuth or BetterAuth** for authentication.
 
-● Initialize **Render hosting environment** for both frontend and backend. ● Create the initial **Git repository and CI/CD pipeline**. 
+● Initialize **Render hosting environment** for both frontend and backend. ● Create the initial **Git repository and CI/CD pipeline**.
 
-● Define the database schema with PostgreSQL and Drizzle ORM. ● Set up Stripe API keys for payment processing. 
+● Define the database schema with PostgreSQL and Drizzle ORM. ● Set up Stripe API keys for payment processing.
 
-● Conduct initial environment testing. 
+● Conduct initial environment testing.
 
-**Timeline: 3 days** 
+**Timeline: 3 days**
 
 **Cost: $180**  
-***Phase 2: UI/UX Design & Wireframing*** 
+**_Phase 2: UI/UX Design & Wireframing_**
 
-**Objective:** Design the user experience and visual interface for the platform. **Tasks:** 
+**Objective:** Design the user experience and visual interface for the platform. **Tasks:**
 
-● Create wireframes for **Home**, **About**, **Contact**, **Mom Helper Registration, Family Registration, Booking System and Admin Dashboard**. 
+● Create wireframes for **Home**, **About**, **Contact**, **Mom Helper Registration, Family Registration, Booking System and Admin Dashboard**.
 
-● Design high-fidelity UI mockups for the platform. 
+● Design high-fidelity UI mockups for the platform.
 
-● Ensure mobile responsiveness and accessibility compliance. 
+● Ensure mobile responsiveness and accessibility compliance.
 
-● Get client approval before proceeding to development. 
+● Get client approval before proceeding to development.
 
-**Timeline: 5 days** 
+**Timeline: 5 days**
 
-**Cost: $300** 
+**Cost: $300**
 
-***Phase 3: Front-End Development*** 
+**_Phase 3: Front-End Development_**
 
-**Objective:** Build the user-facing components of the platform. 
+**Objective:** Build the user-facing components of the platform.
 
-**Tasks:** 
+**Tasks:**
 
-● Implement **Home Page, About, Contact, Registration & Login Pages** for both user types (Families & Mom Helpers). 
+● Implement **Home Page, About, Contact, Registration & Login Pages** for both user types (Families & Mom Helpers).
 
-● Develop **Mom Helper Dashboard** (profile creation, service listings, payment details setup). 
+● Develop **Mom Helper Dashboard** (profile creation, service listings, payment details setup).
 
-● Develop **Family Dashboard** (profile setup, browsing caregivers, initiating bookings, payment management). 
+● Develop **Family Dashboard** (profile setup, browsing caregivers, initiating bookings, payment management).
 
-● Implement **Daycare Matching Portal** (subscription model, listings, filtering by location). ● Set up chat/messaging feature for families to communicate with caregivers. ● Ensure UI responsiveness and performance optimization. 
+● Implement **Daycare Matching Portal** (subscription model, listings, filtering by location). ● Set up chat/messaging feature for families to communicate with caregivers. ● Ensure UI responsiveness and performance optimization.
 
-**Timeline: 10 days** 
+**Timeline: 10 days**
 
 **Cost: $600**  
-***Phase 4: Back-End Development*** 
+**_Phase 4: Back-End Development_**
 
-**Objective:** Develop the core functionalities and API endpoints. 
+**Objective:** Develop the core functionalities and API endpoints.
 
-**Tasks:** 
+**Tasks:**
 
-● Implement **User Authentication & Authorization (NextAuth/BetterAuth-based login)**. 
+● Implement **User Authentication & Authorization (NextAuth/BetterAuth-based login)**.
 
-● Develop API endpoints for **user profile creation, booking system, Stripe payments, and daycare subscriptions**. 
+● Develop API endpoints for **user profile creation, booking system, Stripe payments, and daycare subscriptions**.
 
-● Implement database schema for **users, bookings, transactions, and daycare subscriptions**. 
+● Implement database schema for **users, bookings, transactions, and daycare subscriptions**.
 
-● Set up **Admin Dashboard controls** for managing caregivers and overriding invoices. ● Test and secure all endpoints against vulnerabilities. 
+● Set up **Admin Dashboard controls** for managing caregivers and overriding invoices. ● Test and secure all endpoints against vulnerabilities.
 
-**Timeline: 6 days** 
+**Timeline: 6 days**
 
-**Cost: $360** 
+**Cost: $360**
 
-***Phase 5: Stripe Payment Integration*** 
+**_Phase 5: Stripe Payment Integration_**
 
-**Objective:** Enable secure online payments for hiring caregivers and daycare subscriptions. **Tasks:** 
+**Objective:** Enable secure online payments for hiring caregivers and daycare subscriptions. **Tasks:**
 
-● Implement **Stripe Connect** for caregiver payouts (80% of billed amount to Mom Helpers). ● Enable **pre-authorized payments for families** upon booking. 
+● Implement **Stripe Connect** for caregiver payouts (80% of billed amount to Mom Helpers). ● Enable **pre-authorized payments for families** upon booking.
 
-● Set up **automatic invoicing** when a caregiver closes a session. 
+● Set up **automatic invoicing** when a caregiver closes a session.
 
-● Implement **Stripe subscription payments** for daycare matching services. ● Conduct test transactions to ensure correct payment processing. 
+● Implement **Stripe subscription payments** for daycare matching services. ● Conduct test transactions to ensure correct payment processing.
 
-**Timeline: 3 days** 
+**Timeline: 3 days**
 
 **Cost: $180**  
-***Phase 6: Testing & Quality Assurance*** 
+**_Phase 6: Testing & Quality Assurance_**
 
-**Objective:** Ensure all features function correctly and meet project requirements. **Tasks:** 
+**Objective:** Ensure all features function correctly and meet project requirements. **Tasks:**
 
-● Conduct **thorough testing** for front-end and back-end components. ● Carry out **cross-browser & mobile responsiveness testing**. ● Simulate multiple user workflows to catch bugs and edge cases. ● Fix identified issues before deployment. 
+● Conduct **thorough testing** for front-end and back-end components. ● Carry out **cross-browser & mobile responsiveness testing**. ● Simulate multiple user workflows to catch bugs and edge cases. ● Fix identified issues before deployment.
 
-**Timeline: 2 days** 
+**Timeline: 2 days**
 
-**Cost: $120** 
+**Cost: $120**
 
-***Phase 7: Deployment & Finalization*** 
+**_Phase 7: Deployment & Finalization_**
 
-**Objective:** Deploy the platform to a live environment. 
+**Objective:** Deploy the platform to a live environment.
 
-**Tasks:** 
+**Tasks:**
 
-● Deploy **application on Render**. 
+● Deploy **application on Render**.
 
-● Configure domain and SSL certificates. 
+● Configure domain and SSL certificates.
 
-● Conduct final performance optimizations. 
+● Conduct final performance optimizations.
 
-● Set up **basic user training/documentation** for platform usage. ● Final review with the client before launch. 
+● Set up **basic user training/documentation** for platform usage. ● Final review with the client before launch.
 
-**Timeline: 2 days** 
+**Timeline: 2 days**
 
 **Cost: $120**  
-***Overall Project Summary*** 
+**_Overall Project Summary_**
 
-● **Total Timeline: 31 days** 
+● **Total Timeline: 31 days**
 
-● **Total Cost: $1,860** 
+● **Total Cost: $1,860**
 
-**Notes:** 
+**Notes:**
 
-❖ This breakdown should provide a comprehensive view of the project executables, timelines, and corresponding costs involved. However, during production, few steps will happen simultaneously. A phase-wise breakdown is primarily intended to bring the client and myself on the same page. 
+❖ This breakdown should provide a comprehensive view of the project executables, timelines, and corresponding costs involved. However, during production, few steps will happen simultaneously. A phase-wise breakdown is primarily intended to bring the client and myself on the same page.
 
-❖ **Scope:** The project scope remains limited to the described features without additional expansions. 
+❖ **Scope:** The project scope remains limited to the described features without additional expansions.
 
-❖ **Adjustments:** Any additional features requested will require a change order and timeline adjustment. 
+❖ **Adjustments:** Any additional features requested will require a change order and timeline adjustment.
 
 ❖ **Meetings** will be scheduled with the client on a required basis to streamline the entire process. ❖ **I normally charge $25 / hour but for this project, I have reduced it to only $15 / hour.**

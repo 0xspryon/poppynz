@@ -137,9 +137,8 @@
 	async function confirmApprove(expiryDate: string) {
 		if (!detail || approving) return;
 		approving = true;
-		// End of the chosen day so the approval spans the full expiry date.
-		const expires = new Date(expiryDate);
-		expires.setHours(23, 59, 59, 999);
+		// End of the chosen day (local time) so the approval spans the full expiry date.
+		const expires = new Date(`${expiryDate}T23:59:59.999`);
 		const result = await approveRequest({
 			userId: detail.approvalRequest.userId,
 			approvalRequestId: detail.approvalRequest.id,

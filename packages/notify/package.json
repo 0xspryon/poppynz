@@ -1,0 +1,15 @@
+{
+  "name": "@repo/notify",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./events": "./src/events.ts"
+  },
+  "dependencies": {
+    "@repo/env": "*",
+    "effect": "^3.21.2",
+    "ioredis": "^5.10.1"
+  }
+}

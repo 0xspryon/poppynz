@@ -65,6 +65,13 @@ export const redisConfig = Config.all({
   url: Config.string("REDIS_URL").pipe(Config.withDefault("redis://127.0.0.1:6379")),
 });
 
+// How long an ignored reach-out blocks the pair. Within the window the ignore
+// stays invisible to the sender (thread reads as pending); past it the pair is
+// treated as if it never existed and either side may reach out afresh.
+export const reachoutConfig = Config.all({
+  ignoreCooldownDays: Config.integer("REACHOUT_IGNORE_COOLDOWN_DAYS").pipe(Config.withDefault(120)),
+});
+
 export const typesenseConfig = Config.all({
   host: Config.string("TYPESENSE_HOST"),
   port: Config.integer("TYPESENSE_PORT"),

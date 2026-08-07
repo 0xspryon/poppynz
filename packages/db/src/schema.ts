@@ -6,6 +6,7 @@ import {
   doublePrecision,
   integer,
   index,
+  jsonb,
   pgSchema,
   uniqueIndex,
   uuid,
@@ -21,6 +22,7 @@ export const providerSearchOutboxStatus = appDb.enum("provider_search_outbox_sta
 export const familySearchOutboxStatus = appDb.enum("family_search_outbox_status", ["pending", "processing", "processed", "failed", "superseded"]);
 // "all" means every non-admin profile — admins are never shown T&C.
 export const tcAppliesToRole = appDb.enum("tc_applies_to_role", ["all", "family", "service-provider"]);
+export const conversationStatus = appDb.enum("conversation_status", ["pending", "active", "ignored"]);
 export const kycDocumentStatus = appDb.enum("kyc_document_status", [
   "submitted",
   "approved",
@@ -339,6 +341,82 @@ export const providerSearchOutbox = appDb.table(
     uniqueIndex("provider_search_outbox_user_unresolved_uidx")
       .on(table.userId)
       .where(sql`${table.status} in ('pending', 'processing', 'failed')`),
+  ],
+);
+
+// Snapshot of a service referenced by a reach-out, taken at send time so the
+// card keeps rendering even if the underlying service row is later renamed or
+// soft-deleted. serviceId points at services_offered/services_needed depending
+// on who initiated.
+export type ReachoutService = {
+  serviceId: string;
+  name: string;
+};
+
+// A conversation pairs exactly one family with one provider and starts life as
+// a reach-out: the initiator's templated intro plus the services in question.
+// `pending` keeps the thread locked until the receiver responds; `ignored`
+// archives it quietly and blocks a repeat reach-out until the cool-down
+// (REACHOUT_IGNORE_COOLDOWN_DAYS) lapses — expired-ignored rows get
+// soft-deleted on the next reach-out, which the partial pair-unique index
+// permits while still guaranteeing one live conversation per pair.
+export const conversation = appDb.table(
+  "conversations",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    familyUserId: text("family_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    providerUserId: text("provider_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    initiatorUserId: text("initiator_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    status: conversationStatus("status").default("pending").notNull(),
+    reachoutMessage: text("reachout_message").notNull(),
+    reachoutServices: jsonb("reachout_services").$type<Array<ReachoutService>>().notNull(),
+    respondedAt: timestamp("responded_at"),
+    ignoredAt: timestamp("ignored_at"),
+    familyLastReadAt: timestamp("family_last_read_at"),
+    providerLastReadAt: timestamp("provider_last_read_at"),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("conversations_family_provider_uidx")
+      .on(table.familyUserId, table.providerUserId)
+      .where(sql`${table.deletedAt} is null`),
+    index("conversations_provider_user_id_idx").on(table.providerUserId),
+    index("conversations_status_idx").on(table.status),
+  ],
+);
+
+export const conversationMessage = appDb.table(
+  "conversation_messages",
+  {
+    id: uuid("id").primaryKey().default(sql`uuidv7()`),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversation.id, { onDelete: "cascade" }),
+    senderUserId: text("sender_user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    body: text("body").notNull(),
+    deletedAt: timestamp("deleted_at"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at")
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("conversation_messages_conversation_created_idx").on(table.conversationId, table.createdAt),
+    index("conversation_messages_sender_user_id_idx").on(table.senderUserId),
   ],
 );
 
@@ -684,6 +762,29 @@ export const serviceNeededRelations = relations(serviceNeeded, ({ one }) => ({
 export const serviceCatalogueItemRelations = relations(serviceCatalogueItem, ({ many }) => ({
   servicesOffered: many(serviceOffered),
   servicesNeeded: many(serviceNeeded),
+}));
+
+export const conversationRelations = relations(conversation, ({ one, many }) => ({
+  familyUser: one(user, {
+    fields: [conversation.familyUserId],
+    references: [user.id],
+  }),
+  providerUser: one(user, {
+    fields: [conversation.providerUserId],
+    references: [user.id],
+  }),
+  messages: many(conversationMessage),
+}));
+
+export const conversationMessageRelations = relations(conversationMessage, ({ one }) => ({
+  conversation: one(conversation, {
+    fields: [conversationMessage.conversationId],
+    references: [conversation.id],
+  }),
+  sender: one(user, {
+    fields: [conversationMessage.senderUserId],
+    references: [user.id],
+  }),
 }));
 
 export const sessionRelations = relations(session, ({ one }) => ({

@@ -21,6 +21,8 @@ import { serviceCatalogueRoute } from './service-catalogue/service-catalogue';
 import { adminServiceCatalogueRoute } from './admin/service-catalogue';
 import { adminUsersRoute } from './admin/users';
 import { referralsRoute } from './referrals/referrals';
+import { conversationsRoute } from './conversations/conversations';
+import { notificationsRoute } from './notifications/notifications';
 import { tcsRoute } from './tcs/tcs';
 import { meTcsRoute } from './me/tcs';
 import { adminTcsRoute } from './admin/tcs';
@@ -46,6 +48,8 @@ export const appRoutes = new Hono<HonoEnv>()
 .route('/admin/service-catalogue', adminServiceCatalogueRoute)
 .route('/admin/users', adminUsersRoute)
 .route('/referrals', referralsRoute)
+.route('/conversations', conversationsRoute)
+.route('/notifications', notificationsRoute)
 .route('/providers', providersRoute)
 .route('/families', familiesRoute)
 .route('/geocoding', geocodingRoute)

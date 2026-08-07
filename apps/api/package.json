@@ -23,6 +23,7 @@
     "@repo/env": "*",
     "@repo/google": "*",
     "@repo/mail": "*",
+    "@repo/notify": "*",
     "@repo/objs": "*",
     "@repo/queue": "*",
     "@repo/typesense": "*",

@@ -1,14 +1,16 @@
 <script lang="ts">
 	import { browser } from '$app/environment';
-	import { goto } from '$app/navigation';
+	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { fetchSession, getSession, type MockSession } from '$lib/api/profile';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import ImpersonationBanner from '$lib/components/ImpersonationBanner.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
+	import RealtimeNotifications from '$lib/components/RealtimeNotifications.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
 	import TcGate from '$lib/components/TcGate.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
+	import { unread } from '$lib/unread.svelte';
 	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
@@ -35,16 +37,21 @@
 		});
 	});
 
+	afterNavigate(() => {
+		if (authorized) void unread.refresh();
+	});
+
 	const email = $derived(session?.email ?? 'family');
 	const impersonated = $derived(session?.impersonatedBy != null);
 	const initial = $derived(email.charAt(0).toUpperCase());
 
-	const items: Array<SidebarItem> = [
+	const items: Array<SidebarItem> = $derived([
 		{ href: resolve('/family/find'), label: 'Find help', icon: 'la-search' },
+		{ href: resolve('/family/messages'), label: 'Messages', icon: 'la-comment', badge: unread.count },
 		{ href: resolve('/family/needs'), label: 'Services I need', icon: 'la-clipboard-list' },
 		{ href: resolve('/family/profile'), label: 'Profile', icon: 'la-user' },
 		{ href: resolve('/family/referrals'), label: 'Referrals', icon: 'la-user-plus' }
-	];
+	]);
 </script>
 
 {#if authorized}
@@ -91,6 +98,7 @@
 	/>
 
 	<TcGate />
+	<RealtimeNotifications role="family" />
 {/if}
 
 <ToastHost />

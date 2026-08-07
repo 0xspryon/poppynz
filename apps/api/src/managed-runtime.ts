@@ -1,6 +1,7 @@
 import {
   ApprovalRepoDefault,
   ApprovalRequestRepoDefault,
+  ConversationRepoDefault,
   FamilySearchOutboxRepoDefault,
   FamilySearchRepoDefault,
   KycDocumentRepoDefault,
@@ -19,6 +20,7 @@ import {
   UserRepoDefault,
 } from "@repo/db";
 import { GooglePlacesLive } from "@repo/google";
+import { NotificationHubLive } from "@repo/notify";
 import { ObjectStorageLive } from "@repo/objs";
 import { FamilySearchQueueLive, ProviderSearchQueueLive } from "@repo/queue";
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from "@repo/typesense";
@@ -48,6 +50,8 @@ export const AppLive = Layer.mergeAll(
   FamilySearchRepoDefault,
   ReferralRepoDefault,
   UserDirectoryRepoDefault,
+  ConversationRepoDefault,
+  NotificationHubLive,
   GooglePlacesLive,
   MailerLive,
   ObjectStorageLive,

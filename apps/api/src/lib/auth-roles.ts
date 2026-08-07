@@ -7,6 +7,7 @@ export const appAc = createAccessControl({
   ...defaultStatements,
   approval: ["write"],
   approvalRequest: ["read", "write"],
+  conversation: ["read", "write"],
   familySearch: ["read", "reindex"],
   kycDocument: ["read", "write"],
   kycDocumentType: ["read", "write"],
@@ -21,6 +22,7 @@ export const appAc = createAccessControl({
 
 export const familyRole = appAc.newRole({
   profile: ["read", "update"],
+  conversation: ["read", "write"],
   providerSearch: ["read"],
   approvalRequest: ["write"],
   kycDocument: ["write"],
@@ -33,6 +35,7 @@ export const familyRole = appAc.newRole({
 
 export const spRole = appAc.newRole({
   profile: ["read", "update"],
+  conversation: ["read", "write"],
   // familySearch is additionally gated on a live approval at the route level —
   // the permission alone doesn't make an unapproved provider a searcher.
   familySearch: ["read"],
@@ -50,6 +53,7 @@ export const adminRole = appAc.newRole({
   ...adminAc.statements,
   approval: ["write"],
   approvalRequest: ["read", "write"],
+  conversation: ["read", "write"],
   familySearch: ["read", "reindex"],
   kycDocument: ["read", "write"],
   kycDocumentType: ["read", "write"],

@@ -1,13 +1,16 @@
 <script lang="ts">
 	/** Public provider profile as seen by a family (design 13f/13g). Location
 	 * is approximate only — a shaded circle, never an exact pin or address.
-	 * The Contact CTA ships enabled-looking; tapping opens a "messaging is
-	 * coming soon" note so no layout rework is needed when messaging lands.
+	 * The Contact CTA opens the reach-out composer (design 16a); once a
+	 * conversation exists it becomes a "Message" link into the thread.
 	 * `?from=` carries the search querystring for the back link; `?d=` carries
 	 * the distance computed by the originating search. */
+	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import { lookupConversation, type ConversationLookup } from '$lib/api/conversations';
 	import { getProvider, type ProviderDetail } from '$lib/api/providers';
+	import ReachoutComposerModal from '$lib/components/messages/ReachoutComposerModal.svelte';
 	import { centsToCompactDollars, rateRangeLabel } from '$lib/money';
 	import { withQuery } from '$lib/nav';
 
@@ -15,7 +18,8 @@
 	let loading = $state(true);
 	let notFound = $state(false);
 	let loadError = $state(false);
-	let comingSoonOpen = $state(false);
+	let composerOpen = $state(false);
+	let conversation = $state<ConversationLookup>(null);
 	let retryTick = $state(0);
 
 	const userId = $derived(page.params.userId ?? '');
@@ -49,6 +53,21 @@
 			}
 		});
 	});
+
+	// Whether a conversation with this provider already exists decides the CTA:
+	// composer (none) vs a link into the existing thread.
+	$effect(() => {
+		const id = userId;
+		if (!id) return;
+		conversation = null;
+		void lookupConversation(id).then((result) => {
+			if (result.ok) conversation = result.data.conversation;
+		});
+	});
+
+	function openConversation(conversationId: string) {
+		void goto(withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversationId)}`));
+	}
 
 	const name = $derived(
 		provider ? (provider.displayName ?? `Provider in ${provider.location.city}`) : ''
@@ -169,19 +188,25 @@
 					{#if rateSummary}
 						<div class="font-display text-2xl font-bold text-secondary">{rateSummary}</div>
 					{/if}
-					<button type="button" class="btn btn-primary" onclick={() => (comingSoonOpen = !comingSoonOpen)}>
-						Contact {firstName}
-					</button>
-					<span class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning">
-						Messaging coming soon
-					</span>
+					{#if conversation}
+						<a
+							href={withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversation.id)}`)}
+							class="btn btn-primary"
+						>
+							Message {firstName}
+						</a>
+						{#if conversation.status === 'pending'}
+							<span class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning">
+								{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
+							</span>
+						{/if}
+					{:else}
+						<button type="button" class="btn btn-primary" onclick={() => (composerOpen = true)}>
+							Contact {firstName}
+						</button>
+					{/if}
 				</div>
 			</div>
-			{#if comingSoonOpen}
-				<p class="mt-4 hidden rounded-lg bg-base-300 p-3 text-sm text-base-content-muted lg:block lg:text-right">
-					Messaging is coming soon — you'll be able to reach {firstName} right from here.
-				</p>
-			{/if}
 		</div>
 
 		<div class="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_320px]">
@@ -267,21 +292,32 @@
 			class="fixed inset-x-0 bottom-0 z-20 flex flex-col items-center gap-1.5 border-t
 				border-card-border bg-base-100 p-3 shadow-[0_-4px_16px_rgba(26,51,117,0.08)] lg:hidden"
 		>
-			{#if comingSoonOpen}
-				<p class="w-full rounded-lg bg-base-300 p-2.5 text-center text-[13px] text-base-content-muted">
-					Messaging is coming soon — you'll be able to reach {firstName} right from here.
-				</p>
+			{#if conversation}
+				{#if conversation.status === 'pending'}
+					<span class="rounded-pill bg-warning-content px-2.5 py-0.5 text-[11px] font-bold text-warning">
+						{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
+					</span>
+				{/if}
+				<a
+					href={withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversation.id)}`)}
+					class="btn w-full btn-primary"
+				>
+					Message {firstName}
+				</a>
+			{:else}
+				<button type="button" class="btn w-full btn-primary" onclick={() => (composerOpen = true)}>
+					Contact {firstName}
+				</button>
 			{/if}
-			<span class="rounded-pill bg-warning-content px-2.5 py-0.5 text-[11px] font-bold text-warning">
-				Messaging coming soon
-			</span>
-			<button
-				type="button"
-				class="btn w-full btn-primary"
-				onclick={() => (comingSoonOpen = !comingSoonOpen)}
-			>
-				Contact {firstName}
-			</button>
 		</div>
+
+		<ReachoutComposerModal
+			open={composerOpen}
+			onclose={() => (composerOpen = false)}
+			recipient={{ userId, name }}
+			services={provider.services.map((service) => ({ id: service.id, name: service.name }))}
+			senderRole="family"
+			onconversation={openConversation}
+		/>
 	{/if}
 </div>

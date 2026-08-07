@@ -71,6 +71,13 @@
       "when": 1785283200000,
       "tag": "0009_family_search",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1785974400000,
+      "tag": "0010_messaging",
+      "breakpoints": true
     }
   ]
 }

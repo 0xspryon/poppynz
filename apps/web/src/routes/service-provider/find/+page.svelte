@@ -274,7 +274,7 @@
 
 {#snippet filterControls()}
 	<!-- Service facet: single-select — the search API filters one service at a time. -->
-	<fieldset class="rounded-xl border border-card-border bg-base-100 p-4">
+	<fieldset class="min-w-0 rounded-xl border border-card-border bg-base-100 p-4">
 		<legend class="sr-only">Service</legend>
 		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
 			Service needed
@@ -323,7 +323,7 @@
 		</div>
 	</fieldset>
 
-	<fieldset class="rounded-xl border border-card-border bg-base-100 p-4">
+	<fieldset class="min-w-0 rounded-xl border border-card-border bg-base-100 p-4">
 		<legend class="sr-only">City</legend>
 		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">City</div>
 		<select

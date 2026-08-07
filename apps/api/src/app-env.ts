@@ -1,6 +1,7 @@
 import type {
   ApprovalRepo,
   ApprovalRequestRepo,
+  ConversationRepo,
   FamilySearchOutboxRepo,
   FamilySearchRepo,
   KycDocumentRepo,
@@ -19,6 +20,7 @@ import type {
   UserRepo,
 } from "@repo/db";
 import type { GooglePlaces } from "@repo/google";
+import type { NotificationHub } from "@repo/notify";
 import type { ObjectStorage } from "@repo/objs";
 import type { FamilySearchQueue, ProviderSearchQueue } from "@repo/queue";
 import type { FamilySearchIndex, ProviderSearchIndex } from "@repo/typesense";
@@ -50,6 +52,8 @@ export type AppServices =
   | FamilySearchRepo
   | ReferralRepo
   | UserDirectoryRepo
+  | ConversationRepo
+  | NotificationHub
   | Mailer
   | GooglePlaces
   | ObjectStorage

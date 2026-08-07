@@ -7,6 +7,7 @@ import { Mailer, sendMailBestEffort } from "@/api/lib/mailer";
 import { loadProviderChecklist, loadProviderChecklistWithTypes } from "@/api/lib/provider-onboarding";
 import { parseJsonBody, requestValidationErrorToResponse } from "@/api/lib/schema-validator";
 import { approvalRequestJsonError, validateApprovalRequestRejectInput } from "./approval-requests.validator";
+import { publishNotificationBestEffort } from "@repo/notify";
 
 class ApprovalRequestValidationError extends Data.TaggedError("ApprovalRequestValidationError")<{ message: string }>{}
 class ApprovalRequestAlreadySubmittedError extends Data.TaggedError("ApprovalRequestAlreadySubmittedError")<{}>{}
@@ -158,6 +159,15 @@ export const rejectAdminApprovalRequestRouteProgram = (c: HonoContext<HonoEnv>, 
         });
       }),
     );
+    yield* publishNotificationBestEffort(request.userId, {
+      type: "approval.decided",
+      payload: {
+        approvalRequestId: request.id,
+        status: "rejected",
+        reason: input.reason,
+        expiresAt: null,
+      },
+    });
 
     return toRequestResponse(request);
   });

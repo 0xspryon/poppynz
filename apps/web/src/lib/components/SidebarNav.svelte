@@ -1,6 +1,9 @@
 <script lang="ts" module>
+	import type { ResolvedPathname } from '$app/types';
+
 	export interface SidebarItem {
-		href: string;
+		/** A resolve()d pathname — keeps `svelte/no-navigation-without-resolve` satisfied. */
+		href: ResolvedPathname;
 		label: string;
 		icon: string;
 		/** Pink attention badge count (e.g. missing documents); hidden when falsy. */

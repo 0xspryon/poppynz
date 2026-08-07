@@ -17,5 +17,6 @@ export * from "./repos/provider-search-outbox-repo";
 export * from "./repos/family-search-repo";
 export * from "./repos/family-search-outbox-repo";
 export * from "./repos/referral-repo";
+export * from "./repos/conversation-repo";
 export * from "./repos/user-directory-repo";
 export * from "./repos/tc-document-repo";

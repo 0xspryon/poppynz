@@ -8,6 +8,8 @@
  * are for operation outcomes only.
  */
 
+import { SvelteMap } from 'svelte/reactivity';
+
 export type ToastKind = 'success' | 'error' | 'info';
 
 export interface ToastOptions {
@@ -34,7 +36,7 @@ const DEFAULT_TTL: Record<ToastKind, number> = {
 const MAX_VISIBLE = 4;
 
 let nextId = 1;
-const timers = new Map<number, ReturnType<typeof setTimeout>>();
+const timers = new SvelteMap<number, ReturnType<typeof setTimeout>>();
 
 class ToastStore {
 	items = $state<ToastItem[]>([]);

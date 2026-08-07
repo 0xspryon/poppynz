@@ -29,6 +29,7 @@
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
+    "@repo/notify": "*",
     "@repo/typescript-config": "*",
     "@sveltejs/adapter-node": "^5.5.7",
     "@sveltejs/kit": "^2.55.0",

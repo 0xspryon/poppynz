@@ -70,4 +70,12 @@ if (process.env.NODE_ENV !== "test") {
   await runtime.runPromise(ensureInitialAppState);
 }
 
-export default createApp(runtime);
+const app = createApp(runtime);
+
+export default {
+  fetch: app.fetch,
+  // Bun's default idleTimeout (10s) closes connections with no traffic —
+  // including SSE notification streams sitting between heartbeats. Keep it
+  // comfortably above the stream's heartbeat interval.
+  idleTimeout: 120,
+};

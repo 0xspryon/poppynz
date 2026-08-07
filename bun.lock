@@ -24,6 +24,7 @@
         "@repo/env": "*",
         "@repo/google": "*",
         "@repo/mail": "*",
+        "@repo/notify": "*",
         "@repo/objs": "*",
         "@repo/queue": "*",
         "@repo/typesense": "*",
@@ -82,6 +83,7 @@
       },
       "devDependencies": {
         "@repo/eslint-config": "*",
+        "@repo/notify": "*",
         "@repo/typescript-config": "*",
         "@sveltejs/adapter-node": "^5.5.7",
         "@sveltejs/kit": "^2.55.0",
@@ -176,6 +178,15 @@
       "dependencies": {
         "@repo/env": "*",
         "effect": "^3.21.2",
+      },
+    },
+    "packages/notify": {
+      "name": "@repo/notify",
+      "version": "0.0.0",
+      "dependencies": {
+        "@repo/env": "*",
+        "effect": "^3.21.2",
+        "ioredis": "^5.10.1",
       },
     },
     "packages/objs": {
@@ -620,6 +631,8 @@
     "@repo/google": ["@repo/google@workspace:packages/google"],
 
     "@repo/mail": ["@repo/mail@workspace:packages/mail"],
+
+    "@repo/notify": ["@repo/notify@workspace:packages/notify"],
 
     "@repo/objs": ["@repo/objs@workspace:packages/objs"],
 

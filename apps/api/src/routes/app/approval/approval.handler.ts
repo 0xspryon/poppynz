@@ -7,6 +7,7 @@ import { isRequestValidationError, parseJsonBody, requestValidationErrorToRespon
 import type { SqlError } from "@effect/sql/SqlError";
 import { Mailer, sendMailBestEffort } from "@/api/lib/mailer";
 import { scheduleProviderSearchReconcile } from "@/api/lib/provider-search-jobs";
+import { publishNotificationBestEffort } from "@repo/notify";
 
 export class ApprovalRepoError extends Data.TaggedError("ApprovalRepoError")<{ cause: SqlError }> { }
 export class ApprovalRequestMismatchError extends Data.TaggedError("ApprovalRequestMismatchError")<{}> { }
@@ -90,6 +91,15 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
         expiresAt: approval.expiresAt,
       }),
     );
+    yield* publishNotificationBestEffort(approval.userId, {
+      type: "approval.decided",
+      payload: {
+        approvalRequestId: input.approvalRequestId,
+        status: "approved",
+        reason: null,
+        expiresAt: approval.expiresAt.toISOString(),
+      },
+    });
 
     return response;
   });
@@ -123,6 +133,10 @@ export const revokeApprovalProgram = (id: string, reason: string) =>
         });
       }),
     );
+    yield* publishNotificationBestEffort(revoked.userId, {
+      type: "approval.revoked",
+      payload: { approvalId: revoked.id, reason },
+    });
 
     return {
       id: revoked.id,

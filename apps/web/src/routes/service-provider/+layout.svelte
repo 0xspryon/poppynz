@@ -7,9 +7,11 @@
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import ImpersonationBanner from '$lib/components/ImpersonationBanner.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
+	import RealtimeNotifications from '$lib/components/RealtimeNotifications.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
 	import TcGate from '$lib/components/TcGate.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
+	import { unread } from '$lib/unread.svelte';
 	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
@@ -50,7 +52,10 @@
 		if (authorized) void refreshBadge();
 	});
 	afterNavigate(() => {
-		if (authorized) void refreshBadge();
+		if (authorized) {
+			void refreshBadge();
+			void unread.refresh();
+		}
 	});
 
 	const email = $derived(session?.email ?? 'provider');
@@ -60,6 +65,12 @@
 	const items: Array<SidebarItem> = $derived([
 		{ href: resolve('/service-provider/dashboard'), label: 'Dashboard', icon: 'la-th-large' },
 		{ href: resolve('/service-provider/find'), label: 'Find families', icon: 'la-search' },
+		{
+			href: resolve('/service-provider/messages'),
+			label: 'Messages',
+			icon: 'la-comment',
+			badge: unread.count
+		},
 		{ href: resolve('/service-provider/profile'), label: 'Profile', icon: 'la-user' },
 		{
 			href: resolve('/service-provider/documents'),
@@ -117,6 +128,7 @@
 	/>
 
 	<TcGate />
+	<RealtimeNotifications role="service-provider" />
 {/if}
 
 <ToastHost />

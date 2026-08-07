@@ -20,6 +20,7 @@ COPY packages/env/package.json packages/env/
 COPY packages/eslint-config/package.json packages/eslint-config/
 COPY packages/google/package.json packages/google/
 COPY packages/mail/package.json packages/mail/
+COPY packages/notify/package.json packages/notify/
 COPY packages/objs/package.json packages/objs/
 COPY packages/queue/package.json packages/queue/
 COPY packages/seeder/package.json packages/seeder/

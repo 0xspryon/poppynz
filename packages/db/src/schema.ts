@@ -845,6 +845,49 @@ export const invitation = appDb.table(
   ]
 );
 
+// Snapshot of the searcher's profile location, taken server-side at save time
+// so the admin sees where the family was when nothing matched — even if they
+// move later.
+export type UserSearchLocation = {
+  city?: string;
+  stateProvince?: string;
+  country?: string;
+  latitude?: number;
+  longitude?: number;
+};
+
+// Full filter set of a family marketplace search, captured verbatim when the
+// family asks the Poppynz team for help with a search that came up empty.
+// Stored as loose JSON so old rows keep rendering as the filter set evolves.
+export type UserSearchDetails = {
+  q?: string;
+  service?: string;
+  city?: string;
+  radiusKm?: number;
+  minHourlyRateCents?: number;
+  maxHourlyRateCents?: number;
+  sort?: string;
+  location?: UserSearchLocation;
+};
+
+export const userSearch = appDb.table(
+  'user_search',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    details: jsonb('details').$type<UserSearchDetails>().notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    index('user_search_user_id_idx').on(table.userId),
+    index('user_search_created_at_idx').on(table.createdAt)
+  ]
+);
+
 export const userRelations = relations(user, ({ many }) => ({
   sessions: many(session),
   accounts: many(account),

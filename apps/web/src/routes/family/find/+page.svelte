@@ -16,10 +16,13 @@
 	import { getFamilyOnboardingState, type FamilyOnboardingState } from '$lib/api/onboarding';
 	import { getProfile } from '$lib/api/provider-profile';
 	import { listLiveCatalogue } from '$lib/api/service-catalogue';
+	import { reportUserSearch } from '$lib/api/user-searches';
 	import FamilyGettingStartedModal from '$lib/components/FamilyGettingStartedModal.svelte';
 	import Pagination from '$lib/components/Pagination.svelte';
 	import ProviderCard from '$lib/components/ProviderCard.svelte';
+	import RequestSearchHelpModal from '$lib/components/RequestSearchHelpModal.svelte';
 	import { centsToDollars, dollarsToCents } from '$lib/money';
+	import { toast } from '$lib/toast.svelte';
 	import { withQuery } from '$lib/nav';
 	import { startTourOnce } from '$lib/tour';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
@@ -313,6 +316,36 @@
 	function expandRadius() {
 		const next = RADIUS_PRESETS.find((preset) => preset > (radiusKm ?? 0));
 		if (next) pickRadius(next);
+	}
+
+	// --- "get help from our team" modal (no-results escape hatch) ---
+	let assistOpen = $state(false);
+	let assistBusy = $state(false);
+
+	async function submitSearchAssist() {
+		if (assistBusy) return;
+		assistBusy = true;
+		// Prefer the applied keyword, but text typed without hitting Search is
+		// still what the family was looking for — capture it too.
+		const keyword = q || qInput.trim();
+		const result = await reportUserSearch({
+			...(keyword ? { q: keyword } : {}),
+			...(service ? { service } : {}),
+			...(city ? { city } : {}),
+			...(radiusKm != null ? { radiusKm } : {}),
+			...(minCents != null ? { minHourlyRateCents: minCents } : {}),
+			...(maxCents != null ? { maxHourlyRateCents: maxCents } : {}),
+			sort
+		});
+		assistBusy = false;
+		if (result.ok) {
+			assistOpen = false;
+			toast.success('Our team has been notified and will reach out to help with your search.');
+		} else {
+			toast.error(result.error.message || 'Please try again in a moment.', {
+				title: "Couldn't notify our team"
+			});
+		}
 	}
 
 	const rateChipLabel = $derived.by(() => {
@@ -704,6 +737,23 @@
 						{/if}
 						<button type="button" class="btn btn-sm" onclick={clearFilters}>Clear filters</button>
 					</div>
+					<div
+						class="mt-2 flex w-full max-w-sm flex-col items-center gap-2 border-t
+							border-card-border pt-4"
+					>
+						<p class="text-xs text-base-content-muted">
+							Still stuck? Tell us — a Poppynz administrator will be informed of your search and
+							reach out to help.
+						</p>
+						<button
+							type="button"
+							class="btn btn-primary btn-sm"
+							onclick={() => (assistOpen = true)}
+						>
+							<i class="las la-hands-helping" aria-hidden="true"></i>
+							Get help from our team
+						</button>
+					</div>
 				</div>
 			{:else if total === 0}
 				<div
@@ -758,6 +808,13 @@
 {#if onboarding}
 	<FamilyGettingStartedModal open={modalOpen} state={onboarding} onclose={dismissModal} />
 {/if}
+
+<RequestSearchHelpModal
+	open={assistOpen}
+	busy={assistBusy}
+	onconfirm={submitSearchAssist}
+	oncancel={() => (assistOpen = false)}
+/>
 
 <!-- Mobile filter bottom sheet -->
 {#if sheetOpen}

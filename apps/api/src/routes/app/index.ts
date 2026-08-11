@@ -20,6 +20,8 @@ import { adminFamilySearchRoute } from './admin/family-search';
 import { serviceCatalogueRoute } from './service-catalogue/service-catalogue';
 import { adminServiceCatalogueRoute } from './admin/service-catalogue';
 import { adminUsersRoute } from './admin/users';
+import { adminUserSearchesRoute } from './admin/user-searches';
+import { userSearchesRoute } from './user-searches/user-searches';
 import { referralsRoute } from './referrals/referrals';
 import { contractsRoute } from './contracts/contracts';
 import { conversationsRoute } from './conversations/conversations';
@@ -48,6 +50,8 @@ export const appRoutes = new Hono<HonoEnv>()
   .route('/service-catalogue', serviceCatalogueRoute)
   .route('/admin/service-catalogue', adminServiceCatalogueRoute)
   .route('/admin/users', adminUsersRoute)
+  .route('/admin/user-searches', adminUserSearchesRoute)
+  .route('/user-searches', userSearchesRoute)
   .route('/referrals', referralsRoute)
   .route('/contracts', contractsRoute)
   .route('/conversations', conversationsRoute)

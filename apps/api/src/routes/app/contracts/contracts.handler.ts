@@ -59,11 +59,15 @@ export class UnknownContractServiceError extends Data.TaggedError(
   'UnknownContractServiceError'
 )<{}> {}
 
-/** Rates floor at the provider's listed rate; violations name the offending
- * line items so the editor can point at the right rows. */
+/** Rates floor at half the provider's listed rate; violations name the
+ * offending line items so the editor can point at the right rows. */
 export class RateBelowListedError extends Data.TaggedError('RateBelowListedError')<{
   violations: Array<{ serviceId: string; listedRateCents: number }>;
 }> {}
+
+/** Half the listed rate, rounded up to whole cents — mirrored by the terms
+ * editor's inline check. */
+const minAllowedRateCents = (listedRateCents: number) => Math.ceil(listedRateCents / 2);
 
 export class EmptyContractTermsError extends Data.TaggedError('EmptyContractTermsError')<{}> {}
 
@@ -393,7 +397,7 @@ const snapshotTerms = (providerUserId: string, input: ContractTermsInput) =>
         return yield* Effect.fail(new UnknownContractServiceError());
       }
       seen.add(item.serviceId);
-      if (item.rateCents < service.hourlyRateCents) {
+      if (item.rateCents < minAllowedRateCents(service.hourlyRateCents)) {
         violations.push({ serviceId: service.id, listedRateCents: service.hourlyRateCents });
         continue;
       }
@@ -573,7 +577,7 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     const refreshed = pending.services.map((item) => {
       const current = listedById.get(item.serviceId);
       if (!current || current.currency !== item.currency) return item;
-      if (item.rateCents < current.hourlyRateCents) {
+      if (item.rateCents < minAllowedRateCents(current.hourlyRateCents)) {
         violations.push({ serviceId: item.serviceId, listedRateCents: current.hourlyRateCents });
       }
       return { ...item, listedRateCents: current.hourlyRateCents };
@@ -1263,7 +1267,7 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
         {
           error: {
             code: 'RATE_BELOW_LISTED' as const,
-            message: "Rates start at the provider's listed rate — you can offer more, never less.",
+            message: "Rates start at half the provider's listed rate — you can always offer more.",
             violations: error.violations
           }
         },

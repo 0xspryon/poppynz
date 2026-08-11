@@ -6,9 +6,9 @@
 <script lang="ts">
 	/** Terms editor (design 16d): line items added through a two-step wizard —
 	 * pick one of the provider's services, then set rate / weekly hours /
-	 * expectations. Rates floor at the listed rate ("you can offer more, never
-	 * less"). Used for the family draft, revisions after decline / requested
-	 * changes, and amendments from either side. */
+	 * expectations. Rates floor at half the listed rate (mirrors the API's
+	 * RATE_BELOW_LISTED check). Used for the family draft, revisions after
+	 * decline / requested changes, and amendments from either side. */
 	import type { ContractTerms, ContractTermsInput } from '$lib/api/contracts';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import { formatDateWithWeekday } from '$lib/date';
@@ -144,8 +144,10 @@
 			rateError = 'Enter a valid hourly rate.';
 			return;
 		}
-		if (rateCents < service.hourlyRateCents) {
-			rateError = `Starts at the listed rate — $${centsToDollars(service.hourlyRateCents)}/hr or more.`;
+		// Mirrors the API's floor: half the listed rate, rounded up to whole cents.
+		const minRateCents = Math.ceil(service.hourlyRateCents / 2);
+		if (rateCents < minRateCents) {
+			rateError = `Starts at half the listed rate — $${centsToDollars(minRateCents)}/hr or more.`;
 			return;
 		}
 		// Mirrors the API's upper bound so the failure is inline, not a toast.
@@ -206,7 +208,7 @@
 						<strong class="text-secondary">
 							${centsToDollars(Math.round(item.rateCents * item.hoursPerWeek))}/wk
 						</strong>
-						{#if item.rateCents > item.listedRateCents}
+						{#if item.rateCents !== item.listedRateCents}
 							<span class="text-outline"> · listed ${centsToDollars(item.listedRateCents)}</span>
 						{/if}
 					</div>
@@ -447,8 +449,8 @@
 									type="button"
 									class="btn btn-circle btn-ghost btn-xs text-secondary"
 									aria-label="More hours"
-									disabled={hours >= 100}
-									onclick={() => (hours = Math.min(100, hours + 1))}
+									disabled={hours >= 50}
+									onclick={() => (hours = Math.min(50, hours + 1))}
 								>
 									+
 								</button>
@@ -459,7 +461,7 @@
 						<p class="-mt-2 text-[12px] font-medium text-error" role="alert">{rateError}</p>
 					{:else}
 						<p class="-mt-2 text-[11px] text-outline">
-							Starts at the listed rate — you can offer more, never less.
+							Offers start at half the listed rate — you can always offer more.
 						</p>
 					{/if}
 

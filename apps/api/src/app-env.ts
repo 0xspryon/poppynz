@@ -18,7 +18,8 @@ import type {
   ReferralRepo,
   UserDirectoryRepo,
   UserProfileRepo,
-  UserRepo
+  UserRepo,
+  UserSearchRepo
 } from '@repo/db';
 import type { GooglePlaces } from '@repo/google';
 import type { NotificationHub } from '@repo/notify';
@@ -53,6 +54,7 @@ export type AppServices =
   | FamilySearchRepo
   | ReferralRepo
   | UserDirectoryRepo
+  | UserSearchRepo
   | ConversationRepo
   | ContractRepo
   | NotificationHub

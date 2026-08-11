@@ -34,6 +34,7 @@
 	const items: Array<SidebarItem> = [
 		{ href: resolve('/admin/approval-requests'), label: 'Approval queue', icon: 'la-user-check' },
 		{ href: resolve('/admin/users'), label: 'Users', icon: 'la-users' },
+		{ href: resolve('/admin/user-searches'), label: 'User searches', icon: 'la-search' },
 		{ href: resolve('/admin/document-types'), label: 'Document types', icon: 'la-file-alt' },
 		{ href: resolve('/admin/service-catalogue'), label: 'Service catalogue', icon: 'la-heart' },
 		{ href: resolve('/admin/tcs'), label: 'Terms & conditions', icon: 'la-file-contract' }

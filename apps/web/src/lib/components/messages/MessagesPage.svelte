@@ -384,12 +384,22 @@
 							]}
 							onclick={() => openConversation(conversation.id)}
 						>
-							<span
-								class="flex size-10 shrink-0 items-center justify-center rounded-full bg-neutral
+							<div class="relative">
+								<span
+									class="flex size-10 shrink-0 items-center justify-center rounded-full bg-neutral
 									text-sm font-bold text-base-100"
-							>
-								{conversation.counterpart.name.charAt(0).toUpperCase()}
-							</span>
+								>
+									{conversation.counterpart.name.charAt(0).toUpperCase()}
+								</span>
+								{#if !conversation.awaitingMyResponse && conversation.unreadCount > 0}
+									<span
+										class="mt-1.5 inline-block rounded-pill bg-accent px-2 py-0.5 text-[10.5px]
+											font-bold text-accent-content absolute -bottom-1 -right-1"
+									>
+										{conversation.unreadCount}
+									</span>
+								{/if}
+							</div>
 							<span class="min-w-0 flex-1">
 								<span class="flex items-baseline gap-2">
 									<span
@@ -420,13 +430,6 @@
 											text-[10.5px] font-semibold text-warning"
 									>
 										New reach-out
-									</span>
-								{:else if conversation.unreadCount > 0}
-									<span
-										class="mt-1.5 inline-block rounded-pill bg-accent px-2 py-0.5 text-[10.5px]
-											font-bold text-accent-content"
-									>
-										{conversation.unreadCount}
 									</span>
 								{/if}
 							</span>

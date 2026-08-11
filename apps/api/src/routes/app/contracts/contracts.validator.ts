@@ -45,7 +45,7 @@ export const contractTermsSchema = Schema.Struct({
     Schema.Struct({
       serviceId: Schema.UUID,
       rateCents: Schema.Int.pipe(Schema.positive(), Schema.lessThanOrEqualTo(1_000_000)),
-      hoursPerWeek: Schema.Number.pipe(Schema.greaterThan(0), Schema.lessThanOrEqualTo(100)),
+      hoursPerWeek: Schema.Number.pipe(Schema.greaterThan(0), Schema.lessThanOrEqualTo(50)),
       expectations: Schema.Trim.pipe(Schema.maxLength(2000))
     })
   ).pipe(

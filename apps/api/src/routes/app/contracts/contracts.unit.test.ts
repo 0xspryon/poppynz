@@ -566,12 +566,12 @@ describe('PUT /contracts/:id/terms', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'UnknownContractServiceError' });
   });
 
-  it('floors rates at the listed rate and names the offending rows', async () => {
+  it('floors rates at half the listed rate and names the offending rows', async () => {
     const exit = await Effect.runPromiseExit(
       saveTermsRouteProgram(
         makeContext({
           params: { id: CONTRACT_ID },
-          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 2000 }] }
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 1249 }] }
         }),
         new Headers()
       ).pipe(
@@ -581,6 +581,28 @@ describe('PUT /contracts/:id/terms', () => {
     expect(getFailure(exit)).toMatchObject({
       _tag: 'RateBelowListedError',
       violations: [{ serviceId: SERVICE_ID, listedRateCents: 2500 }]
+    });
+  });
+
+  it('accepts a rate at exactly half the listed rate', async () => {
+    const updates: Array<any> = [];
+    const layer = makeLayer({
+      contractById: baseContract(),
+      versions: [draftVersion()],
+      onUpdateTerms: (versionId, input) => updates.push([versionId, input])
+    });
+    const result = await Effect.runPromise(
+      saveTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 1250 }] }
+        }),
+        new Headers()
+      ).pipe(Effect.provide(layer))
+    );
+    expect(result).toEqual({ id: CONTRACT_ID, version: 1 });
+    expect(updates[0][1]).toMatchObject({
+      services: [{ serviceId: SERVICE_ID, listedRateCents: 2500, rateCents: 1250 }]
     });
   });
 
@@ -733,15 +755,16 @@ describe('POST /contracts/:id/send', () => {
           makeLayer({
             contractById: baseContract(),
             versions: [draftVersion()],
-            // Provider raised their rate above the drafted 2600 since drafting.
-            offered: [offeredService({ hourlyRateCents: 3000 })]
+            // Provider raised their rate enough that the drafted 2600 is now
+            // below the half-the-listing floor (ceil(6000 / 2) = 3000).
+            offered: [offeredService({ hourlyRateCents: 6000 })]
           })
         )
       )
     );
     expect(getFailure(exit)).toMatchObject({
       _tag: 'RateBelowListedError',
-      violations: [{ serviceId: SERVICE_ID, listedRateCents: 3000 }]
+      violations: [{ serviceId: SERVICE_ID, listedRateCents: 6000 }]
     });
   });
 
@@ -1252,12 +1275,12 @@ describe('POST /contracts/:id/amendments', () => {
     ]);
   });
 
-  it("still floors a provider's own amendment at their listed rate", async () => {
+  it("still floors a provider's own amendment at half their listed rate", async () => {
     const exit = await Effect.runPromiseExit(
       amendContractRouteProgram(
         makeContext({
           params: { id: CONTRACT_ID },
-          body: { ...amendmentBody, services: [{ ...amendmentBody.services[0], rateCents: 2000 }] }
+          body: { ...amendmentBody, services: [{ ...amendmentBody.services[0], rateCents: 1249 }] }
         }),
         new Headers()
       ).pipe(

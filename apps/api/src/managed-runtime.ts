@@ -18,7 +18,8 @@ import {
   ReferralRepoDefault,
   UserDirectoryRepoDefault,
   UserProfileRepoDefault,
-  UserRepoDefault
+  UserRepoDefault,
+  UserSearchRepoDefault
 } from '@repo/db';
 import { GooglePlacesLive } from '@repo/google';
 import { NotificationHubLive } from '@repo/notify';
@@ -51,6 +52,7 @@ export const AppLive = Layer.mergeAll(
   FamilySearchRepoDefault,
   ReferralRepoDefault,
   UserDirectoryRepoDefault,
+  UserSearchRepoDefault,
   ConversationRepoDefault,
   ContractRepoDefault,
   NotificationHubLive,

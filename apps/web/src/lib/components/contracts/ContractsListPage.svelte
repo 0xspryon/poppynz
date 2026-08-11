@@ -100,8 +100,7 @@
 	const visible = $derived(contracts.filter(matchesFilter));
 
 	const chipFor = (contract: ContractSummary): { status: ChipStatus; label?: string } => {
-		if (contract.awaitingYou && !contract.pendingAmendment) return { status: 'awaiting-you' };
-		if (contract.pendingAmendment) return { status: 'proposed', label: 'Amendment pending' };
+		if (contract.awaitingYou) return { status: 'awaiting-you' };
 		switch (contract.status) {
 			case 'changes_requested':
 				return { status: 'changes-requested' };

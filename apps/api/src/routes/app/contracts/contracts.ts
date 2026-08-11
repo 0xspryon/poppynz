@@ -2,7 +2,6 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../../../app-env';
 import {
   acceptContractHandler,
-  amendContractHandler,
   contractsBadgeCountHandler,
   createContractHandler,
   declineContractHandler,
@@ -29,6 +28,5 @@ export const contractsRoute = new Hono<HonoEnv>()
   .post('/:id/accept', (c) => acceptContractHandler(c))
   .post('/:id/decline', (c) => declineContractHandler(c))
   .post('/:id/request-changes', (c) => requestChangesHandler(c))
-  .post('/:id/amendments', (c) => amendContractHandler(c))
   .post('/:id/end', (c) => endContractHandler(c))
   .post('/:id/seen', (c) => markContractSeenHandler(c));

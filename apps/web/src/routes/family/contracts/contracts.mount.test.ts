@@ -20,7 +20,6 @@ const freshList = () => ({
 			conversationId: 'conversation-1',
 			status: 'proposed' as const,
 			awaitingYou: false,
-			pendingAmendment: false,
 			hasNews: false,
 			counterpart: {
 				userId: 'provider-1',

@@ -7,6 +7,7 @@ import {
   UserRepo,
   type Contract,
   type ContractServiceItem,
+  type ContractSession,
   type ContractVersion,
   type ContractWithContext
 } from '@repo/db';
@@ -72,7 +73,7 @@ const minAllowedRateCents = (listedRateCents: number) => Math.ceil(listedRateCen
 export class EmptyContractTermsError extends Data.TaggedError('EmptyContractTermsError')<{}> {}
 
 /** The action doesn't apply to the contract's current state (double decide,
- * send without a draft, amend with a pending proposal, …). */
+ * send without a draft, …). */
 export class ContractStateError extends Data.TaggedError('ContractStateError')<{}> {}
 
 /** The caller is a participant but the wrong side for this action. */
@@ -186,10 +187,46 @@ const latestDecidedOf = (versions: Array<ContractVersion>) =>
         version.decidedAt !== null
     ) ?? null;
 
-export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
-  Math.round(services.reduce((total, item) => total + item.rateCents * item.hoursPerWeek, 0));
+// Hours are never stored — they derive from the proposed sessions, per
+// service, so the schedule and the money math can't disagree.
+const sessionMinutes = (session: ContractSession) => session.endMinutes - session.startMinutes;
 
-const todayIsoDate = () => new Date().toISOString().slice(0, 10);
+export const serviceWeeklyMinutes = (item: ContractServiceItem) =>
+  item.sessions.reduce((total, session) => total + sessionMinutes(session), 0);
+
+/** Per-service weekly cost, rounded to whole cents per service (the figure
+ * each line item displays), then summed for the estimate. */
+export const serviceWeeklyCents = (item: ContractServiceItem) =>
+  Math.round((item.rateCents * serviceWeeklyMinutes(item)) / 60);
+
+export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
+  services.reduce((total, item) => total + serviceWeeklyCents(item), 0);
+
+/** All contract dates (session times, starts/ends, "today") are NZ wall-clock
+ * — Pacific/Auckland — regardless of where the server runs. en-CA formats as
+ * YYYY-MM-DD. */
+const nzIsoDate = (at: Date) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland' }).format(at);
+
+const todayIsoDate = () => nzIsoDate(new Date());
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Last working day of the notice flow — derived, never stored. */
+const noticeEndsOn = (contract: Contract) =>
+  contract.endNoticedAt !== null
+    ? nzIsoDate(new Date(contract.endNoticedAt.getTime() + END_NOTICE_DAYS * DAY_MS))
+    : null;
+
+/** The date the contract actually stops working: the earlier of the notice
+ * flow's last working day and the negotiated end-date term (if either). */
+export const effectiveEndsOn = (contract: Contract, accepted: ContractVersion | null) => {
+  const candidates = [noticeEndsOn(contract), accepted?.endsOn ?? null].filter(
+    (value): value is string => value !== null
+  );
+  if (candidates.length === 0) return null;
+  return candidates.sort()[0];
+};
 
 export type PresentedContractStatus =
   | 'draft'
@@ -201,20 +238,23 @@ export type PresentedContractStatus =
   | 'ending'
   | 'ended';
 
-/** Read-time states: an "ending" contract past its last working day presents
- * as ended, and an undedecided pre-active proposal past the expiry window
- * presents as expired — neither is ever written back. */
+/** Read-time states: a running contract past its effective end date (notice
+ * period or the negotiated end-date term) presents as ended, and an undecided
+ * pre-active proposal past the expiry window presents as expired — neither is
+ * ever written back. */
 export const presentedContractStatus = (
   contract: Contract,
   pending: ContractVersion | null,
+  accepted: ContractVersion | null,
   cutoff: Date
 ): PresentedContractStatus => {
-  // Strictly past: endsOn is the LAST WORKING day — the contract is still
-  // ending (payments running) for the whole of it.
+  // Strictly past: the effective end date is the LAST WORKING day — the
+  // contract is still running (payments running) for the whole of it.
+  const endsOn = effectiveEndsOn(contract, accepted);
   if (
-    contract.status === 'ending' &&
-    contract.endsOn !== null &&
-    contract.endsOn < todayIsoDate()
+    (contract.status === 'ending' || contract.status === 'active') &&
+    endsOn !== null &&
+    endsOn < todayIsoDate()
   ) {
     return 'ended';
   }
@@ -268,8 +308,8 @@ const toTermsResponse = (version: ContractVersion, viewerUserId: string, expiryD
   status: version.status,
   proposedByMe: version.proposedByUserId === viewerUserId,
   services: version.services,
-  schedule: version.schedule,
   startsOn: version.startsOn,
+  endsOn: version.endsOn,
   weeklyEstimateCents: weeklyEstimateCents(version.services),
   currency: version.services[0]?.currency ?? 'CAD',
   sentAt: version.sentAt?.toISOString() ?? null,
@@ -305,19 +345,17 @@ export const toContractListItem = (
   return {
     id: row.id,
     conversationId: row.conversationId,
-    status: presentedContractStatus(row, pending, cutoff),
+    status: presentedContractStatus(row, pending, accepted, cutoff),
     awaitingYou:
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
       !isExpired(pending, cutoff),
-    pendingAmendment:
-      (row.status === 'active' || row.status === 'ending') && pending?.status === 'proposed',
     hasNews: hasNewsFor(row, viewerUserId),
     counterpart: counterpartResponse(row, viewerUserId),
     serviceNames: (termsSource?.services ?? []).map((service) => service.name),
     weeklyEstimateCents: termsSource !== null ? weeklyEstimateCents(termsSource.services) : null,
     currency: termsSource?.services[0]?.currency ?? 'CAD',
-    endsOn: row.endsOn,
+    endsOn: effectiveEndsOn(row, accepted),
     updatedAt: row.updatedAt.toISOString(),
     createdAt: row.createdAt.toISOString()
   };
@@ -339,15 +377,12 @@ export const toThreadContractSummary = (
   const termsSource = accepted ?? pendingOf(visible) ?? visible[visible.length - 1] ?? null;
   return {
     id: contract.id,
-    status: presentedContractStatus(contract, pending, cutoff),
+    status: presentedContractStatus(contract, pending, accepted, cutoff),
     awaitingYou:
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
       !isExpired(pending, cutoff),
-    pendingAmendment:
-      (contract.status === 'active' || contract.status === 'ending') &&
-      pending?.status === 'proposed',
-    endsOn: contract.endsOn,
+    endsOn: effectiveEndsOn(contract, accepted),
     weeklyEstimateCents: termsSource ? weeklyEstimateCents(termsSource.services) : null
   };
 };
@@ -407,7 +442,8 @@ const snapshotTerms = (providerUserId: string, input: ContractTermsInput) =>
         listedRateCents: service.hourlyRateCents,
         rateCents: item.rateCents,
         currency: service.currency,
-        hoursPerWeek: item.hoursPerWeek,
+        // Copy out of the validated input so the snapshot owns its rows.
+        sessions: item.sessions.map((session) => ({ ...session })),
         expectations: item.expectations
       });
     }
@@ -512,8 +548,8 @@ export const saveTermsProgram = (
 
     const terms = {
       services,
-      schedule: input.schedule ?? null,
-      startsOn: input.startsOn ?? null
+      startsOn: input.startsOn ?? null,
+      endsOn: input.endsOn ?? null
     };
 
     if (pending !== null) {
@@ -589,8 +625,8 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     yield* contractRepo
       .updateVersionTerms(pending.id, {
         services: refreshed,
-        schedule: pending.schedule,
-        startsOn: pending.startsOn
+        startsOn: pending.startsOn,
+        endsOn: pending.endsOn
       })
       .pipe((errors) => mapContractRepoError(errors));
     const sent = yield* contractRepo
@@ -605,8 +641,7 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
       type: 'contract.proposed',
       payload: {
         contractId,
-        counterpartName: displayName(senderProfile, viewer.name),
-        isAmendment: false
+        counterpartName: displayName(senderProfile, viewer.name)
       }
     });
 
@@ -621,24 +656,6 @@ export const withdrawContractProgram = (userAndSession: UserAndSession, contract
     const { versions, pending } = yield* loadPendingVersion(contractId);
     if (pending === null || pending.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
-    }
-
-    // Retracting a pending amendment: proposer-only (either side may have
-    // proposed it), terminal — an active contract has no draft to fall back
-    // to. Without this, an ignored amendment past its expiry would block
-    // amending forever (accept 409s, and only the counterpart could decline).
-    if (contract.status === 'active' || contract.status === 'ending') {
-      if (pending.proposedByUserId !== viewer.id) {
-        return yield* Effect.fail(new NotContractActorError());
-      }
-      const retracted = yield* contractRepo
-        .withdrawAmendment(pending.id)
-        .pipe((errors) => mapContractRepoError(errors));
-      if (!retracted) {
-        return yield* Effect.fail(new ContractStateError());
-      }
-      // Deliberately no notification, mirroring the pre-active withdraw.
-      return { id: contract.id, status: contract.status };
     }
 
     if (sideOf(contract, viewer.id) !== 'family') {
@@ -677,8 +694,7 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     if (pending.proposedByUserId === viewer.id) {
       return yield* Effect.fail(new NotContractActorError());
     }
-    const isAmendment = contract.status === 'active' || contract.status === 'ending';
-    if (!isAmendment && contract.status !== 'proposed') {
+    if (contract.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
     const { cutoff } = yield* contractProposalContext;
@@ -689,7 +705,7 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     // Supersede + accept + activate run in one transaction — a concurrent
     // decline can never leave the contract without an accepted version.
     const accepted = yield* contractRepo
-      .acceptPendingVersion(contractId, pending.id, { activate: !isAmendment })
+      .acceptPendingVersion(contractId, pending.id, { activate: true })
       .pipe((errors) => mapContractRepoError(errors));
     if (!accepted) {
       return yield* Effect.fail(new ContractStateError());
@@ -700,12 +716,11 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
       type: 'contract.accepted',
       payload: {
         contractId,
-        counterpartName: displayName(accepterProfile, viewer.name),
-        isAmendment
+        counterpartName: displayName(accepterProfile, viewer.name)
       }
     });
 
-    return { id: contract.id, status: isAmendment ? contract.status : ('active' as const) };
+    return { id: contract.id, status: 'active' as const };
   });
 
 export const declineContractProgram = (
@@ -724,20 +739,18 @@ export const declineContractProgram = (
     if (pending.proposedByUserId === viewer.id) {
       return yield* Effect.fail(new NotContractActorError());
     }
-    const isAmendment = contract.status === 'active' || contract.status === 'ending';
-    if (!isAmendment && contract.status !== 'proposed') {
+    if (contract.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
 
     const reason = input.reason?.trim() ? input.reason.trim() : null;
-    // Declining an amendment leaves the contract running on the accepted
-    // terms; declining the pre-active proposal closes the negotiation (the
-    // family may still revise and re-send).
+    // Declining closes the negotiation; the family may still revise and
+    // re-send.
     const declined = yield* contractRepo
       .decidePendingVersion(contractId, pending.id, {
         status: 'declined',
         declineReason: reason,
-        contractStatus: isAmendment ? null : 'declined'
+        contractStatus: 'declined'
       })
       .pipe((errors) => mapContractRepoError(errors));
     if (!declined) {
@@ -750,12 +763,11 @@ export const declineContractProgram = (
       payload: {
         contractId,
         counterpartName: displayName(declinerProfile, viewer.name),
-        reason,
-        isAmendment
+        reason
       }
     });
 
-    return { id: contract.id, status: isAmendment ? contract.status : ('declined' as const) };
+    return { id: contract.id, status: 'declined' as const };
   });
 
 export const requestChangesProgram = (userAndSession: UserAndSession, contractId: string) =>
@@ -766,8 +778,8 @@ export const requestChangesProgram = (userAndSession: UserAndSession, contractId
     if (sideOf(contract, viewer.id) !== 'provider') {
       return yield* Effect.fail(new NotContractActorError());
     }
-    // Pre-active only: amendment receivers accept or decline — "request
-    // changes" is the provider steering the initial negotiation back to chat.
+    // "Request changes" is the provider steering the negotiation back to chat
+    // — the family revises and re-sends the next version.
     if (contract.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
@@ -803,58 +815,6 @@ export const requestChangesProgram = (userAndSession: UserAndSession, contractId
     };
   });
 
-export const amendContractProgram = (
-  userAndSession: UserAndSession,
-  contractId: string,
-  input: ContractTermsInput
-) =>
-  Effect.gen(function* () {
-    const contractRepo = yield* ContractRepo;
-    const viewer = userAndSession.user;
-    const contract = yield* loadParticipantContract(contractId, viewer.id);
-    if (contract.status !== 'active') {
-      return yield* Effect.fail(new ContractStateError());
-    }
-    const { versions, pending } = yield* loadPendingVersion(contractId);
-    if (pending !== null) {
-      return yield* Effect.fail(new ContractStateError());
-    }
-    if (input.services.length === 0) {
-      return yield* Effect.fail(new EmptyContractTermsError());
-    }
-    // The floor binds both proposers — a provider amending their own contract
-    // still can't undercut their public listing.
-    const services = yield* snapshotTerms(contract.providerUserId, input);
-
-    const nextVersion = (versions[versions.length - 1]?.version ?? 0) + 1;
-    const created = yield* contractRepo
-      .createVersion({
-        contractId,
-        version: nextVersion,
-        proposedByUserId: viewer.id,
-        status: 'proposed',
-        services,
-        schedule: input.schedule ?? null,
-        startsOn: input.startsOn ?? null,
-        sentAt: new Date()
-      })
-      .pipe((errors) => mapVersionInsertError(errors));
-
-    const proposerProfile = yield* loadProfileOrNull(viewer.id);
-    const recipientUserId =
-      contract.familyUserId === viewer.id ? contract.providerUserId : contract.familyUserId;
-    yield* publishNotificationBestEffort(recipientUserId, {
-      type: 'contract.proposed',
-      payload: {
-        contractId,
-        counterpartName: displayName(proposerProfile, viewer.name),
-        isAmendment: true
-      }
-    });
-
-    return { id: contract.id, version: created.version };
-  });
-
 export const endContractProgram = (
   userAndSession: UserAndSession,
   contractId: string,
@@ -865,16 +825,15 @@ export const endContractProgram = (
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
 
-    const endsOn = new Date(Date.now() + END_NOTICE_DAYS * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10);
     const note = input.note?.trim() ? input.note.trim() : null;
     const updated = yield* contractRepo
-      .setEnding(contractId, { endsOn, endedByUserId: viewer.id, endNote: note })
+      .setEnding(contractId, { endedByUserId: viewer.id, endNote: note })
       .pipe((errors) => mapContractRepoError(errors));
     if (!updated) {
       return yield* Effect.fail(new ContractStateError());
     }
+    // Derived, not stored — the same computation every read applies.
+    const endsOn = noticeEndsOn(updated) ?? todayIsoDate();
 
     const enderProfile = yield* loadProfileOrNull(viewer.id);
     const recipientUserId =
@@ -946,7 +905,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
     const viewerSide = sideOf(row, viewer.id);
     const pending = pendingOf(row.versions);
     const accepted = acceptedOf(row.versions);
-    const presented = presentedContractStatus(row, pending, cutoff);
+    const presented = presentedContractStatus(row, pending, accepted, cutoff);
 
     const conversation = yield* conversationRepo
       .findById(row.conversationId)
@@ -976,9 +935,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
       row.status === 'draft' || row.status === 'declined' || row.status === 'changes_requested';
     const isReceiverOfPending =
       pending?.status === 'proposed' && pending.proposedByUserId !== viewer.id;
-    const decidable =
-      isReceiverOfPending &&
-      (row.status === 'proposed' || row.status === 'active' || row.status === 'ending');
+    const decidable = isReceiverOfPending && row.status === 'proposed';
 
     // Draft versions are visible only to their proposer (belt and braces — a
     // provider already 404s on a draft-only contract).
@@ -1017,24 +974,20 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           decidedAt: version.decidedAt?.toISOString() ?? null,
           declineReason: version.declineReason
         })),
-        endsOn: row.endsOn,
+        endsOn: effectiveEndsOn(row, accepted),
         endedByMe: row.endedByUserId === viewer.id,
         endNote: row.endNote,
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,
         actions: {
           canEditTerms: isFamily && preActiveEditable,
           canSend: isFamily && preActiveEditable && pending?.status === 'draft',
-          canWithdraw:
-            (isFamily && row.status === 'proposed') ||
-            // Proposer of a pending amendment may retract it (terminal).
-            ((row.status === 'active' || row.status === 'ending') &&
-              pending?.status === 'proposed' &&
-              pending.proposedByUserId === viewer.id),
+          canWithdraw: isFamily && row.status === 'proposed',
           canAccept: decidable && !isExpired(pending, cutoff),
           canDecline: decidable,
           canRequestChanges: !isFamily && row.status === 'proposed' && isReceiverOfPending,
-          canAmend: row.status === 'active' && pending === null,
-          canEnd: row.status === 'active'
+          // Presented, not stored: a contract already past its negotiated end
+          // date can't be given notice.
+          canEnd: presented === 'active'
         },
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString()
@@ -1148,18 +1101,6 @@ export const requestChangesRouteProgram = (c: HonoContext<HonoEnv>, headers: Hea
     return yield* requestChangesProgram(userAndSession, contractId);
   });
 
-export const amendContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
-  Effect.gen(function* () {
-    const contractId = yield* validateContractId(c.req.param('id'));
-    const rawBody = yield* parseJsonBody(c, contractTermsJsonError);
-    const input = yield* validateContractTermsInput(rawBody);
-    const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
-      authenticated
-    );
-    return yield* amendContractProgram(userAndSession, contractId, input);
-  });
-
 export const endContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const contractId = yield* validateContractId(c.req.param('id'));
@@ -1193,7 +1134,6 @@ export type ContractRouteError =
   | Effect.Effect.Error<ReturnType<typeof acceptContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof declineContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof requestChangesRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof amendContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof endContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof markContractSeenRouteProgram>>;
 
@@ -1396,12 +1336,6 @@ export async function declineContractHandler(c: HonoContext<HonoEnv>) {
 export async function requestChangesHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(requestChangesRouteProgram(c, c.req.raw.headers));
-  return exitToResponse(c, exit);
-}
-
-export async function amendContractHandler(c: HonoContext<HonoEnv>) {
-  const runtime = c.get('runtime');
-  const exit = await runtime.runPromiseExit(amendContractRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 

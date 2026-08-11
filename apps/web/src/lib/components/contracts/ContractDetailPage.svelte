@@ -1,16 +1,16 @@
 <script lang="ts">
-	/** Shared contract detail for both roles (design 16d/16f/16h/16i/16j).
-	 * Rendering is driven by the server-computed action flags — the receiver of
-	 * a pending proposal decides (Accept & sign / Request changes / Decline),
-	 * the family sender edits/withdraws, the active contract offers amendments
-	 * and 2-weeks-notice ending. Viewing marks the contract seen, which clears
-	 * the sidebar badge. */
+	/** Shared contract detail for both roles (Flow F). Rendering is driven by
+	 * the server-computed action flags — the receiver of a pending proposal
+	 * decides (Accept & sign / Request changes / Decline), the family sender
+	 * edits/withdraws, the active contract offers 2-weeks-notice ending. Signed
+	 * contracts are never amended — they run out or are ended, and a new
+	 * contract is created. Viewing marks the contract seen, which clears the
+	 * sidebar badge. */
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import {
 		acceptContract,
-		amendContract,
 		declineContract,
 		endContract,
 		getContract,
@@ -23,14 +23,16 @@
 		type ContractTermsInput
 	} from '$lib/api/contracts';
 	import { getProvider } from '$lib/api/providers';
-	import { listServicesOffered } from '$lib/api/services-offered';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import ContractTermsEditor, {
 		type EditorService
 	} from '$lib/components/contracts/ContractTermsEditor.svelte';
 	import ContractTermsView from '$lib/components/contracts/ContractTermsView.svelte';
+	import WeekAtAGlance from '$lib/components/contracts/WeekAtAGlance.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
+	import { minutesToHours, weeklyMinutes } from '$lib/contract-sessions';
+	import { centsToDollars } from '$lib/money';
 	import { formatDate, formatDateTime, formatDateWithWeekday } from '$lib/date';
 	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
@@ -52,7 +54,6 @@
 	let editorServicesError = $state(false);
 
 	let busy = $state(false);
-	let amendmentOpen = $state(false);
 	let acceptConfirmOpen = $state(false);
 	let withdrawConfirmOpen = $state(false);
 	let requestChangesConfirmOpen = $state(false);
@@ -109,7 +110,6 @@
 		if (idChanged) {
 			// Never render contract A (or act on its buttons) under B's URL.
 			contract = null;
-			amendmentOpen = false;
 			acceptConfirmOpen = false;
 			withdrawConfirmOpen = false;
 			requestChangesConfirmOpen = false;
@@ -142,11 +142,9 @@
 		};
 	});
 
-	// The editor's selectable set: the provider's current listing. Families read
-	// the counterpart's public profile; a provider amending reads their own.
-	const editorNeeded = $derived(
-		contract !== null && (contract.actions.canEditTerms || amendmentOpen)
-	);
+	// The editor's selectable set: the provider's current listing, read from
+	// the counterpart's public profile.
+	const editorNeeded = $derived(contract !== null && contract.actions.canEditTerms);
 	let loadedServicesFor: string | null = null;
 	$effect(() => {
 		if (!editorNeeded || contract === null) return;
@@ -172,15 +170,9 @@
 			loadedServicesFor = null;
 			editorServicesError = true;
 		};
-		if (role === 'family') {
-			void getProvider(contract.counterpart.userId).then((result) =>
-				result.ok ? applyServices(result.data.services) : applyFailure()
-			);
-		} else {
-			void listServicesOffered().then((result) =>
-				result.ok ? applyServices(result.data.services) : applyFailure()
-			);
-		}
+		void getProvider(contract.counterpart.userId).then((result) =>
+			result.ok ? applyServices(result.data.services) : applyFailure()
+		);
 	});
 
 	const termsErrorToast = (error: { code: string; message: string }) => {
@@ -252,20 +244,6 @@
 		}
 	}
 
-	async function handleAmend(terms: ContractTermsInput) {
-		if (busy) return;
-		busy = true;
-		const result = await amendContract(contractId, terms);
-		busy = false;
-		if (result.ok) {
-			amendmentOpen = false;
-			toast.success(`${firstName} was asked to review the new terms.`, { title: 'Amendment sent' });
-			void refresh(contractId);
-		} else {
-			termsErrorToast(result.error);
-		}
-	}
-
 	async function handleWithdraw() {
 		if (busy) return;
 		withdrawConfirmOpen = false;
@@ -273,11 +251,7 @@
 		const result = await withdrawContract(contractId);
 		busy = false;
 		if (result.ok) {
-			toast.info(
-				isAmendmentContext
-					? 'Amendment withdrawn — the current terms stay in effect.'
-					: 'Proposal withdrawn — it returned to a draft only you can see.'
-			);
+			toast.info('Proposal withdrawn — it returned to a draft only you can see.');
 			void refresh(contractId);
 		} else {
 			actionErrorToast(result.error, 'Withdrawing failed. Please try again.');
@@ -304,10 +278,7 @@
 		const result = await acceptContract(contractId);
 		busy = false;
 		if (result.ok) {
-			toast.success(
-				isAmendmentContext ? 'The new terms are now in effect.' : 'Contact details are now shared.',
-				{ title: isAmendmentContext ? 'Amendment accepted' : 'Contract active' }
-			);
+			toast.success('Contact details are now shared.', { title: 'Contract active' });
 			void refresh(contractId);
 		} else {
 			actionErrorToast(result.error, 'Accepting failed. Please try again.');
@@ -371,14 +342,6 @@
 			: ''
 	);
 
-	const isAmendmentContext = $derived(
-		contract !== null &&
-			(contract.status === 'active' ||
-				contract.status === 'ending' ||
-				contract.status === 'ended') &&
-			contract.pendingVersion !== null
-	);
-
 	/** The latest version that was actually declined — `latestVersion` may
 	 * already be the family's fresh revision draft, which never carries the
 	 * decline reason. */
@@ -396,7 +359,6 @@
 		) {
 			return { status: 'awaiting-you' };
 		}
-		if (isAmendmentContext) return { status: 'proposed', label: 'Amendment pending' };
 		if (contract.status === 'changes_requested') return { status: 'changes-requested' };
 		return { status: contract.status as ChipStatus };
 	});
@@ -440,11 +402,36 @@
 	 * contracts, the dimmed declined terms). */
 	const displayTerms = $derived.by(() => {
 		if (!contract) return null;
-		if (isAmendmentContext) return contract.acceptedVersion;
 		return contract.acceptedVersion ?? contract.pendingVersion ?? contract.latestVersion;
 	});
 
 	const showEditor = $derived(contract !== null && contract.actions.canEditTerms);
+
+	/** F5's clash-checking tool: the combined week strip renders wherever the
+	 * terms are read-only and there is at least one session to show. */
+	const weekGlanceServices = $derived(
+		displayTerms !== null && !showEditor
+			? displayTerms.services.filter((service) => service.sessions.length > 0)
+			: []
+	);
+
+	const reviewTotals = $derived.by(() => {
+		const pending = contract?.pendingVersion;
+		if (!pending) return null;
+		const sessionCount = pending.services.reduce(
+			(total, service) => total + service.sessions.length,
+			0
+		);
+		const minutes = pending.services.reduce(
+			(total, service) => total + weeklyMinutes(service.sessions),
+			0
+		);
+		return {
+			sessions: sessionCount,
+			hours: minutesToHours(minutes),
+			weekly: centsToDollars(pending.weeklyEstimateCents)
+		};
+	});
 	const versionsNewestFirst = $derived([...(contract?.versions ?? [])].reverse());
 
 	const historyLine = (version: NonNullable<typeof contract>['versions'][number]) => {
@@ -575,18 +562,19 @@
 					</p>
 				</div>
 			{/if}
-		{:else if contract.status === 'active' && !isAmendmentContext}
+		{:else if contract.status === 'active'}
 			<div
 				class="flex items-start gap-2.5 rounded-lg border border-success/30 bg-success-content px-4 py-3"
 			>
 				<i class="las la-check-circle mt-0.5 shrink-0 text-success" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-success">
 					{#if contract.viewerSide === 'family'}
-						Contact details are now shared and weekly payments run on Poppynz. Either side can
-						propose an amendment — it becomes the next version of this contract.
+						Contact details are now shared and weekly payments run on Poppynz.
 					{:else}
-						Contact details are now shared and you get paid weekly on Poppynz. Either side can
-						propose an amendment — it becomes the next version of this contract.
+						Contact details are now shared and you get paid weekly on Poppynz.
+					{/if}
+					{#if contract.endsOn}
+						The contract runs until <strong>{formatDateWithWeekday(contract.endsOn)}</strong>.
 					{/if}
 				</p>
 			</div>
@@ -596,9 +584,13 @@
 			>
 				<i class="las la-clock mt-0.5 shrink-0 text-error" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-error">
-					{contract.endedByMe ? 'You' : firstName} gave 2 weeks' notice
 					{#if contract.endNoticedAt}
-						on {formatDate(contract.endNoticedAt)}{/if}.
+						{contract.endedByMe ? 'You' : firstName} gave 2 weeks' notice on {formatDate(
+							contract.endNoticedAt
+						)}.
+					{:else}
+						This contract {contract.status === 'ended' ? 'reached' : 'reaches'} its agreed end date.
+					{/if}
 					{#if contract.endsOn}
 						{contract.status === 'ended' ? 'The last working day was' : 'The last working day is'}
 						<strong>{formatDateWithWeekday(contract.endsOn)}</strong> — payments run until then and stop
@@ -613,76 +605,7 @@
 
 		<div class="flex flex-col gap-4 lg:grid lg:grid-cols-[1fr_300px] lg:items-start">
 			<div class="flex min-w-0 flex-col gap-4">
-				{#if amendmentOpen}
-					<!-- The open editor outranks everything: a counterpart's amendment
-				     arriving via realtime must not silently unmount typed input —
-				     sending will 409 and the toast explains. -->
-					<ContractTermsEditor
-						providerServices={editorServices}
-						initial={contract.acceptedVersion}
-						mode="amendment"
-						listingLabel={contract.viewerSide === 'family'
-							? `${firstName}'s listing`
-							: 'your listing'}
-						counterpartFirstName={firstName}
-						{busy}
-						onsend={handleAmend}
-						oncancel={() => (amendmentOpen = false)}
-					/>
-				{:else if isAmendmentContext && contract.pendingVersion}
-					{#if displayTerms}
-						<ContractTermsView terms={displayTerms} heading="Current terms" />
-					{/if}
-					<div class="rounded-xl border-[1.5px] border-primary/50 bg-base-100">
-						<ContractTermsView
-							terms={contract.pendingVersion}
-							heading={`Proposed amendment — v${contract.pendingVersion.version}`}
-						/>
-						<div class="px-5 pb-4">
-							{#if contract.actions.canAccept || contract.actions.canDecline}
-								<div class="flex items-center gap-2.5">
-									{#if contract.actions.canAccept}
-										<button
-											type="button"
-											class="btn btn-primary btn-sm"
-											disabled={busy}
-											onclick={() => (acceptConfirmOpen = true)}
-										>
-											Accept new terms
-										</button>
-									{/if}
-									{#if contract.actions.canDecline}
-										<button
-											type="button"
-											class="btn btn-ghost btn-sm text-error"
-											disabled={busy}
-											onclick={() => (declineOpen = true)}
-										>
-											Decline
-										</button>
-									{/if}
-								</div>
-								<p class="mt-1.5 text-[11px] text-outline">
-									Declining keeps the current terms in effect.
-								</p>
-							{:else}
-								<p class="text-[12px] text-base-content-muted">
-									Waiting for {firstName} to review the new terms — the current ones stay in effect meanwhile.
-								</p>
-								{#if contract.actions.canWithdraw}
-									<button
-										type="button"
-										class="btn mt-2 btn-ghost btn-sm text-error"
-										disabled={busy}
-										onclick={() => (withdrawConfirmOpen = true)}
-									>
-										Withdraw amendment
-									</button>
-								{/if}
-							{/if}
-						</div>
-					</div>
-				{:else if showEditor}
+				{#if showEditor}
 					{#if editorServicesError}
 						<p class="rounded-lg bg-base-300 px-4 py-3 text-[12.5px] text-neutral" role="alert">
 							{firstName}'s services didn't load — the editor needs them to add line items. Reload
@@ -692,20 +615,23 @@
 					<ContractTermsEditor
 						providerServices={editorServices}
 						initial={contract.pendingVersion ?? contract.latestVersion}
-						mode="draft"
 						listingLabel={`${firstName}'s listing`}
 						counterpartFirstName={firstName}
+						{chatHref}
 						{busy}
 						onsave={handleSaveDraft}
 						onsend={handleSendTerms}
 					/>
 				{:else if displayTerms}
+					{#if weekGlanceServices.length > 0}
+						<WeekAtAGlance services={weekGlanceServices} />
+					{/if}
 					<ContractTermsView
 						terms={displayTerms}
 						dimmed={contract.status === 'declined' || contract.status === 'expired'}
 						heading={contract.status === 'declined'
 							? `Proposed terms — v${displayTerms.version}`
-							: 'Services & rates'}
+							: 'Services & sessions'}
 					/>
 				{/if}
 
@@ -737,45 +663,50 @@
 
 			<div class="flex flex-col gap-4">
 				{#if contract.actions.canAccept || contract.actions.canDecline || contract.actions.canRequestChanges}
-					{#if !isAmendmentContext}
-						<div class="flex flex-col gap-2.5 rounded-xl border border-card-border bg-base-100 p-4">
-							{#if contract.actions.canAccept}
-								<button
-									type="button"
-									class="btn w-full btn-primary"
-									disabled={busy}
-									onclick={() => (acceptConfirmOpen = true)}
-								>
-									Accept &amp; sign
-								</button>
-							{/if}
-							{#if contract.actions.canRequestChanges}
-								<button
-									type="button"
-									class="btn w-full btn-outline"
-									disabled={busy}
-									onclick={() => (requestChangesConfirmOpen = true)}
-								>
-									Request changes
-								</button>
-							{/if}
-							{#if contract.actions.canDecline}
-								<button
-									type="button"
-									class="btn w-full btn-ghost text-error"
-									disabled={busy}
-									onclick={() => (declineOpen = true)}
-								>
-									Decline
-								</button>
-							{/if}
+					<div class="flex flex-col gap-2.5 rounded-xl border border-card-border bg-base-100 p-4">
+						{#if contract.actions.canAccept}
+							<button
+								type="button"
+								class="btn w-full btn-primary"
+								disabled={busy}
+								onclick={() => (acceptConfirmOpen = true)}
+							>
+								Accept &amp; sign
+							</button>
+						{/if}
+						{#if contract.actions.canRequestChanges}
+							<button
+								type="button"
+								class="btn w-full btn-outline"
+								disabled={busy}
+								onclick={() => (requestChangesConfirmOpen = true)}
+							>
+								Request changes
+							</button>
+						{/if}
+						{#if contract.actions.canDecline}
+							<button
+								type="button"
+								class="btn w-full btn-ghost text-error"
+								disabled={busy}
+								onclick={() => (declineOpen = true)}
+							>
+								Decline
+							</button>
+						{/if}
+						{#if reviewTotals}
 							<p class="text-center text-[11px] leading-relaxed text-outline">
-								Request changes opens the chat with {firstName}
-								{#if contract.pendingVersion?.expiresAt}
-									· expires {formatDate(contract.pendingVersion.expiresAt)}{/if}
+								{reviewTotals.sessions} proposed {reviewTotals.sessions === 1
+									? 'session'
+									: 'sessions'} · {reviewTotals.hours} hrs/wk · ${reviewTotals.weekly}/wk
 							</p>
-						</div>
-					{/if}
+						{/if}
+						<p class="text-center text-[11px] leading-relaxed text-outline">
+							Request changes opens the chat with {firstName}
+							{#if contract.pendingVersion?.expiresAt}
+								· expires {formatDate(contract.pendingVersion.expiresAt)}{/if}
+						</p>
+					</div>
 				{/if}
 
 				{#if contract.actions.canWithdraw}
@@ -836,15 +767,6 @@
 				{/if}
 
 				<div class="flex flex-col gap-2">
-					{#if contract.actions.canAmend && !amendmentOpen}
-						<button
-							type="button"
-							class="btn w-full btn-outline btn-sm"
-							onclick={() => (amendmentOpen = true)}
-						>
-							Propose amendment
-						</button>
-					{/if}
 					{#if chatHref}
 						<a href={chatHref} class="btn w-full btn-outline btn-sm">Open chat with {firstName}</a>
 					{/if}
@@ -870,11 +792,9 @@
 
 <ConfirmDialog
 	open={acceptConfirmOpen}
-	title={isAmendmentContext ? 'Accept the new terms?' : 'Accept & sign this contract?'}
-	body={isAmendmentContext
-		? 'The new terms replace the current ones as the next version of this contract.'
-		: 'Signing activates the contract — contact details are shared and weekly payments are set up on Poppynz.'}
-	confirmLabel={isAmendmentContext ? 'Accept new terms' : 'Accept & sign'}
+	title="Accept & sign this contract?"
+	body="Signing activates the contract — contact details are shared and weekly payments are set up on Poppynz."
+	confirmLabel="Accept & sign"
 	confirmClass="btn-primary"
 	{busy}
 	onconfirm={handleAccept}
@@ -883,10 +803,8 @@
 
 <ConfirmDialog
 	open={withdrawConfirmOpen}
-	title={isAmendmentContext ? 'Withdraw this amendment?' : 'Withdraw this proposal?'}
-	body={isAmendmentContext
-		? `The current terms stay in effect — ${firstName} isn't notified.`
-		: `It returns to a draft only you can see — ${firstName} isn't notified.`}
+	title="Withdraw this proposal?"
+	body={`It returns to a draft only you can see — ${firstName} isn't notified.`}
 	confirmLabel="Withdraw"
 	{busy}
 	onconfirm={handleWithdraw}
@@ -907,13 +825,9 @@
 {#if declineOpen}
 	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Decline proposal">
 		<div class="modal-box max-w-md border border-card-border">
-			<h3 class="font-display text-xl font-bold text-base-content">
-				{isAmendmentContext ? 'Decline the new terms?' : 'Decline this proposal?'}
-			</h3>
+			<h3 class="font-display text-xl font-bold text-base-content">Decline this proposal?</h3>
 			<p class="py-3 text-sm text-base-content-muted">
-				{isAmendmentContext
-					? `The current terms stay in effect. ${firstName} is notified.`
-					: `${firstName} is notified, and your chat stays open — declining a contract never closes the conversation.`}
+				{`${firstName} is notified, and your chat stays open — declining a contract never closes the conversation.`}
 			</p>
 			<label
 				class="mb-1 block text-[11px] font-semibold tracking-[0.08em] text-outline uppercase"

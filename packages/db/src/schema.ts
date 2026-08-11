@@ -503,17 +503,30 @@ export const conversationMessage = appDb.table(
   ]
 );
 
+// One proposed weekly session. Times are wall-clock minutes from midnight in
+// New Zealand local time (Pacific/Auckland) — never UTC instants, so a
+// "3:30–6:00 pm" session stays 3:30–6:00 pm across DST changes.
+export type ContractSession = {
+  /** 0 = Monday … 6 = Sunday. */
+  weekday: number;
+  /** Minutes from midnight, 0..1439. */
+  startMinutes: number;
+  /** Minutes from midnight, startMinutes < endMinutes <= 1440. */
+  endMinutes: number;
+};
+
 // Snapshot of one provider service as agreed in a contract version, taken when
 // the line item is added so the terms keep rendering (and the rate floor stays
 // auditable) even if the underlying services_offered row is later renamed,
-// repriced or soft-deleted.
+// repriced or soft-deleted. Weekly hours are always derived from sessions —
+// they are never stored, so the two can't disagree.
 export type ContractServiceItem = {
   serviceId: string;
   name: string;
   listedRateCents: number;
   rateCents: number;
   currency: string;
-  hoursPerWeek: number;
+  sessions: Array<ContractSession>;
   expectations: string;
 };
 
@@ -539,9 +552,9 @@ export const contract = appDb.table(
       .notNull()
       .references(() => user.id, { onDelete: 'cascade' }),
     status: contractStatus('status').default('draft').notNull(),
-    // Ending with 2 weeks' notice: ends_on is the last working day; past it
-    // the contract presents as ended.
-    endsOn: date('ends_on'),
+    // Ending with 2 weeks' notice: the last working day is derived at read time
+    // as end_noticed_at + 14 days (the negotiated end date, if any, lives on
+    // the version as a term). Past it the contract presents as ended.
     endedByUserId: text('ended_by_user_id').references(() => user.id, { onDelete: 'set null' }),
     endNote: text('end_note'),
     endNoticedAt: timestamp('end_noticed_at'),
@@ -585,8 +598,11 @@ export const contractVersion = appDb.table(
       .references(() => user.id, { onDelete: 'cascade' }),
     status: contractVersionStatus('status').default('draft').notNull(),
     services: jsonb('services').$type<Array<ContractServiceItem>>().notNull(),
-    schedule: text('schedule'),
     startsOn: date('starts_on'),
+    // Optional negotiated term: the contract's last day. Past it an active
+    // contract presents as ended at read time — a signed contract is never
+    // amended; it runs out (or is ended with notice) and a new one is created.
+    endsOn: date('ends_on'),
     sentAt: timestamp('sent_at'),
     decidedAt: timestamp('decided_at'),
     declineReason: text('decline_reason'),

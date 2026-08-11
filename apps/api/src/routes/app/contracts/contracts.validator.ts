@@ -21,7 +21,7 @@ export const contractCreateJsonError = contractCreateValidationError;
 
 export const contractTermsValidationError = {
   code: 'INVALID_CONTRACT_TERMS',
-  message: 'Each service needs a valid rate and weekly hours.'
+  message: 'Each service needs a valid rate and at least one weekly session.'
 } as const;
 
 // A real calendar date — the pattern alone would wave "2026-13-45" through to
@@ -38,14 +38,29 @@ const isoCalendarDate = Schema.String.pipe(
   )
 );
 
+const MINUTES_PER_DAY = 24 * 60;
+
+// One weekly session: NZ wall-clock minutes from midnight (never UTC), Monday
+// = 0. Overlapping sessions are legal — the UI warns, the provider judges.
+const contractSessionSchema = Schema.Struct({
+  weekday: Schema.Int.pipe(Schema.between(0, 6)),
+  startMinutes: Schema.Int.pipe(Schema.between(0, MINUTES_PER_DAY - 1)),
+  endMinutes: Schema.Int.pipe(Schema.between(1, MINUTES_PER_DAY))
+}).pipe(
+  Schema.filter((session) => session.endMinutes > session.startMinutes, {
+    message: () => 'a session must end after it starts'
+  })
+);
+
 // Drafts may be saved partial (zero services); sending enforces at least one
-// line item at the domain level (EMPTY_CONTRACT_TERMS).
+// line item at the domain level (EMPTY_CONTRACT_TERMS). A service that IS
+// present always carries at least one session — hours are derived from them.
 export const contractTermsSchema = Schema.Struct({
   services: Schema.Array(
     Schema.Struct({
       serviceId: Schema.UUID,
       rateCents: Schema.Int.pipe(Schema.positive(), Schema.lessThanOrEqualTo(1_000_000)),
-      hoursPerWeek: Schema.Number.pipe(Schema.greaterThan(0), Schema.lessThanOrEqualTo(50)),
+      sessions: Schema.Array(contractSessionSchema).pipe(Schema.minItems(1), Schema.maxItems(21)),
       expectations: Schema.Trim.pipe(Schema.maxLength(2000))
     })
   ).pipe(
@@ -57,9 +72,17 @@ export const contractTermsSchema = Schema.Struct({
       }
     )
   ),
-  schedule: Schema.optional(Schema.NullOr(Schema.Trim.pipe(Schema.maxLength(2000)))),
-  startsOn: Schema.optional(Schema.NullOr(isoCalendarDate))
-});
+  startsOn: Schema.optional(Schema.NullOr(isoCalendarDate)),
+  endsOn: Schema.optional(Schema.NullOr(isoCalendarDate))
+}).pipe(
+  Schema.filter(
+    (terms) =>
+      !terms.startsOn ||
+      !terms.endsOn ||
+      terms.endsOn >= terms.startsOn ||
+      'the end date must not be before the start date'
+  )
+);
 
 export type ContractTermsInput = Schema.Schema.Type<typeof contractTermsSchema>;
 

@@ -44,8 +44,8 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
       proposedByUserId: string;
       status: 'draft' | 'proposed';
       services: Array<ContractServiceItem>;
-      schedule: string | null;
       startsOn: string | null;
+      endsOn: string | null;
       sentAt?: Date;
     }) => Effect.Effect<ContractVersion, SqlError>;
     /** Guarded `where status = 'draft'`; resolves null when the version is no
@@ -54,8 +54,8 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
       versionId: string,
       input: {
         services: Array<ContractServiceItem>;
-        schedule: string | null;
         startsOn: string | null;
+        endsOn: string | null;
       }
     ) => Effect.Effect<ContractVersion | null, SqlError>;
     /** Atomically: version draft → proposed AND contract → proposed. Resolves
@@ -71,10 +71,6 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
       versionId: string,
       restoredStatus: 'draft' | 'declined' | 'changes_requested'
     ) => Effect.Effect<ContractVersion | null, SqlError>;
-    /** Terminal retraction of a pending amendment (active contracts have no
-     * draft to fall back to): proposed → withdrawn. Resolves null when the
-     * version was not proposed. */
-    withdrawAmendment: (versionId: string) => Effect.Effect<ContractVersion | null, SqlError>;
     /** Atomically: supersede the currently accepted version (if any), accept
      * the pending one, and optionally activate the contract. The supersede
      * happens first so the accepted-unique index never sees two accepted rows;
@@ -98,11 +94,12 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
         contractStatus: 'declined' | 'changes_requested' | null;
       }
     ) => Effect.Effect<ContractVersion | null, SqlError>;
-    /** active → ending with the 2-weeks-notice fields; resolves null when the
+    /** active → ending with the 2-weeks-notice fields; the last working day is
+     * derived from end_noticed_at at read time. Resolves null when the
      * contract was not active. */
     setEnding: (
       contractId: string,
-      input: { endsOn: string; endedByUserId: string; endNote: string | null }
+      input: { endedByUserId: string; endNote: string | null }
     ) => Effect.Effect<Contract | null, SqlError>;
     markSeen: (
       contractId: string,
@@ -205,8 +202,8 @@ export const ContractRepoLive = Layer.effect(
               proposedByUserId: input.familyUserId,
               status: 'draft',
               services: [],
-              schedule: null,
-              startsOn: null
+              startsOn: null,
+              endsOn: null
             })
             .returning();
           return { contract: created, version: versionRows[0] };
@@ -257,8 +254,8 @@ export const ContractRepoLive = Layer.effect(
             proposedByUserId: input.proposedByUserId,
             status: input.status,
             services: input.services,
-            schedule: input.schedule,
             startsOn: input.startsOn,
+            endsOn: input.endsOn,
             sentAt: input.sentAt ?? null
           })
           .returning()
@@ -269,7 +266,7 @@ export const ContractRepoLive = Layer.effect(
       updateVersionTerms: (versionId, input) =>
         db
           .update(contractVersion)
-          .set({ services: input.services, schedule: input.schedule, startsOn: input.startsOn })
+          .set({ services: input.services, startsOn: input.startsOn, endsOn: input.endsOn })
           .where(and(eq(contractVersion.id, versionId), eq(contractVersion.status, 'draft')))
           .returning()
           .pipe(
@@ -310,16 +307,6 @@ export const ContractRepoLive = Layer.effect(
             return version;
           })
         ),
-      withdrawAmendment: (versionId) =>
-        db
-          .update(contractVersion)
-          .set({ status: 'withdrawn', decidedAt: new Date() })
-          .where(and(eq(contractVersion.id, versionId), eq(contractVersion.status, 'proposed')))
-          .returning()
-          .pipe(
-            Effect.map((rows) => rows[0] ?? null),
-            Effect.tap((row) => (row ? touchContract(row.contractId) : Effect.void))
-          ),
       acceptPendingVersion: (contractId, versionId, options) =>
         compound(
           Effect.gen(function* () {
@@ -383,7 +370,6 @@ export const ContractRepoLive = Layer.effect(
           .update(contract)
           .set({
             status: 'ending',
-            endsOn: input.endsOn,
             endedByUserId: input.endedByUserId,
             endNote: input.endNote,
             endNoticedAt: new Date()
@@ -423,7 +409,6 @@ export const dummyContract: Contract = {
   familyUserId: 'family-1',
   providerUserId: 'provider-1',
   status: 'draft',
-  endsOn: null,
   endedByUserId: null,
   endNote: null,
   endNoticedAt: null,
@@ -447,12 +432,16 @@ export const dummyContractVersion: ContractVersion = {
       listedRateCents: 2500,
       rateCents: 2600,
       currency: 'CAD',
-      hoursPerWeek: 4,
+      // Tue & Thu 3:30–6:00 pm (NZ wall-clock minutes).
+      sessions: [
+        { weekday: 1, startMinutes: 930, endMinutes: 1080 },
+        { weekday: 3, startMinutes: 930, endMinutes: 1080 }
+      ],
       expectations: 'Reading practice and a snack after school.'
     }
   ],
-  schedule: 'Tue & Thu 3:30–6:00 pm',
   startsOn: '2026-08-04',
+  endsOn: null,
   sentAt: null,
   decidedAt: null,
   declineReason: null,
@@ -480,7 +469,6 @@ export const EmptyContractRepoTest = makeContractRepoTest({
   updateVersionTerms: () => Effect.succeed(null),
   sendPendingVersion: () => Effect.succeed(null),
   withdrawPendingVersion: () => Effect.succeed(null),
-  withdrawAmendment: () => Effect.succeed(null),
   acceptPendingVersion: () => Effect.succeed(null),
   decidePendingVersion: () => Effect.succeed(null),
   setEnding: () => Effect.succeed(null),

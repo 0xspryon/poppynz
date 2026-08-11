@@ -107,47 +107,38 @@
 			notifications.on('contract.proposed', (event) => {
 				void contractsBadge.refresh();
 				if (!onContractsPage()) {
-					toast.info(
-						event.payload.isAmendment
-							? `${event.payload.counterpartName} proposed new terms on your contract.`
-							: `${event.payload.counterpartName} sent you contract terms to review.`,
-						{ title: event.payload.isAmendment ? 'Contract amendment' : 'New contract proposal' }
-					);
+					toast.info(`${event.payload.counterpartName} sent you contract terms to review.`, {
+						title: 'New contract proposal'
+					});
 				}
 			}),
 			notifications.on('contract.accepted', (event) => {
 				void contractsBadge.refresh();
 				if (onContractsPage()) {
-					toast.success(
-						event.payload.isAmendment
-							? `${event.payload.counterpartName} accepted the new terms.`
-							: `${event.payload.counterpartName} accepted & signed your proposal.`,
-						{ title: 'Contract update' }
-					);
+					toast.success(`${event.payload.counterpartName} accepted & signed your proposal.`, {
+						title: 'Contract update'
+					});
 					return;
 				}
 				contractDecision = {
 					kind: 'accepted',
 					contractId: event.payload.contractId,
-					counterpartName: event.payload.counterpartName,
-					isAmendment: event.payload.isAmendment
+					counterpartName: event.payload.counterpartName
 				};
 			}),
 			notifications.on('contract.declined', (event) => {
 				void contractsBadge.refresh();
 				if (onContractsPage()) {
-					toast.info(
-						`${event.payload.counterpartName} declined ${event.payload.isAmendment ? 'the new terms' : 'your proposal'}.`,
-						{ title: 'Contract update' }
-					);
+					toast.info(`${event.payload.counterpartName} declined your proposal.`, {
+						title: 'Contract update'
+					});
 					return;
 				}
 				contractDecision = {
 					kind: 'declined',
 					contractId: event.payload.contractId,
 					counterpartName: event.payload.counterpartName,
-					reason: event.payload.reason,
-					isAmendment: event.payload.isAmendment
+					reason: event.payload.reason
 				};
 			}),
 			notifications.on('contract.changes_requested', (event) => {

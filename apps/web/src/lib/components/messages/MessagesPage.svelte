@@ -222,9 +222,7 @@
 			case 'declined':
 				return { label: 'Proposal declined', tone: 'neutral' as const };
 			case 'active':
-				return contract.pendingAmendment
-					? { label: 'Amendment pending', tone: 'accent' as const }
-					: { label: 'Contract active', tone: 'success' as const };
+				return { label: 'Contract active', tone: 'success' as const };
 			case 'ending':
 				return { label: 'Contract ending', tone: 'warning' as const };
 			case 'ended':

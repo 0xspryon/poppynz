@@ -289,7 +289,6 @@ const makeLayer = (
       updateVersionTerms: () => Effect.die('not used'),
       sendPendingVersion: () => Effect.die('not used'),
       withdrawPendingVersion: () => Effect.die('not used'),
-      withdrawAmendment: () => Effect.die('not used'),
       acceptPendingVersion: () => Effect.die('not used'),
       decidePendingVersion: () => Effect.die('not used'),
       setEnding: () => Effect.die('not used'),
@@ -679,8 +678,7 @@ describe('GET /conversations/:id', () => {
     expect(result.contract).toMatchObject({
       id: dummyContract.id,
       status: 'proposed',
-      awaitingYou: false,
-      pendingAmendment: false
+      awaitingYou: false
     });
   });
 
@@ -740,7 +738,7 @@ describe('GET /conversations/:id', () => {
           id: 'version-2',
           version: 2,
           status: 'draft',
-          services: [{ ...dummyContractVersion.services[0], rateCents: 9900, hoursPerWeek: 40 }]
+          services: [{ ...dummyContractVersion.services[0], rateCents: 9900 }]
         }
       ]
     });
@@ -750,8 +748,8 @@ describe('GET /conversations/:id', () => {
         new Headers()
       ).pipe(Effect.provide(layer))
     );
-    // 2600 × 4 from the declined v1 — not 9900 × 40 from the private draft.
-    expect(result.contract).toMatchObject({ status: 'declined', weeklyEstimateCents: 10400 });
+    // 2600 × 5 derived hrs from the declined v1 — never the private draft's 9900.
+    expect(result.contract).toMatchObject({ status: 'declined', weeklyEstimateCents: 13000 });
 
     const awaiting = makeLayer({
       viewer: providerUser(),

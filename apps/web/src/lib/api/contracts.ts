@@ -1,7 +1,8 @@
 /** Contracts: family-initiated proposals that grow out of an unlocked
  * conversation (the only entry point), backed by /contracts. Terms live in
- * versions — the initial proposal, re-sends after decline/changes and
- * amendments on an active contract are all "the next version". */
+ * versions — the initial proposal and re-sends after decline/changes are all
+ * "the next version". Signed contracts are never amended: they run out or are
+ * ended with notice, and a new contract is created. */
 import { apiClient, call, type ApiResult, type ErrorsOf } from './client';
 
 const listEndpoint = apiClient.contracts.$get;
@@ -14,7 +15,6 @@ const withdrawEndpoint = apiClient.contracts[':id'].withdraw.$post;
 const acceptEndpoint = apiClient.contracts[':id'].accept.$post;
 const declineEndpoint = apiClient.contracts[':id'].decline.$post;
 const requestChangesEndpoint = apiClient.contracts[':id']['request-changes'].$post;
-const amendEndpoint = apiClient.contracts[':id'].amendments.$post;
 const endEndpoint = apiClient.contracts[':id'].end.$post;
 const seenEndpoint = apiClient.contracts[':id'].seen.$post;
 
@@ -35,11 +35,11 @@ export type ContractTermsInput = {
 	services: Array<{
 		serviceId: string;
 		rateCents: number;
-		hoursPerWeek: number;
+		sessions: Array<{ weekday: number; startMinutes: number; endMinutes: number }>;
 		expectations: string;
 	}>;
-	schedule?: string | null;
 	startsOn?: string | null;
+	endsOn?: string | null;
 };
 export type SaveTermsError = ErrorsOf<typeof termsEndpoint>;
 export type SendContractError = ErrorsOf<typeof sendEndpoint>;
@@ -90,11 +90,6 @@ export async function declineContract(id: string, reason?: string) {
 
 export async function requestContractChanges(id: string) {
 	return call(requestChangesEndpoint({ param: { id } }));
-}
-
-export async function amendContract(id: string, terms: ContractTermsInput) {
-	const args = { param: { id }, json: terms } as unknown as Parameters<typeof amendEndpoint>[0];
-	return call(amendEndpoint(args));
 }
 
 export async function endContract(id: string, note?: string) {

@@ -27,7 +27,6 @@ import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
 import {
   acceptContractRouteProgram,
-  amendContractRouteProgram,
   contractsBadgeCountRouteProgram,
   createContractRouteProgram,
   declineContractRouteProgram,
@@ -128,13 +127,19 @@ const offeredService = (overrides: Partial<ServiceOffered> = {}): ServiceOffered
   ...overrides
 });
 
+// Tue & Thu 3:30-5:30 pm NZ wall-clock = 4 derived hrs/wk.
+const twoWeekdaySessions = [
+  { weekday: 1, startMinutes: 930, endMinutes: 1050 },
+  { weekday: 3, startMinutes: 930, endMinutes: 1050 }
+];
+
 const serviceItem = (overrides: Partial<ContractServiceItem> = {}): ContractServiceItem => ({
   serviceId: SERVICE_ID,
   name: 'Childcare',
   listedRateCents: 2500,
   rateCents: 2600,
   currency: 'CAD',
-  hoursPerWeek: 4,
+  sessions: twoWeekdaySessions,
   expectations: 'Reading practice and a snack after school.',
   ...overrides
 });
@@ -310,8 +315,8 @@ const makeLayer = (
           proposedByUserId: input.proposedByUserId,
           status: input.status,
           services: input.services,
-          schedule: input.schedule,
           startsOn: input.startsOn,
+          endsOn: input.endsOn,
           sentAt: input.sentAt ?? null
         });
       },
@@ -334,12 +339,6 @@ const makeLayer = (
           options.withdrawPendingResult === undefined
             ? draftVersion({ id: versionId })
             : options.withdrawPendingResult
-        );
-      },
-      withdrawAmendment: (versionId) => {
-        options.calls?.push('withdrawAmendment');
-        return Effect.succeed(
-          proposedVersion({ id: versionId, status: 'withdrawn', decidedAt: new Date() })
         );
       },
       acceptPendingVersion: (_contractId, versionId, acceptOptions) => {
@@ -371,7 +370,6 @@ const makeLayer = (
           baseContract({
             id: contractId,
             status: 'ending',
-            endsOn: input.endsOn,
             endedByUserId: input.endedByUserId,
             endNote: input.endNote,
             endNoticedAt: new Date()
@@ -508,10 +506,15 @@ describe('POST /contracts (create from conversation)', () => {
 describe('PUT /contracts/:id/terms', () => {
   const termsBody = {
     services: [
-      { serviceId: SERVICE_ID, rateCents: 2600, hoursPerWeek: 4, expectations: 'Reading practice.' }
+      {
+        serviceId: SERVICE_ID,
+        rateCents: 2600,
+        sessions: twoWeekdaySessions,
+        expectations: 'Reading practice.'
+      }
     ],
-    schedule: 'Tue & Thu 3:30–6:00 pm',
-    startsOn: '2026-08-24'
+    startsOn: '2026-08-24',
+    endsOn: null
   };
 
   it("snapshots name, listed rate and currency from the provider's listing", async () => {
@@ -539,12 +542,12 @@ describe('PUT /contracts/:id/terms', () => {
           listedRateCents: 2500,
           rateCents: 2600,
           currency: 'CAD',
-          hoursPerWeek: 4,
+          sessions: twoWeekdaySessions,
           expectations: 'Reading practice.'
         }
       ],
-      schedule: 'Tue & Thu 3:30–6:00 pm',
-      startsOn: '2026-08-24'
+      startsOn: '2026-08-24',
+      endsOn: null
     });
   });
 
@@ -637,7 +640,7 @@ describe('PUT /contracts/:id/terms', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
   });
 
-  it('refuses on an active contract — new terms go through an amendment', async () => {
+  it('refuses on an active contract — signed terms are never edited', async () => {
     const exit = await Effect.runPromiseExit(
       saveTermsRouteProgram(
         makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
@@ -671,6 +674,42 @@ describe('PUT /contracts/:id/terms', () => {
         makeContext({
           params: { id: CONTRACT_ID },
           body: { ...termsBody, startsOn: '2026-13-45' }
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] }))
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'RequestValidationError',
+      code: 'INVALID_CONTRACT_TERMS'
+    });
+  });
+
+  it('rejects a service without sessions at validation', async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, services: [{ ...termsBody.services[0], sessions: [] }] }
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] }))
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'RequestValidationError',
+      code: 'INVALID_CONTRACT_TERMS'
+    });
+  });
+
+  it('rejects an end date before the start date at validation', async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, startsOn: '2026-08-24', endsOn: '2026-08-23' }
         }),
         new Headers()
       ).pipe(
@@ -731,7 +770,7 @@ describe('POST /contracts/:id/send', () => {
         userId: 'provider-1',
         input: {
           type: 'contract.proposed',
-          payload: { contractId: CONTRACT_ID, counterpartName: 'Priya Tester', isAmendment: false }
+          payload: { contractId: CONTRACT_ID, counterpartName: 'Priya Tester' }
         }
       }
     ]);
@@ -857,57 +896,6 @@ describe('POST /contracts/:id/withdraw', () => {
     );
     expect(getFailure(exit)).toMatchObject({ _tag: 'NotContractActorError' });
   });
-
-  it('lets the proposer retract a pending amendment, terminally and silently', async () => {
-    const published: Array<Published> = [];
-    const calls: Array<string> = [];
-    const layer = makeLayer({
-      viewer: providerUser(),
-      contractById: baseContract({ status: 'active' }),
-      versions: [
-        proposedVersion({ id: 'version-1', version: 1, status: 'accepted', decidedAt: new Date() }),
-        proposedVersion({ id: 'version-2', version: 2, proposedByUserId: 'provider-1' })
-      ],
-      published,
-      calls
-    });
-
-    const result = await Effect.runPromise(
-      withdrawContractRouteProgram(
-        makeContext({ params: { id: CONTRACT_ID } }),
-        new Headers()
-      ).pipe(Effect.provide(layer))
-    );
-
-    expect(result).toEqual({ id: CONTRACT_ID, status: 'active' });
-    expect(calls).toEqual(['withdrawAmendment']);
-    expect(published).toEqual([]);
-  });
-
-  it("refuses the receiver retracting the counterpart's amendment", async () => {
-    const exit = await Effect.runPromiseExit(
-      withdrawContractRouteProgram(
-        makeContext({ params: { id: CONTRACT_ID } }),
-        new Headers()
-      ).pipe(
-        Effect.provide(
-          makeLayer({
-            contractById: baseContract({ status: 'active' }),
-            versions: [
-              proposedVersion({
-                id: 'version-1',
-                version: 1,
-                status: 'accepted',
-                decidedAt: new Date()
-              }),
-              proposedVersion({ id: 'version-2', version: 2, proposedByUserId: 'provider-1' })
-            ]
-          })
-        )
-      )
-    );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'NotContractActorError' });
-  });
 });
 
 describe('POST /contracts/:id/accept', () => {
@@ -935,7 +923,7 @@ describe('POST /contracts/:id/accept', () => {
         userId: 'family-1',
         input: {
           type: 'contract.accepted',
-          payload: { contractId: CONTRACT_ID, counterpartName: 'Maria Tester', isAmendment: false }
+          payload: { contractId: CONTRACT_ID, counterpartName: 'Maria Tester' }
         }
       }
     ]);
@@ -1001,7 +989,7 @@ describe('POST /contracts/:id/accept', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'ContractNotFoundError' });
   });
 
-  it('refuses an expired amendment like an expired proposal', async () => {
+  it('refuses accepting on an active contract — signed contracts are never amended', async () => {
     const exit = await Effect.runPromiseExit(
       acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
         Effect.provide(
@@ -1014,51 +1002,13 @@ describe('POST /contracts/:id/accept', () => {
                 status: 'accepted',
                 decidedAt: new Date()
               }),
-              proposedVersion({
-                id: 'version-2',
-                version: 2,
-                proposedByUserId: 'provider-1',
-                sentAt: EXPIRED_SENT_AT
-              })
+              proposedVersion({ id: 'version-2', version: 2, proposedByUserId: 'provider-1' })
             ]
           })
         )
       )
     );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractProposalExpiredError' });
-  });
-
-  it('supersedes the old accepted terms before accepting an amendment', async () => {
-    const published: Array<Published> = [];
-    const calls: Array<string> = [];
-    // Provider proposed the amendment; the family accepts it.
-    const layer = makeLayer({
-      contractById: baseContract({ status: 'active' }),
-      versions: [
-        proposedVersion({ id: 'version-1', version: 1, status: 'accepted', decidedAt: new Date() }),
-        proposedVersion({ id: 'version-2', version: 2, proposedByUserId: 'provider-1' })
-      ],
-      published,
-      calls
-    });
-
-    const result = await Effect.runPromise(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
-        Effect.provide(layer)
-      )
-    );
-
-    expect(result).toEqual({ id: CONTRACT_ID, status: 'active' });
-    expect(calls).toEqual(['acceptPending:amend']);
-    expect(published).toEqual([
-      {
-        userId: 'provider-1',
-        input: {
-          type: 'contract.accepted',
-          payload: { contractId: CONTRACT_ID, counterpartName: 'Priya Tester', isAmendment: true }
-        }
-      }
-    ]);
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
   });
 });
 
@@ -1094,8 +1044,7 @@ describe('POST /contracts/:id/decline', () => {
           payload: {
             contractId: CONTRACT_ID,
             counterpartName: 'Maria Tester',
-            reason: 'Schedule no longer works.',
-            isAmendment: false
+            reason: 'Schedule no longer works.'
           }
         }
       }
@@ -1118,33 +1067,30 @@ describe('POST /contracts/:id/decline', () => {
     expect(result).toEqual({ id: CONTRACT_ID, status: 'declined' });
   });
 
-  it('leaves an active contract untouched when an amendment is declined', async () => {
-    const calls: Array<string> = [];
-    const published: Array<Published> = [];
-    const layer = makeLayer({
-      viewer: providerUser(),
-      contractById: baseContract({ status: 'active' }),
-      versions: [
-        proposedVersion({ id: 'version-1', version: 1, status: 'accepted', decidedAt: new Date() }),
-        proposedVersion({ id: 'version-2', version: 2, proposedByUserId: 'family-1' })
-      ],
-      calls,
-      published
-    });
-
-    const result = await Effect.runPromise(
+  it('refuses declining on an active contract — signed contracts are never amended', async () => {
+    const exit = await Effect.runPromiseExit(
       declineContractRouteProgram(
         makeContext({ params: { id: CONTRACT_ID }, body: {} }),
         new Headers()
-      ).pipe(Effect.provide(layer))
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'active' }),
+            versions: [
+              proposedVersion({
+                id: 'version-1',
+                version: 1,
+                status: 'accepted',
+                decidedAt: new Date()
+              }),
+              proposedVersion({ id: 'version-2', version: 2, proposedByUserId: 'family-1' })
+            ]
+          })
+        )
+      )
     );
-
-    expect(result).toEqual({ id: CONTRACT_ID, status: 'active' });
-    expect(calls).toEqual(['decidePending:declined:keep']);
-    expect(published[0].input).toMatchObject({
-      type: 'contract.declined',
-      payload: { isAmendment: true, reason: null }
-    });
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
   });
 
   it('refuses the proposer declining their own proposal', async () => {
@@ -1200,7 +1146,7 @@ describe('POST /contracts/:id/request-changes', () => {
     ]);
   });
 
-  it('is pre-active only — amendments are accepted or declined', async () => {
+  it('is pre-active only — it steers the negotiation back to chat', async () => {
     const exit = await Effect.runPromiseExit(
       requestChangesRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
         Effect.provide(
@@ -1230,108 +1176,6 @@ describe('POST /contracts/:id/request-changes', () => {
   });
 });
 
-describe('POST /contracts/:id/amendments', () => {
-  const amendmentBody = {
-    services: [
-      { serviceId: SERVICE_ID, rateCents: 2800, hoursPerWeek: 6, expectations: 'More hours.' }
-    ],
-    schedule: 'Mon–Thu 3:30–6:00 pm',
-    startsOn: null
-  };
-
-  it('lets the provider propose new terms on an active contract', async () => {
-    const published: Array<Published> = [];
-    const createdVersions: Array<any> = [];
-    const layer = makeLayer({
-      viewer: providerUser(),
-      contractById: baseContract({ status: 'active' }),
-      versions: [proposedVersion({ status: 'accepted', decidedAt: new Date() })],
-      published,
-      onCreateVersion: (input) => createdVersions.push(input)
-    });
-
-    const result = await Effect.runPromise(
-      amendContractRouteProgram(
-        makeContext({ params: { id: CONTRACT_ID }, body: amendmentBody }),
-        new Headers()
-      ).pipe(Effect.provide(layer))
-    );
-
-    expect(result).toEqual({ id: CONTRACT_ID, version: 2 });
-    expect(createdVersions[0]).toMatchObject({
-      version: 2,
-      status: 'proposed',
-      proposedByUserId: 'provider-1'
-    });
-    expect(createdVersions[0].sentAt).toBeInstanceOf(Date);
-    expect(published).toEqual([
-      {
-        userId: 'family-1',
-        input: {
-          type: 'contract.proposed',
-          payload: { contractId: CONTRACT_ID, counterpartName: 'Maria Tester', isAmendment: true }
-        }
-      }
-    ]);
-  });
-
-  it("still floors a provider's own amendment at half their listed rate", async () => {
-    const exit = await Effect.runPromiseExit(
-      amendContractRouteProgram(
-        makeContext({
-          params: { id: CONTRACT_ID },
-          body: { ...amendmentBody, services: [{ ...amendmentBody.services[0], rateCents: 1249 }] }
-        }),
-        new Headers()
-      ).pipe(
-        Effect.provide(
-          makeLayer({
-            viewer: providerUser(),
-            contractById: baseContract({ status: 'active' }),
-            versions: [proposedVersion({ status: 'accepted', decidedAt: new Date() })]
-          })
-        )
-      )
-    );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'RateBelowListedError' });
-  });
-
-  it('refuses while another proposal is pending', async () => {
-    const exit = await Effect.runPromiseExit(
-      amendContractRouteProgram(
-        makeContext({ params: { id: CONTRACT_ID }, body: amendmentBody }),
-        new Headers()
-      ).pipe(
-        Effect.provide(
-          makeLayer({
-            contractById: baseContract({ status: 'active' }),
-            versions: [
-              proposedVersion({
-                id: 'version-1',
-                version: 1,
-                status: 'accepted',
-                decidedAt: new Date()
-              }),
-              proposedVersion({ id: 'version-2', version: 2 })
-            ]
-          })
-        )
-      )
-    );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
-  });
-
-  it('refuses on contracts that are not active', async () => {
-    const exit = await Effect.runPromiseExit(
-      amendContractRouteProgram(
-        makeContext({ params: { id: CONTRACT_ID }, body: amendmentBody }),
-        new Headers()
-      ).pipe(Effect.provide(makeLayer({ contractById: baseContract({ status: 'proposed' }) })))
-    );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
-  });
-});
-
 describe('POST /contracts/:id/end', () => {
   it("gives 2 weeks' notice and notifies the counterpart with the last working day", async () => {
     const published: Array<Published> = [];
@@ -1349,12 +1193,13 @@ describe('POST /contracts/:id/end', () => {
       ).pipe(Effect.provide(layer))
     );
 
-    const expectedEndsOn = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .slice(0, 10);
+    // Mirrors the handler: the last working day is NZ wall-clock, derived
+    // from the notice timestamp, never stored.
+    const expectedEndsOn = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Pacific/Auckland'
+    }).format(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000));
     expect(result).toEqual({ id: CONTRACT_ID, status: 'ending', endsOn: expectedEndsOn });
     expect(endInputs[0]).toEqual({
-      endsOn: expectedEndsOn,
       endedByUserId: 'family-1',
       endNote: 'Thanks for everything!'
     });
@@ -1434,7 +1279,6 @@ describe('GET /contracts/:id', () => {
       canAccept: true,
       canDecline: true,
       canRequestChanges: true,
-      canAmend: false,
       canEnd: false
     });
   });
@@ -1461,7 +1305,7 @@ describe('GET /contracts/:id', () => {
     expect(contract.actions.canDecline).toBe(true);
   });
 
-  it('reveals contact details once active and offers amend/end to both sides', async () => {
+  it('reveals contact details once active and offers ending to both sides', async () => {
     const accepted = proposedVersion({ status: 'accepted', decidedAt: new Date() });
     const layer = makeLayer({
       contractById: baseContract({ status: 'active' }),
@@ -1481,19 +1325,18 @@ describe('GET /contracts/:id', () => {
       phone: '+1 416 555 0199'
     });
     expect(contract.acceptedVersion).toMatchObject({ version: 1, weeklyEstimateCents: 10400 });
-    expect(contract.actions).toMatchObject({ canAmend: true, canEnd: true, canAccept: false });
+    expect(contract.actions).toMatchObject({ canEnd: true, canAccept: false });
   });
 
   it("still presents 'ending' ON the last working day — payments run through it", async () => {
     const accepted = proposedVersion({ status: 'accepted', decidedAt: new Date() });
-    const today = new Date().toISOString().slice(0, 10);
+    // Notice given exactly 14 days ago: the derived last working day is today.
     const layer = makeLayer({
       contractWithContext: withContext(
         baseContract({
           status: 'ending',
-          endsOn: today,
           endedByUserId: 'family-1',
-          endNoticedAt: new Date()
+          endNoticedAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000)
         }),
         [accepted],
         'family-1'
@@ -1511,13 +1354,13 @@ describe('GET /contracts/:id', () => {
 
   it('presents an ending contract past its last working day as ended', async () => {
     const accepted = proposedVersion({ status: 'accepted', decidedAt: new Date() });
+    // Notice given 20 days ago: the derived last working day is 6 days past.
     const layer = makeLayer({
       contractWithContext: withContext(
         baseContract({
           status: 'ending',
-          endsOn: '2026-08-01',
           endedByUserId: 'provider-1',
-          endNoticedAt: new Date()
+          endNoticedAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000)
         }),
         [accepted],
         'family-1'
@@ -1534,7 +1377,29 @@ describe('GET /contracts/:id', () => {
     expect(contract.status).toBe('ended');
     expect(contract.endedByMe).toBe(false);
     expect(contract.counterpartContact).not.toBeNull();
-    expect(contract.actions).toMatchObject({ canAmend: false, canEnd: false });
+    expect(contract.actions).toMatchObject({ canEnd: false });
+  });
+
+  it('presents an active contract past its agreed end date as ended', async () => {
+    const accepted = proposedVersion({
+      status: 'accepted',
+      decidedAt: new Date(),
+      endsOn: '2026-08-01'
+    });
+    const layer = makeLayer({
+      contractWithContext: withContext(baseContract({ status: 'active' }), [accepted], 'family-1'),
+      conversationById: activeConversation()
+    });
+
+    const { contract } = await Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(contract.status).toBe('ended');
+    expect(contract.endsOn).toBe('2026-08-01');
+    expect(contract.actions).toMatchObject({ canEnd: false });
   });
 });
 
@@ -1556,7 +1421,7 @@ describe('GET /contracts + badge', () => {
       version: 1,
       status: 'declined',
       decidedAt: new Date(),
-      services: [serviceItem({ name: 'Childcare', rateCents: 2600, hoursPerWeek: 4 })]
+      services: [serviceItem({ name: 'Childcare', rateCents: 2600 })]
     });
     const privateDraftV2 = draftVersion({
       id: 'version-2',
@@ -1565,8 +1430,7 @@ describe('GET /contracts + badge', () => {
         serviceItem({
           serviceId: OTHER_SERVICE_ID,
           name: 'Secret new plan',
-          rateCents: 5000,
-          hoursPerWeek: 30
+          rateCents: 5000
         })
       ]
     });
@@ -1754,14 +1618,6 @@ describe('authorization', () => {
     [
       'request-changes',
       () => requestChangesRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers())
-    ],
-    [
-      'amend',
-      () =>
-        amendContractRouteProgram(
-          makeContext({ params: { id: CONTRACT_ID }, body: { services: [] } }),
-          new Headers()
-        )
     ],
     [
       'end',

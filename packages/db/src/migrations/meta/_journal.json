@@ -92,6 +92,13 @@
       "when": 1786406400000,
       "tag": "0012_user_searches",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786752000000,
+      "tag": "0013_scheduled_contracts",
+      "breakpoints": true
     }
   ]
 }

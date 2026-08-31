@@ -4,7 +4,8 @@ import {
   KycDocumentRepo,
   type KycDocumentType,
   type KycDocument,
-  KycDocumentTypeRepo
+  KycDocumentTypeRepo,
+  SafetyVerificationRepo
 } from '@repo/db';
 import { objectBucketsConfig } from '@repo/env';
 import { ObjectStorage, type ObjectStorageError } from '@repo/objs';
@@ -110,6 +111,35 @@ const toKycDocResponse = (doc: KycDocument) => ({
   deletedAt: toDateString(doc.deletedAt)
 });
 
+/**
+ * A document type is either upload-only or a priced Credibled check — never
+ * half-configured.
+ *
+ * Without this an admin could mark a type fetchable with no price and the
+ * applicant would be quoted nothing for a check Poppynz still pays for.
+ * Checked against the MERGED state so a partial PATCH can't sneak past it.
+ */
+const ensureFetchablePricing = (merged: {
+  credibledCheckTypeValue: string | null;
+  credibledCostCents: number | null;
+}) => {
+  if (merged.credibledCheckTypeValue !== null && merged.credibledCostCents === null) {
+    return Effect.fail(
+      new KycValidationError({
+        message: 'Set a price before making a document type fetchable via Credibled.'
+      })
+    );
+  }
+  if (merged.credibledCheckTypeValue === null && merged.credibledCostCents !== null) {
+    return Effect.fail(
+      new KycValidationError({
+        message: 'Only fetchable document types can carry a price.'
+      })
+    );
+  }
+  return Effect.void;
+};
+
 export const listKycDocumentTypesRouteProgram = () =>
   Effect.gen(function* () {
     const repo = yield* KycDocumentTypeRepo;
@@ -123,6 +153,10 @@ export const createKycDocumentTypeRouteProgram = (c: HonoContext<HonoEnv>, heade
     const input = yield* validateKycDocumentTypeCreateInput(rawBody);
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { kycDocumentType: ['write'] })(authenticated);
+    yield* ensureFetchablePricing({
+      credibledCheckTypeValue: input.credibledCheckTypeValue ?? null,
+      credibledCostCents: input.credibledCostCents ?? null
+    });
     const repo = yield* KycDocumentTypeRepo;
     const type = yield* mapKycRepoError(
       repo.create({ ...input, appliesToRole: input.appliesToRole ?? 'service-provider' })
@@ -141,6 +175,17 @@ export const updateKycDocumentTypeRouteProgram = (
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { kycDocumentType: ['write'] })(authenticated);
     const repo = yield* KycDocumentTypeRepo;
+    const current = yield* mapKycRepoError(repo.findActiveById(id));
+    yield* ensureFetchablePricing({
+      credibledCheckTypeValue:
+        input.credibledCheckTypeValue !== undefined
+          ? input.credibledCheckTypeValue
+          : current.credibledCheckTypeValue,
+      credibledCostCents:
+        input.credibledCostCents !== undefined
+          ? input.credibledCostCents
+          : current.credibledCostCents
+    });
     const type = yield* mapKycRepoError(repo.update(id, input));
     return toKycTypeResponse(type);
   });
@@ -170,6 +215,18 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
         new KycValidationError({ message: 'KYC document type is not available for this role.' })
       );
     }
+    // A type that backs safety verification is submitted through
+    // /safety-verification/document, which also collects the issuing service
+    // and document number. Accepting it here would create a second, parallel
+    // record that the safety gate never reads.
+    if (documentType.backsSafetyVerification) {
+      return yield* Effect.fail(
+        new KycValidationError({
+          message: 'Submit this document through safety verification.'
+        })
+      );
+    }
+
     yield* ensureOwnFileKey(provider.user.id, input.fileKey);
     const expiryDate = yield* parseFutureDate(input.expiryDate, documentType.requiresExpiryDate);
     const docRepo = yield* KycDocumentRepo;
@@ -182,6 +239,24 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
         expiryDate
       })
     );
+
+    // Uploading it yourself supersedes having Credibled fetch it: drop the
+    // matching item from the unpaid basket so nobody is charged for a check
+    // they have just provided. Best-effort — a failure here must not lose the
+    // document the applicant just uploaded.
+    yield* Effect.gen(function* () {
+      const safetyRepo = yield* SafetyVerificationRepo;
+      const live = yield* safetyRepo.findLive(provider.user.id, 'service-provider');
+      if (!live || live.status !== 'not_started') {
+        return;
+      }
+      const items = yield* safetyRepo.listItems(live.id);
+      const queued = items.find((item) => item.documentTypeId === input.documentTypeId);
+      if (queued) {
+        yield* safetyRepo.removeItem(live.id, queued.id);
+      }
+    }).pipe(Effect.ignore);
+
     return toKycDocResponse(doc);
   });
 

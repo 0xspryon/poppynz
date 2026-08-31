@@ -15,6 +15,11 @@ export const appAc = createAccessControl({
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
   referral: ['read', 'write'],
+  // `review` is the admin-only decision capability: approving or rejecting a
+  // verification, and reading the underlying report. Applicants get read+write
+  // for their own record only — ownership is enforced at the route, since a
+  // permission can't express "but only yours".
+  safetyVerification: ['read', 'write', 'review'],
   serviceCatalogue: ['read', 'write'],
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
@@ -30,6 +35,7 @@ export const familyRole = appAc.newRole({
   approvalRequest: ['write'],
   kycDocument: ['write'],
   referral: ['read', 'write'],
+  safetyVerification: ['read', 'write'],
   serviceCatalogue: ['read'],
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
@@ -47,6 +53,7 @@ export const spRole = appAc.newRole({
   approvalRequest: ['write'],
   kycDocument: ['write'],
   referral: ['read', 'write'],
+  safetyVerification: ['read', 'write'],
   serviceCatalogue: ['read'],
   serviceOffered: ['read', 'write'],
   tcs: ['read', 'accept']
@@ -66,6 +73,7 @@ export const adminRole = appAc.newRole({
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
   referral: ['read', 'write'],
+  safetyVerification: ['read', 'write', 'review'],
   serviceCatalogue: ['read', 'write'],
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],

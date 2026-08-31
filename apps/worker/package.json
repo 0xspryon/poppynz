@@ -7,11 +7,13 @@
   "dependencies": {
     "@hono/node-server": "^1.19.7",
     "@queuedash/api": "^3.19.0",
+    "@repo/credibled": "*",
     "@repo/db": "*",
     "@repo/env": "*",
     "@repo/google": "*",
     "@repo/mail": "*",
     "@repo/objs": "*",
+    "@repo/payments": "*",
     "@repo/queue": "*",
     "@repo/typesense": "*",
     "bullmq": "^5.66.0",

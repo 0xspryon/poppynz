@@ -22,6 +22,11 @@ import {
   authErrorToResponse,
   handleNever
 } from '@/api/lib/effect-auth';
+import {
+  requireVerifiedSafety,
+  safetyVerificationGateUnavailableResponseBody,
+  safetyVerificationRequiredResponseBody
+} from '@/api/lib/safety-verification-gate';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import {
   contractCreateJsonError,
@@ -998,6 +1003,9 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
 // ---------------------------------------------------------------------------
 // Route programs (parse + validate + authenticate + authorize + domain)
 
+// A contract is the bookable act, so it carries the same gate as reach-out —
+// including for a pair whose conversation predates safety verification, and
+// for anybody whose verification has since lapsed.
 export const createContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const rawBody = yield* parseJsonBody(c, contractCreateJsonError);
@@ -1006,6 +1014,7 @@ export const createContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Hea
     const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
       authenticated
     );
+    yield* requireVerifiedSafety(userAndSession);
     return yield* createContractProgram(userAndSession, input);
   });
 
@@ -1056,6 +1065,7 @@ export const sendContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Heade
     const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
       authenticated
     );
+    yield* requireVerifiedSafety(userAndSession);
     return yield* sendContractProgram(userAndSession, contractId);
   });
 
@@ -1076,6 +1086,7 @@ export const acceptContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Hea
     const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
       authenticated
     );
+    yield* requireVerifiedSafety(userAndSession);
     return yield* acceptContractProgram(userAndSession, contractId);
   });
 
@@ -1253,6 +1264,10 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
         },
         409
       );
+    case 'SafetyVerificationRequiredError':
+      return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
+    case 'SafetyVerificationGateUnavailableError':
+      return c.json({ error: safetyVerificationGateUnavailableResponseBody }, 503);
     default:
       return handleNever(c, error);
   }

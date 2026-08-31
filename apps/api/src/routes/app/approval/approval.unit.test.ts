@@ -7,6 +7,7 @@ import {
   type ApprovalRequest,
   makeServiceOfferedRepoTest,
   makeUserProfileRepoTest,
+  makeSafetyVerificationRepoTest,
   makeUserRepoTest,
   type User
 } from '@repo/db';
@@ -132,6 +133,24 @@ const makeLayer = (
   } = {}
 ) =>
   Layer.mergeAll(
+    // Safety verification now gates the bookable actions; these suites assert
+    // other behaviour, so the applicant is verified unless a test says so.
+    makeSafetyVerificationRepoTest({
+      findLive: () =>
+        Effect.succeed({ id: 'sv-1', status: 'verified', expiresOn: '2099-01-01' } as never),
+      findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+      findByCredibledUuid: () => Effect.succeed(null),
+      listByUser: () => Effect.succeed([]),
+      listForReview: () => Effect.succeed([]),
+      create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+      update: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' })),
+      listExpiringForNotification: () => Effect.succeed([]),
+      markExpiryNotified: () =>
+        Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+      listLapsed: () => Effect.succeed([]),
+      listInFlight: () => Effect.succeed([]),
+      listAwaitingOrder: () => Effect.succeed([])
+    }),
     makeApprovalRepoTest({
       create: (approvalInput) => {
         options.onCreateApproval?.(approvalInput);

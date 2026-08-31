@@ -16,10 +16,7 @@ import {
   requirePermissions
 } from '@/api/lib/effect-auth';
 import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
-import {
-  loadProviderChecklist,
-  loadProviderChecklistWithTypes
-} from '@/api/lib/provider-onboarding';
+import { loadChecklist, loadChecklistWithTypes } from '@/api/lib/onboarding-checklist';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import {
   approvalRequestJsonError,
@@ -53,7 +50,7 @@ const toRequestResponse = <T extends { reviewedAt: Date | null; createdAt: Date;
 });
 
 const buildWarnings = (userId: string) =>
-  loadProviderChecklist(userId).pipe(Effect.map((state) => state.warnings));
+  loadChecklist(userId, 'service-provider').pipe(Effect.map((state) => state.warnings));
 
 export const createApprovalRequestRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
@@ -110,13 +107,13 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
 
     // Warnings reflect the provider's CURRENT checklist (a doc uploaded after
     // submission clears the warning) — one lookup per distinct applicant.
-    const loadChecklist = loadProviderChecklistWithTypes(types);
+    const loadChecklistFor = loadChecklistWithTypes(types, 'service-provider');
     const userIds = [...new Set(requests.map((request) => request.userId))];
     const warningsByUser = new Map(
       yield* Effect.forEach(
         userIds,
         (userId) =>
-          loadChecklist(userId).pipe(Effect.map((state) => [userId, state.warnings] as const)),
+          loadChecklistFor(userId).pipe(Effect.map((state) => [userId, state.warnings] as const)),
         { concurrency: 5 }
       )
     );
@@ -145,7 +142,7 @@ export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string
     const [profile, { checklist, services, warnings }, currentApproval] = yield* Effect.all(
       [
         profileRepo.findByUserId(request.userId),
-        loadProviderChecklist(request.userId),
+        loadChecklist(request.userId, 'service-provider'),
         approvalRepo
           .findCurrentByUserId(request.userId)
           .pipe(Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)))

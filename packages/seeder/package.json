@@ -10,6 +10,7 @@
     "test": "bun test src"
   },
   "dependencies": {
+    "@repo/credibled": "*",
     "@repo/db": "*",
     "@repo/env": "*",
     "drizzle-orm": "^0.45.2",

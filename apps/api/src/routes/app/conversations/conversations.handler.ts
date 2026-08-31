@@ -24,6 +24,11 @@ import {
   authErrorToResponse,
   handleNever
 } from '@/api/lib/effect-auth';
+import {
+  requireVerifiedSafety,
+  safetyVerificationGateUnavailableResponseBody,
+  safetyVerificationRequiredResponseBody
+} from '@/api/lib/safety-verification-gate';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import {
   messageJsonError,
@@ -242,6 +247,11 @@ export const createReachoutProgram = (
     // Mirrors the family-search gate: the permission says a provider MAY
     // contact families, a live approval says they may do it RIGHT NOW.
     // Existing conversations are unaffected — revocation stops new contacts.
+    // Safety verification gates BOTH sides. The approval check below stays
+    // helper-specific because approval is a helper concept; verification is
+    // not, and applying it to only one role is how families ended up ungated.
+    yield* requireVerifiedSafety(userAndSession);
+
     if (sender.role === 'service-provider') {
       const approvalRepo = yield* ApprovalRepo;
       const approval = yield* approvalRepo.findCurrentByUserId(sender.id).pipe(
@@ -774,6 +784,10 @@ const conversationRouteErrorToResponse = (
         },
         409
       );
+    case 'SafetyVerificationRequiredError':
+      return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
+    case 'SafetyVerificationGateUnavailableError':
+      return c.json({ error: safetyVerificationGateUnavailableResponseBody }, 503);
     case 'ProviderNotApprovedError':
       return c.json(
         {

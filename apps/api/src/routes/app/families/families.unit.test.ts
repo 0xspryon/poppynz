@@ -3,6 +3,7 @@ import {
   makeApprovalRepoTest,
   makeFamilySearchOutboxRepoTest,
   makeFamilySearchRepoTest,
+  makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
   makeUserProfileRepoTest,
   makeUserRepoTest,
@@ -158,6 +159,24 @@ const makeLayer = (
   const candidates = options.candidates ?? [candidate()];
 
   return Layer.mergeAll(
+    // Safety verification now gates both roles; these suites assert other
+    // behaviour, so the applicant is verified unless a test says otherwise.
+    makeSafetyVerificationRepoTest({
+      findLive: () =>
+        Effect.succeed({ id: 'sv-1', status: 'verified', expiresOn: '2099-01-01' } as never),
+      findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+      findByCredibledUuid: () => Effect.succeed(null),
+      listByUser: () => Effect.succeed([]),
+      listForReview: () => Effect.succeed([]),
+      create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+      update: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' })),
+      listExpiringForNotification: () => Effect.succeed([]),
+      markExpiryNotified: () =>
+        Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+      listLapsed: () => Effect.succeed([]),
+      listInFlight: () => Effect.succeed([]),
+      listAwaitingOrder: () => Effect.succeed([])
+    }),
     makeObjectStorageTest({
       ensureBucketExists: () => Effect.void,
       ensurePublicReadBucket: () => Effect.void,

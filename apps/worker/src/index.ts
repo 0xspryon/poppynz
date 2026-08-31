@@ -3,14 +3,18 @@ import { createQueueDashExpressMiddleware } from '@queuedash/api';
 import { Queue, Worker } from 'bullmq';
 import { Effect, Layer, ManagedRuntime } from 'effect';
 import { trustedOriginsConfig } from '@repo/env';
+import { CredibledDefault } from '@repo/credibled';
 import { MailerLive } from '@repo/mail';
+import { PaymentsMock } from '@repo/payments';
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import {
   ApprovalRepoDefault,
   FamilySearchOutboxRepo,
   FamilySearchOutboxRepoDefault,
   ProviderSearchOutboxRepo,
-  ProviderSearchOutboxRepoDefault
+  ProviderSearchOutboxRepoDefault,
+  SafetyVerificationRepoDefault,
+  UserRepoDefault
 } from '@repo/db';
 import {
   approvalExpiryCronPattern,
@@ -22,11 +26,24 @@ import {
   getRedisConnection,
   providerSearchJobNames,
   providerSearchQueueDefinition,
-  queues
+  queues,
+  safetyVerificationExpiryCronPattern,
+  safetyVerificationExpirySchedulerId,
+  safetyVerificationJobNames,
+  safetyVerificationQueueDefinition,
+  safetyVerificationReconcileCronPattern,
+  safetyVerificationReconcileSchedulerId,
+  type PlaceSafetyVerificationOrderJob
 } from '@repo/queue';
 import { processApprovalExpiryNotifications } from './approval-expiry-processor';
 import { processFamilySearchJob } from './family-search-processor';
 import { processProviderSearchJob } from './provider-search-processor';
+import { processSafetyVerificationExpiries } from './safety-verification-expiry-processor';
+import {
+  placeSafetyVerificationOrder,
+  recoverUnorderedSafetyVerifications
+} from './safety-verification-order-processor';
+import { reconcileSafetyVerificationStatuses } from './safety-verification-status-processor';
 
 const WorkerLive = Layer.mergeAll(
   ProviderSearchIndexDefault,
@@ -34,6 +51,12 @@ const WorkerLive = Layer.mergeAll(
   FamilySearchIndexDefault,
   FamilySearchOutboxRepoDefault,
   ApprovalRepoDefault,
+  SafetyVerificationRepoDefault,
+  UserRepoDefault,
+  CredibledDefault,
+  // Stripe lands in its own PR; the mock keeps the refund and retry paths
+  // exercised until then.
+  PaymentsMock,
   MailerLive
 );
 const runtime = ManagedRuntime.make(WorkerLive);
@@ -67,6 +90,46 @@ const familySearchWorker = new Worker(
   }
 );
 
+const safetyVerificationWorker = new Worker(
+  safetyVerificationQueueDefinition.name,
+  async (job) => {
+    if (job.name === safetyVerificationJobNames.placeOrder) {
+      const data = job.data as PlaceSafetyVerificationOrderJob;
+      const outcome = await runtime.runPromise(placeSafetyVerificationOrder(data.verificationId));
+      console.log(`safety-verification order: ${outcome}`);
+      return;
+    }
+
+    if (job.name === safetyVerificationJobNames.reconcileStatuses) {
+      const summary = await runtime.runPromise(reconcileSafetyVerificationStatuses);
+      console.log(
+        `safety-verification reconcile: ${summary.advanced} advanced, ` +
+          `${summary.unreachable} unreachable, ${summary.failed} failed of ${summary.checked}`
+      );
+      return;
+    }
+
+    if (job.name === safetyVerificationJobNames.sweepExpiries) {
+      const summary = await runtime.runPromise(
+        processSafetyVerificationExpiries(new Date(), uiOrigin)
+      );
+      console.log(
+        `safety-verification expiry sweep: ${summary.lapsed} lapsed, ` +
+          `${summary.notified} notified, ${summary.failed} failed of ${summary.candidates}`
+      );
+      return;
+    }
+
+    console.warn(`safety-verification: unknown job ${job.name}`);
+  },
+  {
+    connection,
+    // Orders spend money — keep concurrency low enough that a burst can't
+    // outrun the per-record idempotency guards.
+    concurrency: Number.parseInt(process.env.SAFETY_VERIFICATION_WORKER_CONCURRENCY ?? '3', 10)
+  }
+);
+
 const approvalExpiryWorker = new Worker(
   approvalExpiryQueueDefinition.name,
   async () => {
@@ -96,6 +159,40 @@ void scheduleApprovalExpirySweep().catch((cause) => {
   // TODO: log this failure to Sentry once error reporting is wired.
   console.error(cause);
 });
+
+const safetyVerificationQueue = new Queue(safetyVerificationQueueDefinition.name, { connection });
+
+const scheduleSafetyVerificationJobs = async () => {
+  // The reconcile poll is the ONLY recovery path for a dropped Credibled
+  // webhook — they log a failed delivery and never retry it.
+  await safetyVerificationQueue.upsertJobScheduler(
+    safetyVerificationReconcileSchedulerId,
+    { pattern: safetyVerificationReconcileCronPattern },
+    { name: safetyVerificationJobNames.reconcileStatuses, data: {} }
+  );
+  await safetyVerificationQueue.upsertJobScheduler(
+    safetyVerificationExpirySchedulerId,
+    { pattern: safetyVerificationExpiryCronPattern },
+    { name: safetyVerificationJobNames.sweepExpiries, data: {} }
+  );
+};
+
+void scheduleSafetyVerificationJobs().catch((cause) => {
+  console.error(cause);
+});
+
+// Records charged but never ordered — a queue job lost between the charge and
+// the order would otherwise leave somebody paid-up with nothing happening.
+void runtime
+  .runPromise(recoverUnorderedSafetyVerifications)
+  .then(({ recovered }) => {
+    if (recovered > 0) {
+      console.log(`safety-verification: recovered ${recovered} unordered check(s) on boot`);
+    }
+  })
+  .catch((cause) => {
+    console.error(cause);
+  });
 
 const queueDashQueues = queues.map((queue) => ({
   queue: new Queue(queue.name, { connection }),
@@ -189,6 +286,8 @@ const shutdown = async () => {
   await familySearchQueue.close();
   await approvalExpiryWorker.close();
   await approvalExpiryQueue.close();
+  await safetyVerificationWorker.close();
+  await safetyVerificationQueue.close();
   await Promise.all(queueDashQueues.map(({ queue }) => queue.close()));
   await runtime.dispose();
 };

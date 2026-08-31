@@ -8,6 +8,11 @@ import { DBNotFoundError, ProviderSearchRepo, UserProfileRepo } from '@repo/db';
 import { Cause, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
+  requireVerifiedSafety,
+  safetyVerificationGateUnavailableResponseBody,
+  safetyVerificationRequiredResponseBody
+} from '@/api/lib/safety-verification-gate';
+import {
   authErrorToResponse,
   authenticate,
   handleNever,
@@ -93,6 +98,7 @@ export const searchProvidersRouteProgram = (
     const userAndSession = yield* requirePermissions(headers, { providerSearch: ['read'] })(
       authenticated
     );
+    yield* requireVerifiedSafety(userAndSession);
     const minRadiusKm = yield* getProviderSearchMinRadiusKm.pipe(Effect.orElseSucceed(() => 10));
 
     let center: [number, number] | undefined;
@@ -241,6 +247,10 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: ProvidersRouteError) =>
     case 'AuthProviderError':
     case 'AuthEntityLookupError':
       return authErrorToResponse(c, error);
+    case 'SafetyVerificationRequiredError':
+      return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
+    case 'SafetyVerificationGateUnavailableError':
+      return c.json({ error: safetyVerificationGateUnavailableResponseBody }, 503);
     case 'ProviderSearchRequestValidationError':
       return c.json(
         { error: { code: 'INVALID_PROVIDER_SEARCH' as const, message: error.message } },

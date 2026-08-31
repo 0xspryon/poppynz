@@ -15,11 +15,11 @@ export const environmentConfig = Config.string('ENVIRONMENT').pipe(
     return isAppEnvironment(value)
       ? Either.right(value)
       : Either.left(
-          ConfigError.InvalidData(
-            [],
-            `ENVIRONMENT must be one of: ${appEnvironments.join(', ')} — got "${raw}"`
-          )
-        );
+        ConfigError.InvalidData(
+          [],
+          `ENVIRONMENT must be one of: ${appEnvironments.join(', ')} — got "${raw}"`
+        )
+      );
   })
 );
 
@@ -147,4 +147,68 @@ export const mailConfig = Config.all({
   ),
   environment: environmentConfig,
   adminAccounts: adminAccountsList
+});
+
+// Credibled — the screening vendor behind Path A of safety verification.
+//
+// Keys and webhook secrets are Redacted so they can't leak into a log line or
+// an error message by accident; read them with `Redacted.value` at the call
+// site only. Each Credibled AUDIENCE (helpers, families) is a separate account
+// with its own key and its own webhook secret, and their webhook payload
+// identifies neither — which is why each audience gets its own webhook path
+// rather than one shared endpoint that would have to guess at the secret.
+//
+// Without an API key the client stays in dev log-mode: orders are logged and
+// answered with a synthetic check id instead of being sent (and paid for).
+export const credibledConfig = Config.all({
+  baseUrl: Config.string('CREDIBLED_BASE_URL').pipe(
+    Config.withDefault('https://api.credibled.com/api/external/v1')
+  ),
+  providerApiKey: Config.option(Config.redacted('CREDIBLED_PROVIDER_API_KEY')),
+  providerWebhookSecret: Config.option(Config.redacted('CREDIBLED_PROVIDER_WEBHOOK_SECRET')),
+  // The family account isn't wired up yet; both stay empty until its key is
+  // issued, at which point enabling it is configuration rather than code.
+  familyApiKey: Config.option(Config.redacted('CREDIBLED_PROVIDER_API_KEY')),
+  familyWebhookSecret: Config.option(Config.redacted('CREDIBLED_PROVIDER_WEBHOOK_SECRET')),
+  requestTimeoutMillis: Config.integer('CREDIBLED_REQUEST_TIMEOUT_MS').pipe(
+    Config.withDefault(15000)
+  )
+});
+
+// Poppynz safety verification policy.
+//
+// `validityMonths` exists because Credibled reports completion but never an
+// expiry date — how long a passed check stays good is our decision, not
+// theirs. Uploaded documents carry their own valid-until date and ignore it.
+export const safetyVerificationConfig = Config.all({
+  validityMonths: Config.integer('SAFETY_VERIFICATION_VALIDITY_MONTHS').pipe(
+    Config.withDefault(12)
+  ),
+  expiryReminderDays: Config.integer('SAFETY_VERIFICATION_EXPIRY_REMINDER_DAYS').pipe(
+    Config.withDefault(30)
+  ),
+  // Stamped onto the consent record so a later policy change can't rewrite
+  // what an applicant actually agreed to.
+  consentPolicyVersion: Config.string('SAFETY_VERIFICATION_CONSENT_POLICY_VERSION').pipe(
+    Config.withDefault('2026-08-22')
+  ),
+  // Credibled's API exposes no pricing, so the vendor cost is configured
+  // rather than quoted. Both are pre-tax, in cents.
+  // The price applied to a Credibled check when the document type has no
+  // explicit one. Per-type prices on kyc_document_types override it.
+  checkCostCents: Config.integer('SAFETY_VERIFICATION_CHECK_COST_CENTS').pipe(
+    Config.withDefault(5500)
+  ),
+  adminFeeCents: Config.integer('SAFETY_VERIFICATION_ADMIN_FEE_CENTS').pipe(
+    Config.withDefault(500)
+  ),
+  // Placeholder until Stripe Tax lands: Canadian rates run from 5% GST to 15%
+  // HST and vary by province, which the payment PR resolves properly.
+  taxRateBasisPoints: Config.integer('SAFETY_VERIFICATION_TAX_RATE_BASIS_POINTS').pipe(
+    Config.withDefault(0)
+  ),
+  // Order attempts after a successful payment before the charge is refunded.
+  orderMaxAttempts: Config.integer('SAFETY_VERIFICATION_ORDER_MAX_ATTEMPTS').pipe(
+    Config.withDefault(3)
+  )
 });

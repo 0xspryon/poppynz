@@ -64,6 +64,11 @@
 			badge: contractsBadge.count
 		},
 		{ href: resolve('/family/needs'), label: 'Services I need', icon: 'la-clipboard-list' },
+		{
+			href: resolve('/family/verification'),
+			label: 'Safety verification',
+			icon: 'la-shield-alt'
+		},
 		{ href: resolve('/family/profile'), label: 'Profile', icon: 'la-user' },
 		{ href: resolve('/family/referrals'), label: 'Referrals', icon: 'la-user-plus' }
 	]);

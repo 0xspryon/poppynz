@@ -1,0 +1,13 @@
+{
+  "name": "@repo/payments",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@repo/env": "*",
+    "effect": "^3.21.2"
+  }
+}

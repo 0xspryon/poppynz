@@ -1,0 +1,17 @@
+{
+  "name": "@repo/credibled",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./check-types": "./src/check-types.ts"
+  },
+  "scripts": {
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@repo/env": "*",
+    "effect": "^3.21.2"
+  }
+}

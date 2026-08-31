@@ -4,6 +4,7 @@ import {
   makeApprovalRequestRepoTest,
   makeKycDocumentRepoTest,
   makeKycDocumentTypeRepoTest,
+  makeSafetyVerificationRepoTest,
   makeServiceOfferedRepoTest,
   makeUserProfileRepoTest,
   type Approval,
@@ -83,7 +84,7 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
   appliesToRole: 'service-provider',
   isOptional: false,
   requiresExpiryDate: true,
-  isFetchable: false,
+  credibledCheckTypeValue: null,
   deletedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
@@ -163,6 +164,26 @@ const makeLayer = (
   const requests = options.requests ?? [];
 
   return Layer.mergeAll(
+    // The checklist now reads a backing type's status from the verification
+    // record, so the loader needs this repo even where no verification exists.
+    makeSafetyVerificationRepoTest({
+      findLive: () => Effect.succeed(null),
+      findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+      findByCredibledUuid: () => Effect.succeed(null),
+      listByUser: () => Effect.succeed([]),
+      listForReview: () => Effect.succeed([]),
+      create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+      update: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' })),
+      listExpiringForNotification: () => Effect.succeed([]),
+      markExpiryNotified: () =>
+        Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+      listLapsed: () => Effect.succeed([]),
+      listInFlight: () => Effect.succeed([]),
+      listAwaitingOrder: () => Effect.succeed([]),
+      listItems: () => Effect.succeed([]),
+      addItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+      removeItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }))
+    }),
     makeUserProfileRepoTest({
       findByUserId: (userId) =>
         currentProfile.userId === userId
@@ -248,7 +269,7 @@ describe('getOnboardingProgram', () => {
         id: 'document-type-3',
         name: 'Driving record',
         isOptional: true,
-        isFetchable: true
+        credibledCheckTypeValue: 'request_motor_vehicle_records'
       }),
       documentType({ id: 'document-type-4', name: 'Admin-only doc', appliesToRole: 'admin' })
     ];

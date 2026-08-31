@@ -6,6 +6,7 @@ import {
   makeApprovalRepoTest,
   makeApprovalRequestRepoTest,
   makeServiceOfferedRepoTest,
+  makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
   makeUserProfileRepoTest,
   makeUserRepoTest,
@@ -191,6 +192,25 @@ const makeApp = (
       : options.authSession;
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
+      // Approval now requires a current safety verification; this suite tests
+      // the approval flow itself, so the provider is verified.
+      makeSafetyVerificationRepoTest({
+        findLive: () =>
+          Effect.succeed({ id: 'sv-1', status: 'verified', expiresOn: '2099-01-01' } as never),
+        findById: () =>
+          Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+        findByCredibledUuid: () => Effect.succeed(null),
+        listByUser: () => Effect.succeed([]),
+        listForReview: () => Effect.succeed([]),
+        create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+        update: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' })),
+        listExpiringForNotification: () => Effect.succeed([]),
+        markExpiryNotified: () =>
+          Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+        listLapsed: () => Effect.succeed([]),
+        listInFlight: () => Effect.succeed([]),
+        listAwaitingOrder: () => Effect.succeed([])
+      }),
       EmptySignupIntentRepoTest,
       EmptySigninServiceTest,
       EmptySignupServiceTest,

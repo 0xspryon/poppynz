@@ -83,6 +83,26 @@ export const kycDocumentStatus = appDb.enum('kyc_document_status', [
   'rejected'
 ]);
 
+// Poppynz safety verification. One lifecycle for both routes: ordering a check
+// through Credibled, or submitting an existing document for admin review.
+// `review_required` is where both converge — nothing reaches `verified`
+// without a human decision, including a Credibled PASS.
+export const safetyVerificationStatus = appDb.enum('safety_verification_status', [
+  'not_started',
+  'payment_pending',
+  'invited',
+  'in_progress',
+  'review_required',
+  'verified',
+  'rejected',
+  'expired'
+]);
+// Null until the applicant picks one; fixed for the life of the record.
+export const safetyVerificationRoute = appDb.enum('safety_verification_route', [
+  'credibled',
+  'uploaded_document'
+]);
+
 export const user = appDb.table('user', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -172,7 +192,20 @@ export const kycDocumentType = appDb.table(
     appliesToRole: accessControlRole('applies_to_role').default('service-provider').notNull(),
     isOptional: boolean('is_optional').default(false).notNull(),
     requiresExpiryDate: boolean('requires_expiry_date').default(false).notNull(),
-    isFetchable: boolean('is_fetchable').default(false).notNull(),
+    // Credibled's stable check-type `value` (never its uuid — those are issued
+    // per Credibled account). NULL means upload-only: either Credibled has no
+    // equivalent product (vulnerable-sector checks) or we haven't confirmed one.
+    // Fetchability is derived from this being present so the two can't disagree.
+    credibledCheckTypeValue: text('credibled_check_type_value'),
+    // What Poppynz charges for this check, pre-tax. Credibled's API exposes no
+    // pricing at all, so somebody has to type it in — and a fetchable type
+    // without a price is a configuration error, not a free check.
+    credibledCostCents: integer('credibled_cost_cents'),
+    // This type IS the applicant's safety-verification evidence — uploading it
+    // creates the safety_verification record rather than an ordinary KYC
+    // document, and the checklist reads its status from there. Exactly the
+    // vulnerable-sector check today.
+    backsSafetyVerification: boolean('backs_safety_verification').default(false).notNull(),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -274,6 +307,130 @@ export const kycDocument = appDb.table(
     index('kyc_documents_user_id_idx').on(table.userId),
     index('kyc_documents_document_type_id_idx').on(table.documentTypeId),
     uniqueIndex('kyc_documents_user_id_document_type_uidx').on(table.userId, table.documentTypeId)
+  ]
+);
+
+// Mandatory safety verification, one record per applicant per role — a person
+// who is both a family and a helper is screened twice and the rows never mix.
+//
+// Rejected and expired rows are kept as history; the partial unique index
+// allows at most one live record per (user, role), so re-verification after a
+// rejection or an expiry inserts a fresh row rather than mutating the audit
+// trail.
+export const safetyVerification = appDb.table(
+  'safety_verifications',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    role: accessControlRole('role').notNull(),
+    status: safetyVerificationStatus('status').notNull().default('not_started'),
+    route: safetyVerificationRoute('route'),
+
+    // Credibled's own id for the check. The API has no external-reference
+    // field, so this is the only join key between their webhooks and our rows.
+    credibledCheckUuid: text('credibled_check_uuid'),
+    // The Credibled-hosted applicant link. We order with `send_email: false` so
+    // the branding and reminder cadence stay ours, which means WE have to put
+    // this in front of the applicant — without it the flow dead-ends at
+    // "check your email" for mail nobody sent.
+    applicationUrl: text('application_url'),
+
+    consentAt: timestamp('consent_at'),
+    consentPolicyVersion: text('consent_policy_version'),
+
+    // Deliberately provider-agnostic: the payment port hands back opaque
+    // references, so nothing in the schema commits to Stripe.
+    paymentReference: text('payment_reference'),
+    refundReference: text('refund_reference'),
+    amountCents: integer('amount_cents'),
+    feeCents: integer('fee_cents'),
+    taxCents: integer('tax_cents'),
+    totalCents: integer('total_cents'),
+
+    // Uploaded-document route only.
+    issuingAuthority: text('issuing_authority'),
+    documentNumber: text('document_number'),
+    filename: text('filename'),
+    fileKey: text('file_key'),
+
+    issuedOn: date('issued_on'),
+    // Credibled reports completion, not expiry, so for that route this is
+    // derived from policy (SAFETY_VERIFICATION_VALIDITY_MONTHS).
+    expiresOn: date('expires_on'),
+
+    reviewedBy: text('reviewed_by').references(() => user.id, { onDelete: 'set null' }),
+    reviewedAt: timestamp('reviewed_at'),
+    decisionReason: text('decision_reason'),
+
+    // One pre-expiry reminder per record, mirroring the approval sweep.
+    expiryNotifiedAt: timestamp('expiry_notified_at'),
+
+    // The row doubles as its own outbox: a paid-but-not-yet-ordered record is
+    // retried by the worker, and past SAFETY_VERIFICATION_ORDER_MAX_ATTEMPTS
+    // the charge is refunded rather than left hanging.
+    orderAttempts: integer('order_attempts').default(0).notNull(),
+    lastOrderError: text('last_order_error'),
+
+    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    uniqueIndex('safety_verifications_user_role_live_uidx')
+      .on(table.userId, table.role)
+      .where(sql`${table.deletedAt} is null and ${table.status} not in ('rejected', 'expired')`),
+    uniqueIndex('safety_verifications_credibled_uuid_uidx')
+      .on(table.credibledCheckUuid)
+      .where(sql`${table.credibledCheckUuid} is not null`),
+    index('safety_verifications_user_id_idx').on(table.userId),
+    index('safety_verifications_status_idx').on(table.status),
+    index('safety_verifications_status_expires_on_idx').on(table.status, table.expiresOn)
+  ]
+);
+
+// The applicant's basket of checks to order.
+//
+// A record in `not_started` holding items IS the basket: the applicant adds
+// checks from the documents page, sees the itemised price on the verification
+// page, and paying moves the same row to `payment_pending`. That keeps one
+// live record per (user, role) — no separate cart concept to reconcile.
+export const safetyVerificationItem = appDb.table(
+  'safety_verification_items',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    verificationId: uuid('verification_id')
+      .notNull()
+      .references(() => safetyVerification.id, { onDelete: 'cascade' }),
+    documentTypeId: uuid('document_type_id')
+      .notNull()
+      .references(() => kycDocumentType.id, { onDelete: 'restrict' }),
+    credibledCheckTypeValue: text('credibled_check_type_value').notNull(),
+    // Frozen when the item is added, so an admin editing the price mid-basket
+    // cannot change what the applicant was quoted.
+    costCents: integer('cost_cents').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex('safety_verification_items_verification_type_uidx').on(
+      table.verificationId,
+      table.documentTypeId
+    ),
+    // Two document types could map to the same Credibled check; ordering it
+    // twice would be charged twice and fulfilled once.
+    uniqueIndex('safety_verification_items_verification_check_uidx').on(
+      table.verificationId,
+      table.credibledCheckTypeValue
+    ),
+    index('safety_verification_items_verification_id_idx').on(table.verificationId)
   ]
 );
 
@@ -912,6 +1069,9 @@ export const userRelations = relations(user, ({ many }) => ({
   approvals: many(approval),
   approvalRequests: many(approvalRequest),
   kycDocuments: many(kycDocument),
+  safetyVerifications: many(safetyVerification, {
+    relationName: 'safetyVerificationApplicant'
+  }),
   servicesOffered: many(serviceOffered),
   servicesNeeded: many(serviceNeeded),
   tcDocumentAcceptances: many(tcDocumentAcceptance)
@@ -980,6 +1140,31 @@ export const kycDocumentRelations = relations(kycDocument, ({ one }) => ({
   documentType: one(kycDocumentType, {
     fields: [kycDocument.documentTypeId],
     references: [kycDocumentType.id]
+  })
+}));
+
+export const safetyVerificationItemRelations = relations(safetyVerificationItem, ({ one }) => ({
+  verification: one(safetyVerification, {
+    fields: [safetyVerificationItem.verificationId],
+    references: [safetyVerification.id]
+  }),
+  documentType: one(kycDocumentType, {
+    fields: [safetyVerificationItem.documentTypeId],
+    references: [kycDocumentType.id]
+  })
+}));
+
+export const safetyVerificationRelations = relations(safetyVerification, ({ one, many }) => ({
+  items: many(safetyVerificationItem),
+  user: one(user, {
+    fields: [safetyVerification.userId],
+    references: [user.id],
+    relationName: 'safetyVerificationApplicant'
+  }),
+  reviewer: one(user, {
+    fields: [safetyVerification.reviewedBy],
+    references: [user.id],
+    relationName: 'safetyVerificationReviewer'
   })
 }));
 

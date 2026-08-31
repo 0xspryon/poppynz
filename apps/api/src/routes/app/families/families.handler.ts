@@ -8,6 +8,11 @@ import { ApprovalRepo, DBNotFoundError, FamilySearchRepo, UserProfileRepo } from
 import { Cause, Data, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
+  requireVerifiedSafety,
+  safetyVerificationGateUnavailableResponseBody,
+  safetyVerificationRequiredResponseBody
+} from '@/api/lib/safety-verification-gate';
+import {
   authErrorToResponse,
   authenticate,
   handleNever,
@@ -101,6 +106,7 @@ export const searchFamiliesRouteProgram = (
       authenticated
     );
     yield* ensureApprovedProvider(userAndSession);
+    yield* requireVerifiedSafety(userAndSession);
     const minRadiusKm = yield* getFamilySearchMinRadiusKm.pipe(Effect.orElseSucceed(() => 10));
 
     let center: [number, number] | undefined;
@@ -227,6 +233,7 @@ export const getFamilyRouteProgram = (headers: Headers, userId: string) =>
       authenticated
     );
     yield* ensureApprovedProvider(userAndSession);
+    yield* requireVerifiedSafety(userAndSession);
     const repo = yield* FamilySearchRepo;
     const candidate = yield* repo.findCandidateByUserId(userId);
     const imageUrl = yield* presignProfileImageUrl(candidate.profile.image);
@@ -248,6 +255,10 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: FamiliesRouteError) => 
     case 'AuthProviderError':
     case 'AuthEntityLookupError':
       return authErrorToResponse(c, error);
+    case 'SafetyVerificationRequiredError':
+      return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
+    case 'SafetyVerificationGateUnavailableError':
+      return c.json({ error: safetyVerificationGateUnavailableResponseBody }, 503);
     case 'ProviderNotApprovedError':
       return c.json(
         {

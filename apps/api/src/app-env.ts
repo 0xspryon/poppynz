@@ -16,15 +16,22 @@ import type {
   ProviderSearchOutboxRepo,
   ProviderSearchRepo,
   ReferralRepo,
+  SafetyVerificationRepo,
   UserDirectoryRepo,
   UserProfileRepo,
   UserRepo,
   UserSearchRepo
 } from '@repo/db';
 import type { GooglePlaces } from '@repo/google';
+import type { Credibled } from '@repo/credibled';
 import type { NotificationHub } from '@repo/notify';
 import type { ObjectStorage } from '@repo/objs';
-import type { FamilySearchQueue, ProviderSearchQueue } from '@repo/queue';
+import type { Payments } from '@repo/payments';
+import type {
+  FamilySearchQueue,
+  ProviderSearchQueue,
+  SafetyVerificationQueue
+} from '@repo/queue';
 import type { FamilySearchIndex, ProviderSearchIndex } from '@repo/typesense';
 import type { ManagedRuntime } from 'effect';
 import type { SigninService } from './routes/app/auth/signin/signin.handler';
@@ -53,6 +60,7 @@ export type AppServices =
   | FamilySearchOutboxRepo
   | FamilySearchRepo
   | ReferralRepo
+  | SafetyVerificationRepo
   | UserDirectoryRepo
   | UserSearchRepo
   | ConversationRepo
@@ -65,6 +73,9 @@ export type AppServices =
   | ProviderSearchIndex
   | FamilySearchQueue
   | FamilySearchIndex
+  | SafetyVerificationQueue
+  | Credibled
+  | Payments
   | AuthService;
 
 export type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, never>;

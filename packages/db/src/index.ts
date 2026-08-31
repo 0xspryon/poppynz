@@ -8,6 +8,7 @@ export * from './repos/session-repo';
 export * from './repos/approval-repo';
 export * from './repos/kyc-document-repo';
 export * from './repos/kyc-document-type-repo';
+export * from './repos/safety-verification-repo';
 export * from './repos/service-offered-repo';
 export * from './repos/service-needed-repo';
 export * from './repos/service-catalogue-repo';

@@ -53,6 +53,31 @@ const sanitizeFileName = (fileName: string) => {
 
 const validateUploadInput = (userRole: Roles | null, input: UploadPresignInput) =>
   Effect.gen(function* () {
+    if (input.target === 'safety-verification-document') {
+      // Both applicant roles are screened; admins are not applicants.
+      if (userRole !== 'service-provider' && userRole !== 'family') {
+        return yield* Effect.fail(
+          new UploadValidationError({
+            message: 'Only families and service providers submit verification documents.'
+          })
+        );
+      }
+
+      if (!allowedKycContentTypes.has(input.contentType)) {
+        return yield* Effect.fail(
+          new UploadValidationError({ message: 'Unsupported verification document file type.' })
+        );
+      }
+
+      if (input.sizeBytes > maxKycDocumentSizeBytes) {
+        return yield* Effect.fail(
+          new UploadValidationError({ message: 'Verification document is too large.' })
+        );
+      }
+
+      return;
+    }
+
     if (input.target === 'kyc-document') {
       if (userRole !== 'service-provider') {
         return yield* Effect.fail(
@@ -113,6 +138,10 @@ const buildObjectKey = (userId: string, input: UploadPresignInput) => {
     return `users/${userId}/kyc/${input.documentTypeId}/${uploadId}-${safeName}`;
   }
 
+  if (input.target === 'safety-verification-document') {
+    return `users/${userId}/safety-verification/${uploadId}-${safeName}`;
+  }
+
   return `users/${userId}/public/profile-pictures/${uploadId}-${safeName}`;
 };
 
@@ -128,7 +157,12 @@ export const createUploadPresignProgram = (
 
     yield* validateUploadInput(userAndSession.user.role, input);
 
-    const bucket = input.target === 'kyc-document' ? buckets.kycBucket : buckets.publicBucket;
+    // Verification evidence is as sensitive as KYC — private bucket, never the
+    // public one.
+    const bucket =
+      input.target === 'kyc-document' || input.target === 'safety-verification-document'
+        ? buckets.kycBucket
+        : buckets.publicBucket;
     const fileKey = buildObjectKey(userAndSession.user.id, input);
     const presignedUrl = yield* objectStorage
       .createPresignedPutUrl({

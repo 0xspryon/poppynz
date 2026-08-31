@@ -23,6 +23,13 @@ export const uploadPresignInputSchema = Schema.Union(
   Schema.Struct({
     ...baseUploadInputFields,
     target: Schema.Literal('public-profile-picture')
+  }),
+  // Safety-verification evidence. Lands in the private KYC bucket under the
+  // applicant's own prefix, and unlike `kyc-document` it is available to
+  // families too — both roles are screened.
+  Schema.Struct({
+    ...baseUploadInputFields,
+    target: Schema.Literal('safety-verification-document')
   })
 );
 

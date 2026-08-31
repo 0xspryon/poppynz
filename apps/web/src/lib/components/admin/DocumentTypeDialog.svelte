@@ -1,6 +1,7 @@
 <script lang="ts">
 	/** Create/edit dialog for KYC document types (design 8d). Owns the draft;
 	 * emits it on save. */
+	import { credibledCheckTypes, type CredibledCheckTypeValue } from '@repo/credibled/check-types';
 	import type { DocumentType, DocumentTypeDraft } from '$lib/api/document-types';
 
 	interface Props {
@@ -15,12 +16,18 @@
 
 	let { open, editing, busy = false, error = null, onsave, oncancel }: Props = $props();
 
-	let draft: DocumentTypeDraft = $state({
+	const blankDraft = (): DocumentTypeDraft => ({
 		name: '',
 		isOptional: false,
 		requiresExpiryDate: true,
-		isFetchable: false
+		credibledCheckTypeValue: null,
+		credibledCostCents: null
 	});
+
+	/** The form edits dollars; the API stores cents. */
+	let costDollars = $state('');
+
+	let draft: DocumentTypeDraft = $state(blankDraft());
 
 	$effect(() => {
 		if (open) {
@@ -29,16 +36,31 @@
 						name: editing.name,
 						isOptional: editing.isOptional,
 						requiresExpiryDate: editing.requiresExpiryDate,
-						isFetchable: editing.isFetchable
+						credibledCheckTypeValue:
+							(editing.credibledCheckTypeValue as CredibledCheckTypeValue | null) ?? null,
+						credibledCostCents: editing.credibledCostCents ?? null
 					}
-				: { name: '', isOptional: false, requiresExpiryDate: true, isFetchable: false };
+				: blankDraft();
+			// Derived from `editing`, NOT from `draft`. Reading `draft` here would
+			// make this effect depend on the state it just wrote, and Svelte would
+			// re-run it forever (effect_update_depth_exceeded).
+			costDollars =
+				editing?.credibledCostCents == null ? '' : (editing.credibledCostCents / 100).toFixed(2);
 		}
 	});
 
 	function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (busy || !draft.name.trim()) return;
-		onsave(draft);
+		const parsed = Number.parseFloat(costDollars);
+		onsave({
+			...draft,
+			// Round at the boundary — 45.675 must not become 4567.4999 cents.
+			credibledCostCents:
+				draft.credibledCheckTypeValue === null || !Number.isFinite(parsed)
+					? null
+					: Math.round(parsed * 100)
+		});
 	}
 </script>
 
@@ -92,11 +114,49 @@
 					/>
 					<span class="text-sm font-medium text-base-content">Needs expiry date</span>
 				</label>
-				<label class="flex items-center gap-2.5">
-					<input type="checkbox" class="toggle toggle-credibled" bind:checked={draft.isFetchable} />
-					<span class="text-sm font-medium text-base-content">Fetchable via Credibled</span>
-				</label>
 			</div>
+
+			<fieldset class="fieldset mt-4">
+				<legend class="fieldset-legend">Collect via Credibled</legend>
+				<select
+					class="select w-full"
+					value={draft.credibledCheckTypeValue ?? ''}
+					onchange={(event) =>
+						(draft.credibledCheckTypeValue =
+							(event.currentTarget.value as CredibledCheckTypeValue) || null)}
+				>
+					<option value="">Upload only — the applicant provides the document</option>
+					{#each credibledCheckTypes as checkType (checkType.value)}
+						<option value={checkType.value}>{checkType.label}</option>
+					{/each}
+				</select>
+				<p class="mt-1.5 text-xs text-base-content-muted">
+					Pick the check Credibled runs for this document. Credibled does not offer
+					vulnerable-sector checks — leave those on upload only.
+				</p>
+			</fieldset>
+
+			{@debug draft}
+			{#if draft.credibledCheckTypeValue}
+				<fieldset class="fieldset mt-3">
+					<legend class="fieldset-legend">Price · CAD, before tax</legend>
+					<label class="input w-full">
+						<span class="text-base-content-muted">$</span>
+						<input
+							type="number"
+							min="0"
+							step="0.01"
+							required
+							placeholder="55.00"
+							bind:value={costDollars}
+						/>
+					</label>
+					<p class="mt-1.5 text-xs text-base-content-muted">
+						Credibled publishes no pricing, so this is set here. Applicants see it as a line item
+						before they pay.
+					</p>
+				</fieldset>
+			{/if}
 
 			{#if error}
 				<p class="mt-4 text-sm font-medium text-error" role="alert">{error}</p>

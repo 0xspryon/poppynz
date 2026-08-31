@@ -6,6 +6,8 @@ import {
   accountUnbannedMail,
   adminApprovalRequestSubmittedMail,
   approvalExpiringMail,
+  safetyVerificationExpiringMail,
+  safetyVerificationInviteMail,
   approvalGrantedMail,
   approvalRequestRejectedMail,
   approvalRequestSubmittedMail,
@@ -71,6 +73,21 @@ export type ApprovalExpiringMail = {
   link: string;
 };
 
+export type SafetyVerificationInviteMail = {
+  email: string;
+  name: string | null;
+  link: string;
+};
+
+export type SafetyVerificationExpiringMail = {
+  email: string;
+  name: string | null;
+  role: 'family' | 'service-provider';
+  expiresOn: string;
+  daysRemaining: number;
+  link: string;
+};
+
 export type FamilyWelcomeMail = {
   email: string;
   name: string | null;
@@ -120,6 +137,12 @@ export class Mailer extends Context.Tag('@api/lib/Mailer')<
     sendApprovalGranted: (mail: ApprovalGrantedMail) => Effect.Effect<void, MailerError>;
     sendApprovalRevoked: (mail: ApprovalRevokedMail) => Effect.Effect<void, MailerError>;
     sendApprovalExpiring: (mail: ApprovalExpiringMail) => Effect.Effect<void, MailerError>;
+    sendSafetyVerificationInvite: (
+      mail: SafetyVerificationInviteMail
+    ) => Effect.Effect<void, MailerError>;
+    sendSafetyVerificationExpiring: (
+      mail: SafetyVerificationExpiringMail
+    ) => Effect.Effect<void, MailerError>;
     sendAccountBanned: (mail: AccountBannedMail) => Effect.Effect<void, MailerError>;
     sendAccountUnbanned: (mail: AccountUnbannedMail) => Effect.Effect<void, MailerError>;
   }
@@ -243,6 +266,10 @@ export const makeMailer = (config: {
     sendApprovalGranted: (mail) => deliver([mail.email], approvalGrantedMail(mail)),
     sendApprovalRevoked: (mail) => deliver([mail.email], approvalRevokedMail(mail)),
     sendApprovalExpiring: (mail) => deliver([mail.email], approvalExpiringMail(mail)),
+    sendSafetyVerificationInvite: (mail) =>
+      deliver([mail.email], safetyVerificationInviteMail(mail)),
+    sendSafetyVerificationExpiring: (mail) =>
+      deliver([mail.email], safetyVerificationExpiringMail(mail)),
     sendAccountBanned: (mail) => deliver([mail.email], accountBannedMail(mail)),
     sendAccountUnbanned: (mail) => deliver([mail.email], accountUnbannedMail(mail))
   };
@@ -270,6 +297,8 @@ export const makeMailerTest = (implementation: Partial<Context.Tag.Service<Maile
     sendApprovalGranted: () => Effect.void,
     sendApprovalRevoked: () => Effect.void,
     sendApprovalExpiring: () => Effect.void,
+    sendSafetyVerificationInvite: () => Effect.void,
+    sendSafetyVerificationExpiring: () => Effect.void,
     sendAccountBanned: () => Effect.void,
     sendAccountUnbanned: () => Effect.void,
     ...implementation

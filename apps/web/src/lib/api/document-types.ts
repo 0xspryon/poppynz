@@ -1,4 +1,5 @@
 /** Admin CRUD for KYC document types (screen 8d), backed by /kyc-docs/types. */
+import type { CredibledCheckTypeValue } from '@repo/credibled/check-types';
 import { apiClient, call, type ApiResult, type ErrorsOf } from './client';
 
 const listEndpoint = apiClient['kyc-docs'].types.$get;
@@ -19,7 +20,11 @@ export interface DocumentTypeDraft {
 	name: string;
 	isOptional: boolean;
 	requiresExpiryDate: boolean;
-	isFetchable: boolean;
+	/** Credibled check type to order, or null for upload-only. */
+	credibledCheckTypeValue: CredibledCheckTypeValue | null;
+	/** Pre-tax price in cents. Required once a check type is set — Credibled
+	 * publishes no pricing, so somebody has to enter it. */
+	credibledCostCents: number | null;
 }
 
 export async function listDocumentTypes() {

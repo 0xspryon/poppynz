@@ -1,3 +1,4 @@
+import { credibledCheckTypeValues } from '@repo/credibled';
 import { Schema } from 'effect';
 import { validateInput } from '@/api/lib/schema-validator';
 
@@ -18,7 +19,16 @@ export const kycDocumentTypeCreateSchema = Schema.Struct({
   appliesToRole: Schema.optional(Schema.Literal('service-provider')),
   isOptional: Schema.Boolean,
   requiresExpiryDate: Schema.Boolean,
-  isFetchable: Schema.optional(Schema.Boolean)
+  // Null means upload-only. Constraining to the known catalogue stops an
+  // admin saving a value the API would later reject at order time.
+  credibledCheckTypeValue: Schema.optional(
+    Schema.NullOr(Schema.Literal(...credibledCheckTypeValues))
+  ),
+  // Pre-tax price in cents. Credibled publishes no pricing, so an admin sets
+  // it; capped well above any plausible check to catch a stray extra digit.
+  credibledCostCents: Schema.optional(
+    Schema.NullOr(Schema.Number.pipe(Schema.int(), Schema.between(0, 500_000)))
+  )
 });
 
 export const kycDocumentTypeUpdateSchema = Schema.partial(kycDocumentTypeCreateSchema);

@@ -1,5 +1,6 @@
 import {
   ApprovalRepo,
+  SafetyVerificationRepo,
   ApprovalRequestRepo,
   DBNotFoundError,
   ServiceOfferedRepo,
@@ -8,6 +9,7 @@ import {
 } from '@repo/db';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
+import { isVerified, toDateOnly } from '@/api/lib/safety-verification';
 import {
   authErrorToResponse,
   authenticate,
@@ -82,6 +84,23 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
       return yield* Effect.fail(
         new ApprovalEligibilityError({
           message: 'Provider must have at least one active service before approval.'
+        })
+      );
+    }
+
+    // Nobody becomes approved — and therefore searchable — without a current
+    // safety verification. Enforcing it HERE rather than only in the search
+    // index means the one rule covers discovery, reach-out and bookings at
+    // once: the index eligibility already keys off a live approval.
+    const safetyRepo = yield* SafetyVerificationRepo;
+    const verification = yield* safetyRepo
+      .findLive(input.userId, 'service-provider')
+      .pipe(Effect.catchTag('SqlError', (cause) => Effect.fail(new ApprovalRepoError({ cause }))));
+
+    if (!isVerified(verification, toDateOnly(new Date()))) {
+      return yield* Effect.fail(
+        new ApprovalEligibilityError({
+          message: 'Provider must complete Poppynz safety verification before approval.'
         })
       );
     }

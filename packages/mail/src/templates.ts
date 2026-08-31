@@ -352,6 +352,66 @@ export const approvalRevokedMail = (mail: {
   ].join('\n')
 });
 
+export const safetyVerificationInviteMail = (mail: {
+  name: string | null;
+  link: string;
+}): MailContent => ({
+  subject: 'Complete your Poppynz safety check',
+  html: layout(
+    paragraph(escapeHtml(greeting(mail.name))) +
+      paragraph(
+        'Your safety check is ready. Use the secure link below to confirm your identity and complete your screening with our provider.'
+      ) +
+      paragraph(
+        'Poppynz never sees your identity documents — you provide them directly to the screening provider.'
+      ) +
+      button(mail.link, 'Complete your check')
+  ),
+  text: [
+    greeting(mail.name),
+    '',
+    'Your safety check is ready. Use the secure link below to confirm your identity and complete your screening with our provider.',
+    '',
+    'Poppynz never sees your identity documents — you provide them directly to the screening provider.',
+    '',
+    `Complete your check: ${mail.link}`
+  ].join('\n')
+});
+
+export const safetyVerificationExpiringMail = (mail: {
+  name: string | null;
+  role: 'family' | 'service-provider';
+  expiresOn: string;
+  daysRemaining: number;
+  link: string;
+}): MailContent => {
+  const when = mail.daysRemaining === 1 ? 'tomorrow' : `in ${mail.daysRemaining} days`;
+  const consequence =
+    mail.role === 'family'
+      ? 'you will not be able to make new bookings'
+      : 'your profile will no longer appear when families search, and you will not be able to take new bookings';
+  return {
+    subject: `Your Poppynz safety verification expires ${when}`,
+    html: layout(
+      paragraph(escapeHtml(greeting(mail.name))) +
+        paragraph(
+          `Your Poppynz safety verification expires ${escapeHtml(when)}, on <strong>${escapeHtml(mail.expiresOn)}</strong>. Once it expires, ${escapeHtml(consequence)} until it is renewed.`
+        ) +
+        paragraph('Renewing takes a few minutes and keeps your account active.') +
+        button(mail.link, 'Renew your verification')
+    ),
+    text: [
+      greeting(mail.name),
+      '',
+      `Your Poppynz safety verification expires ${when}, on ${mail.expiresOn}. Once it expires, ${consequence} until it is renewed.`,
+      '',
+      'Renewing takes a few minutes and keeps your account active.',
+      '',
+      `Renew your verification: ${mail.link}`
+    ].join('\n')
+  };
+};
+
 export const approvalExpiringMail = (mail: {
   name: string | null;
   expiresAt: Date;

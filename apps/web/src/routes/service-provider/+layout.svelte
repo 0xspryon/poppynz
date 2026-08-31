@@ -87,6 +87,11 @@
 			badge: missingDocuments
 		},
 		{ href: resolve('/service-provider/services'), label: 'Services & rates', icon: 'la-heart' },
+		{
+			href: resolve('/service-provider/verification'),
+			label: 'Safety verification',
+			icon: 'la-shield-alt'
+		},
 		{ href: resolve('/service-provider/approval'), label: 'Approval', icon: 'la-user-shield' },
 		{ href: resolve('/service-provider/referrals'), label: 'Referrals', icon: 'la-user-plus' }
 	]);

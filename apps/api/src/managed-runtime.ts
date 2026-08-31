@@ -16,15 +16,22 @@ import {
   ProviderSearchOutboxRepoDefault,
   ProviderSearchRepoDefault,
   ReferralRepoDefault,
+  SafetyVerificationRepoDefault,
   UserDirectoryRepoDefault,
   UserProfileRepoDefault,
   UserRepoDefault,
   UserSearchRepoDefault
 } from '@repo/db';
+import { CredibledDefault } from '@repo/credibled';
 import { GooglePlacesLive } from '@repo/google';
 import { NotificationHubLive } from '@repo/notify';
 import { ObjectStorageLive } from '@repo/objs';
-import { FamilySearchQueueLive, ProviderSearchQueueLive } from '@repo/queue';
+import { PaymentsMock } from '@repo/payments';
+import {
+  FamilySearchQueueLive,
+  ProviderSearchQueueLive,
+  SafetyVerificationQueueLive
+} from '@repo/queue';
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import { Layer, ManagedRuntime } from 'effect';
 import type { AppRuntime } from './app-env';
@@ -51,6 +58,7 @@ export const AppLive = Layer.mergeAll(
   FamilySearchOutboxRepoDefault,
   FamilySearchRepoDefault,
   ReferralRepoDefault,
+  SafetyVerificationRepoDefault,
   UserDirectoryRepoDefault,
   UserSearchRepoDefault,
   ConversationRepoDefault,
@@ -63,6 +71,11 @@ export const AppLive = Layer.mergeAll(
   ProviderSearchIndexDefault,
   FamilySearchQueueLive,
   FamilySearchIndexDefault,
+  SafetyVerificationQueueLive,
+  CredibledDefault,
+  // Stripe lands in its own PR; until then the port resolves to the mock so
+  // the ordering, refund and retry paths are exercised end to end.
+  PaymentsMock,
   SigninServiceLive,
   SignupServiceLive,
   AuthServiceLive

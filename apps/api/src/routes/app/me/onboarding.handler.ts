@@ -18,7 +18,7 @@ import {
   requirePermissions,
   type UserAndSession
 } from '@/api/lib/effect-auth';
-import { loadProviderChecklist } from '@/api/lib/provider-onboarding';
+import { loadChecklist } from '@/api/lib/onboarding-checklist';
 
 export class OnboardingRepoError extends Data.TaggedError('OnboardingRepoError')<{
   cause: SqlError;
@@ -98,7 +98,7 @@ export const getOnboardingProgram = (userAndSession: UserAndSession) =>
     );
     const [{ checklist, services, warnings }, approval, latestRequest] = yield* Effect.all(
       [
-        mapRepoError(loadProviderChecklist(userId)),
+        mapRepoError(loadChecklist(userId, 'service-provider')),
         nullOnNotFound(approvalRepo.findCurrentByUserId(userId)),
         nullOnNotFound(approvalRequestRepo.findLatestByUserId(userId))
       ],

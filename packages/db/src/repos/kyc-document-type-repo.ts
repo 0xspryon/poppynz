@@ -9,14 +9,19 @@ export type KycDocumentType = InferSelectModel<typeof kycDocumentType>;
 export type KycDocumentTypeInsert = InferInsertModel<typeof kycDocumentType>;
 export type KycDocumentTypeCreateInput = Pick<
   KycDocumentTypeInsert,
-  'name' | 'isOptional' | 'requiresExpiryDate' | 'isFetchable'
+  'name' | 'isOptional' | 'requiresExpiryDate' | 'credibledCheckTypeValue' | 'credibledCostCents'
 > & {
   appliesToRole?: KycDocumentType['appliesToRole'];
 };
 export type KycDocumentTypeUpdateInput = Partial<
   Pick<
     KycDocumentType,
-    'name' | 'isOptional' | 'requiresExpiryDate' | 'isFetchable' | 'appliesToRole'
+    | 'name'
+    | 'isOptional'
+    | 'requiresExpiryDate'
+    | 'credibledCheckTypeValue'
+    | 'credibledCostCents'
+    | 'appliesToRole'
   >
 >;
 

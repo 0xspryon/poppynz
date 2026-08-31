@@ -8,6 +8,11 @@
 		type DocumentType,
 		type DocumentTypeDraft
 	} from '$lib/api/document-types';
+	import {
+		credibledCheckTypeLabel,
+		credibledCheckTypes,
+		type CredibledCheckTypeValue
+	} from '@repo/credibled/check-types';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import DocumentTypeDialog from '$lib/components/admin/DocumentTypeDialog.svelte';
 	import { toast } from '$lib/toast.svelte';
@@ -91,7 +96,7 @@
 	 * flight and the checkbox is reverted if it fails. */
 	async function toggleField(
 		item: DocumentType,
-		field: 'isOptional' | 'requiresExpiryDate' | 'isFetchable',
+		field: 'isOptional' | 'requiresExpiryDate',
 		input: HTMLInputElement
 	) {
 		const value = input.checked;
@@ -105,13 +110,41 @@
 			toast.success(
 				field === 'isOptional'
 					? `${updated.name} is now ${updated.isOptional ? 'optional' : 'required'}.`
-					: field === 'requiresExpiryDate'
-						? `${updated.name} ${updated.requiresExpiryDate ? 'now requires' : 'no longer requires'} an expiry date.`
-						: `${updated.name} is now ${updated.isFetchable ? 'fetchable via Credibled' : 'upload only'}.`
+					: `${updated.name} ${updated.requiresExpiryDate ? 'now requires' : 'no longer requires'} an expiry date.`
 			);
 		} else {
 			input.checked = !value;
 			toast.error(errorText(result.error), { title: `${item.name} not updated` });
+		}
+		busyIds.delete(item.id);
+	}
+
+	/** Inline check-type picker: same pessimistic pattern as the toggles — the
+	 * row is disabled while the PATCH is in flight and the select is reverted
+	 * if it fails. */
+	async function setCheckType(item: DocumentType, select: HTMLSelectElement) {
+		const previous = item.credibledCheckTypeValue ?? '';
+		const value = (select.value as CredibledCheckTypeValue) || null;
+		busyIds.add(item.id);
+		const result = await updateDocumentType(item.id, { credibledCheckTypeValue: value });
+		if (result.ok) {
+			items = items.map((candidate) => (candidate.id === item.id ? result.data : candidate));
+			toast.success(
+				value
+					? `${result.data.name} is now collected via ${credibledCheckTypeLabel(value)}.`
+					: `${result.data.name} is now upload only.`
+			);
+		} else {
+			select.value = previous;
+			toast.error(
+				// The API refuses a fetchable type with no price; say so instead of
+				// the generic retry message, because retrying will not help.
+				// `INVALID_KYC_DOCUMENT` is what the pricing invariant returns.
+				result.error.code === 'INVALID_KYC_DOCUMENT'
+					? result.error.message
+					: errorText(result.error),
+				{ title: `${item.name} not updated` }
+			);
 		}
 		busyIds.delete(item.id);
 	}
@@ -176,7 +209,7 @@
 {:else}
 	<!-- Desktop: header row + card rows (per design 8d) -->
 	<div
-		class="mb-2 hidden grid-cols-[1fr_150px_130px_130px_140px_90px] gap-3.5 px-4 text-[10.5px]
+		class="mb-2 hidden grid-cols-[1fr_140px_120px_110px_210px_90px] gap-3.5 px-4 text-[10.5px]
 			font-semibold tracking-[0.08em] text-outline uppercase lg:grid"
 	>
 		<span>Name</span><span>Applies to</span><span>Requirement</span><span>Expiry date</span>
@@ -187,7 +220,7 @@
 			{@const busy = busyIds.has(item.id)}
 			<div
 				class="rounded-lg border border-card-border bg-base-100 px-4 py-3.5
-					lg:grid lg:grid-cols-[1fr_150px_130px_130px_140px_90px] lg:items-center lg:gap-3.5"
+					lg:grid lg:grid-cols-[1fr_140px_120px_110px_210px_90px] lg:items-center lg:gap-3.5"
 			>
 				<div class="mb-2 flex items-center justify-between lg:mb-0 lg:block">
 					<span class="text-sm font-semibold text-base-content">{item.name}</span>
@@ -223,16 +256,28 @@
 					<span class="text-xs text-base-content-muted">Expiry</span>
 				</label>
 				<label class="flex items-center gap-2 py-1 lg:py-0">
-					<input
-						type="checkbox"
-						class="toggle toggle-sm toggle-credibled"
-						checked={item.isFetchable}
+					<span class="sr-only">Credibled check for {item.name}</span>
+					<select
+						class="select select-sm w-full max-w-full text-xs
+							{item.credibledCheckTypeValue
+							? 'border-credibled-border bg-credibled-tint text-credibled-text'
+							: ''}"
+						value={item.credibledCheckTypeValue ?? ''}
 						disabled={busy}
-						onchange={(event) => toggleField(item, 'isFetchable', event.currentTarget)}
-					/>
-					<span class="text-xs text-base-content-muted">
-						{item.isFetchable ? 'Fetchable' : 'Upload only'}
-					</span>
+						onchange={(event) => setCheckType(item, event.currentTarget)}
+					>
+						<option value="">Upload only</option>
+						{#each credibledCheckTypes as checkType (checkType.value)}
+							<option value={checkType.value}>{checkType.label}</option>
+						{/each}
+					</select>
+					{#if item.credibledCheckTypeValue}
+						<span class="text-xs whitespace-nowrap text-base-content-muted">
+							{item.credibledCostCents === null
+								? 'no price'
+								: `$${(item.credibledCostCents / 100).toFixed(2)}`}
+						</span>
+					{/if}
 				</label>
 				<div class="mt-2 flex justify-end gap-1.5 lg:mt-0">
 					<button

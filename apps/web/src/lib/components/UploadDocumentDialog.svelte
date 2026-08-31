@@ -10,7 +10,14 @@
 		target: OnboardingDocument | null;
 		busy?: boolean;
 		error?: string;
-		onsubmit: (input: { file: File; expiryDate: string | null }) => void;
+		onsubmit: (input: {
+			file: File;
+			expiryDate: string | null;
+			/** Only collected for a type that backs safety verification. */
+			issuingAuthority?: string;
+			documentNumber?: string;
+			issuedOn?: string;
+		}) => void;
 		oncancel: () => void;
 	}
 
@@ -18,11 +25,20 @@
 
 	let file = $state<File | null>(null);
 	let expiry = $state('');
+	// A vulnerable-sector check is the applicant's safety-verification
+	// evidence, so it carries provenance an ordinary document does not.
+	let issuingAuthority = $state('');
+	let documentNumber = $state('');
+	let issuedOn = $state('');
 
+	// Writes only — never read state this effect also assigns, or Svelte loops.
 	$effect(() => {
 		if (target) {
 			file = null;
 			expiry = '';
+			issuingAuthority = '';
+			documentNumber = '';
+			issuedOn = '';
 		}
 	});
 
@@ -31,12 +47,29 @@
 		file = input.files?.[0] ?? null;
 	}
 
-	const canSubmit = $derived(file !== null && (!target?.requiresExpiryDate || expiry !== ''));
+	const needsIssuingDetails = $derived(target?.backsSafetyVerification === true);
+
+	const canSubmit = $derived(
+		file !== null &&
+			(!target?.requiresExpiryDate || expiry !== '') &&
+			(!needsIssuingDetails ||
+				(issuingAuthority.trim() !== '' && documentNumber.trim() !== '' && issuedOn !== ''))
+	);
 
 	function submit(event: SubmitEvent) {
 		event.preventDefault();
 		if (!file || !canSubmit || busy) return;
-		onsubmit({ file, expiryDate: expiry ? new Date(expiry).toISOString() : null });
+		onsubmit({
+			file,
+			expiryDate: expiry ? new Date(expiry).toISOString() : null,
+			...(needsIssuingDetails
+				? {
+						issuingAuthority: issuingAuthority.trim(),
+						documentNumber: documentNumber.trim(),
+						issuedOn
+					}
+				: {})
+		});
 	}
 </script>
 
@@ -61,11 +94,38 @@
 				/>
 			</fieldset>
 
+			{#if needsIssuingDetails}
+				<fieldset class="fieldset mt-2">
+					<legend class="fieldset-legend">Issuing police service</legend>
+					<input
+						type="text"
+						class="input w-full"
+						maxlength="120"
+						placeholder="Toronto Police Service"
+						bind:value={issuingAuthority}
+					/>
+				</fieldset>
+				<fieldset class="fieldset mt-2">
+					<legend class="fieldset-legend">Document number</legend>
+					<input type="text" class="input w-full" maxlength="60" bind:value={documentNumber} />
+				</fieldset>
+				<fieldset class="fieldset mt-2">
+					<legend class="fieldset-legend">Issued on</legend>
+					<input type="date" class="input w-full" bind:value={issuedOn} />
+				</fieldset>
+			{/if}
+
 			{#if target.requiresExpiryDate}
 				<fieldset class="fieldset mt-2">
-					<legend class="fieldset-legend">Expiry date</legend>
+					<legend class="fieldset-legend">
+						{needsIssuingDetails ? 'Valid until' : 'Expiry date'}
+					</legend>
 					<input type="date" class="input w-full" bind:value={expiry} />
-					<p class="label text-xs">This document type requires a future expiry date.</p>
+					<p class="label text-xs">
+						{needsIssuingDetails
+							? 'A Poppynz administrator reviews this — submitting is not the same as being verified.'
+							: 'This document type requires a future expiry date.'}
+					</p>
 				</fieldset>
 			{/if}
 

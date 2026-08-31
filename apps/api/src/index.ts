@@ -6,6 +6,7 @@ import { auth } from './lib/auth';
 import { hasMalformedCallbackParam } from './lib/magic-link-guard';
 import { resolveUiOrigin } from './lib/ui-origin';
 import { appRoutes } from './routes/app/index';
+import { credibledWebhookRoute } from './routes/webhooks/credibled';
 import { requestId } from 'hono/request-id';
 import { makeAppRuntime } from './managed-runtime';
 import { ensureInitialAppState } from './startup';
@@ -44,6 +45,11 @@ export const createApp = (
       }
       return auth.handler(c.req.raw);
     })
+    // Public ingress — deliberately OUTSIDE the app router and its session
+    // middleware. Authenticity comes from the HMAC signature alone, and the
+    // audience comes from the path because Credibled's payload identifies
+    // neither the account nor the role.
+    .route('/webhooks/credibled', credibledWebhookRoute)
     .route(API_BASE_PATH, appRoutes)
 
     .onError((error, c) => {

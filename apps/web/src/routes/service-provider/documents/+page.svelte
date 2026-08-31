@@ -6,6 +6,13 @@
 		type OnboardingState
 	} from '$lib/api/onboarding';
 	import { uploadKycDocument } from '$lib/api/kyc-documents';
+	import {
+		addSafetyVerificationItem,
+		getSafetyVerification,
+		submitSafetyDocument
+	} from '$lib/api/safety-verification';
+	import { resolve } from '$app/paths';
+	import { goto } from '$app/navigation';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import UploadDocumentDialog from '$lib/components/UploadDocumentDialog.svelte';
 	import { toast } from '$lib/toast.svelte';
@@ -20,6 +27,38 @@
 	let uploadTarget = $state<OnboardingDocument | null>(null);
 	let uploading = $state(false);
 	let uploadError = $state('');
+
+	// "Verify through Credibled" adds the check to the applicant's list; the modal
+	// explains that adding is not the same as starting, so somebody can queue
+	// several checks and pay for them once.
+	let addingId = $state<string | null>(null);
+	let addedDoc = $state<OnboardingDocument | null>(null);
+	/** documentTypeIds sitting in the unpaid Credibled list. */
+	let queuedTypeIds = $state<Array<string>>([]);
+
+	async function loadBasket() {
+		const result = await getSafetyVerification();
+		queuedTypeIds = result.ok ? result.data.basket.map((entry) => entry.documentTypeId) : [];
+	}
+
+	async function addToCheckList(doc: OnboardingDocument) {
+		if (addingId) return;
+		addingId = doc.documentTypeId;
+		const result = await addSafetyVerificationItem(doc.documentTypeId);
+		if (result.ok) {
+			addedDoc = doc;
+			await loadBasket();
+		} else {
+			toast.error(
+				result.error.code === 'SAFETY_VERIFICATION_CONFLICT' ||
+					result.error.code === 'INVALID_SAFETY_VERIFICATION_INPUT'
+					? result.error.message
+					: RETRY_MESSAGE,
+				{ title: 'Not added to your check list' }
+			);
+		}
+		addingId = null;
+	}
 
 	async function load() {
 		loading = onboarding === null;
@@ -38,6 +77,7 @@
 	// request loop against /me/onboarding.
 	onMount(() => {
 		void load();
+		void loadBasket();
 	});
 
 	const requiredDocs = $derived(onboarding?.documents.filter((doc) => !doc.isOptional) ?? []);
@@ -58,23 +98,49 @@
 		uploadTarget = null;
 	}
 
-	async function submitUpload(input: { file: File; expiryDate: string | null }) {
+	async function submitUpload(input: {
+		file: File;
+		expiryDate: string | null;
+		issuingAuthority?: string;
+		documentNumber?: string;
+		issuedOn?: string;
+	}) {
 		if (!uploadTarget || uploading) return;
 		uploading = true;
 		uploadError = '';
-		const result = await uploadKycDocument({
-			documentTypeId: uploadTarget.documentTypeId,
-			file: input.file,
-			expiryDate: input.expiryDate
-		});
+
+		// A type that backs safety verification writes the verification record,
+		// not an ordinary KYC document — one source of truth for the gate.
+		const result = uploadTarget.backsSafetyVerification
+			? await submitSafetyDocument({
+					file: input.file,
+					issuingAuthority: input.issuingAuthority ?? '',
+					documentNumber: input.documentNumber ?? '',
+					issuedOn: input.issuedOn ?? '',
+					expiresOn: (input.expiryDate ?? '').slice(0, 10)
+				})
+			: await uploadKycDocument({
+					documentTypeId: uploadTarget.documentTypeId,
+					file: input.file,
+					expiryDate: input.expiryDate
+				});
+
 		if (result.ok) {
-			toast.success(`${uploadTarget.name} uploaded.`);
+			toast.success(
+				uploadTarget.backsSafetyVerification
+					? `${uploadTarget.name} submitted for review.`
+					: `${uploadTarget.name} uploaded.`
+			);
 			uploadTarget = null;
-			await load();
+			// The server drops the matching Credibled item on upload, so the
+			// button state has to be refreshed alongside the checklist.
+			await Promise.all([load(), loadBasket()]);
 		} else if (
 			result.error.code === 'INVALID_KYC_DOCUMENT' ||
 			result.error.code === 'INVALID_UPLOAD_PRESIGN_INPUT' ||
-			result.error.code === 'INVALID_UPLOAD'
+			result.error.code === 'INVALID_UPLOAD' ||
+			result.error.code === 'INVALID_SAFETY_VERIFICATION_INPUT' ||
+			result.error.code === 'SAFETY_VERIFICATION_CONFLICT'
 		) {
 			// The server is rejecting the chosen file/expiry — keep that next to
 			// the inputs so it can be corrected in place.
@@ -170,17 +236,7 @@
 			</div>
 			<StatusChip status={chipStatus(doc)} />
 			{#if doc.status === 'missing'}
-				{#if doc.isFetchable}
-					<button
-						type="button"
-						class="btn btn-outline btn-sm cursor-not-allowed border-credibled-border
-							text-credibled-text opacity-60"
-						disabled
-						title="Credibled integration is coming soon"
-					>
-						Fetch via Credibled
-					</button>
-				{/if}
+				<!-- Uploading it yourself is free and instant, so it leads. -->
 				<button
 					type="button"
 					class="btn btn-outline btn-sm btn-secondary"
@@ -188,6 +244,29 @@
 				>
 					Upload yourself
 				</button>
+				{#if doc.isFetchable}
+					{#if queuedTypeIds.includes(doc.documentTypeId)}
+						<a
+							class="btn btn-sm border-credibled-border bg-credibled-tint text-credibled-text"
+							href={resolve('/service-provider/verification')}
+							title="Waiting for payment — open Safety verification to pay and start"
+						>
+							Scheduled via Credibled
+						</a>
+					{:else}
+						<button
+							type="button"
+							class="btn btn-outline btn-sm border-credibled-border text-credibled-text"
+							disabled={addingId !== null}
+							onclick={() => addToCheckList(doc)}
+						>
+							{#if addingId === doc.documentTypeId}
+								<span class="loading loading-spinner loading-xs"></span>
+							{/if}
+							Verify through Credibled
+						</button>
+					{/if}
+				{/if}
 			{:else}
 				<button type="button" class="btn btn-outline btn-sm" onclick={() => openUpload(doc)}>
 					Replace
@@ -210,38 +289,6 @@
 	{:else if errorMessage}
 		<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
 	{:else if onboarding}
-		{#if onboarding.documents.some((doc) => doc.isFetchable)}
-			<!-- Credibled hero (integration pending — fetch stays disabled) -->
-			<div
-				class="mb-6 flex items-center gap-4 rounded-lg border border-credibled-border bg-base-100
-					px-5 py-4"
-			>
-				<span
-					class="flex size-11 shrink-0 items-center justify-center rounded-full border-[1.5px]
-						border-credibled"
-				>
-					<i class="las la-fingerprint text-xl text-credibled" aria-hidden="true"></i>
-				</span>
-				<div class="min-w-0 flex-1">
-					<div class="flex flex-wrap items-center gap-2.5">
-						<span class="font-display text-base font-bold text-base-content">
-							Verification by Credibled
-						</span>
-						<span
-							class="rounded-pill bg-credibled-tint px-2.5 py-0.5 text-[10.5px] font-semibold
-								text-credibled-text"
-						>
-							Coming soon
-						</span>
-					</div>
-					<p class="mt-0.5 text-[13px] leading-relaxed text-base-content-muted">
-						Credibled will collect your official checks (criminal record, references) directly —
-						until then, upload those documents yourself below.
-					</p>
-				</div>
-			</div>
-		{/if}
-
 		<div class="mb-2.5 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
 			Required · {requiredSubmitted} of {requiredDocs.length}
 		</div>
@@ -278,3 +325,44 @@
 	onsubmit={(input) => void submitUpload(input)}
 	oncancel={closeUpload}
 />
+
+{#if addedDoc}
+	<div class="modal modal-open" role="dialog" aria-modal="true">
+		<div class="modal-box max-w-lg border border-card-border">
+			<h3 class="font-display text-xl font-bold text-base-content">Added to your check list</h3>
+			<p class="mt-2 text-sm text-base-content-muted">
+				<b>{addedDoc.name}</b> will be collected by Credibled on your behalf. Nothing has been ordered
+				or charged yet.
+			</p>
+			<p class="mt-3 text-sm text-base-content-muted">
+				If there are other documents you'd like Credibled to collect, close this and keep adding
+				them you'll pay for everything together, once.
+			</p>
+			<p class="mt-3 text-sm text-base-content-muted">
+				When you're ready, head to Safety verification to see the price and start the checks.
+			</p>
+
+			<div class="modal-action">
+				<button type="button" class="btn btn-ghost" onclick={() => (addedDoc = null)}>
+					Keep adding documents
+				</button>
+				<button
+					type="button"
+					class="btn btn-primary"
+					onclick={() => {
+						addedDoc = null;
+						void goto(resolve('/service-provider/verification'));
+					}}
+				>
+					Review and start
+				</button>
+			</div>
+		</div>
+		<button
+			type="button"
+			class="modal-backdrop"
+			onclick={() => (addedDoc = null)}
+			aria-label="Close"
+		></button>
+	</div>
+{/if}

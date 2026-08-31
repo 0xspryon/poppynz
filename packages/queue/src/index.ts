@@ -20,10 +20,17 @@ export const familySearchQueueDefinition = {
   type: 'bullmq' as const
 };
 
+export const safetyVerificationQueueDefinition = {
+  name: 'safety-verification' as const,
+  displayName: 'Safety Verification' as const,
+  type: 'bullmq' as const
+};
+
 export const queues = [
   providerSearchQueueDefinition,
   familySearchQueueDefinition,
-  approvalExpiryQueueDefinition
+  approvalExpiryQueueDefinition,
+  safetyVerificationQueueDefinition
 ] as const;
 
 export const providerSearchJobNames = {
@@ -40,9 +47,27 @@ export const approvalExpiryJobNames = {
   notifyExpiring: 'notify-expiring-approvals'
 } as const;
 
+export const safetyVerificationJobNames = {
+  /** Place a paid-for order with Credibled. Retried by the worker; past
+   * SAFETY_VERIFICATION_ORDER_MAX_ATTEMPTS the charge is refunded. */
+  placeOrder: 'place-safety-verification-order',
+  /** Backstop for Credibled webhooks, which are never retried on failure —
+   * this poll is the only recovery path for a dropped delivery. */
+  reconcileStatuses: 'reconcile-safety-verification-statuses',
+  /** Daily expiry sweep and pre-expiry reminders. */
+  sweepExpiries: 'sweep-safety-verification-expiries'
+} as const;
+
 /** One repeatable scheduler drives the daily run; upserted on worker boot. */
 export const approvalExpirySchedulerId = 'approval-expiry-daily';
 export const approvalExpiryCronPattern = '0 2 * * *';
+
+export const safetyVerificationReconcileSchedulerId = 'safety-verification-reconcile';
+// Every 15 minutes. Credibled logs a failed webhook delivery but never retries
+// it, so this cadence bounds how long a completed check can sit unnoticed.
+export const safetyVerificationReconcileCronPattern = '*/15 * * * *';
+export const safetyVerificationExpirySchedulerId = 'safety-verification-expiry-daily';
+export const safetyVerificationExpiryCronPattern = '30 2 * * *';
 
 // outboxId stays nullable only for legacy delayed expiry jobs still sitting
 // in Redis from before expiry reconciles were dropped (search-time DB
@@ -54,6 +79,14 @@ export type ProviderSearchJobData = ReconcileProviderJob | ReindexAllProvidersJo
 
 // Family reconciles have no legacy delayed jobs, so every enqueue carries its
 // outbox row id.
+export type PlaceSafetyVerificationOrderJob = { verificationId: string };
+export type ReconcileSafetyVerificationsJob = Record<string, never>;
+export type SweepSafetyVerificationExpiriesJob = Record<string, never>;
+export type SafetyVerificationJobData =
+  | PlaceSafetyVerificationOrderJob
+  | ReconcileSafetyVerificationsJob
+  | SweepSafetyVerificationExpiriesJob;
+
 export type ReconcileFamilyJob = { outboxId: string; userId: string };
 export type ReindexAllFamiliesJob = Record<string, never>;
 export type FamilySearchJobData = ReconcileFamilyJob | ReindexAllFamiliesJob;
@@ -220,3 +253,53 @@ export const FamilySearchQueueLive = Layer.effect(
 
 export const makeFamilySearchQueueTest = (implementation: Context.Tag.Service<FamilySearchQueue>) =>
   Layer.succeed(FamilySearchQueue, implementation);
+
+
+export class SafetyVerificationQueueError extends Data.TaggedError('SafetyVerificationQueueError')<{
+  operation: 'enqueueOrder';
+  cause: unknown;
+}> {}
+
+export const makeSafetyVerificationQueue = (connection: QueueOptions['connection']) =>
+  new Queue<SafetyVerificationJobData>(safetyVerificationQueueDefinition.name, {
+    connection,
+    defaultJobOptions
+  });
+
+export class SafetyVerificationQueue extends Context.Tag('@repo/queue/SafetyVerificationQueue')<
+  SafetyVerificationQueue,
+  {
+    enqueueOrder: (
+      input: PlaceSafetyVerificationOrderJob
+    ) => Effect.Effect<EnqueuedJob, SafetyVerificationQueueError>;
+  }
+>() {}
+
+export const SafetyVerificationQueueLive = Layer.effect(
+  SafetyVerificationQueue,
+  redisConnectionConfig.pipe(
+    Effect.map((connection) => {
+      const queue = makeSafetyVerificationQueue(connection);
+
+      return {
+        enqueueOrder: (input: PlaceSafetyVerificationOrderJob) =>
+          Effect.tryPromise({
+            try: async () => {
+              const job = await queue.add(safetyVerificationJobNames.placeOrder, input, {
+                // Deduplicated on the verification id: a double-submit or a
+                // retried request must never place two paid orders.
+                deduplication: { id: `safety-verification-order-${input.verificationId}` }
+              });
+
+              return { id: job.id, name: job.name };
+            },
+            catch: (cause) => new SafetyVerificationQueueError({ operation: 'enqueueOrder', cause })
+          })
+      };
+    })
+  )
+);
+
+export const makeSafetyVerificationQueueTest = (
+  implementation: Context.Tag.Service<SafetyVerificationQueue>
+) => Layer.succeed(SafetyVerificationQueue, implementation);

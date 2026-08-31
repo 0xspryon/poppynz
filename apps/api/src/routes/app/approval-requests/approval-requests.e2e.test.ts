@@ -7,6 +7,7 @@ import {
   EmptySignupIntentRepoTest,
   EmptyUserProfileRepoTest,
   makeApprovalRequestRepoTest,
+  makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
   type ApprovalRequest,
@@ -141,6 +142,26 @@ const makeApp = (
       : options.authSession;
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
+    // The checklist now reads a backing type's status from the verification
+    // record, so the loader needs this repo even where no verification exists.
+    makeSafetyVerificationRepoTest({
+      findLive: () => Effect.succeed(null),
+      findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+      findByCredibledUuid: () => Effect.succeed(null),
+      listByUser: () => Effect.succeed([]),
+      listForReview: () => Effect.succeed([]),
+      create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+      update: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' })),
+      listExpiringForNotification: () => Effect.succeed([]),
+      markExpiryNotified: () =>
+        Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
+      listLapsed: () => Effect.succeed([]),
+      listInFlight: () => Effect.succeed([]),
+      listAwaitingOrder: () => Effect.succeed([]),
+      listItems: () => Effect.succeed([]),
+      addItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+      removeItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }))
+    }),
       EmptySignupIntentRepoTest,
       EmptySigninServiceTest,
       EmptySignupServiceTest,

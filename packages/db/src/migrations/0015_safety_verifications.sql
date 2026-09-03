@@ -5,6 +5,12 @@
 -- rows are kept as history, so the uniqueness constraint is partial — at most
 -- one LIVE record per (user, role) — and re-verification inserts a fresh row
 -- rather than mutating the audit trail.
+
+-- `access_control_role` has been declared in schema.ts since the onboarding
+-- work but no migration ever created it: 0001 typed
+-- `kyc_document_types.applies_to_role` as plain text, so the gap stayed
+-- invisible until this table referenced the type for real.
+CREATE TYPE "app_db"."access_control_role" AS ENUM('family', 'service-provider', 'admin');--> statement-breakpoint
 CREATE TYPE "app_db"."safety_verification_status" AS ENUM('not_started', 'payment_pending', 'invited', 'in_progress', 'review_required', 'verified', 'rejected', 'expired');--> statement-breakpoint
 CREATE TYPE "app_db"."safety_verification_route" AS ENUM('credibled', 'uploaded_document');--> statement-breakpoint
 

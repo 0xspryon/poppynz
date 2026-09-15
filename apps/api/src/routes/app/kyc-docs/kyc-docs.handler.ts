@@ -1,11 +1,11 @@
 import type { SqlError } from '@effect/sql/SqlError';
 import {
+  CheckOrderRepo,
   DBNotFoundError,
   KycDocumentRepo,
   type KycDocumentType,
   type KycDocument,
-  KycDocumentTypeRepo,
-  SafetyVerificationRepo
+  KycDocumentTypeRepo
 } from '@repo/db';
 import { objectBucketsConfig } from '@repo/env';
 import { ObjectStorage, type ObjectStorageError } from '@repo/objs';
@@ -38,6 +38,9 @@ class KycNotFoundError extends Data.TaggedError('KycNotFoundError')<{
   entity: 'document' | 'documentType';
 }> {}
 class KycRepoError extends Data.TaggedError('KycRepoError')<{ cause: SqlError }> {}
+class KycDocumentTypeConflictError extends Data.TaggedError('KycDocumentTypeConflictError')<{
+  message: string;
+}> {}
 class KycFileMissingError extends Data.TaggedError('KycFileMissingError')<{}> {}
 class KycFileUrlError extends Data.TaggedError('KycFileUrlError')<{
   cause: ObjectStorageError | ConfigError;
@@ -82,11 +85,17 @@ const parseFutureDate = (value: string | null | undefined, required: boolean) =>
   return Effect.succeed(date);
 };
 
-const ensureServiceProvider = <T extends { user: { role: string | null } }>(userAndSession: T) =>
-  userAndSession.user.role === 'service-provider'
-    ? Effect.succeed(userAndSession)
+/** Both applicant roles have a document checklist; which types they may
+ * submit is decided by the type's own `appliesToRole` below. */
+const ensureApplicant = <T extends { user: { role: string | null } }>(
+  userAndSession: T
+): Effect.Effect<T & { user: { role: 'service-provider' | 'family' } }, KycValidationError> =>
+  userAndSession.user.role === 'service-provider' || userAndSession.user.role === 'family'
+    ? Effect.succeed(userAndSession as T & { user: { role: 'service-provider' | 'family' } })
     : Effect.fail(
-        new KycValidationError({ message: 'Only service providers can submit KYC documents.' })
+        new KycValidationError({
+          message: 'Only families and service providers can submit KYC documents.'
+        })
       );
 
 const ensureOwnFileKey = (userId: string, fileKey: string) =>
@@ -140,6 +149,35 @@ const ensureFetchablePricing = (merged: {
   return Effect.void;
 };
 
+/**
+ * One safety gate per role.
+ *
+ * Two gate types for the same role would put two checklist entries in front
+ * of the applicant, both reading the same verdict. The partial unique index
+ * is the backstop; this is the check that turns a violation into a message an
+ * administrator can act on rather than a 500.
+ */
+const ensureSingleGate = (
+  types: Array<KycDocumentType>,
+  merged: { appliesToRole: KycDocumentType['appliesToRole']; isSafetyGate: boolean },
+  excludingId: string | null
+) => {
+  if (!merged.isSafetyGate) {
+    return Effect.void;
+  }
+  const clash = types.find(
+    (type) =>
+      type.id !== excludingId && type.isSafetyGate && type.appliesToRole === merged.appliesToRole
+  );
+  return clash
+    ? Effect.fail(
+        new KycDocumentTypeConflictError({
+          message: `${clash.name} is already the safety gate for this role — a role has exactly one.`
+        })
+      )
+    : Effect.void;
+};
+
 export const listKycDocumentTypesRouteProgram = () =>
   Effect.gen(function* () {
     const repo = yield* KycDocumentTypeRepo;
@@ -158,9 +196,12 @@ export const createKycDocumentTypeRouteProgram = (c: HonoContext<HonoEnv>, heade
       credibledCostCents: input.credibledCostCents ?? null
     });
     const repo = yield* KycDocumentTypeRepo;
-    const type = yield* mapKycRepoError(
-      repo.create({ ...input, appliesToRole: input.appliesToRole ?? 'service-provider' })
-    );
+    const appliesToRole = input.appliesToRole ?? 'service-provider';
+    if (input.isSafetyGate) {
+      const types = yield* mapKycRepoError(repo.listActive());
+      yield* ensureSingleGate(types, { appliesToRole, isSafetyGate: true }, null);
+    }
+    const type = yield* mapKycRepoError(repo.create({ ...input, appliesToRole }));
     return toKycTypeResponse(type);
   });
 
@@ -186,6 +227,16 @@ export const updateKycDocumentTypeRouteProgram = (
           ? input.credibledCostCents
           : current.credibledCostCents
     });
+    // Checked against the MERGED state, like pricing: a PATCH that only moves
+    // the role, or only sets the flag, must not slip a second gate in.
+    const merged = {
+      appliesToRole: input.appliesToRole ?? current.appliesToRole,
+      isSafetyGate: input.isSafetyGate ?? current.isSafetyGate
+    };
+    if (merged.isSafetyGate) {
+      const types = yield* mapKycRepoError(repo.listActive());
+      yield* ensureSingleGate(types, merged, id);
+    }
     const type = yield* mapKycRepoError(repo.update(id, input));
     return toKycTypeResponse(type);
   });
@@ -207,19 +258,19 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
     const userAndSession = yield* requirePermissions(headers, { kycDocument: ['write'] })(
       authenticated
     );
-    const provider = yield* ensureServiceProvider(userAndSession);
+    const applicant = yield* ensureApplicant(userAndSession);
     const typeRepo = yield* KycDocumentTypeRepo;
     const documentType = yield* mapKycRepoError(typeRepo.findActiveById(input.documentTypeId));
-    if (documentType.appliesToRole !== provider.user.role) {
+    if (documentType.appliesToRole !== applicant.user.role) {
       return yield* Effect.fail(
         new KycValidationError({ message: 'KYC document type is not available for this role.' })
       );
     }
-    // A type that backs safety verification is submitted through
-    // /safety-verification/document, which also collects the issuing service
-    // and document number. Accepting it here would create a second, parallel
-    // record that the safety gate never reads.
-    if (documentType.backsSafetyVerification) {
+    // The safety-gate type is submitted through /safety-verification/document,
+    // which also collects the issuing service and document number. Accepting
+    // it here would create a second, parallel record that the safety gate
+    // never reads.
+    if (documentType.isSafetyGate) {
       return yield* Effect.fail(
         new KycValidationError({
           message: 'Submit this document through safety verification.'
@@ -227,12 +278,12 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
       );
     }
 
-    yield* ensureOwnFileKey(provider.user.id, input.fileKey);
+    yield* ensureOwnFileKey(applicant.user.id, input.fileKey);
     const expiryDate = yield* parseFutureDate(input.expiryDate, documentType.requiresExpiryDate);
     const docRepo = yield* KycDocumentRepo;
     const doc = yield* mapKycRepoError(
       docRepo.submit({
-        userId: provider.user.id,
+        userId: applicant.user.id,
         documentTypeId: input.documentTypeId,
         filename: input.filename,
         fileKey: input.fileKey,
@@ -245,15 +296,15 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
     // they have just provided. Best-effort — a failure here must not lose the
     // document the applicant just uploaded.
     yield* Effect.gen(function* () {
-      const safetyRepo = yield* SafetyVerificationRepo;
-      const live = yield* safetyRepo.findLive(provider.user.id, 'service-provider');
-      if (!live || live.status !== 'not_started') {
+      const orders = yield* CheckOrderRepo;
+      const open = yield* orders.findOpen(applicant.user.id, applicant.user.role);
+      if (!open || open.status !== 'draft') {
         return;
       }
-      const items = yield* safetyRepo.listItems(live.id);
+      const items = yield* orders.listItems(open.id);
       const queued = items.find((item) => item.documentTypeId === input.documentTypeId);
       if (queued) {
-        yield* safetyRepo.removeItem(live.id, queued.id);
+        yield* orders.removeItem(open.id, queued.id);
       }
     }).pipe(Effect.ignore);
 
@@ -357,6 +408,11 @@ const kycDocsErrorToResponse = (c: HonoContext<HonoEnv>, error: KycDocsRouteErro
           }
         },
         404
+      );
+    case 'KycDocumentTypeConflictError':
+      return c.json(
+        { error: { code: 'KYC_DOCUMENT_TYPE_CONFLICT' as const, message: error.message } },
+        409
       );
     case 'KycRepoError':
       return c.json(

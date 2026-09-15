@@ -3,6 +3,7 @@ import {
   DBNotFoundError,
   makeKycDocumentRepoTest,
   makeKycDocumentTypeRepoTest,
+  makeCheckOrderRepoTest,
   makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
@@ -66,7 +67,7 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
   requiresExpiryDate: true,
   credibledCheckTypeValue: null,
   credibledCostCents: null,
-  backsSafetyVerification: false,
+  isSafetyGate: false,
   deletedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
@@ -81,6 +82,7 @@ const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
   fileKey: 'users/provider-1/kyc/document-type-1/government-id.pdf',
   expiryDate: new Date('2027-06-12T00:00:00.000Z'),
   status: 'submitted',
+  source: 'upload',
   reason: null,
   deletedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
@@ -103,14 +105,16 @@ const makeLayer = (
     user?: User;
     hasPermission?: boolean;
     type?: KycDocumentType | null;
+    /** Every active type, when a test needs more than the one under edit. */
+    types?: Array<KycDocumentType>;
     document?: KycDocument | null;
     createTypeError?: SqlError;
     submitError?: SqlError;
     onCreateType?: (input: KycDocumentTypeCreateInput) => void;
     onUpdateType?: (input: KycDocumentTypeUpdateInput) => void;
     onSubmit?: (input: KycDocumentSubmitInput) => void;
-    safetyLive?: { id: string; status: string } | null;
-    safetyItems?: Array<{ id: string; documentTypeId: string }>;
+    openOrder?: { id: string; status: string } | null;
+    orderItems?: Array<{ id: string; documentTypeId: string }>;
     onRemoveItem?: (itemId: string) => void;
   } = {}
 ) => {
@@ -120,12 +124,10 @@ const makeLayer = (
   const currentDocument = options.document === undefined ? kycDocument() : options.document;
 
   return Layer.mergeAll(
-    // Uploading yourself drops the matching Credibled basket item; this suite
-    // has no basket, so the lookup finds nothing.
+    // The checklist reads a gate type's status from the verification record.
     makeSafetyVerificationRepoTest({
-      findLive: () => Effect.succeed((options.safetyLive ?? null) as never),
+      findLive: () => Effect.succeed(null),
       findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      findByCredibledUuid: () => Effect.succeed(null),
       listByUser: () => Effect.succeed([]),
       listForReview: () => Effect.succeed([]),
       create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
@@ -133,12 +135,24 @@ const makeLayer = (
       listExpiringForNotification: () => Effect.succeed([]),
       markExpiryNotified: () =>
         Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      listLapsed: () => Effect.succeed([]),
+      listLapsed: () => Effect.succeed([])
+    }),
+    // Uploading yourself drops the matching item from an unpaid Credibled
+    // basket; unless a test says otherwise there is no basket to find.
+    makeCheckOrderRepoTest({
+      findById: () => Effect.fail(new DBNotFoundError({ entity: 'checkOrder', value: '' })),
+      findOpen: () => Effect.succeed((options.openOrder ?? null) as never),
+      findByCredibledUuid: () => Effect.succeed(null),
+      create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+      update: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' })),
+      claimForPayment: () => Effect.succeed(null),
+      advance: () => Effect.succeed(null),
+      complete: () => Effect.succeed(null),
       listInFlight: () => Effect.succeed([]),
-      listAwaitingOrder: () => Effect.succeed([]),
-      listItems: () => Effect.succeed((options.safetyItems ?? []) as never),
+      listAwaitingPlacement: () => Effect.succeed([]),
+      listItems: () => Effect.succeed((options.orderItems ?? []) as never),
       addItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
-      removeItem: (_verificationId, itemId) => {
+      removeItem: (_orderId, itemId) => {
         options.onRemoveItem?.(itemId);
         return Effect.succeed({ id: itemId } as never);
       }
@@ -162,7 +176,7 @@ const makeLayer = (
           : Effect.fail(new DBNotFoundError({ entity: 'session', value: id }))
     }),
     makeKycDocumentTypeRepoTest({
-      listActive: () => Effect.succeed(currentType ? [currentType] : []),
+      listActive: () => Effect.succeed(options.types ?? (currentType ? [currentType] : [])),
       findActiveById: (id) =>
         currentType?.id === id && currentType.deletedAt === null
           ? Effect.succeed(currentType)
@@ -290,8 +304,8 @@ describe('KYC route programs', () => {
       ).pipe(
         Effect.provide(
           makeLayer({
-            safetyLive: { id: 'sv-1', status: 'not_started' },
-            safetyItems: [{ id: 'item-1', documentTypeId: 'document-type-1' }],
+            openOrder: { id: 'order-1', status: 'draft' },
+            orderItems: [{ id: 'item-1', documentTypeId: 'document-type-1' }],
             onRemoveItem: (id) => removed.push(id)
           })
         )
@@ -315,8 +329,8 @@ describe('KYC route programs', () => {
       ).pipe(
         Effect.provide(
           makeLayer({
-            safetyLive: { id: 'sv-1', status: 'not_started' },
-            safetyItems: [{ id: 'item-9', documentTypeId: 'other-type' }],
+            openOrder: { id: 'order-1', status: 'draft' },
+            orderItems: [{ id: 'item-9', documentTypeId: 'other-type' }],
             onRemoveItem: (id) => removed.push(id)
           })
         )
@@ -357,6 +371,89 @@ describe('KYC route programs', () => {
       ).pipe(Effect.provide(makeLayer({})))
     );
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it('allows the one safety gate a role is entitled to', async () => {
+    const created: Array<KycDocumentTypeCreateInput> = [];
+    await Effect.runPromise(
+      createKycDocumentTypeRouteProgram(
+        contextWithJson({
+          name: 'Vulnerable Sector Check',
+          isOptional: false,
+          requiresExpiryDate: true,
+          isSafetyGate: true
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(makeLayer({ type: null, onCreateType: (input) => created.push(input) }))
+      )
+    );
+    expect(created[0]).toMatchObject({ isSafetyGate: true });
+  });
+
+  it('refuses a second safety gate for the same role', async () => {
+    // Two gates would put two checklist entries in front of the applicant,
+    // both reading the same verdict.
+    const exit = await Effect.runPromiseExit(
+      createKycDocumentTypeRouteProgram(
+        contextWithJson({
+          name: 'Criminal Record Check',
+          isOptional: false,
+          requiresExpiryDate: false,
+          isSafetyGate: true
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            type: documentType({
+              id: 'gate-1',
+              name: 'Vulnerable Sector Check',
+              isSafetyGate: true
+            })
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('KycDocumentTypeConflictError');
+  });
+
+  it('refuses to promote a type to the gate while another type holds it', async () => {
+    // Checked against the merged state, so a PATCH carrying only the flag is
+    // caught the same way a create is.
+    const exit = await Effect.runPromiseExit(
+      updateKycDocumentTypeRouteProgram(
+        contextWithJson({ isSafetyGate: true }),
+        new Headers(),
+        'document-type-1'
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            types: [
+              documentType(),
+              documentType({ id: 'gate-1', name: 'Vulnerable Sector Check', isSafetyGate: true })
+            ]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('KycDocumentTypeConflictError');
+  });
+
+  it('lets the current gate keep its flag through an unrelated update', async () => {
+    // The gate excludes itself from the clash check — otherwise renaming it
+    // would be refused for conflicting with itself.
+    const updated = await Effect.runPromise(
+      updateKycDocumentTypeRouteProgram(
+        contextWithJson({ name: 'Vulnerable Sector Check (renamed)' }),
+        new Headers(),
+        'document-type-1'
+      ).pipe(Effect.provide(makeLayer({ type: documentType({ isSafetyGate: true }) })))
+    );
+    expect(updated).toMatchObject({
+      isSafetyGate: true,
+      name: 'Vulnerable Sector Check (renamed)'
+    });
   });
 
   it('rejects a Credibled check type outside the catalogue', async () => {
@@ -458,6 +555,30 @@ describe('KYC route programs', () => {
 
     expect(getFailure(missingExpiry)._tag).toBe('KycValidationError');
     expect(getFailure(foreignKey)._tag).toBe('KycValidationError');
+  });
+
+  it('lets a family submit a document of a family type', async () => {
+    const submitted: Array<KycDocumentSubmitInput> = [];
+    await Effect.runPromise(
+      submitKycDocumentRouteProgram(
+        contextWithJson({
+          documentTypeId: 'document-type-1',
+          filename: 'a.pdf',
+          fileKey: 'users/family-1/a.pdf',
+          expiryDate: '2099-01-01T00:00:00.000Z'
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'family-1', role: 'family' }),
+            type: documentType({ appliesToRole: 'family' }),
+            onSubmit: (input) => submitted.push(input)
+          })
+        )
+      )
+    );
+    expect(submitted[0]).toMatchObject({ userId: 'family-1', documentTypeId: 'document-type-1' });
   });
 
   it('rejects family users submitting service-provider KYC docs', async () => {

@@ -18,10 +18,12 @@
 
 	const blankDraft = (): DocumentTypeDraft => ({
 		name: '',
+		appliesToRole: 'service-provider',
 		isOptional: false,
 		requiresExpiryDate: true,
 		credibledCheckTypeValue: null,
-		credibledCostCents: null
+		credibledCostCents: null,
+		isSafetyGate: false
 	});
 
 	/** The form edits dollars; the API stores cents. */
@@ -34,11 +36,13 @@
 			draft = editing
 				? {
 						name: editing.name,
+						appliesToRole: editing.appliesToRole === 'family' ? 'family' : 'service-provider',
 						isOptional: editing.isOptional,
 						requiresExpiryDate: editing.requiresExpiryDate,
 						credibledCheckTypeValue:
 							(editing.credibledCheckTypeValue as CredibledCheckTypeValue | null) ?? null,
-						credibledCostCents: editing.credibledCostCents ?? null
+						credibledCostCents: editing.credibledCostCents ?? null,
+						isSafetyGate: editing.isSafetyGate
 					}
 				: blankDraft();
 			// Derived from `editing`, NOT from `draft`. Reading `draft` here would
@@ -73,7 +77,7 @@
 			<p class="mt-1 mb-4 text-sm text-base-content-muted">
 				{editing
 					? 'Changes apply to new uploads immediately.'
-					: "Added to every provider's checklist immediately."}
+					: "Added to every applicant's checklist for that role immediately."}
 			</p>
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_180px]">
@@ -90,8 +94,9 @@
 				</fieldset>
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">Applies to</legend>
-					<select class="select w-full" disabled>
-						<option>Service provider</option>
+					<select class="select w-full" bind:value={draft.appliesToRole}>
+						<option value="service-provider">Service provider</option>
+						<option value="family">Family</option>
 					</select>
 				</fieldset>
 			</div>
@@ -114,7 +119,17 @@
 					/>
 					<span class="text-sm font-medium text-base-content">Needs expiry date</span>
 				</label>
+				<label class="flex items-center gap-2.5">
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={draft.isSafetyGate} />
+					<span class="text-sm font-medium text-base-content">Safety gate</span>
+				</label>
 			</div>
+			{#if draft.isSafetyGate}
+				<p class="mt-1.5 text-xs text-base-content-muted">
+					Submitting this document starts the applicant's safety verification instead of an ordinary
+					document review. A role has exactly one.
+				</p>
+			{/if}
 
 			<fieldset class="fieldset mt-4">
 				<legend class="fieldset-legend">Collect via Credibled</legend>

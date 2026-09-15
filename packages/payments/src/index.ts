@@ -1,4 +1,3 @@
-import { safetyVerificationConfig } from '@repo/env';
 import { Context, Data, Effect, Layer } from 'effect';
 
 /**
@@ -6,8 +5,8 @@ import { Context, Data, Effect, Layer } from 'effect';
  *
  * Stripe lands in its own PR. Nothing outside this package may reference it —
  * that rule is what makes the next round additive rather than a rewrite, and
- * it's why the persisted columns are `payment_reference` / `refund_reference`
- * rather than `stripe_*`.
+ * it's why the persisted columns are `provider` + `provider_reference` rather
+ * than `stripe_*`.
  *
  * Three properties matter more than the provider:
  *
@@ -18,12 +17,27 @@ import { Context, Data, Effect, Layer } from 'effect';
  *     can't double-charge.
  *   - Refund exists from day one. The order-retry-exhausted path calls it, and
  *     that path is tested now rather than after real money is involved.
+ *
+ * The port knows nothing about what is being paid for. Fee and tax policy is
+ * handed in by the caller per purpose — Credibled orders carry a flat
+ * administration fee, bookings will carry something else — so a second
+ * purpose never has to monkey-patch a config named after the first.
  */
 
-/** One priced line on a quote — a single Credibled check. */
+/** Which gateway a reference belongs to. Persisted next to the reference so a
+ * row is meaningful on its own. */
+export type PaymentProvider = 'mock' | 'stripe';
+
+/** One priced line on a quote. */
 export type QuoteLineItem = {
   readonly label: string;
   readonly costCents: number;
+};
+
+/** Fee and tax policy for one purpose. Pre-tax, in cents and basis points. */
+export type QuotePolicy = {
+  readonly adminFeeCents: number;
+  readonly taxRateBasisPoints: number;
 };
 
 export type Money = {
@@ -61,9 +75,10 @@ export class PaymentProviderError extends Data.TaggedError('PaymentProviderError
 export class Payments extends Context.Tag('@repo/payments/Payments')<
   Payments,
   {
-    /** Itemises what an applicant will pay before anything is ordered. The
-     * caller supplies the basket; the port adds the fee and the tax. */
-    quote: (lineItems: ReadonlyArray<QuoteLineItem>) => Effect.Effect<Money>;
+    readonly provider: PaymentProvider;
+    /** Itemises what somebody will pay before anything is charged. The caller
+     * supplies the lines and the policy; the port adds the fee and the tax. */
+    quote: (lineItems: ReadonlyArray<QuoteLineItem>, policy: QuotePolicy) => Effect.Effect<Money>;
     authorise: (input: {
       userId: string;
       quote: Money;
@@ -73,16 +88,16 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
     refund: (input: {
       reference: string;
       reason: string;
+      /** Same key must resolve to the same refund, never a second one — a
+       * lost write after a successful refund is retried, not repeated. */
+      idempotencyKey: string;
     }) => Effect.Effect<PaymentRefund, PaymentProviderError>;
   }
 >() {}
 
 export const quoteFromPolicy = (
   lineItems: ReadonlyArray<QuoteLineItem>,
-  policy: {
-    adminFeeCents: number;
-    taxRateBasisPoints: number;
-  }
+  policy: QuotePolicy
 ): Money => {
   const amountCents = lineItems.reduce((total, item) => total + item.costCents, 0);
   // An empty basket is quoted as nothing at all — charging the administration
@@ -120,13 +135,12 @@ export const makeMockPayments = (
 ): Context.Tag.Service<Payments> => {
   const now = options.now ?? (() => new Date());
   const authorisations = new Map<string, PaymentAuthorisation>();
+  const refunds = new Map<string, PaymentRefund>();
 
   return {
-    quote: (lineItems) =>
-      safetyVerificationConfig.pipe(
-        Effect.map((policy) => quoteFromPolicy(lineItems, policy)),
-        Effect.orDie
-      ),
+    provider: 'mock',
+
+    quote: (lineItems, policy) => Effect.succeed(quoteFromPolicy(lineItems, policy)),
 
     authorise: ({ idempotencyKey }) =>
       Effect.gen(function* () {
@@ -149,15 +163,24 @@ export const makeMockPayments = (
         return authorisation;
       }),
 
-    refund: ({ reference }) =>
-      options.failRefund
-        ? Effect.fail(
+    refund: ({ reference, idempotencyKey }) =>
+      Effect.gen(function* () {
+        if (options.failRefund) {
+          return yield* Effect.fail(
             new PaymentProviderError({ operation: 'refund', cause: 'mock refund failure' })
-          )
-        : Effect.succeed({
-            refundReference: `mock_refund_${reference}`,
-            refundedAt: now()
-          })
+          );
+        }
+        const existing = refunds.get(idempotencyKey);
+        if (existing) {
+          return existing;
+        }
+        const refund: PaymentRefund = {
+          refundReference: `mock_refund_${reference}`,
+          refundedAt: now()
+        };
+        refunds.set(idempotencyKey, refund);
+        return refund;
+      })
   };
 };
 

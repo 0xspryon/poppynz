@@ -3,7 +3,7 @@ import type { SqlError } from '@effect/sql/SqlError';
 import { and, eq, inArray, type InferSelectModel, isNull } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
-import { serviceNeeded, user, userProfile } from '../schema';
+import { safetyVerification, serviceNeeded, user, userProfile } from '../schema';
 
 export type FamilySearchProfile = InferSelectModel<typeof userProfile> & {
   email: string;
@@ -15,9 +15,17 @@ export type FamilySearchProfile = InferSelectModel<typeof userProfile> & {
 
 export type FamilySearchService = InferSelectModel<typeof serviceNeeded>;
 
+/** The family's live safety verdict, or null. Only a `verified` row is
+ * carried: anything else is, for discoverability, the same as nothing. The
+ * document builder applies expiry at read time, so `expiresOn` comes along. */
+export type FamilySearchVerification = {
+  expiresOn: string | null;
+};
+
 export type FamilySearchCandidate = {
   profile: FamilySearchProfile;
   services: Array<FamilySearchService>;
+  verification: FamilySearchVerification | null;
 };
 
 export class FamilySearchRepo extends Context.Tag('@repo/db/FamilySearchRepo')<
@@ -84,6 +92,22 @@ export const FamilySearchRepoLive = Layer.effect(
         .from(serviceNeeded)
         .where(and(eq(serviceNeeded.userId, userId), isNull(serviceNeeded.deletedAt)));
 
+    // Families are gated on their own safety verdict, not on an approval —
+    // there is no approval concept for a family, so verification feeds the
+    // index directly.
+    const verifiedVerdicts = (userIds: Array<string>) =>
+      db
+        .select({ userId: safetyVerification.userId, expiresOn: safetyVerification.expiresOn })
+        .from(safetyVerification)
+        .where(
+          and(
+            inArray(safetyVerification.userId, userIds),
+            eq(safetyVerification.role, 'family'),
+            eq(safetyVerification.status, 'verified'),
+            isNull(safetyVerification.deletedAt)
+          )
+        );
+
     const listCandidatesByUserIds = (
       userIds: Array<string>
     ): Effect.Effect<Array<FamilySearchCandidate>, SqlError> => {
@@ -99,21 +123,26 @@ export const FamilySearchRepoLive = Layer.effect(
           services: db
             .select()
             .from(serviceNeeded)
-            .where(and(inArray(serviceNeeded.userId, userIds), isNull(serviceNeeded.deletedAt)))
+            .where(and(inArray(serviceNeeded.userId, userIds), isNull(serviceNeeded.deletedAt))),
+          verdicts: verifiedVerdicts(userIds)
         },
         { concurrency: 'unbounded' }
       ).pipe(
-        Effect.map(({ profiles, services }) => {
+        Effect.map(({ profiles, services, verdicts }) => {
           const servicesByUserId = new Map<string, Array<FamilySearchService>>();
           for (const row of services) {
             const existing = servicesByUserId.get(row.userId);
             if (existing) existing.push(row);
             else servicesByUserId.set(row.userId, [row]);
           }
+          const verdictByUserId = new Map(
+            verdicts.map((row) => [row.userId, { expiresOn: row.expiresOn }])
+          );
 
           return profiles.map((row) => ({
             profile: toProfile(row),
-            services: servicesByUserId.get(row.profile.userId) ?? []
+            services: servicesByUserId.get(row.profile.userId) ?? [],
+            verification: verdictByUserId.get(row.profile.userId) ?? null
           }));
         })
       );
@@ -124,7 +153,10 @@ export const FamilySearchRepoLive = Layer.effect(
         Effect.all(
           {
             profile: findProfile(userId),
-            services: listServices(userId)
+            services: listServices(userId),
+            verification: verifiedVerdicts([userId]).pipe(
+              Effect.map((rows) => (rows[0] ? { expiresOn: rows[0].expiresOn } : null))
+            )
           },
           { concurrency: 'unbounded' }
         ),

@@ -2,6 +2,7 @@ import { SafetyVerificationRepo, UserRepo, type SafetyVerification } from '@repo
 import { safetyVerificationConfig } from '@repo/env';
 import { Mailer } from '@repo/mail';
 import { Effect } from 'effect';
+import { scheduleFamilySearchReconcile } from './family-search-jobs';
 
 /**
  * Daily expiry sweep.
@@ -50,7 +51,15 @@ export const processSafetyVerificationExpiries = (now: Date, uiOrigin: string) =
     const lapsed = yield* repo.listLapsed(currentDate);
     yield* Effect.forEach(
       lapsed,
-      (record) => repo.update(record.id, { status: 'expired' }).pipe(Effect.option),
+      (record) =>
+        repo.update(record.id, { status: 'expired' }).pipe(
+          Effect.option,
+          // A family's discoverability rides on this verdict; the index
+          // already hides them at read time, this just tidies the document.
+          Effect.tap(() =>
+            record.role === 'family' ? scheduleFamilySearchReconcile(record.userId) : Effect.void
+          )
+        ),
       { concurrency: 5 }
     );
 

@@ -84,6 +84,13 @@
 		} else if (result.error.code === 'INVALID_KYC_DOCUMENT_TYPE_INPUT') {
 			// Field validation stays next to the input inside the dialog.
 			modalError = 'Check the name — it must be 1–120 characters.';
+		} else if (
+			result.error.code === 'KYC_DOCUMENT_TYPE_CONFLICT' ||
+			result.error.code === 'INVALID_KYC_DOCUMENT'
+		) {
+			// A second safety gate for the role, or a pricing mismatch: the server
+			// says exactly what to change, and it belongs next to the toggles.
+			modalError = result.error.message;
 		} else {
 			toast.error(errorText(result.error), {
 				title: editing ? 'Document type not updated' : 'Document type not created'
@@ -224,13 +231,21 @@
 			>
 				<div class="mb-2 flex items-center justify-between lg:mb-0 lg:block">
 					<span class="text-sm font-semibold text-base-content">{item.name}</span>
+					{#if item.isSafetyGate}
+						<span
+							class="badge badge-sm badge-primary ml-2 font-semibold"
+							title="Submitting this document starts safety verification"
+						>
+							Safety gate
+						</span>
+					{/if}
 					<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info lg:hidden">
 						{item.isOptional ? 'Optional' : 'Required'}
 					</span>
 				</div>
 				<div class="hidden lg:block">
 					<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info">
-						Service provider
+						{item.appliesToRole === 'family' ? 'Family' : 'Service provider'}
 					</span>
 				</div>
 				<label class="flex items-center gap-2 py-1 lg:py-0">

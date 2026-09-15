@@ -84,14 +84,18 @@ const familyDocument = (overrides: Partial<FamilySearchDocument> = {}): FamilySe
   servicesNormalized: ['childcare'],
   serviceDescriptions: ['After-school care'],
   serviceNamesText: 'Childcare',
+  verifiedUntil: Date.parse('2099-01-01T23:59:59.999Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z').getTime(),
   ...overrides
 });
 
 const candidate = (
   userId = 'family-1',
-  overrides: Partial<FamilySearchCandidate['profile']> = {}
+  overrides: Partial<FamilySearchCandidate['profile']> = {},
+  // Verified by default: nobody is discoverable without it.
+  verification: FamilySearchCandidate['verification'] = { expiresOn: '2099-01-01' }
 ): FamilySearchCandidate => ({
+  verification,
   profile: {
     userId,
     language: 'en',
@@ -165,7 +169,6 @@ const makeLayer = (
       findLive: () =>
         Effect.succeed({ id: 'sv-1', status: 'verified', expiresOn: '2099-01-01' } as never),
       findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      findByCredibledUuid: () => Effect.succeed(null),
       listByUser: () => Effect.succeed([]),
       listForReview: () => Effect.succeed([]),
       create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
@@ -173,9 +176,7 @@ const makeLayer = (
       listExpiringForNotification: () => Effect.succeed([]),
       markExpiryNotified: () =>
         Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      listLapsed: () => Effect.succeed([]),
-      listInFlight: () => Effect.succeed([]),
-      listAwaitingOrder: () => Effect.succeed([])
+      listLapsed: () => Effect.succeed([])
     }),
     makeObjectStorageTest({
       ensureBucketExists: () => Effect.void,
@@ -531,6 +532,20 @@ describe('family detail route program', () => {
         description: 'After-school care'
       }
     ]);
+  });
+
+  it('hides a family without a current safety verification', async () => {
+    // Families have no approval step; the safety verdict IS the gate for the
+    // index, and the read path re-checks it in the database.
+    for (const verification of [null, { expiresOn: '2020-01-01' }, { expiresOn: null }]) {
+      const exit = await Effect.runPromise(
+        getFamilyRouteProgram(new Headers(), 'family-1').pipe(
+          Effect.provide(makeLayer({ candidates: [candidate('family-1', {}, verification)] })),
+          Effect.exit
+        )
+      );
+      expect(getFailure(exit)._tag).toBe('DBNotFoundError');
+    }
   });
 
   it('hides families that fail the eligibility gate', async () => {

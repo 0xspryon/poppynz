@@ -1,5 +1,10 @@
-import type { SafetyVerification, SafetyVerificationRole } from '@repo/db';
-import type { SafetyVerificationStatus } from '@repo/credibled';
+import type {
+  CheckOrder,
+  Payment,
+  SafetyVerification,
+  SafetyVerificationRole,
+  SafetyVerificationStatus
+} from '@repo/db';
 
 // Pure safety-verification domain logic: what a record presents as, when it
 // lapses, and what each audience is allowed to see. Kept free of Effect and of
@@ -31,6 +36,19 @@ export const addMonths = (at: Date, months: number): Date => {
  * window comes from policy. */
 export const expiryFromCompletion = (completedAt: Date, validityMonths: number): string =>
   toDateOnly(addMonths(completedAt, validityMonths));
+
+/**
+ * What an applicant sees. Broader than the stored verdict: before there is a
+ * verdict at all, a Credibled order has stages of its own, and the applicant
+ * is shown those in the same vocabulary. The set is unchanged from when all of
+ * it lived on one row, so nothing downstream has to learn a new word.
+ */
+export type ApplicantSafetyStatus =
+  | 'not_started'
+  | 'payment_pending'
+  | 'invited'
+  | 'in_progress'
+  | SafetyVerificationStatus;
 
 /**
  * Read-time expiry, mirroring how contracts present `ended`.
@@ -67,6 +85,43 @@ export const isTerminalStatus = (status: SafetyVerificationStatus): boolean =>
   status === 'verified' || status === 'rejected' || status === 'expired';
 
 /**
+ * An open order's stage in the applicant's vocabulary.
+ *
+ * Null for a finished order: its outcome, if it has one, is the verdict it
+ * produced, and a failed or cancelled order presents as nothing at all —
+ * exactly as a rejected verdict always has, since neither occupies the live
+ * slot the applicant's page reads from.
+ */
+export const orderPresentedStatus = (
+  order: Pick<CheckOrder, 'status'>
+): ApplicantSafetyStatus | null => {
+  switch (order.status) {
+    case 'draft':
+      return 'not_started';
+    // Claimed-but-unconfirmed and paid-but-unplaced read the same to the
+    // applicant: money is in motion and nothing is expected of them yet.
+    case 'payment_pending':
+    case 'paid':
+      return 'payment_pending';
+    case 'invited':
+      return 'invited';
+    case 'in_progress':
+      return 'in_progress';
+    default:
+      return null;
+  }
+};
+
+/** Everything the applicant-facing summary is assembled from. Any part may be
+ * absent: no verdict yet, no order at all, or an order that was never paid. */
+export type ApplicantSafetyState = {
+  verification: SafetyVerification | null;
+  /** The open order, or the one behind the verdict — whichever exists. */
+  order: CheckOrder | null;
+  payment: Payment | null;
+};
+
+/**
  * What the applicant sees about their own verification.
  *
  * Deliberately omits every field that could carry screening detail — no
@@ -74,41 +129,38 @@ export const isTerminalStatus = (status: SafetyVerificationStatus): boolean =>
  * is included because an applicant is entitled to know why they were rejected,
  * and it is admin-authored prose rather than vendor data.
  */
-export const toApplicantSummary = (record: SafetyVerification | null, today: string) => {
-  if (!record) {
-    return {
-      status: 'not_started' as SafetyVerificationStatus,
-      route: null,
-      consentAt: null,
-      issuedOn: null,
-      expiresOn: null,
-      decisionReason: null,
-      // Never a real link when there is no record.
-      applicationUrl: null,
-      cost: null
-    };
-  }
+export const toApplicantSummary = (state: ApplicantSafetyState, today: string) => {
+  const { verification, order, payment } = state;
+
+  const status: ApplicantSafetyStatus = verification
+    ? presentedStatus(verification, today)
+    : order
+      ? (orderPresentedStatus(order) ?? 'not_started')
+      : 'not_started';
 
   return {
-    status: presentedStatus(record, today),
-    route: record.route,
-    consentAt: record.consentAt?.toISOString() ?? null,
-    issuedOn: record.issuedOn,
-    expiresOn: record.expiresOn,
-    decisionReason: record.decisionReason,
-    // Only while the applicant still has something to do with it.
+    status,
+    route: verification?.route ?? (order ? ('credibled' as const) : null),
+    consentAt: (verification?.consentAt ?? order?.consentAt)?.toISOString() ?? null,
+    issuedOn: verification?.issuedOn ?? null,
+    expiresOn: verification?.expiresOn ?? null,
+    decisionReason: verification?.decisionReason ?? null,
+    // Only while the applicant still has something to do with it — and never
+    // a real link when there is nothing in flight.
     applicationUrl:
-      record.status === 'invited' || record.status === 'in_progress'
-        ? record.applicationUrl
+      order && (order.status === 'invited' || order.status === 'in_progress')
+        ? order.applicationUrl
         : null,
+    // What was actually charged, frozen at authorisation. A pending or
+    // declined charge is not a cost the applicant has borne.
     cost:
-      record.totalCents === null
+      payment === null || payment.status === 'pending' || payment.status === 'failed'
         ? null
         : {
-            amountCents: record.amountCents ?? 0,
-            feeCents: record.feeCents ?? 0,
-            taxCents: record.taxCents ?? 0,
-            totalCents: record.totalCents,
+            amountCents: payment.amountCents,
+            feeCents: payment.feeCents,
+            taxCents: payment.taxCents,
+            totalCents: payment.totalCents,
             currency: 'CAD' as const
           }
   };
@@ -119,7 +171,8 @@ export const toApplicantSummary = (record: SafetyVerification | null, today: str
  *
  * Still not the report itself — that is fetched on demand from Credibled by a
  * separate authorised call and never cached into our storage. What's here is
- * the metadata needed to make a decision.
+ * the metadata needed to make a decision. Money is deliberately absent: what
+ * an applicant paid has no bearing on whether they are safe.
  */
 export const toAdminSummary = (record: SafetyVerification, today: string) => ({
   id: record.id,
@@ -128,7 +181,10 @@ export const toAdminSummary = (record: SafetyVerification, today: string) => ({
   status: presentedStatus(record, today),
   storedStatus: record.status,
   route: record.route,
-  hasCredibledCheck: record.credibledCheckUuid !== null,
+  checkOrderId: record.checkOrderId,
+  // An order only ever produces a verdict once Credibled has finished with
+  // it, so a linked order always has a report to open.
+  hasCredibledCheck: record.checkOrderId !== null,
   consentAt: record.consentAt?.toISOString() ?? null,
   consentPolicyVersion: record.consentPolicyVersion,
   issuingAuthority: record.issuingAuthority,
@@ -139,8 +195,6 @@ export const toAdminSummary = (record: SafetyVerification, today: string) => ({
   reviewedBy: record.reviewedBy,
   reviewedAt: record.reviewedAt?.toISOString() ?? null,
   decisionReason: record.decisionReason,
-  paymentReference: record.paymentReference,
-  refundReference: record.refundReference,
   createdAt: record.createdAt.toISOString(),
   updatedAt: record.updatedAt.toISOString()
 });

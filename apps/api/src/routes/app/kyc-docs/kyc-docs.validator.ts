@@ -16,7 +16,8 @@ const trimmedNonEmptyString = Schema.Trim.pipe(Schema.nonEmptyString());
 
 export const kycDocumentTypeCreateSchema = Schema.Struct({
   name: trimmedNonEmptyString.pipe(Schema.maxLength(120)),
-  appliesToRole: Schema.optional(Schema.Literal('service-provider')),
+  // Both applicant roles have a checklist; admins are never asked for documents.
+  appliesToRole: Schema.optional(Schema.Literal('service-provider', 'family')),
   isOptional: Schema.Boolean,
   requiresExpiryDate: Schema.Boolean,
   // Null means upload-only. Constraining to the known catalogue stops an
@@ -28,7 +29,10 @@ export const kycDocumentTypeCreateSchema = Schema.Struct({
   // it; capped well above any plausible check to catch a stray extra digit.
   credibledCostCents: Schema.optional(
     Schema.NullOr(Schema.Number.pipe(Schema.int(), Schema.between(0, 500_000)))
-  )
+  ),
+  // This type is the safety gate for its role. At most one per role — the
+  // handler refuses a second, and the database enforces it underneath.
+  isSafetyGate: Schema.optional(Schema.Boolean)
 });
 
 export const kycDocumentTypeUpdateSchema = Schema.partial(kycDocumentTypeCreateSchema);

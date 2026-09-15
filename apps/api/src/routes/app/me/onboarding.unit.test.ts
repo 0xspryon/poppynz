@@ -99,6 +99,7 @@ const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
   fileKey: 'users/user-1/kyc/document-type-1/passport.pdf',
   expiryDate: new Date('2029-08-12T00:00:00.000Z'),
   status: 'submitted',
+  source: 'upload',
   reason: null,
   deletedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
@@ -169,7 +170,6 @@ const makeLayer = (
     makeSafetyVerificationRepoTest({
       findLive: () => Effect.succeed(null),
       findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      findByCredibledUuid: () => Effect.succeed(null),
       listByUser: () => Effect.succeed([]),
       listForReview: () => Effect.succeed([]),
       create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
@@ -177,12 +177,7 @@ const makeLayer = (
       listExpiringForNotification: () => Effect.succeed([]),
       markExpiryNotified: () =>
         Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      listLapsed: () => Effect.succeed([]),
-      listInFlight: () => Effect.succeed([]),
-      listAwaitingOrder: () => Effect.succeed([]),
-      listItems: () => Effect.succeed([]),
-      addItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
-      removeItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }))
+      listLapsed: () => Effect.succeed([])
     }),
     makeUserProfileRepoTest({
       findByUserId: (userId) =>

@@ -31,7 +31,7 @@
 
 	const basket = $derived(page?.basket ?? []);
 	const documentsHref = $derived(
-		role === 'family' ? resolve('/family/profile') : resolve('/service-provider/documents')
+		role === 'family' ? resolve('/family/documents') : resolve('/service-provider/documents')
 	);
 
 	async function removeItem(itemId: string) {
@@ -49,6 +49,12 @@
 
 	const status = $derived(page?.verification.status ?? 'not_started');
 	const canStart = $derived(status === 'not_started');
+	// The Credibled card only earns its place when there is something to
+	// order: a family's gate is upload-only, so they see the documents link
+	// alone rather than an empty check list.
+	const showCredibled = $derived(
+		(canStart && (page?.orderableCheckTypes.length ?? 0) > 0) || basket.length > 0
+	);
 
 	const chip: Record<string, ChipStatus> = {
 		not_started: 'missing',
@@ -73,9 +79,11 @@
 		expired: 'Expired'
 	};
 
-	const statusHelp: Record<string, string> = {
+	const statusHelp: Record<string, string> = $derived({
 		not_started:
-			'Add documents from your Documents page, then pay for them together here.',
+			(page?.orderableCheckTypes.length ?? 0) > 0
+				? 'Add documents from your Documents page, then pay for them together here.'
+				: 'Upload your vulnerable-sector check from your Documents page to get started.',
 		payment_pending: 'We are confirming your payment. This usually takes a moment.',
 		invited:
 			'We emailed you a secure link to finish your check — you can also continue below.',
@@ -85,7 +93,7 @@
 		verified: 'You are verified and can use Poppynz normally.',
 		rejected: 'Your verification was not approved.',
 		expired: 'Your verification has lapsed. Renew it to keep using Poppynz.'
-	};
+	});
 
 	const money = (cents: number) =>
 		new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(cents / 100);
@@ -159,6 +167,9 @@
 				{/if}
 			</div>
 			<p class="mt-2 text-sm text-base-content-muted">{statusHelp[status]}</p>
+			{#if status === 'not_started' && !showCredibled}
+				<a class="btn btn-primary btn-sm mt-3" href={documentsHref}>Go to Documents</a>
+			{/if}
 
 			{#if page.verification.applicationUrl}
 				<a
@@ -182,7 +193,7 @@
 			{/if}
 		</div>
 
-		{#if canStart || basket.length > 0}
+		{#if showCredibled}
 			<h2 class="mt-8 mb-3 text-lg font-semibold text-base-content">
 				{canStart ? 'Order checks' : 'Checks Credibled is collecting'}
 			</h2>

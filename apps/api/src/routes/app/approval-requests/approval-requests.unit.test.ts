@@ -93,6 +93,7 @@ const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
   filename: 'identity.pdf',
   fileKey: 'users/provider-1/kyc/document-type-1/identity.pdf',
   status: 'submitted',
+  source: 'upload',
   reason: null,
   expiryDate: new Date('2027-06-12T00:00:00.000Z'),
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
@@ -172,7 +173,6 @@ const makeLayer = (
       findLive: () =>
         Effect.succeed({ id: 'sv-1', status: 'verified', expiresOn: '2099-01-01' } as never),
       findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      findByCredibledUuid: () => Effect.succeed(null),
       listByUser: () => Effect.succeed([]),
       listForReview: () => Effect.succeed([]),
       create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
@@ -180,9 +180,7 @@ const makeLayer = (
       listExpiringForNotification: () => Effect.succeed([]),
       markExpiryNotified: () =>
         Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      listLapsed: () => Effect.succeed([]),
-      listInFlight: () => Effect.succeed([]),
-      listAwaitingOrder: () => Effect.succeed([])
+      listLapsed: () => Effect.succeed([])
     }),
     EmptyApprovalRepoTest,
     makeMailerTest({

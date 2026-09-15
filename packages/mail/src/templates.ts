@@ -57,8 +57,11 @@ export const familyWelcomeMail = (mail: {
   name: string | null;
   profileLink: string;
   needsLink: string;
+  documentsLink: string;
   findLink: string;
 }): MailContent => {
+  // Mirrors the in-app getting-started checklist step for step — the safety
+  // check is what makes a family discoverable, so it is a step, not a footnote.
   const steps = [
     {
       text: 'Set your home location. Searches are centered on it, and it lets vetted helpers nearby find your family.',
@@ -71,6 +74,11 @@ export const familyWelcomeMail = (mail: {
       linkLabel: 'List the services you need'
     },
     {
+      text: 'Complete your safety check by uploading a vulnerable sector check from your local police service. Safety runs both ways on Poppynz — helpers only see families who have been verified, just as you only see vetted helpers.',
+      href: mail.documentsLink,
+      linkLabel: 'Upload your safety check'
+    },
+    {
       text: 'Browse vetted helpers near you and find the right fit for your family.',
       href: mail.findLink,
       linkLabel: 'Find help near you'
@@ -81,7 +89,7 @@ export const familyWelcomeMail = (mail: {
     html: layout(
       paragraph(escapeHtml(greeting(mail.name))) +
         paragraph(
-          "Welcome to Poppynz! Every helper on our marketplace is identity- and background-vetted before families can find them. Here's how to get set up:"
+          "Welcome to Poppynz! Every helper on our marketplace is identity- and background-vetted before families can find them — and every family completes a safety check before helpers can find them. Here's how to get set up:"
         ) +
         numberedSteps(steps) +
         button(mail.profileLink, 'Get started')
@@ -89,7 +97,7 @@ export const familyWelcomeMail = (mail: {
     text: [
       greeting(mail.name),
       '',
-      "Welcome to Poppynz! Every helper on our marketplace is identity- and background-vetted before families can find them. Here's how to get set up:",
+      "Welcome to Poppynz! Every helper on our marketplace is identity- and background-vetted before families can find them — and every family completes a safety check before helpers can find them. Here's how to get set up:",
       '',
       numberedStepsText(steps),
       '',

@@ -1,9 +1,9 @@
 import {
   canApplyCredibledTransition,
-  credibledStatusToSafetyVerificationStatus,
+  credibledStatusToCheckOrderStatus,
   Credibled
 } from '@repo/credibled';
-import { SafetyVerificationRepo, type SafetyVerification } from '@repo/db';
+import { CheckOrderRepo, inFlightCheckOrderStatuses, type CheckOrder } from '@repo/db';
 import { safetyVerificationConfig } from '@repo/env';
 import { Effect } from 'effect';
 
@@ -15,7 +15,9 @@ import { Effect } from 'effect';
  * nice-to-have: it is the only thing that makes webhook delivery non-critical.
  *
  * Shares its transition rules with the webhook handler, so a poll and a
- * delivery arriving in either order converge on the same state.
+ * delivery arriving in either order converge on the same state — and the
+ * repository's guarded completion means the two can never produce two
+ * verdicts for one order.
  */
 
 const validityMonths = safetyVerificationConfig.pipe(
@@ -35,51 +37,67 @@ const addMonths = (at: Date, months: number) => {
   return result;
 };
 
-const audienceFor = (record: SafetyVerification) =>
-  record.role === 'family' ? ('family' as const) : ('service-provider' as const);
+const audienceFor = (order: CheckOrder) =>
+  order.role === 'family' ? ('family' as const) : ('service-provider' as const);
 
-const reconcileOne = (record: SafetyVerification, months: number) =>
+const reconcileOne = (order: CheckOrder, months: number) =>
   Effect.gen(function* () {
-    if (!record.credibledCheckUuid) {
+    if (!order.credibledCheckUuid) {
       return 'skipped';
     }
 
-    const repo = yield* SafetyVerificationRepo;
+    const orders = yield* CheckOrderRepo;
     const credibled = yield* Credibled;
 
     const status = yield* credibled
-      .getCheckStatus(audienceFor(record), record.credibledCheckUuid)
+      .getCheckStatus(audienceFor(order), order.credibledCheckUuid)
       .pipe(Effect.option);
 
     if (status._tag === 'None') {
       return 'unreachable';
     }
 
-    const next = credibledStatusToSafetyVerificationStatus(status.value.applicationStatus);
-    if (!canApplyCredibledTransition(record.status, next)) {
+    const next = credibledStatusToCheckOrderStatus(status.value.applicationStatus);
+    if (!canApplyCredibledTransition(order.status, next)) {
       return 'unchanged';
     }
 
-    const completed = status.value.applicationStatus === 'Complete';
-    const now = new Date();
+    if (next === 'complete') {
+      // Only a genuine Complete carries dates; Action Required and In Dispute
+      // leave the validity window to the administrator's decision.
+      const completed = status.value.applicationStatus === 'Complete';
+      const now = new Date();
+      const result = yield* orders.complete(order.id, {
+        completedAt: now,
+        verification: {
+          consentAt: order.consentAt,
+          consentPolicyVersion: order.consentPolicyVersion,
+          issuedOn: completed ? toDateOnly(now) : null,
+          expiresOn: completed ? toDateOnly(addMonths(now, months)) : null
+        }
+      });
+      // Null means a webhook got there first — nothing to do.
+      return result ? 'advanced' : 'unchanged';
+    }
 
-    yield* repo.update(record.id, {
-      status: next,
-      issuedOn: completed ? toDateOnly(now) : record.issuedOn,
-      expiresOn: completed ? toDateOnly(addMonths(now, months)) : record.expiresOn
+    // Guarded like completion is: a webhook that completed this order between
+    // our read and our write must not be dragged back to `in_progress`.
+    const advanced = yield* orders.advance(order.id, {
+      from: { status: inFlightCheckOrderStatuses },
+      set: { status: next }
     });
 
-    return 'advanced';
+    return advanced ? 'advanced' : 'unchanged';
   });
 
-export const reconcileSafetyVerificationStatuses = Effect.gen(function* () {
-  const repo = yield* SafetyVerificationRepo;
+export const reconcileCheckOrderStatuses = Effect.gen(function* () {
+  const orders = yield* CheckOrderRepo;
   const months = yield* validityMonths;
-  const inFlight = yield* repo.listInFlight();
+  const inFlight = yield* orders.listInFlight();
 
   const outcomes = yield* Effect.forEach(
     inFlight,
-    (record) => reconcileOne(record, months).pipe(Effect.orElseSucceed(() => 'failed' as const)),
+    (order) => reconcileOne(order, months).pipe(Effect.orElseSucceed(() => 'failed' as const)),
     // Deliberately modest: this runs every 15 minutes and Credibled rate-limits
     // per key. There is no deadline pressure on a backstop.
     { concurrency: 4 }

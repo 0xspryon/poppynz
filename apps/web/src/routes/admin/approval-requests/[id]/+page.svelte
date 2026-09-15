@@ -432,7 +432,11 @@
 										{doc.status === 'missing' ? 'text-warning' : 'text-base-content-muted'}"
 								>
 									{#if doc.document}
-										{doc.document.filename}
+										{#if doc.document.source === 'credibled'}
+											Collected by Credibled — see the safety verification for the report
+										{:else}
+											{doc.document.filename}
+										{/if}
 										{#if doc.document.expiryDate}
 											· expires {formatDate(doc.document.expiryDate)}
 										{/if}
@@ -442,7 +446,8 @@
 								</div>
 							</div>
 							<StatusChip status={docChip(doc.status)} />
-							{#if doc.document}
+							<!-- A fetched document has no file of ours to open. -->
+							{#if doc.document && doc.document.source !== 'credibled'}
 								<button
 									type="button"
 									class="btn btn-outline btn-xs"

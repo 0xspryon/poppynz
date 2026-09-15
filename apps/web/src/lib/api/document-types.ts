@@ -18,6 +18,8 @@ export type DocumentTypeMutationError =
 
 export interface DocumentTypeDraft {
 	name: string;
+	/** Which applicant role owes this document. */
+	appliesToRole: 'service-provider' | 'family';
 	isOptional: boolean;
 	requiresExpiryDate: boolean;
 	/** Credibled check type to order, or null for upload-only. */
@@ -25,6 +27,9 @@ export interface DocumentTypeDraft {
 	/** Pre-tax price in cents. Required once a check type is set — Credibled
 	 * publishes no pricing, so somebody has to enter it. */
 	credibledCostCents: number | null;
+	/** This type is the safety gate for its role: uploading it creates the
+	 * safety verification rather than an ordinary document. One per role. */
+	isSafetyGate: boolean;
 }
 
 export async function listDocumentTypes() {

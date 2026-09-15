@@ -1,10 +1,10 @@
 import {
   canApplyCredibledTransition,
-  credibledStatusToSafetyVerificationStatus,
+  credibledStatusToCheckOrderStatus,
   verifyCredibledSignature,
   type CredibledAudience
 } from '@repo/credibled';
-import { SafetyVerificationRepo } from '@repo/db';
+import { CheckOrderRepo, inFlightCheckOrderStatuses } from '@repo/db';
 import { credibledConfig, safetyVerificationConfig } from '@repo/env';
 import { Effect, Option, Redacted } from 'effect';
 import { Hono } from 'hono';
@@ -77,12 +77,17 @@ const validityMonths = safetyVerificationConfig.pipe(
 );
 
 /**
- * Applies one delivery to one record.
+ * Applies one delivery to one order.
  *
  * Returns a short reason string for logging. Every non-applied outcome is
  * still a 2xx: a duplicate, an out-of-order event or an unknown check id are
  * all "nothing further for Credibled to do", and asking them to retry would
  * achieve nothing since they never do.
+ *
+ * A delivery moves the ORDER. Completing an order is what creates the safety
+ * verdict — in review_required, never verified — and the two writes happen in
+ * one transaction inside the repository so a webhook can never leave an order
+ * closed with no verdict behind it.
  */
 const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayload) =>
   Effect.gen(function*() {
@@ -98,46 +103,67 @@ const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayl
       return `ignored: data_type ${payload.data_type}`;
     }
 
-    const repo = yield* SafetyVerificationRepo;
-    const record = yield* repo.findByCredibledUuid(uuid);
+    const orders = yield* CheckOrderRepo;
+    const order = yield* orders.findByCredibledUuid(uuid);
 
-    if (!record) {
+    if (!order) {
       // Not ours — a check placed from the Credibled dashboard, or one whose
-      // record was deleted. Nothing to do, and nothing Credibled can fix.
-      return 'ignored: no matching verification';
+      // order was deleted. Nothing to do, and nothing Credibled can fix.
+      return 'ignored: no matching order';
     }
 
     // The audience is derived from which endpoint was called, and each
-    // endpoint verifies with its own account's secret. A record belonging to
+    // endpoint verifies with its own account's secret. An order belonging to
     // the other role therefore means a valid signature from the wrong account
     // — refuse rather than cross the boundary.
     const expectedAudience: CredibledAudience =
-      record.role === 'family' ? 'family' : 'service-provider';
+      order.role === 'family' ? 'family' : 'service-provider';
     if (expectedAudience !== audience) {
       return 'ignored: audience mismatch';
     }
 
-    const next = credibledStatusToSafetyVerificationStatus(applicationStatus);
-    if (!canApplyCredibledTransition(record.status, next)) {
+    const next = credibledStatusToCheckOrderStatus(applicationStatus);
+    if (!canApplyCredibledTransition(order.status, next)) {
       // Out-of-order or duplicate delivery. Credibled sends no timestamp, so
       // this rank check IS the replay defence.
-      return `ignored: ${record.status} -> ${next} is not a forward transition`;
+      return `ignored: ${order.status} -> ${next} is not a forward transition`;
     }
 
-    const months = yield* validityMonths;
-    const completed = applicationStatus === 'Complete';
-
-    yield* repo.update(record.id, {
-      status: next,
+    if (next === 'complete') {
+      const months = yield* validityMonths;
+      const now = new Date();
+      // Only a genuine Complete carries dates. Action Required and In Dispute
+      // still need a person, but there is nothing finished to measure a
+      // validity window from — the administrator's decision supplies one.
+      const completed = applicationStatus === 'Complete';
       // A completed check dates from now; the applicant is not verified yet —
       // an admin still decides — but the validity window is measured from
       // completion, not from the decision, so a slow review doesn't extend it.
-      issuedOn: completed ? toDateOnly(new Date()) : record.issuedOn,
-      expiresOn: completed ? expiryFromCompletion(new Date(), months) : record.expiresOn,
-      lastOrderError: null
+      const result = yield* orders.complete(order.id, {
+        completedAt: now,
+        verification: {
+          consentAt: order.consentAt,
+          consentPolicyVersion: order.consentPolicyVersion,
+          issuedOn: completed ? toDateOnly(now) : null,
+          expiresOn: completed ? expiryFromCompletion(now, months) : null
+        }
+      });
+      return result
+        ? `applied: ${order.status} -> complete (verification ${result.verification.id} awaiting review)`
+        : `ignored: ${order.status} -> complete was applied concurrently`;
+    }
+
+    // Guarded like completion is: the rank check ran on the row as read, and
+    // the poller may have completed the order since. An unguarded write here
+    // would drag a completed order back in flight.
+    const advanced = yield* orders.advance(order.id, {
+      from: { status: inFlightCheckOrderStatuses },
+      set: { status: next, lastOrderError: null }
     });
 
-    return `applied: ${record.status} -> ${next}`;
+    return advanced
+      ? `applied: ${order.status} -> ${next}`
+      : `ignored: ${order.status} -> ${next} was overtaken by a concurrent transition`;
   });
 
 const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv>) => {

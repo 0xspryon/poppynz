@@ -84,6 +84,13 @@
 		} else if (result.error.code === 'INVALID_KYC_DOCUMENT_TYPE_INPUT') {
 			// Field validation stays next to the input inside the dialog.
 			modalError = 'Check the name — it must be 1–120 characters.';
+		} else if (
+			result.error.code === 'KYC_DOCUMENT_TYPE_CONFLICT' ||
+			result.error.code === 'INVALID_KYC_DOCUMENT'
+		) {
+			// A second safety gate for the role, or a pricing mismatch: the server
+			// says exactly what to change, and it belongs next to the toggles.
+			modalError = result.error.message;
 		} else {
 			toast.error(errorText(result.error), {
 				title: editing ? 'Document type not updated' : 'Document type not created'

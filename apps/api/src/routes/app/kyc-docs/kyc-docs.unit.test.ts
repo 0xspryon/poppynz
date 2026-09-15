@@ -3,6 +3,7 @@ import {
   DBNotFoundError,
   makeKycDocumentRepoTest,
   makeKycDocumentTypeRepoTest,
+  makeCheckOrderRepoTest,
   makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
@@ -109,8 +110,8 @@ const makeLayer = (
     onCreateType?: (input: KycDocumentTypeCreateInput) => void;
     onUpdateType?: (input: KycDocumentTypeUpdateInput) => void;
     onSubmit?: (input: KycDocumentSubmitInput) => void;
-    safetyLive?: { id: string; status: string } | null;
-    safetyItems?: Array<{ id: string; documentTypeId: string }>;
+    openOrder?: { id: string; status: string } | null;
+    orderItems?: Array<{ id: string; documentTypeId: string }>;
     onRemoveItem?: (itemId: string) => void;
   } = {}
 ) => {
@@ -120,12 +121,10 @@ const makeLayer = (
   const currentDocument = options.document === undefined ? kycDocument() : options.document;
 
   return Layer.mergeAll(
-    // Uploading yourself drops the matching Credibled basket item; this suite
-    // has no basket, so the lookup finds nothing.
+    // The checklist reads a gate type's status from the verification record.
     makeSafetyVerificationRepoTest({
-      findLive: () => Effect.succeed((options.safetyLive ?? null) as never),
+      findLive: () => Effect.succeed(null),
       findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      findByCredibledUuid: () => Effect.succeed(null),
       listByUser: () => Effect.succeed([]),
       listForReview: () => Effect.succeed([]),
       create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
@@ -133,12 +132,24 @@ const makeLayer = (
       listExpiringForNotification: () => Effect.succeed([]),
       markExpiryNotified: () =>
         Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      listLapsed: () => Effect.succeed([]),
+      listLapsed: () => Effect.succeed([])
+    }),
+    // Uploading yourself drops the matching item from an unpaid Credibled
+    // basket; unless a test says otherwise there is no basket to find.
+    makeCheckOrderRepoTest({
+      findById: () => Effect.fail(new DBNotFoundError({ entity: 'checkOrder', value: '' })),
+      findOpen: () => Effect.succeed((options.openOrder ?? null) as never),
+      findByCredibledUuid: () => Effect.succeed(null),
+      create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
+      update: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' })),
+      claimForPayment: () => Effect.succeed(null),
+      advance: () => Effect.succeed(null),
+      complete: () => Effect.succeed(null),
       listInFlight: () => Effect.succeed([]),
-      listAwaitingOrder: () => Effect.succeed([]),
-      listItems: () => Effect.succeed((options.safetyItems ?? []) as never),
+      listAwaitingPlacement: () => Effect.succeed([]),
+      listItems: () => Effect.succeed((options.orderItems ?? []) as never),
       addItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
-      removeItem: (_verificationId, itemId) => {
+      removeItem: (_orderId, itemId) => {
         options.onRemoveItem?.(itemId);
         return Effect.succeed({ id: itemId } as never);
       }
@@ -290,8 +301,8 @@ describe('KYC route programs', () => {
       ).pipe(
         Effect.provide(
           makeLayer({
-            safetyLive: { id: 'sv-1', status: 'not_started' },
-            safetyItems: [{ id: 'item-1', documentTypeId: 'document-type-1' }],
+            openOrder: { id: 'order-1', status: 'draft' },
+            orderItems: [{ id: 'item-1', documentTypeId: 'document-type-1' }],
             onRemoveItem: (id) => removed.push(id)
           })
         )
@@ -315,8 +326,8 @@ describe('KYC route programs', () => {
       ).pipe(
         Effect.provide(
           makeLayer({
-            safetyLive: { id: 'sv-1', status: 'not_started' },
-            safetyItems: [{ id: 'item-9', documentTypeId: 'other-type' }],
+            openOrder: { id: 'order-1', status: 'draft' },
+            orderItems: [{ id: 'item-9', documentTypeId: 'other-type' }],
             onRemoveItem: (id) => removed.push(id)
           })
         )

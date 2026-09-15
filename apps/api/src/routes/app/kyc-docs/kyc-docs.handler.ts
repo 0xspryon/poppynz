@@ -1,11 +1,11 @@
 import type { SqlError } from '@effect/sql/SqlError';
 import {
+  CheckOrderRepo,
   DBNotFoundError,
   KycDocumentRepo,
   type KycDocumentType,
   type KycDocument,
-  KycDocumentTypeRepo,
-  SafetyVerificationRepo
+  KycDocumentTypeRepo
 } from '@repo/db';
 import { objectBucketsConfig } from '@repo/env';
 import { ObjectStorage, type ObjectStorageError } from '@repo/objs';
@@ -245,15 +245,15 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
     // they have just provided. Best-effort — a failure here must not lose the
     // document the applicant just uploaded.
     yield* Effect.gen(function* () {
-      const safetyRepo = yield* SafetyVerificationRepo;
-      const live = yield* safetyRepo.findLive(provider.user.id, 'service-provider');
-      if (!live || live.status !== 'not_started') {
+      const orders = yield* CheckOrderRepo;
+      const open = yield* orders.findOpen(provider.user.id, 'service-provider');
+      if (!open || open.status !== 'draft') {
         return;
       }
-      const items = yield* safetyRepo.listItems(live.id);
+      const items = yield* orders.listItems(open.id);
       const queued = items.find((item) => item.documentTypeId === input.documentTypeId);
       if (queued) {
-        yield* safetyRepo.removeItem(live.id, queued.id);
+        yield* orders.removeItem(open.id, queued.id);
       }
     }).pipe(Effect.ignore);
 

@@ -1,5 +1,12 @@
 import { Credibled } from '@repo/credibled';
-import { SafetyVerificationRepo, UserRepo, type SafetyVerification } from '@repo/db';
+import {
+  CheckOrderRepo,
+  isSettledPayment,
+  PaymentRepo,
+  UserRepo,
+  type CheckOrder,
+  type Payment
+} from '@repo/db';
 import { safetyVerificationConfig } from '@repo/env';
 import { Payments } from '@repo/payments';
 import { Effect } from 'effect';
@@ -26,89 +33,103 @@ const policy = safetyVerificationConfig.pipe(
   }))
 );
 
-const audienceFor = (record: SafetyVerification) =>
-  record.role === 'family' ? ('family' as const) : ('service-provider' as const);
+const audienceFor = (order: CheckOrder) =>
+  order.role === 'family' ? ('family' as const) : ('service-provider' as const);
 
-/** Refund and close the record out. Called once attempts are exhausted. */
-const refundAndFail = (record: SafetyVerification, reason: string) =>
+/** Refund and close the order out. Called once attempts are exhausted. */
+const refundAndFail = (order: CheckOrder, payment: Payment | null, reason: string) =>
   Effect.gen(function* () {
-    const repo = yield* SafetyVerificationRepo;
+    const orders = yield* CheckOrderRepo;
+    const paymentRepo = yield* PaymentRepo;
     const payments = yield* Payments;
 
-    if (!record.paymentReference) {
+    if (payment === null || !isSettledPayment(payment) || !payment.providerReference) {
       // Nothing was charged, so there is nothing to give back.
-      yield* repo.update(record.id, { status: 'rejected', lastOrderError: reason });
-      return `verification ${record.id}: failed with no payment to refund`;
+      yield* orders.update(order.id, { status: 'failed', lastOrderError: reason });
+      return `order ${order.id}: failed with no payment to refund`;
     }
 
+    // Keyed on the payment row: a refund that succeeded at the provider but
+    // whose record here was lost is retried under the same key, not repeated.
     const refund = yield* payments
-      .refund({ reference: record.paymentReference, reason })
+      .refund({ reference: payment.providerReference, reason, idempotencyKey: payment.id })
       .pipe(Effect.option);
 
     if (refund._tag === 'None') {
-      // Leave the record in payment_pending: a failed refund must stay visible
-      // and retryable rather than being closed out as if it were settled.
-      yield* repo.update(record.id, {
-        lastOrderError: `${reason} (refund failed — needs manual settlement)`
+      // Leave the order `paid`: a failed refund must stay visible and
+      // retryable rather than being closed out as if it were settled. The
+      // note lives on the payment — that is the row holding the money.
+      yield* paymentRepo.update(payment.id, {
+        lastError: `${reason} (refund failed — needs manual settlement)`
       });
-      return `verification ${record.id}: REFUND FAILED after ${reason}`;
+      yield* orders.update(order.id, { lastOrderError: reason });
+      return `order ${order.id}: REFUND FAILED after ${reason}`;
     }
 
-    yield* repo.update(record.id, {
-      status: 'rejected',
+    yield* paymentRepo.update(payment.id, {
+      status: 'refunded',
       refundReference: refund.value.refundReference,
-      decisionReason:
-        'We could not place your check with our screening provider, so your payment was refunded.',
-      lastOrderError: reason
+      refundedAt: refund.value.refundedAt,
+      lastError: null
     });
-    return `verification ${record.id}: refunded after ${reason}`;
+    yield* orders.update(order.id, { status: 'failed', lastOrderError: reason });
+    return `order ${order.id}: refunded after ${reason}`;
   });
 
-export const placeSafetyVerificationOrder = (verificationId: string) =>
+export const placeCheckOrder = (orderId: string) =>
   Effect.gen(function* () {
-    const repo = yield* SafetyVerificationRepo;
+    const orders = yield* CheckOrderRepo;
+    const paymentRepo = yield* PaymentRepo;
     const credibled = yield* Credibled;
     const config = yield* policy;
 
-    const record = yield* repo.findById(verificationId).pipe(Effect.option);
-    if (record._tag === 'None') {
-      return `verification ${verificationId}: gone, nothing to order`;
+    const found = yield* orders.findById(orderId).pipe(Effect.option);
+    if (found._tag === 'None') {
+      return `order ${orderId}: gone, nothing to order`;
     }
-    const verification = record.value;
+    const order = found.value;
 
     // Idempotency: the queue dedupes, but a redelivered job or the boot-time
     // recovery sweep can still land here twice.
-    if (verification.credibledCheckUuid) {
-      return `verification ${verificationId}: already ordered`;
+    if (order.credibledCheckUuid) {
+      return `order ${orderId}: already ordered`;
     }
-    if (verification.status !== 'payment_pending') {
-      return `verification ${verificationId}: status ${verification.status}, not orderable`;
+    if (order.status !== 'paid') {
+      return `order ${orderId}: status ${order.status}, not orderable`;
     }
-    if (!verification.paymentReference) {
-      return `verification ${verificationId}: not paid, refusing to order`;
+
+    // `paid` says the charge settled; the payment row is the proof. Refusing
+    // here rather than refunding is deliberate: a `paid` order with no settled
+    // payment is an inconsistency to look at, not a case to auto-close.
+    const payment = order.paymentId
+      ? yield* paymentRepo.findById(order.paymentId).pipe(Effect.option)
+      : ({ _tag: 'None' } as const);
+    if (payment._tag === 'None' || !isSettledPayment(payment.value)) {
+      return `order ${orderId}: not paid, refusing to order`;
     }
-    // The basket travels with the record. An empty one means the order route
+
+    // The basket travels with the order. An empty one means the order route
     // let something through it shouldn't have — refund rather than call
     // Credibled with no check types.
-    const items = yield* repo.listItems(verification.id);
+    const items = yield* orders.listItems(order.id);
     if (items.length === 0) {
-      return yield* refundAndFail(verification, 'no Credibled checks selected');
+      return yield* refundAndFail(order, payment.value, 'no Credibled checks selected');
     }
     const checkTypeValues = items.map((item) => item.credibledCheckTypeValue);
 
-    const attempts = verification.orderAttempts + 1;
-    yield* repo.update(verification.id, { orderAttempts: attempts });
+    const attempts = order.orderAttempts + 1;
+    yield* orders.update(order.id, { orderAttempts: attempts });
 
     const userRepo = yield* UserRepo;
-    const applicant = yield* userRepo.findById(verification.userId).pipe(Effect.option);
+    const applicant = yield* userRepo.findById(order.userId).pipe(Effect.option);
     if (applicant._tag === 'None' || !applicant.value.email) {
-      return yield* refundAndFail(verification, 'applicant has no email address');
+      return yield* refundAndFail(order, payment.value, 'applicant has no email address');
     }
     const applicantEmail = applicant.value.email;
 
     const created = yield* credibled
       .createBackgroundCheck({
-        audience: audienceFor(verification),
+        audience: audienceFor(order),
         email: applicantEmail,
         checkTypeValues: checkTypeValues as never
       })
@@ -131,21 +152,22 @@ export const placeSafetyVerificationOrder = (verificationId: string) =>
     if (created._tag === 'None') {
       if (attempts >= config.orderMaxAttempts) {
         return yield* refundAndFail(
-          verification,
+          order,
+          payment.value,
           `Credibled order failed after ${attempts} attempts`
         );
       }
-      yield* repo.update(verification.id, {
+      yield* orders.update(order.id, {
         lastOrderError: `attempt ${attempts} failed`
       });
       // Throwing hands the job back to BullMQ's backoff rather than swallowing
-      // it — the record must not sit paid-but-unordered without a retry.
+      // it — the order must not sit paid-but-unplaced without a retry.
       return yield* Effect.fail(
-        new Error(`Credibled order attempt ${attempts} failed for ${verification.id}`)
+        new Error(`Credibled order attempt ${attempts} failed for ${order.id}`)
       );
     }
 
-    yield* repo.update(verification.id, {
+    yield* orders.update(order.id, {
       status: 'invited',
       credibledCheckUuid: created.value.uuid,
       applicationUrl: created.value.applicationUrl,
@@ -155,23 +177,23 @@ export const placeSafetyVerificationOrder = (verificationId: string) =>
     // Credibled emails the applicant the secure link itself (send_email: true),
     // so Poppynz deliberately sends nothing here — two mails for one action
     // reads as a bug. The link is also surfaced in-app, and the reconcile
-    // poller keeps the record moving regardless of what the applicant does.
+    // poller keeps the order moving regardless of what the applicant does.
 
     return (
-      `verification ${verification.id}: ordered ${checkTypeValues.length} check(s) ` +
+      `order ${order.id}: placed ${checkTypeValues.length} check(s) ` +
       `as ${created.value.uuid}`
     );
   });
 
-/** Boot-time recovery for records charged but never ordered — covers a queue
+/** Boot-time recovery for orders charged but never placed — covers a queue
  * job lost between the charge and the order. */
-export const recoverUnorderedSafetyVerifications = Effect.gen(function* () {
-  const repo = yield* SafetyVerificationRepo;
-  const pending = yield* repo.listAwaitingOrder();
+export const recoverUnplacedCheckOrders = Effect.gen(function* () {
+  const orders = yield* CheckOrderRepo;
+  const pending = yield* orders.listAwaitingPlacement();
 
   const results = yield* Effect.forEach(
     pending,
-    (record) => placeSafetyVerificationOrder(record.id).pipe(Effect.option),
+    (order) => placeCheckOrder(order.id).pipe(Effect.option),
     { concurrency: 3 }
   );
 

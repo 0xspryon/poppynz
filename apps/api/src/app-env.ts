@@ -1,12 +1,14 @@
 import type {
   ApprovalRepo,
   ApprovalRequestRepo,
+  CheckOrderRepo,
   ContractRepo,
   ConversationRepo,
   FamilySearchOutboxRepo,
   FamilySearchRepo,
   KycDocumentRepo,
   KycDocumentTypeRepo,
+  PaymentRepo,
   ServiceCatalogueRepo,
   ServiceNeededRepo,
   ServiceOfferedRepo,
@@ -61,6 +63,8 @@ export type AppServices =
   | FamilySearchRepo
   | ReferralRepo
   | SafetyVerificationRepo
+  | CheckOrderRepo
+  | PaymentRepo
   | UserDirectoryRepo
   | UserSearchRepo
   | ConversationRepo

@@ -15,7 +15,6 @@ const repo = (live: Partial<SafetyVerification> | null, fail = false) =>
         ? Effect.fail(new SqlError({ cause: 'connection lost' }))
         : Effect.succeed(live as SafetyVerification | null),
     findById: () => Effect.die('unused'),
-    findByCredibledUuid: () => Effect.succeed(null),
     listByUser: () => Effect.succeed([]),
     listForReview: () => Effect.succeed([]),
     create: () => Effect.die('unused'),
@@ -23,8 +22,6 @@ const repo = (live: Partial<SafetyVerification> | null, fail = false) =>
     listExpiringForNotification: () => Effect.succeed([]),
     markExpiryNotified: () => Effect.die('unused'),
     listLapsed: () => Effect.succeed([]),
-    listInFlight: () => Effect.succeed([]),
-    listAwaitingOrder: () => Effect.succeed([])
   });
 
 const run = (role: string | null, live: Partial<SafetyVerification> | null, fail = false) =>

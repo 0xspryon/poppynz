@@ -7,7 +7,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@repo/env": "*",
     "effect": "^3.21.2"
   }
 }

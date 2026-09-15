@@ -9,8 +9,10 @@ import { PaymentsMock } from '@repo/payments';
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import {
   ApprovalRepoDefault,
+  CheckOrderRepoDefault,
   FamilySearchOutboxRepo,
   FamilySearchOutboxRepoDefault,
+  PaymentRepoDefault,
   ProviderSearchOutboxRepo,
   ProviderSearchOutboxRepoDefault,
   SafetyVerificationRepoDefault,
@@ -33,17 +35,17 @@ import {
   safetyVerificationQueueDefinition,
   safetyVerificationReconcileCronPattern,
   safetyVerificationReconcileSchedulerId,
-  type PlaceSafetyVerificationOrderJob
+  type PlaceCheckOrderJob
 } from '@repo/queue';
 import { processApprovalExpiryNotifications } from './approval-expiry-processor';
 import { processFamilySearchJob } from './family-search-processor';
 import { processProviderSearchJob } from './provider-search-processor';
 import { processSafetyVerificationExpiries } from './safety-verification-expiry-processor';
 import {
-  placeSafetyVerificationOrder,
-  recoverUnorderedSafetyVerifications
+  placeCheckOrder,
+  recoverUnplacedCheckOrders
 } from './safety-verification-order-processor';
-import { reconcileSafetyVerificationStatuses } from './safety-verification-status-processor';
+import { reconcileCheckOrderStatuses } from './safety-verification-status-processor';
 
 const WorkerLive = Layer.mergeAll(
   ProviderSearchIndexDefault,
@@ -52,6 +54,8 @@ const WorkerLive = Layer.mergeAll(
   FamilySearchOutboxRepoDefault,
   ApprovalRepoDefault,
   SafetyVerificationRepoDefault,
+  CheckOrderRepoDefault,
+  PaymentRepoDefault,
   UserRepoDefault,
   CredibledDefault,
   // Stripe lands in its own PR; the mock keeps the refund and retry paths
@@ -94,14 +98,14 @@ const safetyVerificationWorker = new Worker(
   safetyVerificationQueueDefinition.name,
   async (job) => {
     if (job.name === safetyVerificationJobNames.placeOrder) {
-      const data = job.data as PlaceSafetyVerificationOrderJob;
-      const outcome = await runtime.runPromise(placeSafetyVerificationOrder(data.verificationId));
+      const data = job.data as PlaceCheckOrderJob;
+      const outcome = await runtime.runPromise(placeCheckOrder(data.orderId));
       console.log(`safety-verification order: ${outcome}`);
       return;
     }
 
     if (job.name === safetyVerificationJobNames.reconcileStatuses) {
-      const summary = await runtime.runPromise(reconcileSafetyVerificationStatuses);
+      const summary = await runtime.runPromise(reconcileCheckOrderStatuses);
       console.log(
         `safety-verification reconcile: ${summary.advanced} advanced, ` +
           `${summary.unreachable} unreachable, ${summary.failed} failed of ${summary.checked}`
@@ -181,10 +185,10 @@ void scheduleSafetyVerificationJobs().catch((cause) => {
   console.error(cause);
 });
 
-// Records charged but never ordered — a queue job lost between the charge and
+// Orders charged but never placed — a queue job lost between the charge and
 // the order would otherwise leave somebody paid-up with nothing happening.
 void runtime
-  .runPromise(recoverUnorderedSafetyVerifications)
+  .runPromise(recoverUnplacedCheckOrders)
   .then(({ recovered }) => {
     if (recovered > 0) {
       console.log(`safety-verification: recovered ${recovered} unordered check(s) on boot`);

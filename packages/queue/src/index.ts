@@ -79,11 +79,15 @@ export type ProviderSearchJobData = ReconcileProviderJob | ReindexAllProvidersJo
 
 // Family reconciles have no legacy delayed jobs, so every enqueue carries its
 // outbox row id.
-export type PlaceSafetyVerificationOrderJob = { verificationId: string };
+/** Places a paid check order with Credibled. Job and queue names are
+ * unchanged from when the payload named a verification; a job queued under
+ * the old `verificationId` payload will not resolve, and its order is picked
+ * up by the worker's boot-time recovery sweep instead. */
+export type PlaceCheckOrderJob = { orderId: string };
 export type ReconcileSafetyVerificationsJob = Record<string, never>;
 export type SweepSafetyVerificationExpiriesJob = Record<string, never>;
 export type SafetyVerificationJobData =
-  | PlaceSafetyVerificationOrderJob
+  | PlaceCheckOrderJob
   | ReconcileSafetyVerificationsJob
   | SweepSafetyVerificationExpiriesJob;
 
@@ -269,9 +273,7 @@ export const makeSafetyVerificationQueue = (connection: QueueOptions['connection
 export class SafetyVerificationQueue extends Context.Tag('@repo/queue/SafetyVerificationQueue')<
   SafetyVerificationQueue,
   {
-    enqueueOrder: (
-      input: PlaceSafetyVerificationOrderJob
-    ) => Effect.Effect<EnqueuedJob, SafetyVerificationQueueError>;
+    enqueueOrder: (input: PlaceCheckOrderJob) => Effect.Effect<EnqueuedJob, SafetyVerificationQueueError>;
   }
 >() {}
 
@@ -282,13 +284,13 @@ export const SafetyVerificationQueueLive = Layer.effect(
       const queue = makeSafetyVerificationQueue(connection);
 
       return {
-        enqueueOrder: (input: PlaceSafetyVerificationOrderJob) =>
+        enqueueOrder: (input: PlaceCheckOrderJob) =>
           Effect.tryPromise({
             try: async () => {
               const job = await queue.add(safetyVerificationJobNames.placeOrder, input, {
-                // Deduplicated on the verification id: a double-submit or a
-                // retried request must never place two paid orders.
-                deduplication: { id: `safety-verification-order-${input.verificationId}` }
+                // Deduplicated on the order id: a double-submit or a retried
+                // request must never place two paid orders.
+                deduplication: { id: `safety-verification-order-${input.orderId}` }
               });
 
               return { id: job.id, name: job.name };

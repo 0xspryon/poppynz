@@ -90,7 +90,11 @@ const makeLayer = (
       getCheckStatus: (_audience, uuid) =>
         options.vendorStatus === 'unreachable'
           ? Effect.fail(
-              new CredibledRequestError({ operation: 'checkStatus', status: null, cause: 'timeout' })
+              new CredibledRequestError({
+                operation: 'checkStatus',
+                status: null,
+                cause: 'timeout'
+              })
             )
           : Effect.succeed({
               uuid,

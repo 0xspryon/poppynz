@@ -177,7 +177,7 @@ const makeLayer = (
       listExpiringForNotification: () => Effect.succeed([]),
       markExpiryNotified: () =>
         Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      listLapsed: () => Effect.succeed([]),
+      listLapsed: () => Effect.succeed([])
     }),
     makeUserProfileRepoTest({
       findByUserId: (userId) =>

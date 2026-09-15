@@ -180,8 +180,7 @@ export const placeCheckOrder = (orderId: string) =>
     // poller keeps the order moving regardless of what the applicant does.
 
     return (
-      `order ${order.id}: placed ${checkTypeValues.length} check(s) ` +
-      `as ${created.value.uuid}`
+      `order ${order.id}: placed ${checkTypeValues.length} check(s) ` + `as ${created.value.uuid}`
     );
   });
 

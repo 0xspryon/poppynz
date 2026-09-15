@@ -233,10 +233,11 @@ describe('credibled webhook — application', () => {
     // Action Required has no completion to measure a validity window from;
     // the administrator's decision supplies one.
     const completions: Array<CheckOrderCompletionInput> = [];
-    const res = await post(
-      makeApp({ onComplete: (_id, input) => completions.push(input) }),
-      { uuid: 'check-1', data_type: 'background_check', application_status: 'Action Required' }
-    );
+    const res = await post(makeApp({ onComplete: (_id, input) => completions.push(input) }), {
+      uuid: 'check-1',
+      data_type: 'background_check',
+      application_status: 'Action Required'
+    });
 
     expect(res.status).toBe(200);
     expect(completions[0]?.verification.issuedOn).toBeNull();

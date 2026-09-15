@@ -253,7 +253,7 @@ const makeLayer = (
       listExpiringForNotification: () => Effect.succeed([]),
       markExpiryNotified: () =>
         Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
-      listLapsed: () => Effect.succeed([]),
+      listLapsed: () => Effect.succeed([])
     }),
     makeAuthServiceTest({
       getSession: () => Effect.succeed({ user: { id: viewer.id }, session: { id: 'session-1' } }),

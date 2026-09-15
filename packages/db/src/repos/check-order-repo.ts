@@ -99,7 +99,10 @@ export class CheckOrderRepo extends Context.Tag('@repo/db/CheckOrderRepo')<
      * decline's revert against a re-claim, marking paid against a revert, a
      * vendor transition against a concurrent completion. Plain `update` is
      * for fields that carry no state (attempt counters, error notes). */
-    advance: (id: string, input: CheckOrderAdvanceInput) => Effect.Effect<CheckOrder | null, SqlError>;
+    advance: (
+      id: string,
+      input: CheckOrderAdvanceInput
+    ) => Effect.Effect<CheckOrder | null, SqlError>;
     /** Closes an in-flight order, creates the verdict it produced, and records
      * each fetched check as a document — in one transaction. Null means the
      * order was not in flight (a duplicate webhook, or a poll racing a
@@ -170,7 +173,11 @@ export const CheckOrderRepoLive = Layer.effect(
           .pipe(Effect.map(firstOrNull)),
 
       create: (input) =>
-        db.insert(checkOrder).values(input).returning().pipe(Effect.map((rows) => rows[0])),
+        db
+          .insert(checkOrder)
+          .values(input)
+          .returning()
+          .pipe(Effect.map((rows) => rows[0])),
 
       update: (id, input) =>
         db
@@ -331,7 +338,11 @@ export const CheckOrderRepoLive = Layer.effect(
           .orderBy(checkOrderItem.createdAt),
 
       addItem: (input) =>
-        db.insert(checkOrderItem).values(input).returning().pipe(Effect.map((rows) => rows[0])),
+        db
+          .insert(checkOrderItem)
+          .values(input)
+          .returning()
+          .pipe(Effect.map((rows) => rows[0])),
 
       removeItem: (orderId, itemId) =>
         db

@@ -59,7 +59,11 @@ export const PaymentRepoLive = Layer.effect(
           .pipe(Effect.flatMap(oneOrNotFound(id))),
 
       create: (input) =>
-        db.insert(payment).values(input).returning().pipe(Effect.map((rows) => rows[0])),
+        db
+          .insert(payment)
+          .values(input)
+          .returning()
+          .pipe(Effect.map((rows) => rows[0])),
 
       update: (id, input) =>
         db

@@ -225,7 +225,9 @@ describe('placing a paid check order', () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     // Keyed on the payment row, so a lost record of a successful refund is
     // retried under the same key rather than refunded twice.
-    expect(recorded.refunds).toEqual([{ reference: 'mock_auth_payment-1', idempotencyKey: 'payment-1' }]);
+    expect(recorded.refunds).toEqual([
+      { reference: 'mock_auth_payment-1', idempotencyKey: 'payment-1' }
+    ]);
     expect(recorded.paymentUpdates.at(-1)).toMatchObject({
       status: 'refunded',
       refundReference: 'mock_refund_mock_auth_payment-1'

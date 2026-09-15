@@ -22,7 +22,13 @@ const type = (overrides: Partial<KycDocumentType> = {}): KycDocumentType =>
     ...overrides
   }) as KycDocumentType;
 
-const gate = type({ id: 'gate-1', name: 'Vulnerable Sector Check', isSafetyGate: true, credibledCheckTypeValue: null, credibledCostCents: null });
+const gate = type({
+  id: 'gate-1',
+  name: 'Vulnerable Sector Check',
+  isSafetyGate: true,
+  credibledCheckTypeValue: null,
+  credibledCostCents: null
+});
 
 const document = (overrides: Partial<KycDocument> = {}): KycDocument =>
   ({

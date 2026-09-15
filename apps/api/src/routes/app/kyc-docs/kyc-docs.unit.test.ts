@@ -384,7 +384,9 @@ describe('KYC route programs', () => {
           isSafetyGate: true
         }),
         new Headers()
-      ).pipe(Effect.provide(makeLayer({ type: null, onCreateType: (input) => created.push(input) })))
+      ).pipe(
+        Effect.provide(makeLayer({ type: null, onCreateType: (input) => created.push(input) }))
+      )
     );
     expect(created[0]).toMatchObject({ isSafetyGate: true });
   });
@@ -404,7 +406,11 @@ describe('KYC route programs', () => {
       ).pipe(
         Effect.provide(
           makeLayer({
-            type: documentType({ id: 'gate-1', name: 'Vulnerable Sector Check', isSafetyGate: true })
+            type: documentType({
+              id: 'gate-1',
+              name: 'Vulnerable Sector Check',
+              isSafetyGate: true
+            })
           })
         )
       )
@@ -444,7 +450,10 @@ describe('KYC route programs', () => {
         'document-type-1'
       ).pipe(Effect.provide(makeLayer({ type: documentType({ isSafetyGate: true }) })))
     );
-    expect(updated).toMatchObject({ isSafetyGate: true, name: 'Vulnerable Sector Check (renamed)' });
+    expect(updated).toMatchObject({
+      isSafetyGate: true,
+      name: 'Vulnerable Sector Check (renamed)'
+    });
   });
 
   it('rejects a Credibled check type outside the catalogue', async () => {
@@ -546,6 +555,30 @@ describe('KYC route programs', () => {
 
     expect(getFailure(missingExpiry)._tag).toBe('KycValidationError');
     expect(getFailure(foreignKey)._tag).toBe('KycValidationError');
+  });
+
+  it('lets a family submit a document of a family type', async () => {
+    const submitted: Array<KycDocumentSubmitInput> = [];
+    await Effect.runPromise(
+      submitKycDocumentRouteProgram(
+        contextWithJson({
+          documentTypeId: 'document-type-1',
+          filename: 'a.pdf',
+          fileKey: 'users/family-1/a.pdf',
+          expiryDate: '2099-01-01T00:00:00.000Z'
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'family-1', role: 'family' }),
+            type: documentType({ appliesToRole: 'family' }),
+            onSubmit: (input) => submitted.push(input)
+          })
+        )
+      )
+    );
+    expect(submitted[0]).toMatchObject({ userId: 'family-1', documentTypeId: 'document-type-1' });
   });
 
   it('rejects family users submitting service-provider KYC docs', async () => {

@@ -3,6 +3,7 @@ import {
   ApprovalRepo,
   ApprovalRequestRepo,
   type DBNotFoundError,
+  SafetyVerificationRepo,
   ServiceNeededRepo,
   UserProfileRepo,
   type Approval,
@@ -19,6 +20,7 @@ import {
   type UserAndSession
 } from '@/api/lib/effect-auth';
 import { loadChecklist } from '@/api/lib/onboarding-checklist';
+import { isVerified, presentedStatus, toDateOnly } from '@/api/lib/safety-verification';
 
 export class OnboardingRepoError extends Data.TaggedError('OnboardingRepoError')<{
   cause: SqlError;
@@ -144,9 +146,10 @@ export const getOnboardingRouteProgram = (headers: Headers) =>
   });
 
 /** The family getting-started checklist: the same steps the welcome email
- * promises, with completion derived from real data — a saved location and at
- * least one registered need are exactly what make the family discoverable to
- * approved providers. */
+ * promises, with completion derived from real data. A saved location and at
+ * least one registered need are what make the family findable; the safety
+ * verification is what makes them ELIGIBLE to be found — nobody is
+ * discoverable, on either side, without one. */
 export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const family = yield* ensureFamily(userAndSession);
@@ -154,8 +157,9 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
 
     const profileRepo = yield* UserProfileRepo;
     const needsRepo = yield* ServiceNeededRepo;
+    const safetyRepo = yield* SafetyVerificationRepo;
 
-    const [profile, needs] = yield* Effect.all(
+    const [profile, needs, { checklist, warnings }, verification] = yield* Effect.all(
       [
         profileRepo.findByUserId(userId).pipe(
           Effect.catchTags({
@@ -163,7 +167,9 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
             SqlError: (cause) => Effect.fail(new OnboardingRepoError({ cause }))
           })
         ),
-        mapRepoError(needsRepo.listByUserId(userId))
+        mapRepoError(needsRepo.listByUserId(userId)),
+        mapRepoError(loadChecklist(userId, 'family')),
+        mapRepoError(safetyRepo.findLive(userId, 'family'))
       ],
       { concurrency: 'unbounded' }
     );
@@ -171,18 +177,35 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
     const locationComplete =
       typeof profile.latitude === 'number' && typeof profile.longitude === 'number';
     const needsComplete = needs.length > 0;
+    const requiredEntries = checklist.filter((entry) => !entry.isOptional);
+    const requiredSubmitted = requiredEntries.filter((entry) => entry.status !== 'missing').length;
+    const today = toDateOnly(new Date());
 
     return {
       userId,
       firstName: profile.firstName,
       progress: {
-        completed: (locationComplete ? 1 : 0) + (needsComplete ? 1 : 0),
-        total: 2
+        completed: (locationComplete ? 1 : 0) + (needsComplete ? 1 : 0) + requiredSubmitted,
+        total: 2 + requiredEntries.length
       },
       steps: {
         location: { complete: locationComplete },
-        needs: { complete: needsComplete, count: needs.length }
-      }
+        needs: { complete: needsComplete, count: needs.length },
+        documents: {
+          complete: requiredSubmitted === requiredEntries.length,
+          requiredSubmitted,
+          requiredTotal: requiredEntries.length
+        }
+      },
+      documents: checklist,
+      // The gate itself, as the applicant is allowed to see it: submitted is
+      // not verified, and only verified makes a family discoverable.
+      safetyVerification: {
+        status: verification ? presentedStatus(verification, today) : ('not_started' as const),
+        verified: isVerified(verification, today),
+        expiresOn: isVerified(verification, today) ? (verification?.expiresOn ?? null) : null
+      },
+      warnings
     };
   });
 

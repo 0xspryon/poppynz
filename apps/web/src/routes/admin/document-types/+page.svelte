@@ -225,7 +225,10 @@
 				<div class="mb-2 flex items-center justify-between lg:mb-0 lg:block">
 					<span class="text-sm font-semibold text-base-content">{item.name}</span>
 					{#if item.isSafetyGate}
-						<span class="badge badge-sm badge-primary ml-2 font-semibold" title="Submitting this document starts safety verification">
+						<span
+							class="badge badge-sm badge-primary ml-2 font-semibold"
+							title="Submitting this document starts safety verification"
+						>
 							Safety gate
 						</span>
 					{/if}
@@ -235,7 +238,7 @@
 				</div>
 				<div class="hidden lg:block">
 					<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info">
-						Service provider
+						{item.appliesToRole === 'family' ? 'Family' : 'Service provider'}
 					</span>
 				</div>
 				<label class="flex items-center gap-2 py-1 lg:py-0">

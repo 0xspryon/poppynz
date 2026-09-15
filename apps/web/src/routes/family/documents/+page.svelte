@@ -2,4 +2,4 @@
 	import DocumentsPage from '$lib/components/DocumentsPage.svelte';
 </script>
 
-<DocumentsPage role="service-provider" />
+<DocumentsPage role="family" />

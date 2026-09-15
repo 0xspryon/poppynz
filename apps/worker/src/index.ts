@@ -19,6 +19,7 @@ import {
   UserRepoDefault
 } from '@repo/db';
 import {
+  FamilySearchQueueLive,
   approvalExpiryCronPattern,
   approvalExpiryJobNames,
   approvalExpiryQueueDefinition,
@@ -41,10 +42,7 @@ import { processApprovalExpiryNotifications } from './approval-expiry-processor'
 import { processFamilySearchJob } from './family-search-processor';
 import { processProviderSearchJob } from './provider-search-processor';
 import { processSafetyVerificationExpiries } from './safety-verification-expiry-processor';
-import {
-  placeCheckOrder,
-  recoverUnplacedCheckOrders
-} from './safety-verification-order-processor';
+import { placeCheckOrder, recoverUnplacedCheckOrders } from './safety-verification-order-processor';
 import { reconcileCheckOrderStatuses } from './safety-verification-status-processor';
 
 const WorkerLive = Layer.mergeAll(
@@ -61,7 +59,9 @@ const WorkerLive = Layer.mergeAll(
   // Stripe lands in its own PR; the mock keeps the refund and retry paths
   // exercised until then.
   PaymentsMock,
-  MailerLive
+  MailerLive,
+  // The expiry sweep re-indexes a family whose verification lapsed.
+  FamilySearchQueueLive
 );
 const runtime = ManagedRuntime.make(WorkerLive);
 const connection = getRedisConnection();

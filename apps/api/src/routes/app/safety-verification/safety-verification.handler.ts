@@ -19,6 +19,7 @@ import { Payments, type QuoteLineItem } from '@repo/payments';
 import { SafetyVerificationQueue } from '@repo/queue';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
+import { scheduleFamilySearchReconcile } from '@/api/lib/family-search-jobs';
 import {
   authErrorToResponse,
   authenticate,
@@ -716,6 +717,11 @@ export const decideSafetyVerificationRouteProgram = (
     const currentDate = today();
     const now = new Date();
 
+    // A family's discoverability rides directly on this verdict (providers'
+    // rides on their approval, which already requires it), so a decision
+    // either way re-indexes them. Best-effort: the read path re-verifies.
+    const reindex = record.role === 'family' ? scheduleFamilySearchReconcile(record.userId) : Effect.void;
+
     if (input.decision === 'reject') {
       const rejected = yield* mapRepoError(
         repo.update(record.id, {
@@ -725,6 +731,7 @@ export const decideSafetyVerificationRouteProgram = (
           decisionReason: reason
         })
       );
+      yield* reindex;
       return { verification: toAdminSummary(rejected, currentDate) };
     }
 
@@ -755,6 +762,7 @@ export const decideSafetyVerificationRouteProgram = (
         expiryNotifiedAt: null
       })
     );
+    yield* reindex;
 
     return { verification: toAdminSummary(approved, currentDate) };
   });

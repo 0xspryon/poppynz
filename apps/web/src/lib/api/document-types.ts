@@ -18,6 +18,8 @@ export type DocumentTypeMutationError =
 
 export interface DocumentTypeDraft {
 	name: string;
+	/** Which applicant role owes this document. */
+	appliesToRole: 'service-provider' | 'family';
 	isOptional: boolean;
 	requiresExpiryDate: boolean;
 	/** Credibled check type to order, or null for upload-only. */

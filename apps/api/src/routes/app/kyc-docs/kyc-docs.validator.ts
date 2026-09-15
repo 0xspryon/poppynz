@@ -16,7 +16,8 @@ const trimmedNonEmptyString = Schema.Trim.pipe(Schema.nonEmptyString());
 
 export const kycDocumentTypeCreateSchema = Schema.Struct({
   name: trimmedNonEmptyString.pipe(Schema.maxLength(120)),
-  appliesToRole: Schema.optional(Schema.Literal('service-provider')),
+  // Both applicant roles have a checklist; admins are never asked for documents.
+  appliesToRole: Schema.optional(Schema.Literal('service-provider', 'family')),
   isOptional: Schema.Boolean,
   requiresExpiryDate: Schema.Boolean,
   // Null means upload-only. Constraining to the known catalogue stops an

@@ -131,7 +131,22 @@ describe('createUploadPresignProgram', () => {
     ]);
   });
 
-  it('rejects KYC uploads from non-service-provider users', async () => {
+  it('presigns a KYC upload for a family against a family document type', async () => {
+    const result = await Effect.runPromise(
+      createUploadPresignProgram(userAndSession('family'), {
+        target: 'kyc-document',
+        documentTypeId: 'document-type-1',
+        fileName: 'vsc.pdf',
+        contentType: 'application/pdf',
+        sizeBytes: 1234
+      }).pipe(
+        Effect.provide(makeLayer({ documentType: documentType({ appliesToRole: 'family' }) }))
+      )
+    );
+    expect(result.fileKey).toContain('/kyc/document-type-1/');
+  });
+
+  it("rejects KYC uploads against another role's document type", async () => {
     const exit = await Effect.runPromise(
       createUploadPresignProgram(userAndSession('family'), {
         target: 'kyc-document',

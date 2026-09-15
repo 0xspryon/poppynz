@@ -27,6 +27,11 @@ export type FamilySearchDocument = {
   servicesNormalized: Array<string>;
   serviceDescriptions: Array<string>;
   serviceNamesText: string;
+  // End of the day the family's safety verification lapses (epoch ms). The
+  // read path filters on it so a lapsed family drops out of results before
+  // any reconcile runs — the same trick the provider index plays with
+  // `approvalExpiresAt`.
+  verifiedUntil: number;
   updatedAt: number;
 };
 
@@ -98,13 +103,27 @@ const unique = (values: Array<string>) => Array.from(new Set(values));
  * lowercase, while the original-cased fields stay for display. */
 const normalizeForMatch = (value: string) => value.trim().toLowerCase();
 
+/**
+ * When a verification stops counting, as epoch ms. A `date` column compared
+ * in UTC: valid through the whole of its expiry day, mirroring
+ * `presentedStatus` in the API (which keeps a record valid ON the date).
+ * A verified row with no expiry is treated as already lapsed — an unbounded
+ * verification is exactly the failure a safety gate must not have.
+ */
+const verifiedUntilOf = (expiresOn: string | null): number =>
+  expiresOn ? Date.parse(`${expiresOn}T23:59:59.999Z`) : 0;
+
 export const buildFamilySearchDocument = (
   candidate: FamilySearchCandidate
 ): FamilySearchDocument | null => {
-  const { profile, services } = candidate;
+  const { profile, services, verification } = candidate;
   const activeServices = services.filter((service) => service.deletedAt === null);
 
   if (profile.role !== 'family') return null;
+  // Nobody is discoverable without a current Poppynz safety verification.
+  // Families have no approval step, so this is THE gate for the index.
+  const verifiedUntil = verification ? verifiedUntilOf(verification.expiresOn) : 0;
+  if (verifiedUntil <= Date.now()) return null;
   // A ban with no expiry is permanent; an expiry in the past means the ban has lapsed.
   if (profile.banned === true && (profile.banExpires === null || profile.banExpires > new Date()))
     return null;
@@ -134,6 +153,7 @@ export const buildFamilySearchDocument = (
     servicesNormalized: unique(servicesNames.map(normalizeForMatch)),
     serviceDescriptions,
     serviceNamesText: servicesNames.join(' '),
+    verifiedUntil,
     updatedAt: Date.now()
   };
 };
@@ -161,6 +181,7 @@ const collectionSchema = (name: string) => ({
     { name: 'servicesNormalized', type: 'string[]' as const, facet: true },
     { name: 'serviceDescriptions', type: 'string[]' as const, optional: true },
     { name: 'serviceNamesText', type: 'string' as const },
+    { name: 'verifiedUntil', type: 'int64' as const, facet: true },
     { name: 'updatedAt', type: 'int64' as const, facet: true }
   ],
   default_sorting_field: 'updatedAt'
@@ -172,7 +193,9 @@ const collectionSchema = (name: string) => ({
 const filterString = (value: string) => `\`${value.replace(/`/g, '\\`')}\``;
 
 export const buildFamilyFilter = (input: FamilySearchInput) => {
-  const filters: Array<string> = [];
+  // Read-time expiry: a lapsed verification hides the family immediately,
+  // without waiting for the nightly sweep or a reconcile.
+  const filters: Array<string> = [`verifiedUntil:>${Date.now()}`];
   if (input.city) filters.push(`cityNormalized:=${filterString(normalizeForMatch(input.city))}`);
   if (input.service)
     filters.push(`servicesNormalized:=${filterString(normalizeForMatch(input.service))}`);
@@ -369,11 +392,15 @@ const makeFamilySearchIndex = (config: {
 
     const getFamily = (userId: string) =>
       Effect.tryPromise({
-        try: async () =>
-          (await client
+        try: async () => {
+          const document = (await client
             .collections(readCollection)
             .documents(userId)
-            .retrieve()) as FamilySearchDocument,
+            .retrieve()) as FamilySearchDocument;
+          if (document.verifiedUntil <= Date.now())
+            throw new DBNotFoundError({ entity: 'familySearchDocument', value: userId });
+          return document;
+        },
         catch: (cause) =>
           isNotFound(cause)
             ? new DBNotFoundError({ entity: 'familySearchDocument', value: userId })

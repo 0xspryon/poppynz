@@ -105,8 +105,9 @@ export const typesenseConfig = Config.all({
   familyCollectionAlias: Config.string('TYPESENSE_FAMILY_COLLECTION_ALIAS').pipe(
     Config.withDefault('families_current')
   ),
+  // v2 adds `verifiedUntil` (families are gated on safety verification).
   familyCollectionVersion: Config.string('TYPESENSE_FAMILY_COLLECTION_VERSION').pipe(
-    Config.withDefault('families_v1')
+    Config.withDefault('families_v2')
   )
 });
 

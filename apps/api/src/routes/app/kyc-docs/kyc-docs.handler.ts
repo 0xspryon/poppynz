@@ -85,11 +85,17 @@ const parseFutureDate = (value: string | null | undefined, required: boolean) =>
   return Effect.succeed(date);
 };
 
-const ensureServiceProvider = <T extends { user: { role: string | null } }>(userAndSession: T) =>
-  userAndSession.user.role === 'service-provider'
-    ? Effect.succeed(userAndSession)
+/** Both applicant roles have a document checklist; which types they may
+ * submit is decided by the type's own `appliesToRole` below. */
+const ensureApplicant = <T extends { user: { role: string | null } }>(
+  userAndSession: T
+): Effect.Effect<T & { user: { role: 'service-provider' | 'family' } }, KycValidationError> =>
+  userAndSession.user.role === 'service-provider' || userAndSession.user.role === 'family'
+    ? Effect.succeed(userAndSession as T & { user: { role: 'service-provider' | 'family' } })
     : Effect.fail(
-        new KycValidationError({ message: 'Only service providers can submit KYC documents.' })
+        new KycValidationError({
+          message: 'Only families and service providers can submit KYC documents.'
+        })
       );
 
 const ensureOwnFileKey = (userId: string, fileKey: string) =>
@@ -252,10 +258,10 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
     const userAndSession = yield* requirePermissions(headers, { kycDocument: ['write'] })(
       authenticated
     );
-    const provider = yield* ensureServiceProvider(userAndSession);
+    const applicant = yield* ensureApplicant(userAndSession);
     const typeRepo = yield* KycDocumentTypeRepo;
     const documentType = yield* mapKycRepoError(typeRepo.findActiveById(input.documentTypeId));
-    if (documentType.appliesToRole !== provider.user.role) {
+    if (documentType.appliesToRole !== applicant.user.role) {
       return yield* Effect.fail(
         new KycValidationError({ message: 'KYC document type is not available for this role.' })
       );
@@ -272,12 +278,12 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
       );
     }
 
-    yield* ensureOwnFileKey(provider.user.id, input.fileKey);
+    yield* ensureOwnFileKey(applicant.user.id, input.fileKey);
     const expiryDate = yield* parseFutureDate(input.expiryDate, documentType.requiresExpiryDate);
     const docRepo = yield* KycDocumentRepo;
     const doc = yield* mapKycRepoError(
       docRepo.submit({
-        userId: provider.user.id,
+        userId: applicant.user.id,
         documentTypeId: input.documentTypeId,
         filename: input.filename,
         fileKey: input.fileKey,
@@ -291,7 +297,7 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
     // document the applicant just uploaded.
     yield* Effect.gen(function* () {
       const orders = yield* CheckOrderRepo;
-      const open = yield* orders.findOpen(provider.user.id, 'service-provider');
+      const open = yield* orders.findOpen(applicant.user.id, applicant.user.role);
       if (!open || open.status !== 'draft') {
         return;
       }

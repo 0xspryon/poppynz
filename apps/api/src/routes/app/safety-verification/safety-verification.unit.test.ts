@@ -2,6 +2,7 @@ import { makeCredibledTest, type CredibledCheckTypeValue } from '@repo/credibled
 import {
   DBNotFoundError,
   makeCheckOrderRepoTest,
+  makeFamilySearchOutboxRepoTest,
   makeKycDocumentTypeRepoTest,
   makePaymentRepoTest,
   makeSafetyVerificationRepoTest,
@@ -25,7 +26,7 @@ import {
   type User
 } from '@repo/db';
 import { makeMockPayments, makePaymentsTest, PaymentDeclinedError } from '@repo/payments';
-import { makeSafetyVerificationQueueTest } from '@repo/queue';
+import { makeFamilySearchQueueTest, makeSafetyVerificationQueueTest } from '@repo/queue';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
@@ -182,6 +183,8 @@ type Recorded = {
   paymentsCreated: Array<PaymentCreateInput>;
   paymentUpdates: Array<PaymentUpdateInput>;
   enqueued: Array<string>;
+  /** Family user ids handed to the search reconcile queue. */
+  reindexed: Array<string>;
 };
 
 const record = (): Recorded => ({
@@ -195,7 +198,8 @@ const record = (): Recorded => ({
   itemsAdded: [],
   paymentsCreated: [],
   paymentUpdates: [],
-  enqueued: []
+  enqueued: [],
+  reindexed: []
 });
 
 const makeLayer = (
@@ -352,6 +356,23 @@ const makeLayer = (
         recorded.enqueued.push(orderId);
         return Effect.succeed({ id: 'job-1', name: 'place-order' });
       }
+    }),
+    // A decision on a FAMILY re-indexes them (their discoverability rides on
+    // the verdict); the outbox row comes first, then the job.
+    makeFamilySearchOutboxRepoTest({
+      createPending: (userId) => Effect.succeed({ id: `outbox-${userId}`, userId } as never),
+      listUnresolved: () => Effect.succeed([]),
+      markProcessing: () => Effect.die('not used'),
+      markProcessed: () => Effect.die('not used'),
+      markFailed: () => Effect.die('not used'),
+      markSupersededBefore: () => Effect.succeed(0)
+    }),
+    makeFamilySearchQueueTest({
+      enqueueReconcile: ({ userId }) => {
+        recorded.reindexed.push(userId);
+        return Effect.succeed({ id: 'job-2', name: 'reconcile-family' });
+      },
+      enqueueReindex: () => Effect.die('not used')
     })
   );
 };
@@ -900,6 +921,36 @@ describe('admin decisions', () => {
     expect(recorded.verificationUpdates[0]?.status).toBe('verified');
     expect(recorded.verificationUpdates[0]?.reviewedBy).toBe('admin-1');
     expect(recorded.verificationUpdates[0]?.expiresOn).toBeTruthy();
+  });
+
+  it('re-indexes a family on either decision, and never a helper', async () => {
+    for (const decision of [{ decision: 'approve' }, { decision: 'reject', reason: 'No.' }]) {
+      const recorded = record();
+      await Effect.runPromise(
+        decideSafetyVerificationRouteProgram(contextWithJson(decision), new Headers(), 'sv-1').pipe(
+          Effect.provide(
+            makeLayer({
+              user: admin,
+              byId: verification({ role: 'family', userId: 'family-1' }),
+              recorded
+            })
+          )
+        )
+      );
+      expect(recorded.reindexed).toEqual(['family-1']);
+    }
+
+    // A helper's discoverability rides on their approval, which already
+    // requires the verdict — nothing to re-index here.
+    const recorded = record();
+    await Effect.runPromise(
+      decideSafetyVerificationRouteProgram(
+        contextWithJson({ decision: 'approve' }),
+        new Headers(),
+        'sv-1'
+      ).pipe(Effect.provide(makeLayer({ user: admin, byId: verification(), recorded })))
+    );
+    expect(recorded.reindexed).toEqual([]);
   });
 
   it('refuses a rejection with no reason — the applicant sees it', async () => {

@@ -35,6 +35,18 @@
 					: 'Pick from common services or describe your own.',
 			href: resolve('/family/needs'),
 			cta: 'List your needs'
+		},
+		{
+			complete: state.steps.documents.complete,
+			title: 'Complete your safety check',
+			detail:
+				state.safetyVerification.status === 'review_required'
+					? 'Submitted — a Poppynz administrator is reviewing it.'
+					: state.safetyVerification.verified
+						? 'Verified. Helpers can find your family.'
+						: 'Upload your vulnerable-sector check. Helpers only see verified families.',
+			href: resolve('/family/documents'),
+			cta: 'Upload documents'
 		}
 	]);
 </script>
@@ -44,7 +56,7 @@
 		<div class="modal-box max-w-lg">
 			<h2 class="font-display text-xl font-bold text-base-content">{greeting}</h2>
 			<p class="mt-1 mb-4 text-sm text-base-content-muted">
-				Two quick steps and you're set — then browse vetted helpers near you.
+				Three quick steps and you're set — then browse vetted helpers near you.
 			</p>
 
 			<ol class="flex flex-col gap-2.5">
@@ -91,7 +103,7 @@
 						class="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full
 							border-[1.5px] border-outline-variant text-xs font-bold text-base-content-muted"
 					>
-						3
+						4
 					</span>
 					<span class="min-w-0 flex-1">
 						<span class="block text-sm font-semibold text-base-content">Find the right helper</span>

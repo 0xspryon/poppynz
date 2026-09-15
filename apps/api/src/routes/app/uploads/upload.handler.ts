@@ -79,9 +79,13 @@ const validateUploadInput = (userRole: Roles | null, input: UploadPresignInput) 
     }
 
     if (input.target === 'kyc-document') {
-      if (userRole !== 'service-provider') {
+      // Both applicant roles have a checklist; the type's own role decides
+      // which documents each may upload (checked just below).
+      if (userRole !== 'service-provider' && userRole !== 'family') {
         return yield* Effect.fail(
-          new UploadValidationError({ message: 'Only service providers can upload KYC documents.' })
+          new UploadValidationError({
+            message: 'Only families and service providers can upload KYC documents.'
+          })
         );
       }
 

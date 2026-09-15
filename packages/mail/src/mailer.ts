@@ -93,6 +93,7 @@ export type FamilyWelcomeMail = {
   name: string | null;
   profileLink: string;
   needsLink: string;
+  documentsLink: string;
   findLink: string;
 };
 

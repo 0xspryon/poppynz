@@ -39,6 +39,7 @@ describe('sendWelcomeMailEffect', () => {
           name: 'Fiona',
           profileLink: link('/family/profile'),
           needsLink: link('/family/needs'),
+          documentsLink: link('/family/documents'),
           findLink: link('/family/find')
         }
       }

@@ -229,11 +229,12 @@ export const kycDocumentType = appDb.table(
     // pricing at all, so somebody has to type it in — and a fetchable type
     // without a price is a configuration error, not a free check.
     credibledCostCents: integer('credibled_cost_cents'),
-    // This type IS the applicant's safety-verification evidence — uploading it
-    // creates the safety_verification record rather than an ordinary KYC
-    // document, and the checklist reads its status from there. Exactly the
-    // vulnerable-sector check today.
-    backsSafetyVerification: boolean('backs_safety_verification').default(false).notNull(),
+    // This type IS the safety gate for its role — uploading it creates the
+    // safety_verification record rather than an ordinary KYC document, and
+    // the checklist reads its status from there. Exactly one per role, which
+    // the partial unique index below enforces: two gates would put two
+    // entries on the checklist both reading the same verdict.
+    isSafetyGate: boolean('is_safety_gate').default(false).notNull(),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -241,7 +242,12 @@ export const kycDocumentType = appDb.table(
       .$onUpdate(() => /* @__PURE__ */ new Date())
       .notNull()
   },
-  (table) => [index('kyc_document_types_deleted_at_idx').on(table.deletedAt)]
+  (table) => [
+    index('kyc_document_types_deleted_at_idx').on(table.deletedAt),
+    uniqueIndex('kyc_document_types_role_gate_uidx')
+      .on(table.appliesToRole)
+      .where(sql`${table.isSafetyGate} and ${table.deletedAt} is null`)
+  ]
 );
 
 export const approvalRequest = appDb.table(

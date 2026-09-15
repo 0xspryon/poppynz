@@ -12,6 +12,7 @@ export type KycDocumentTypeCreateInput = Pick<
   'name' | 'isOptional' | 'requiresExpiryDate' | 'credibledCheckTypeValue' | 'credibledCostCents'
 > & {
   appliesToRole?: KycDocumentType['appliesToRole'];
+  isSafetyGate?: boolean;
 };
 export type KycDocumentTypeUpdateInput = Partial<
   Pick<
@@ -22,6 +23,7 @@ export type KycDocumentTypeUpdateInput = Partial<
     | 'credibledCheckTypeValue'
     | 'credibledCostCents'
     | 'appliesToRole'
+    | 'isSafetyGate'
   >
 >;
 

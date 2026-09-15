@@ -21,10 +21,10 @@ import { Effect } from 'effect';
 // service-provider, which made families impossible to screen.
 
 /**
- * A type that BACKS safety verification reads its status from the verification
- * record, not from kyc_documents — that record is the single source of truth
- * for whether the applicant is cleared, so the checklist must not show a
- * second, independent answer beside it.
+ * The safety-gate type reads its status from the verification record, not
+ * from kyc_documents — that record is the single source of truth for whether
+ * the applicant is cleared, so the checklist must not show a second,
+ * independent answer beside it.
  */
 const safetyVerificationChecklistStatus = (
   verification: SafetyVerification | null,
@@ -40,8 +40,8 @@ const safetyVerificationChecklistStatus = (
       return 'approved' as const;
     case 'rejected':
       return 'rejected' as const;
-    // not_started, payment_pending, invited, in_progress and expired all mean
-    // there is nothing decided to show — the applicant still owes us evidence.
+    // Expired means there is nothing decided to show — the applicant owes us
+    // fresh evidence. (An order still in flight has no verdict row at all.)
     default:
       return 'missing' as const;
   }
@@ -59,16 +59,12 @@ export const buildDocumentChecklist = (
   return types
     .filter((type) => type.appliesToRole === role)
     .map((type) => {
-      const backsSafetyVerification = type.backsSafetyVerification;
-      // For a backing type the "document" is the one attached to the
+      const isSafetyGate = type.isSafetyGate;
+      // For the gate type the "document" is the one attached to the
       // verification record, so both the status and the file come from there.
       const uploaded =
-        backsSafetyVerification && verification?.route === 'uploaded_document'
-          ? verification
-          : null;
-      const document = backsSafetyVerification
-        ? null
-        : (docsByTypeId.get(type.id) ?? null);
+        isSafetyGate && verification?.route === 'uploaded_document' ? verification : null;
+      const document = isSafetyGate ? null : (docsByTypeId.get(type.id) ?? null);
 
       return {
         documentTypeId: type.id,
@@ -79,8 +75,8 @@ export const buildDocumentChecklist = (
         // Derived, never stored: a type is fetchable exactly when it carries a
         // Credibled check type, so the flag can't drift from the mapping.
         isFetchable: type.credibledCheckTypeValue !== null,
-        backsSafetyVerification,
-        status: backsSafetyVerification
+        isSafetyGate,
+        status: isSafetyGate
           ? safetyVerificationChecklistStatus(verification, today)
           : document
             ? document.status

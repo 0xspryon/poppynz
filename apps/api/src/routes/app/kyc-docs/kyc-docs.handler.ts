@@ -38,6 +38,9 @@ class KycNotFoundError extends Data.TaggedError('KycNotFoundError')<{
   entity: 'document' | 'documentType';
 }> {}
 class KycRepoError extends Data.TaggedError('KycRepoError')<{ cause: SqlError }> {}
+class KycDocumentTypeConflictError extends Data.TaggedError('KycDocumentTypeConflictError')<{
+  message: string;
+}> {}
 class KycFileMissingError extends Data.TaggedError('KycFileMissingError')<{}> {}
 class KycFileUrlError extends Data.TaggedError('KycFileUrlError')<{
   cause: ObjectStorageError | ConfigError;
@@ -140,6 +143,35 @@ const ensureFetchablePricing = (merged: {
   return Effect.void;
 };
 
+/**
+ * One safety gate per role.
+ *
+ * Two gate types for the same role would put two checklist entries in front
+ * of the applicant, both reading the same verdict. The partial unique index
+ * is the backstop; this is the check that turns a violation into a message an
+ * administrator can act on rather than a 500.
+ */
+const ensureSingleGate = (
+  types: Array<KycDocumentType>,
+  merged: { appliesToRole: KycDocumentType['appliesToRole']; isSafetyGate: boolean },
+  excludingId: string | null
+) => {
+  if (!merged.isSafetyGate) {
+    return Effect.void;
+  }
+  const clash = types.find(
+    (type) =>
+      type.id !== excludingId && type.isSafetyGate && type.appliesToRole === merged.appliesToRole
+  );
+  return clash
+    ? Effect.fail(
+        new KycDocumentTypeConflictError({
+          message: `${clash.name} is already the safety gate for this role — a role has exactly one.`
+        })
+      )
+    : Effect.void;
+};
+
 export const listKycDocumentTypesRouteProgram = () =>
   Effect.gen(function* () {
     const repo = yield* KycDocumentTypeRepo;
@@ -158,9 +190,12 @@ export const createKycDocumentTypeRouteProgram = (c: HonoContext<HonoEnv>, heade
       credibledCostCents: input.credibledCostCents ?? null
     });
     const repo = yield* KycDocumentTypeRepo;
-    const type = yield* mapKycRepoError(
-      repo.create({ ...input, appliesToRole: input.appliesToRole ?? 'service-provider' })
-    );
+    const appliesToRole = input.appliesToRole ?? 'service-provider';
+    if (input.isSafetyGate) {
+      const types = yield* mapKycRepoError(repo.listActive());
+      yield* ensureSingleGate(types, { appliesToRole, isSafetyGate: true }, null);
+    }
+    const type = yield* mapKycRepoError(repo.create({ ...input, appliesToRole }));
     return toKycTypeResponse(type);
   });
 
@@ -186,6 +221,16 @@ export const updateKycDocumentTypeRouteProgram = (
           ? input.credibledCostCents
           : current.credibledCostCents
     });
+    // Checked against the MERGED state, like pricing: a PATCH that only moves
+    // the role, or only sets the flag, must not slip a second gate in.
+    const merged = {
+      appliesToRole: input.appliesToRole ?? current.appliesToRole,
+      isSafetyGate: input.isSafetyGate ?? current.isSafetyGate
+    };
+    if (merged.isSafetyGate) {
+      const types = yield* mapKycRepoError(repo.listActive());
+      yield* ensureSingleGate(types, merged, id);
+    }
     const type = yield* mapKycRepoError(repo.update(id, input));
     return toKycTypeResponse(type);
   });
@@ -215,11 +260,11 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
         new KycValidationError({ message: 'KYC document type is not available for this role.' })
       );
     }
-    // A type that backs safety verification is submitted through
-    // /safety-verification/document, which also collects the issuing service
-    // and document number. Accepting it here would create a second, parallel
-    // record that the safety gate never reads.
-    if (documentType.backsSafetyVerification) {
+    // The safety-gate type is submitted through /safety-verification/document,
+    // which also collects the issuing service and document number. Accepting
+    // it here would create a second, parallel record that the safety gate
+    // never reads.
+    if (documentType.isSafetyGate) {
       return yield* Effect.fail(
         new KycValidationError({
           message: 'Submit this document through safety verification.'
@@ -357,6 +402,11 @@ const kycDocsErrorToResponse = (c: HonoContext<HonoEnv>, error: KycDocsRouteErro
           }
         },
         404
+      );
+    case 'KycDocumentTypeConflictError':
+      return c.json(
+        { error: { code: 'KYC_DOCUMENT_TYPE_CONFLICT' as const, message: error.message } },
+        409
       );
     case 'KycRepoError':
       return c.json(

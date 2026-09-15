@@ -28,7 +28,10 @@ export const kycDocumentTypeCreateSchema = Schema.Struct({
   // it; capped well above any plausible check to catch a stray extra digit.
   credibledCostCents: Schema.optional(
     Schema.NullOr(Schema.Number.pipe(Schema.int(), Schema.between(0, 500_000)))
-  )
+  ),
+  // This type is the safety gate for its role. At most one per role — the
+  // handler refuses a second, and the database enforces it underneath.
+  isSafetyGate: Schema.optional(Schema.Boolean)
 });
 
 export const kycDocumentTypeUpdateSchema = Schema.partial(kycDocumentTypeCreateSchema);

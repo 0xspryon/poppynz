@@ -79,7 +79,7 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
     requiresExpiryDate: false,
     credibledCheckTypeValue: 'request_enhanced_criminal_record_check',
     credibledCostCents: 4500,
-    backsSafetyVerification: false,
+    isSafetyGate: false,
     deletedAt: null,
     createdAt: new Date('2026-06-12T00:00:00.000Z'),
     updatedAt: new Date('2026-06-12T00:00:00.000Z'),

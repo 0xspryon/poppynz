@@ -109,9 +109,9 @@
 		uploading = true;
 		uploadError = '';
 
-		// A type that backs safety verification writes the verification record,
-		// not an ordinary KYC document — one source of truth for the gate.
-		const result = uploadTarget.backsSafetyVerification
+		// The safety-gate type writes the verification record, not an ordinary
+		// KYC document — one source of truth for the gate.
+		const result = uploadTarget.isSafetyGate
 			? await submitSafetyDocument({
 					file: input.file,
 					issuingAuthority: input.issuingAuthority ?? '',
@@ -127,7 +127,7 @@
 
 		if (result.ok) {
 			toast.success(
-				uploadTarget.backsSafetyVerification
+				uploadTarget.isSafetyGate
 					? `${uploadTarget.name} submitted for review.`
 					: `${uploadTarget.name} uploaded.`
 			);

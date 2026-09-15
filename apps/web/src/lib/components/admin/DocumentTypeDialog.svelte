@@ -21,7 +21,8 @@
 		isOptional: false,
 		requiresExpiryDate: true,
 		credibledCheckTypeValue: null,
-		credibledCostCents: null
+		credibledCostCents: null,
+		isSafetyGate: false
 	});
 
 	/** The form edits dollars; the API stores cents. */
@@ -38,7 +39,8 @@
 						requiresExpiryDate: editing.requiresExpiryDate,
 						credibledCheckTypeValue:
 							(editing.credibledCheckTypeValue as CredibledCheckTypeValue | null) ?? null,
-						credibledCostCents: editing.credibledCostCents ?? null
+						credibledCostCents: editing.credibledCostCents ?? null,
+						isSafetyGate: editing.isSafetyGate
 					}
 				: blankDraft();
 			// Derived from `editing`, NOT from `draft`. Reading `draft` here would
@@ -114,7 +116,17 @@
 					/>
 					<span class="text-sm font-medium text-base-content">Needs expiry date</span>
 				</label>
+				<label class="flex items-center gap-2.5">
+					<input type="checkbox" class="toggle toggle-primary" bind:checked={draft.isSafetyGate} />
+					<span class="text-sm font-medium text-base-content">Safety gate</span>
+				</label>
 			</div>
+			{#if draft.isSafetyGate}
+				<p class="mt-1.5 text-xs text-base-content-muted">
+					Submitting this document starts the applicant's safety verification instead of an
+					ordinary document review. A role has exactly one.
+				</p>
+			{/if}
 
 			<fieldset class="fieldset mt-4">
 				<legend class="fieldset-legend">Collect via Credibled</legend>

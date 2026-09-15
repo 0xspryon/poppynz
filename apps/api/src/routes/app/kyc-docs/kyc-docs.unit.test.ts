@@ -67,7 +67,7 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
   requiresExpiryDate: true,
   credibledCheckTypeValue: null,
   credibledCostCents: null,
-  backsSafetyVerification: false,
+  isSafetyGate: false,
   deletedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
@@ -104,6 +104,8 @@ const makeLayer = (
     user?: User;
     hasPermission?: boolean;
     type?: KycDocumentType | null;
+    /** Every active type, when a test needs more than the one under edit. */
+    types?: Array<KycDocumentType>;
     document?: KycDocument | null;
     createTypeError?: SqlError;
     submitError?: SqlError;
@@ -173,7 +175,7 @@ const makeLayer = (
           : Effect.fail(new DBNotFoundError({ entity: 'session', value: id }))
     }),
     makeKycDocumentTypeRepoTest({
-      listActive: () => Effect.succeed(currentType ? [currentType] : []),
+      listActive: () => Effect.succeed(options.types ?? (currentType ? [currentType] : [])),
       findActiveById: (id) =>
         currentType?.id === id && currentType.deletedAt === null
           ? Effect.succeed(currentType)
@@ -368,6 +370,80 @@ describe('KYC route programs', () => {
       ).pipe(Effect.provide(makeLayer({})))
     );
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it('allows the one safety gate a role is entitled to', async () => {
+    const created: Array<KycDocumentTypeCreateInput> = [];
+    await Effect.runPromise(
+      createKycDocumentTypeRouteProgram(
+        contextWithJson({
+          name: 'Vulnerable Sector Check',
+          isOptional: false,
+          requiresExpiryDate: true,
+          isSafetyGate: true
+        }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ type: null, onCreateType: (input) => created.push(input) })))
+    );
+    expect(created[0]).toMatchObject({ isSafetyGate: true });
+  });
+
+  it('refuses a second safety gate for the same role', async () => {
+    // Two gates would put two checklist entries in front of the applicant,
+    // both reading the same verdict.
+    const exit = await Effect.runPromiseExit(
+      createKycDocumentTypeRouteProgram(
+        contextWithJson({
+          name: 'Criminal Record Check',
+          isOptional: false,
+          requiresExpiryDate: false,
+          isSafetyGate: true
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            type: documentType({ id: 'gate-1', name: 'Vulnerable Sector Check', isSafetyGate: true })
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('KycDocumentTypeConflictError');
+  });
+
+  it('refuses to promote a type to the gate while another type holds it', async () => {
+    // Checked against the merged state, so a PATCH carrying only the flag is
+    // caught the same way a create is.
+    const exit = await Effect.runPromiseExit(
+      updateKycDocumentTypeRouteProgram(
+        contextWithJson({ isSafetyGate: true }),
+        new Headers(),
+        'document-type-1'
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            types: [
+              documentType(),
+              documentType({ id: 'gate-1', name: 'Vulnerable Sector Check', isSafetyGate: true })
+            ]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('KycDocumentTypeConflictError');
+  });
+
+  it('lets the current gate keep its flag through an unrelated update', async () => {
+    // The gate excludes itself from the clash check — otherwise renaming it
+    // would be refused for conflicting with itself.
+    const updated = await Effect.runPromise(
+      updateKycDocumentTypeRouteProgram(
+        contextWithJson({ name: 'Vulnerable Sector Check (renamed)' }),
+        new Headers(),
+        'document-type-1'
+      ).pipe(Effect.provide(makeLayer({ type: documentType({ isSafetyGate: true }) })))
+    );
+    expect(updated).toMatchObject({ isSafetyGate: true, name: 'Vulnerable Sector Check (renamed)' });
   });
 
   it('rejects a Credibled check type outside the catalogue', async () => {

@@ -47,7 +47,7 @@
 		file = input.files?.[0] ?? null;
 	}
 
-	const needsIssuingDetails = $derived(target?.backsSafetyVerification === true);
+	const needsIssuingDetails = $derived(target?.isSafetyGate === true);
 
 	const canSubmit = $derived(
 		file !== null &&

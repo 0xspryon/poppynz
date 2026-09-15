@@ -87,6 +87,7 @@ export const buildDocumentChecklist = (
               filename: uploaded.filename,
               expiryDate: uploaded.expiresOn,
               reason: uploaded.decisionReason,
+              source: 'upload' as const,
               submittedAt: uploaded.createdAt.toISOString()
             }
           : document
@@ -95,6 +96,9 @@ export const buildDocumentChecklist = (
                 filename: document.filename,
                 expiryDate: document.expiryDate?.toISOString() ?? null,
                 reason: document.reason,
+                // A fetched document has no file to show; the UI labels it
+                // instead of rendering an empty filename.
+                source: document.source,
                 submittedAt: document.createdAt.toISOString()
               }
             : null

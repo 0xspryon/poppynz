@@ -8,6 +8,7 @@ import { kycDocument, kycDocumentType } from '../schema';
 export type KycDocument = InferSelectModel<typeof kycDocument>;
 export type KycDocumentTypeForDocument = InferSelectModel<typeof kycDocumentType>;
 export type KycDocumentStatus = KycDocument['status'];
+export type KycDocumentSource = KycDocument['source'];
 export type KycDocumentWithType = KycDocument & { documentType: KycDocumentTypeForDocument };
 
 export type KycDocumentSubmitInput = {
@@ -89,16 +90,20 @@ export const KycDocumentRepoLive = Layer.effect(
             fileKey: input.fileKey,
             expiryDate: input.expiryDate,
             status: 'submitted',
+            source: 'upload',
             reason: null,
             deletedAt: null
           })
           .onConflictDoUpdate({
             target: [kycDocument.userId, kycDocument.documentTypeId],
+            // An upload supersedes whatever was there — including a document
+            // Credibled fetched — so `source` is reset along with the file.
             set: {
               filename: input.filename,
               fileKey: input.fileKey,
               expiryDate: input.expiryDate,
               status: 'submitted',
+              source: 'upload',
               reason: null,
               deletedAt: null,
               updatedAt: new Date()

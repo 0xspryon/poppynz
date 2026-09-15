@@ -82,6 +82,11 @@ export const kycDocumentStatus = appDb.enum('kyc_document_status', [
   'approved',
   'rejected'
 ]);
+// How a document came to exist: the applicant uploaded a file, or Credibled
+// completed the check on their behalf. A fetched document holds no file — the
+// report stays with the vendor and is opened on demand from the safety
+// verification review, never copied into our storage.
+export const kycDocumentSource = appDb.enum('kyc_document_source', ['upload', 'credibled']);
 
 // Poppynz safety verification — the VERDICT only. A record is created once
 // evidence exists (an uploaded document, or a Credibled order that completed)
@@ -325,10 +330,12 @@ export const kycDocument = appDb.table(
     documentTypeId: uuid('document_type_id')
       .notNull()
       .references(() => kycDocumentType.id, { onDelete: 'restrict' }),
+    // Null for a fetched document — see `kyc_document_source`.
     filename: text('filename'),
     fileKey: text('file_key'),
     expiryDate: timestamp('expiry_date'),
     status: kycDocumentStatus('status').notNull(),
+    source: kycDocumentSource('source').notNull().default('upload'),
     reason: text('reason'),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

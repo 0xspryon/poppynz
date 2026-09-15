@@ -13,7 +13,7 @@ import {
 } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
-import { checkOrder, checkOrderItem, safetyVerification } from '../schema';
+import { checkOrder, checkOrderItem, kycDocument, safetyVerification } from '../schema';
 import type { SafetyVerification, SafetyVerificationInsert } from './safety-verification-repo';
 
 export type CheckOrder = InferSelectModel<typeof checkOrder>;
@@ -100,9 +100,10 @@ export class CheckOrderRepo extends Context.Tag('@repo/db/CheckOrderRepo')<
      * vendor transition against a concurrent completion. Plain `update` is
      * for fields that carry no state (attempt counters, error notes). */
     advance: (id: string, input: CheckOrderAdvanceInput) => Effect.Effect<CheckOrder | null, SqlError>;
-    /** Closes an in-flight order and creates the verdict it produced, in one
-     * transaction. Null means the order was not in flight — a duplicate
-     * webhook, or a poll racing a delivery — and nothing was written. */
+    /** Closes an in-flight order, creates the verdict it produced, and records
+     * each fetched check as a document — in one transaction. Null means the
+     * order was not in flight (a duplicate webhook, or a poll racing a
+     * delivery) and nothing was written. */
     complete: (
       id: string,
       input: CheckOrderCompletionInput
@@ -253,6 +254,46 @@ export const CheckOrderRepoLive = Layer.effect(
                 ...input.verification
               })
               .returning();
+
+            // Every check the order fetched becomes a document, so the
+            // applicant's checklist stops reading "missing" for evidence they
+            // paid for. Nothing of the report is stored — only that the check
+            // completed. An existing upload for the same type is left alone
+            // unless it was rejected (or deleted), in which case the fetched
+            // result supersedes it.
+            const items = yield* db
+              .select()
+              .from(checkOrderItem)
+              .where(eq(checkOrderItem.orderId, order.id));
+            for (const item of items) {
+              yield* db
+                .insert(kycDocument)
+                .values({
+                  userId: order.userId,
+                  documentTypeId: item.documentTypeId,
+                  filename: null,
+                  fileKey: null,
+                  expiryDate: null,
+                  status: 'submitted',
+                  source: 'credibled',
+                  reason: null,
+                  deletedAt: null
+                })
+                .onConflictDoUpdate({
+                  target: [kycDocument.userId, kycDocument.documentTypeId],
+                  set: {
+                    filename: null,
+                    fileKey: null,
+                    expiryDate: null,
+                    status: 'submitted',
+                    source: 'credibled',
+                    reason: null,
+                    deletedAt: null,
+                    updatedAt: new Date()
+                  },
+                  setWhere: sql`${kycDocument.status} = 'rejected' or ${kycDocument.deletedAt} is not null`
+                });
+            }
 
             return { order, verification: created[0]! };
           })

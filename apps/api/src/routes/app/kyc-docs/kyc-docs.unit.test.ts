@@ -82,6 +82,7 @@ const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
   fileKey: 'users/provider-1/kyc/document-type-1/government-id.pdf',
   expiryDate: new Date('2027-06-12T00:00:00.000Z'),
   status: 'submitted',
+  source: 'upload',
   reason: null,
   deletedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),

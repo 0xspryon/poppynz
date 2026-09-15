@@ -211,7 +211,11 @@
 				</div>
 				<div class="mt-0.5 text-xs text-base-content-muted">
 					{#if doc.document}
-						{doc.document.filename}
+						{#if doc.document.source === 'credibled'}
+							Collected by Credibled
+						{:else}
+							{doc.document.filename}
+						{/if}
 						{#if doc.document.expiryDate}
 							· expires {formatDate(doc.document.expiryDate)}
 						{/if}

@@ -11,7 +11,7 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile.migrations.production
-    restart: 'no'
+    restart: "no"
     env_file: .env
     environment:
       <<: *app-env
@@ -22,7 +22,7 @@ services:
     build:
       context: .
       dockerfile: ./Dockerfile.seeds.production
-    restart: 'no'
+    restart: "no"
     env_file: .env
     environment:
       <<: *app-env
@@ -41,11 +41,11 @@ services:
     environment:
       <<: *app-env
     expose:
-      - '3000'
+      - "3000"
     networks:
       - dokploy-network
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/health || exit 1']
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/health || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -54,6 +54,7 @@ services:
       - traefik.enable=true
       # More specific rule than the web router, so /api/* wins by priority.
       - traefik.http.routers.poppynz-staging-api.rule=Host(`staging.poppynz.com`) && PathPrefix(`/api`)
+      - traefik.http.routers.poppynz-staging-api.rule=Host(`staging.poppynz.com`) && PathPrefix(`/webhooks`)
       - traefik.http.routers.poppynz-staging-api.entrypoints=websecure
       - traefik.http.routers.poppynz-staging-api.tls.certresolver=letsencrypt
       - traefik.http.services.poppynz-staging-api.loadbalancer.server.port=3000
@@ -73,7 +74,7 @@ services:
       <<: *app-env
       WORKER_HTTP_PORT: 3000
     expose:
-      - '3000'
+      - "3000"
     networks:
       - dokploy-network
     depends_on:
@@ -95,11 +96,11 @@ services:
       # adapter-node needs the public origin for CSRF checks and absolute URLs.
       ORIGIN: ${ORIGIN:-https://staging.poppynz.com}
     expose:
-      - '3000'
+      - "3000"
     networks:
       - dokploy-network
     healthcheck:
-      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3000/ || exit 1']
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/ || exit 1"]
       interval: 30s
       timeout: 5s
       retries: 5
@@ -126,7 +127,7 @@ services:
     networks:
       - dokploy-network
     expose:
-      - '3000'
+      - "3000"
     volumes:
       - drizzle-gateway:${DRIZZLE_GATEWAY_STORE_PATH}
     labels:

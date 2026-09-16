@@ -53,8 +53,7 @@ services:
     labels:
       - traefik.enable=true
       # More specific rule than the web router, so /api/* wins by priority.
-      - traefik.http.routers.poppynz-staging-api.rule=Host(`staging.poppynz.com`) && PathPrefix(`/api`)
-      - traefik.http.routers.poppynz-staging-api.rule=Host(`staging.poppynz.com`) && PathPrefix(`/webhooks`)
+      - traefik.http.routers.poppynz-staging-api.rule=Host(`staging.poppynz.com`) && (PathPrefix(`/api`) || PathPrefix(`/webhooks`))
       - traefik.http.routers.poppynz-staging-api.entrypoints=websecure
       - traefik.http.routers.poppynz-staging-api.tls.certresolver=letsencrypt
       - traefik.http.services.poppynz-staging-api.loadbalancer.server.port=3000

@@ -22,6 +22,7 @@ import { makeAuthServiceTest } from '@/api/lib/effect-auth';
 import {
   createKycDocumentTypeRouteProgram,
   deleteKycDocumentTypeRouteProgram,
+  listKycDocumentTypesRouteProgram,
   submitKycDocumentRouteProgram,
   updateAdminKycDocumentRouteProgram,
   updateKycDocumentTypeRouteProgram
@@ -221,6 +222,40 @@ const makeLayer = (
 };
 
 describe('KYC route programs', () => {
+  it('lists the newest document type first and the rest alphabetically', async () => {
+    const types = [
+      documentType({ id: 'b', name: 'Police Check', createdAt: new Date('2026-06-10T00:00:00Z') }),
+      documentType({ id: 'a', name: 'apostille', createdAt: new Date('2026-06-11T00:00:00Z') }),
+      documentType({
+        id: 'c',
+        name: 'Driver Licence',
+        createdAt: new Date('2026-06-14T00:00:00Z')
+      }),
+      documentType({
+        id: 'd',
+        name: 'Birth Certificate',
+        createdAt: new Date('2026-06-12T00:00:00Z')
+      })
+    ];
+    const result = await Effect.runPromise(
+      listKycDocumentTypesRouteProgram().pipe(Effect.provide(makeLayer({ types })))
+    );
+
+    expect(result.map((type) => type.name)).toEqual([
+      'Driver Licence',
+      'apostille',
+      'Birth Certificate',
+      'Police Check'
+    ]);
+  });
+
+  it('lists nothing when there are no document types', async () => {
+    const result = await Effect.runPromise(
+      listKycDocumentTypesRouteProgram().pipe(Effect.provide(makeLayer({ types: [] })))
+    );
+    expect(result).toEqual([]);
+  });
+
   it('creates a document type with default service-provider role', async () => {
     const created: Array<KycDocumentTypeCreateInput> = [];
     const result = await Effect.runPromise(

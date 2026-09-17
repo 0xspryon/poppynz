@@ -6,6 +6,7 @@ import {
 import { CheckOrderRepo, inFlightCheckOrderStatuses, type CheckOrder } from '@repo/db';
 import { safetyVerificationConfig } from '@repo/env';
 import { Effect } from 'effect';
+import { publishNotificationBestEffort } from '@repo/notify';
 
 /**
  * Reconcile poller — the recovery path for dropped Credibled webhooks.
@@ -77,7 +78,14 @@ const reconcileOne = (order: CheckOrder, months: number) =>
         }
       });
       // Null means a webhook got there first — nothing to do.
-      return result ? 'advanced' : 'unchanged';
+      if (!result) {
+        return 'unchanged';
+      }
+      yield* publishNotificationBestEffort(order.userId, {
+        type: 'safety_verification.updated',
+        payload: { status: 'review_required' }
+      });
+      return 'advanced';
     }
 
     // Guarded like completion is: a webhook that completed this order between
@@ -87,7 +95,18 @@ const reconcileOne = (order: CheckOrder, months: number) =>
       set: { status: next }
     });
 
-    return advanced ? 'advanced' : 'unchanged';
+    if (!advanced) {
+      return 'unchanged';
+    }
+    // Anything short of `complete` that passed the forward-transition check
+    // is one of the two in-flight stages the applicant can see.
+    if (next === 'invited' || next === 'in_progress') {
+      yield* publishNotificationBestEffort(order.userId, {
+        type: 'safety_verification.updated',
+        payload: { status: next }
+      });
+    }
+    return 'advanced';
   });
 
 export const reconcileCheckOrderStatuses = Effect.gen(function* () {

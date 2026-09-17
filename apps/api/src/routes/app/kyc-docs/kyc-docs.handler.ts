@@ -178,11 +178,29 @@ const ensureSingleGate = (
     : Effect.void;
 };
 
+/**
+ * Admin list order: the newest type first so the one just created is in
+ * view, then everything else alphabetically by name. Ties on creation time
+ * (bulk-seeded rows) fall back to name so the order is stable.
+ */
+export const orderKycDocumentTypesForAdmin = (types: ReadonlyArray<KycDocumentType>) => {
+  const byName = (a: KycDocumentType, b: KycDocumentType) =>
+    a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+  const newest = types.reduce<KycDocumentType | null>((best, type) => {
+    if (!best) return type;
+    const delta = type.createdAt.getTime() - best.createdAt.getTime();
+    return delta > 0 || (delta === 0 && byName(type, best) < 0) ? type : best;
+  }, null);
+  if (!newest) return [];
+  const rest = types.filter((type) => type !== newest).sort(byName);
+  return [newest, ...rest];
+};
+
 export const listKycDocumentTypesRouteProgram = () =>
   Effect.gen(function* () {
     const repo = yield* KycDocumentTypeRepo;
     const types = yield* mapKycRepoError(repo.listActive());
-    return types.map(toKycTypeResponse);
+    return orderKycDocumentTypesForAdmin(types).map(toKycTypeResponse);
   });
 
 export const createKycDocumentTypeRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>

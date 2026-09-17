@@ -10,6 +10,7 @@ import {
 import { safetyVerificationConfig } from '@repo/env';
 import { Payments } from '@repo/payments';
 import { Effect } from 'effect';
+import { publishNotificationBestEffort } from '@repo/notify';
 
 /**
  * Places a paid-for order with Credibled.
@@ -172,6 +173,11 @@ export const placeCheckOrder = (orderId: string) =>
       credibledCheckUuid: created.value.uuid,
       applicationUrl: created.value.applicationUrl,
       lastOrderError: null
+    });
+    // The page showed "payment in progress" until now; tell it to refetch.
+    yield* publishNotificationBestEffort(order.userId, {
+      type: 'safety_verification.updated',
+      payload: { status: 'invited' }
     });
 
     // Credibled emails the applicant the secure link itself (send_email: true),

@@ -5,6 +5,7 @@ import { Effect, Layer, ManagedRuntime } from 'effect';
 import { trustedOriginsConfig } from '@repo/env';
 import { CredibledDefault } from '@repo/credibled';
 import { MailerLive } from '@repo/mail';
+import { NotificationHubLive } from '@repo/notify';
 import { PaymentsMock } from '@repo/payments';
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import {
@@ -61,7 +62,10 @@ const WorkerLive = Layer.mergeAll(
   PaymentsMock,
   MailerLive,
   // The expiry sweep re-indexes a family whose verification lapsed.
-  FamilySearchQueueLive
+  FamilySearchQueueLive,
+  // Check-order transitions publish to the same Redis channels the API's SSE
+  // stream subscribes to, so the applicant's page learns without a refresh.
+  NotificationHubLive
 );
 const runtime = ManagedRuntime.make(WorkerLive);
 const connection = getRedisConnection();

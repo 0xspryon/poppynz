@@ -15,6 +15,7 @@ import {
   recordCredibledWebhookOutcome,
   recordCredibledWebhookSignature
 } from './credibled-webhook-log';
+import { publishNotificationBestEffort } from '@repo/notify';
 
 /**
  * Credibled status webhooks.
@@ -54,7 +55,14 @@ type CredibledWebhookPayload = {
   uuid?: unknown;
   data_type?: unknown;
   application_status?: unknown;
+  /** Credibled-hosted applicant link, preferred over the raw Certn one —
+   * the same preference createBackgroundCheck applies. */
+  cred_application_url?: unknown;
+  application_url?: unknown;
 };
+
+const nonEmptyString = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim().length > 0 ? value : null;
 
 const secretFor = () =>
   credibledConfig.pipe(
@@ -90,7 +98,7 @@ const validityMonths = safetyVerificationConfig.pipe(
  * closed with no verdict behind it.
  */
 const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayload) =>
-  Effect.gen(function*() {
+  Effect.gen(function* () {
     const uuid = typeof payload.uuid === 'string' ? payload.uuid : null;
     const applicationStatus =
       typeof payload.application_status === 'string' ? payload.application_status : null;
@@ -129,6 +137,14 @@ const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayl
       return `ignored: ${order.status} -> ${next} is not a forward transition`;
     }
 
+    // Placing the order does not always yield a link (adopting a duplicate
+    // check returns none), but every delivery carries one. Fill the gap so
+    // "Continue your check" appears; never overwrite a link we already show.
+    const applicationUrl =
+      order.applicationUrl === null
+        ? (nonEmptyString(payload.cred_application_url) ?? nonEmptyString(payload.application_url))
+        : null;
+
     if (next === 'complete') {
       const months = yield* validityMonths;
       const now = new Date();
@@ -148,9 +164,14 @@ const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayl
           expiresOn: completed ? expiryFromCompletion(now, months) : null
         }
       });
-      return result
-        ? `applied: ${order.status} -> complete (verification ${result.verification.id} awaiting review)`
-        : `ignored: ${order.status} -> complete was applied concurrently`;
+      if (!result) {
+        return `ignored: ${order.status} -> complete was applied concurrently`;
+      }
+      yield* publishNotificationBestEffort(order.userId, {
+        type: 'safety_verification.updated',
+        payload: { status: 'review_required' }
+      });
+      return `applied: ${order.status} -> complete (verification ${result.verification.id} awaiting review)`;
     }
 
     // Guarded like completion is: the rank check ran on the row as read, and
@@ -158,12 +179,23 @@ const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayl
     // would drag a completed order back in flight.
     const advanced = yield* orders.advance(order.id, {
       from: { status: inFlightCheckOrderStatuses },
-      set: { status: next, lastOrderError: null }
+      set: {
+        status: next,
+        lastOrderError: null,
+        ...(applicationUrl ? { applicationUrl } : {})
+      }
     });
 
-    return advanced
-      ? `applied: ${order.status} -> ${next}`
-      : `ignored: ${order.status} -> ${next} was overtaken by a concurrent transition`;
+    if (!advanced) {
+      return `ignored: ${order.status} -> ${next} was overtaken by a concurrent transition`;
+    }
+    if (next === 'invited' || next === 'in_progress') {
+      yield* publishNotificationBestEffort(order.userId, {
+        type: 'safety_verification.updated',
+        payload: { status: next }
+      });
+    }
+    return `applied: ${order.status} -> ${next}`;
   });
 
 const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv>) => {
@@ -231,8 +263,8 @@ const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv
   if (signatureValid !== true) {
     console.warn(
       `[credibled:webhook:${audience}] processing an unverified delivery — ` +
-      `${secret === null ? 'no secret configured' : 'signature mismatch'}. ` +
-      'Signature enforcement is temporarily disabled for staging testing.'
+        `${secret === null ? 'no secret configured' : 'signature mismatch'}. ` +
+        'Signature enforcement is temporarily disabled for staging testing.'
     );
   }
 

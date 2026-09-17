@@ -41,6 +41,12 @@
 	const contractsHref = $derived(
 		role === 'family' ? resolve('/family/contracts') : resolve('/service-provider/contracts')
 	);
+	const verificationHref = $derived(
+		role === 'family' ? resolve('/family/verification') : resolve('/service-provider/verification')
+	);
+	const documentsHref = $derived(
+		role === 'family' ? resolve('/family/documents') : resolve('/service-provider/documents')
+	);
 	const contractDetailHref = (id: string) =>
 		role === 'family'
 			? resolve('/family/contracts/[id]', { id })
@@ -49,6 +55,29 @@
 	const onMessagesPage = () => page.url.pathname.startsWith(messagesHref);
 	const onApprovalPage = () => approvalHref !== null && page.url.pathname.startsWith(approvalHref);
 	const onContractsPage = () => page.url.pathname.startsWith(contractsHref);
+	// Both pages subscribe themselves and refetch; a toast there would be noise.
+	const onVerificationPage = () =>
+		page.url.pathname.startsWith(verificationHref) || page.url.pathname.startsWith(documentsHref);
+
+	const verificationCopy: Record<string, { title: string; message: string }> = {
+		invited: {
+			title: 'Your check is ready',
+			message: 'Credibled has set up your safety check — continue it from Safety verification.'
+		},
+		in_progress: {
+			title: 'Check in progress',
+			message: 'Credibled is processing your safety check.'
+		},
+		review_required: {
+			title: 'Check complete',
+			message: 'Your safety check is finished and with a Poppynz administrator for review.'
+		},
+		verified: { title: 'You are verified', message: 'Your safety verification was approved.' },
+		rejected: {
+			title: 'Verification update',
+			message: 'Your safety verification was not approved. See Safety verification for the reason.'
+		}
+	};
 
 	onMount(() => {
 		notifications.connect();
@@ -147,6 +176,18 @@
 					toast.info(`${event.payload.counterpartName} asked for changes to your proposal.`, {
 						title: 'Contract update'
 					});
+				}
+			}),
+			notifications.on('safety_verification.updated', (event) => {
+				if (onVerificationPage()) return;
+				const copy = verificationCopy[event.payload.status];
+				if (!copy) return;
+				if (event.payload.status === 'rejected') {
+					toast.error(copy.message, { title: copy.title });
+				} else if (event.payload.status === 'verified') {
+					toast.success(copy.message, { title: copy.title });
+				} else {
+					toast.info(copy.message, { title: copy.title });
 				}
 			}),
 			notifications.on('contract.ended', (event) => {

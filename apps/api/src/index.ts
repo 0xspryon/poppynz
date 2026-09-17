@@ -29,7 +29,9 @@ export const createApp = (
       })
     )
 
-    .get('/health', (c) => {
+    // Under the API prefix so the reverse proxy forwards it like every other
+    // API path; the container healthcheck and any uptime probe hit the same URL.
+    .get(`${API_BASE_PATH}/health`, (c) => {
       return c.text('Up!');
     })
 

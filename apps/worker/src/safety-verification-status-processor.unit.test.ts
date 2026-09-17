@@ -10,6 +10,7 @@ import {
 import { Effect, Layer } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { reconcileCheckOrderStatuses } from './safety-verification-status-processor';
+import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
 
 // The poller is the only recovery path for a dropped Credibled webhook, and
 // it shares the webhook's rules: only forward moves, and completing an order
@@ -38,9 +39,10 @@ const order = (overrides: Partial<CheckOrder> = {}): CheckOrder =>
 type Recorded = {
   updates: Array<CheckOrderUpdateInput>;
   completions: Array<CheckOrderCompletionInput>;
+  notified: Array<{ userId: string; input: NotificationInput }>;
 };
 
-const record = (): Recorded => ({ updates: [], completions: [] });
+const record = (): Recorded => ({ updates: [], completions: [], notified: [] });
 
 const makeLayer = (
   options: {
@@ -101,6 +103,13 @@ const makeLayer = (
               applicationStatus: options.vendorStatus ?? 'Complete',
               checkStatuses: []
             })
+    }),
+    makeNotificationHubTest({
+      publish: (userId, input) => {
+        recorded.notified.push({ userId, input });
+        return Effect.void;
+      },
+      subscribe: () => Effect.die('not used')
     })
   );
 };
@@ -121,6 +130,9 @@ describe('reconciling in-flight check orders', () => {
     // Never a plain status update for a completion — the verdict must be
     // created in the same transaction.
     expect(recorded.updates).toHaveLength(0);
+    expect(recorded.notified.map((entry) => entry.input.payload)).toEqual([
+      { status: 'review_required' }
+    ]);
   });
 
   it('completes without dates when a person is needed but nothing is finished', async () => {
@@ -138,6 +150,9 @@ describe('reconciling in-flight check orders', () => {
     expect(summary.advanced).toBe(1);
     expect(recorded.updates).toEqual([{ status: 'in_progress' }]);
     expect(recorded.completions).toHaveLength(0);
+    expect(recorded.notified.map((entry) => entry.input.payload)).toEqual([
+      { status: 'in_progress' }
+    ]);
   });
 
   it('writes nothing when Credibled reports what we already know', async () => {
@@ -147,6 +162,7 @@ describe('reconciling in-flight check orders', () => {
     expect(summary.advanced).toBe(0);
     expect(recorded.updates).toHaveLength(0);
     expect(recorded.completions).toHaveLength(0);
+    expect(recorded.notified).toHaveLength(0);
   });
 
   it('does not drag an order the webhook just completed back in flight', async () => {

@@ -22,5 +22,5 @@ The development stack starts Postgres, RustFS, runs database migrations, and sta
 
 Useful URLs:
 
-- API health: http://localhost:3000/health
+- API health: http://localhost:3000/api/v1/health
 - RustFS console: http://localhost:9001

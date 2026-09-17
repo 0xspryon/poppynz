@@ -48,6 +48,7 @@ import {
   validateSafetyVerificationItemInput,
   validateSafetyVerificationOrderInput
 } from './safety-verification.validator';
+import { publishNotificationBestEffort } from '@repo/notify';
 
 class SafetyVerificationValidationError extends Data.TaggedError(
   'SafetyVerificationValidationError'
@@ -204,14 +205,16 @@ export const getMySafetyVerificationRouteProgram = (headers: Headers) =>
 
     // Which Credibled checks this role's document types map onto. Empty means
     // ordering is unavailable and only the upload route is offered.
-    const orderableCheckTypes = types.filter((type) => isOrderable(type, role)).map((type) => ({
-      documentTypeId: type.id,
-      name: type.name,
-      credibledCheckTypeValue: type.credibledCheckTypeValue as string,
-      credibledLabel: credibledCheckTypeLabel(type.credibledCheckTypeValue as string),
-      costCents: type.credibledCostCents as number,
-      selected: items.some((item) => item.documentTypeId === type.id)
-    }));
+    const orderableCheckTypes = types
+      .filter((type) => isOrderable(type, role))
+      .map((type) => ({
+        documentTypeId: type.id,
+        name: type.name,
+        credibledCheckTypeValue: type.credibledCheckTypeValue as string,
+        credibledLabel: credibledCheckTypeLabel(type.credibledCheckTypeValue as string),
+        costCents: type.credibledCostCents as number,
+        selected: items.some((item) => item.documentTypeId === type.id)
+      }));
 
     return {
       verification: toApplicantSummary({ verification: record, order, payment }, today()),
@@ -236,10 +239,7 @@ export const getMySafetyVerificationRouteProgram = (headers: Headers) =>
 // Basket
 // ---------------------------------------------------------------------------
 
-export const addSafetyVerificationItemRouteProgram = (
-  c: HonoContext<HonoEnv>,
-  headers: Headers
-) =>
+export const addSafetyVerificationItemRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const rawBody = yield* parseJsonBody(c, safetyVerificationJsonError);
     const input = yield* validateSafetyVerificationItemInput(rawBody);
@@ -438,7 +438,8 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
           // payment stays settled and flagged so somebody finds it.
           yield* paymentRepo
             .update(settled.id, {
-              lastError: 'charge settled but the order was no longer awaiting it — needs manual settlement'
+              lastError:
+                'charge settled but the order was no longer awaiting it — needs manual settlement'
             })
             .pipe(Effect.ignore);
           return yield* Effect.fail(alreadyInProgress());
@@ -471,7 +472,9 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
             // charge; the failed row stays as the record of the attempt. The
             // revert is guarded on OUR payment so it cannot clobber a re-claim
             // that got in first.
-            yield* mapRepoError(paymentRepo.update(payment.id, { status: 'failed', lastError: reason }));
+            yield* mapRepoError(
+              paymentRepo.update(payment.id, { status: 'failed', lastError: reason })
+            );
             yield* mapRepoError(
               orders.advance(claimed.id, {
                 from: { status: 'payment_pending', paymentId: payment.id },
@@ -720,7 +723,8 @@ export const decideSafetyVerificationRouteProgram = (
     // A family's discoverability rides directly on this verdict (providers'
     // rides on their approval, which already requires it), so a decision
     // either way re-indexes them. Best-effort: the read path re-verifies.
-    const reindex = record.role === 'family' ? scheduleFamilySearchReconcile(record.userId) : Effect.void;
+    const reindex =
+      record.role === 'family' ? scheduleFamilySearchReconcile(record.userId) : Effect.void;
 
     if (input.decision === 'reject') {
       const rejected = yield* mapRepoError(
@@ -732,6 +736,10 @@ export const decideSafetyVerificationRouteProgram = (
         })
       );
       yield* reindex;
+      yield* publishNotificationBestEffort(record.userId, {
+        type: 'safety_verification.updated',
+        payload: { status: 'rejected' }
+      });
       return { verification: toAdminSummary(rejected, currentDate) };
     }
 
@@ -763,6 +771,10 @@ export const decideSafetyVerificationRouteProgram = (
       })
     );
     yield* reindex;
+    yield* publishNotificationBestEffort(record.userId, {
+      type: 'safety_verification.updated',
+      payload: { status: 'verified' }
+    });
 
     return { verification: toAdminSummary(approved, currentDate) };
   });
@@ -889,7 +901,10 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: SafetyVerificationRoute
   }
 };
 
-const exitToResponse = <T>(c: HonoContext<HonoEnv>, exit: Exit.Exit<T, SafetyVerificationRouteError>) =>
+const exitToResponse = <T>(
+  c: HonoContext<HonoEnv>,
+  exit: Exit.Exit<T, SafetyVerificationRouteError>
+) =>
   Exit.match(exit, {
     onSuccess: (value) => c.json(value),
     onFailure: (cause) => {
@@ -906,9 +921,7 @@ const exitToResponse = <T>(c: HonoContext<HonoEnv>, exit: Exit.Exit<T, SafetyVer
 
 export async function getMySafetyVerificationHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
-  const exit = await runtime.runPromiseExit(
-    getMySafetyVerificationRouteProgram(c.req.raw.headers)
-  );
+  const exit = await runtime.runPromiseExit(getMySafetyVerificationRouteProgram(c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 

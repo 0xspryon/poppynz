@@ -63,6 +63,13 @@ export type NotificationPayloads = {
     counterpartName: string;
     endsOn: string;
   };
+  /** The viewer's safety check moved: Credibled set it up (invited), is
+   * processing it, finished it (awaiting review), or an admin decided.
+   * Deliberately thin — a page showing the verification refetches its summary
+   * on receipt; anywhere else it is just a toast. */
+  'safety_verification.updated': {
+    status: 'invited' | 'in_progress' | 'review_required' | 'verified' | 'rejected';
+  };
 };
 
 // Planned (not yet published) — future domains follow the same pattern:

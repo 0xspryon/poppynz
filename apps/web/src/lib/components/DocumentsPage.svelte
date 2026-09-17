@@ -19,6 +19,7 @@
 	import { goto } from '$app/navigation';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import UploadDocumentDialog from '$lib/components/UploadDocumentDialog.svelte';
+	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
 
 	interface Props {
@@ -95,6 +96,12 @@
 	onMount(() => {
 		void load();
 		void loadBasket();
+		// The safety-gate row reads the verification's status, and a placed
+		// order empties the basket — both change without the applicant acting.
+		return notifications.on('safety_verification.updated', () => {
+			void load();
+			void loadBasket();
+		});
 	});
 
 	const requiredDocs = $derived(documents?.filter((doc) => !doc.isOptional) ?? []);
@@ -367,7 +374,7 @@
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={() => (addedDoc = null)}>
-					Keep adding documents
+					Add additional verifictations
 				</button>
 				<button
 					type="button"

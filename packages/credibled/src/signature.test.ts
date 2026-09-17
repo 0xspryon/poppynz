@@ -36,6 +36,74 @@ describe('credibled signature', () => {
     expect(credibledSignature(a, vector.secret)).toBe(credibledSignature(b, vector.secret));
   });
 
+  // Expected strings below were produced by CPython's json.dumps(sort_keys=True)
+  // with ensure_ascii left at its default (True) and set to False.
+  describe('non-ASCII, the way json.dumps does it', () => {
+    it('escapes a precomposed accent as one \\u escape by default', () => {
+      const payload = { firstName: 'José' };
+      expect(credibledCanonicalPayload(payload)).toBe('{"firstName": "Jos\\u00e9"}');
+      expect(credibledCanonicalPayload(payload, { ensureAscii: false })).toBe(
+        '{"firstName": "José"}'
+      );
+    });
+
+    it('does not normalise a decomposed accent — the combining mark is its own escape', () => {
+      // "é" typed as e + U+0301 looks identical but is two code points, and
+      // json.dumps escapes each without folding them into U+00E9.
+      const payload = { firstName: 'Jose\u0301' };
+      expect(credibledCanonicalPayload(payload)).toBe('{"firstName": "Jose\\u0301"}');
+      expect(credibledCanonicalPayload(payload, { ensureAscii: false })).toBe(
+        '{"firstName": "Jose\u0301"}'
+      );
+      expect(credibledSignature(payload, vector.secret)).not.toBe(
+        credibledSignature({ firstName: 'José' }, vector.secret)
+      );
+    });
+
+    it('escapes an astral character as a surrogate pair', () => {
+      expect(credibledCanonicalPayload({ note: 'ok 😀' })).toBe('{"note": "ok \\ud83d\\ude00"}');
+      expect(credibledCanonicalPayload({ note: 'ok 😀' }, { ensureAscii: false })).toBe(
+        '{"note": "ok 😀"}'
+      );
+    });
+
+    it('escapes controls and DEL like Python, in both modes', () => {
+      const payload = { s: 'a\tb\nc"d\\e\x01f\x7fg' };
+      // DEL is outside printable ASCII, so ensure_ascii escapes it — but the
+      // non-ASCII mode leaves it raw, exactly as py_encode_basestring does.
+      expect(credibledCanonicalPayload(payload)).toBe(
+        '{"s": "a\\tb\\nc\\"d\\\\e\\u0001f\\u007fg"}'
+      );
+      expect(credibledCanonicalPayload(payload, { ensureAscii: false })).toBe(
+        '{"s": "a\\tb\\nc\\"d\\\\e\\u0001f\x7fg"}'
+      );
+    });
+
+    it('escapes keys as well as values, at every depth', () => {
+      const payload = { clé: ['ñ', { ß: 1.5 }] };
+      expect(credibledCanonicalPayload(payload)).toBe(
+        '{"cl\\u00e9": ["\\u00f1", {"\\u00df": 1.5}]}'
+      );
+      expect(credibledCanonicalPayload(payload, { ensureAscii: false })).toBe(
+        '{"clé": ["ñ", {"ß": 1.5}]}'
+      );
+    });
+
+    it('verifies a signature made over either encoding', () => {
+      const payload = { firstName: 'José', uuid: 'u1' };
+      const ascii = credibledSignature(payload, vector.secret);
+      const raw = credibledSignature(payload, vector.secret, { ensureAscii: false });
+      expect(ascii).not.toBe(raw);
+      expect(verifyCredibledSignature(payload, ascii, vector.secret)).toBe(true);
+      expect(verifyCredibledSignature(payload, raw, vector.secret)).toBe(true);
+      // Accepting two encodings must not accept anything else.
+      expect(verifyCredibledSignature({ ...payload, uuid: 'u2' }, ascii, vector.secret)).toBe(
+        false
+      );
+      expect(verifyCredibledSignature({ ...payload, uuid: 'u2' }, raw, vector.secret)).toBe(false);
+    });
+  });
+
   it('accepts a correct signature', () => {
     expect(verifyCredibledSignature(vector.payload, vector.signature, vector.secret)).toBe(true);
   });

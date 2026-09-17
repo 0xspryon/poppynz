@@ -3,11 +3,6 @@ import { adminUsers } from './0000_admin_users';
 import { kycDocumentTypes } from './0001_kyc_document_types';
 import { serviceCatalogue } from './0002_service_catalogue';
 import { tcDocuments } from './0003_tc_documents';
-import { credibledCheckTypesSeed } from './0004_credibled_check_types';
-import { credibledPricing } from './0005_credibled_pricing';
-import { vscBacksSafetyVerification } from './0006_vsc_backs_safety_verification';
-import { credibledDefaultPrice } from './0007_credibled_default_price';
-import { familySafetyGate } from './0008_family_safety_gate';
 // <seed:new-imports> — `bun run seed:new` inserts above; keep this marker.
 
 /**
@@ -20,11 +15,6 @@ export const seeds: ReadonlyArray<Seed> = [
   adminUsers,
   kycDocumentTypes,
   serviceCatalogue,
-  tcDocuments,
-  credibledCheckTypesSeed,
-  credibledPricing,
-  vscBacksSafetyVerification,
-  credibledDefaultPrice,
-  familySafetyGate
+  tcDocuments
   // <seed:new-entries> — `bun run seed:new` inserts above; keep this marker.
 ];

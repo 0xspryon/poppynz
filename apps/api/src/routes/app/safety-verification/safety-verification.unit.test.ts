@@ -37,6 +37,7 @@ import {
   orderSafetyCheckRouteProgram,
   submitSafetyDocumentRouteProgram
 } from './safety-verification.handler';
+import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
 
 const user = (overrides: Partial<User> = {}): User =>
   ({
@@ -185,6 +186,7 @@ type Recorded = {
   enqueued: Array<string>;
   /** Family user ids handed to the search reconcile queue. */
   reindexed: Array<string>;
+  notified: Array<{ userId: string; input: NotificationInput }>;
 };
 
 const record = (): Recorded => ({
@@ -199,7 +201,8 @@ const record = (): Recorded => ({
   paymentsCreated: [],
   paymentUpdates: [],
   enqueued: [],
-  reindexed: []
+  reindexed: [],
+  notified: []
 });
 
 const makeLayer = (
@@ -251,7 +254,8 @@ const makeLayer = (
     }),
     makeKycDocumentTypeRepoTest({
       listActive: () => Effect.succeed(options.types ?? [documentType()]),
-      findActiveById: () => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: '' })),
+      findActiveById: () =>
+        Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: '' })),
       create: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
       update: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' })),
       softDelete: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }))
@@ -373,6 +377,13 @@ const makeLayer = (
         return Effect.succeed({ id: 'job-2', name: 'reconcile-family' });
       },
       enqueueReindex: () => Effect.die('not used')
+    }),
+    makeNotificationHubTest({
+      publish: (userId, input) => {
+        recorded.notified.push({ userId, input });
+        return Effect.void;
+      },
+      subscribe: () => Effect.die('not used')
     })
   );
 };
@@ -570,7 +581,9 @@ describe('building the check list', () => {
       addSafetyVerificationItemRouteProgram(
         contextWithJson({ documentTypeId: 'type-1' }),
         new Headers()
-      ).pipe(Effect.provide(makeLayer({ types: [documentType({ credibledCheckTypeValue: null })] })))
+      ).pipe(
+        Effect.provide(makeLayer({ types: [documentType({ credibledCheckTypeValue: null })] }))
+      )
     );
     expect(failureTag(exit)).toBe('SafetyVerificationValidationError');
   });
@@ -679,7 +692,11 @@ describe('ordering a check', () => {
     openOrder: order(),
     items: [
       item(),
-      item({ id: 'item-2', credibledCheckTypeValue: 'request_motor_vehicle_records', costCents: 2500 })
+      item({
+        id: 'item-2',
+        credibledCheckTypeValue: 'request_motor_vehicle_records',
+        costCents: 2500
+      })
     ]
   };
 
@@ -738,7 +755,10 @@ describe('ordering a check', () => {
     );
 
     expect(failureTag(exit)).toBe('SafetyVerificationPaymentError');
-    expect(recorded.paymentUpdates[0]).toMatchObject({ status: 'failed', lastError: 'card declined' });
+    expect(recorded.paymentUpdates[0]).toMatchObject({
+      status: 'failed',
+      lastError: 'card declined'
+    });
     // Back to a draft the applicant can retry with a fresh charge — but only
     // if the order is still claimed for this payment, so the revert can never
     // clobber a re-claim that got in first.
@@ -921,6 +941,8 @@ describe('admin decisions', () => {
     expect(recorded.verificationUpdates[0]?.status).toBe('verified');
     expect(recorded.verificationUpdates[0]?.reviewedBy).toBe('admin-1');
     expect(recorded.verificationUpdates[0]?.expiresOn).toBeTruthy();
+    // The applicant hears about the verdict on their open page.
+    expect(recorded.notified.map((entry) => entry.input.payload)).toEqual([{ status: 'verified' }]);
   });
 
   it('re-indexes a family on either decision, and never a helper', async () => {
@@ -973,9 +995,7 @@ describe('admin decisions', () => {
         contextWithJson({ decision: 'approve' }),
         new Headers(),
         'sv-1'
-      ).pipe(
-        Effect.provide(makeLayer({ user: admin, byId: verification({ status: 'rejected' }) }))
-      )
+      ).pipe(Effect.provide(makeLayer({ user: admin, byId: verification({ status: 'rejected' }) })))
     );
 
     expect(failureTag(exit)).toBe('SafetyVerificationConflictError');

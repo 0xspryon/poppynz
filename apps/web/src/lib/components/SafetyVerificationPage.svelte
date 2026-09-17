@@ -11,6 +11,7 @@
 	} from '$lib/api/safety-verification';
 	import { resolve } from '$app/paths';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
 
 	interface Props {
@@ -45,7 +46,6 @@
 		}
 		removingId = null;
 	}
-
 
 	const status = $derived(page?.verification.status ?? 'not_started');
 	const canStart = $derived(status === 'not_started');
@@ -85,8 +85,7 @@
 				? 'Add documents from your Documents page, then pay for them together here.'
 				: 'Upload your vulnerable-sector check from your Documents page to get started.',
 		payment_pending: 'We are confirming your payment. This usually takes a moment.',
-		invited:
-			'We emailed you a secure link to finish your check — you can also continue below.',
+		invited: 'We emailed you a secure link to finish your check — you can also continue below.',
 		in_progress: 'Your check is being processed. We will let you know when it is done.',
 		review_required:
 			'A Poppynz administrator is reviewing your submission. Submitted is not the same as verified — we will confirm once the review is complete.',
@@ -100,6 +99,13 @@
 
 	async function load() {
 		loading = true;
+		await refresh();
+		loading = false;
+	}
+
+	/** Re-reads the summary without blanking the page — the realtime event
+	 * that triggers this carries only a status, so the page fetches the rest. */
+	async function refresh() {
 		const result = await getSafetyVerification();
 		if (result.ok) {
 			page = result.data;
@@ -110,11 +116,13 @@
 					? 'Your session has expired — sign in again.'
 					: RETRY_MESSAGE;
 		}
-		loading = false;
 	}
 
 	onMount(() => {
 		void load();
+		return notifications.on('safety_verification.updated', () => {
+			void refresh();
+		});
 	});
 
 	async function order() {
@@ -134,7 +142,6 @@
 		}
 		ordering = false;
 	}
-
 </script>
 
 <svelte:head>

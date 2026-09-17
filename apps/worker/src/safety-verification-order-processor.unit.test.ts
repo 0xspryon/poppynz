@@ -11,6 +11,7 @@ import {
   type PaymentUpdateInput,
   type User
 } from '@repo/db';
+import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
 import { makePaymentsTest, PaymentProviderError } from '@repo/payments';
 import { Effect, Exit, Layer } from 'effect';
 import { describe, expect, it } from 'vitest';
@@ -81,9 +82,16 @@ type Recorded = {
   paymentUpdates: Array<PaymentUpdateInput>;
   placed: Array<ReadonlyArray<string>>;
   refunds: Array<{ reference: string; idempotencyKey: string }>;
+  notified: Array<{ userId: string; input: NotificationInput }>;
 };
 
-const record = (): Recorded => ({ orderUpdates: [], paymentUpdates: [], placed: [], refunds: [] });
+const record = (): Recorded => ({
+  orderUpdates: [],
+  paymentUpdates: [],
+  placed: [],
+  refunds: [],
+  notified: []
+});
 
 const makeLayer = (
   options: {
@@ -161,6 +169,13 @@ const makeLayer = (
               refundedAt: new Date('2026-08-01T01:00:00.000Z')
             });
       }
+    }),
+    makeNotificationHubTest({
+      publish: (userId, input) => {
+        recorded.notified.push({ userId, input });
+        return Effect.void;
+      },
+      subscribe: () => Effect.die('not used')
     })
   );
 };
@@ -175,6 +190,13 @@ describe('placing a paid check order', () => {
 
     expect(Exit.isSuccess(exit)).toBe(true);
     expect(recorded.placed).toEqual([['request_enhanced_criminal_record_check']]);
+    // The applicant's open page learns the check is ready without a refresh.
+    expect(recorded.notified).toEqual([
+      {
+        userId: 'provider-1',
+        input: { type: 'safety_verification.updated', payload: { status: 'invited' } }
+      }
+    ]);
     expect(recorded.orderUpdates.at(-1)).toMatchObject({
       status: 'invited',
       credibledCheckUuid: 'check-1',
@@ -191,6 +213,7 @@ describe('placing a paid check order', () => {
     await run(makeLayer({ order: order({ credibledCheckUuid: 'check-1' }), recorded }));
 
     expect(recorded.placed).toHaveLength(0);
+    expect(recorded.notified).toHaveLength(0);
     expect(recorded.orderUpdates).toHaveLength(0);
   });
 

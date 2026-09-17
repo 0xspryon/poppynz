@@ -12,6 +12,7 @@ import { Hono } from 'hono';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { BaseAppEnv } from '@/api/app-env';
 import { credibledWebhookRoute } from './credibled';
+import { NoopNotificationHubTest } from '@repo/notify';
 
 // Public ingress with no session — every guarantee has to come from the
 // signature and from how the handler applies what it receives, so this suite
@@ -107,7 +108,8 @@ const makeApp = (
         listItems: () => Effect.succeed([]),
         addItem: () => Effect.die('not used'),
         removeItem: () => Effect.die('not used')
-      })
+      }),
+      NoopNotificationHubTest
     )
   );
 
@@ -259,6 +261,47 @@ describe('credibled webhook — application', () => {
     expect(res.status).toBe(200);
     expect(updates[0]?.status).toBe('in_progress');
     expect(completions).toHaveLength(0);
+  });
+
+  it('fills in the applicant link from a delivery when the order has none', async () => {
+    const updates: Array<CheckOrderUpdateInput> = [];
+    const res = await post(
+      makeApp({
+        found: record({ status: 'invited', applicationUrl: null }),
+        onUpdate: (_id, input) => updates.push(input)
+      }),
+      {
+        uuid: 'check-1',
+        data_type: 'background_check',
+        application_status: 'In Progress',
+        cred_application_url: null,
+        application_url: 'https://whitelabel.certn.co/welcome/email?session=s&token=t'
+      }
+    );
+
+    expect(res.status).toBe(200);
+    expect(updates[0]).toMatchObject({
+      status: 'in_progress',
+      applicationUrl: 'https://whitelabel.certn.co/welcome/email?session=s&token=t'
+    });
+  });
+
+  it('never overwrites a link the applicant has already been shown', async () => {
+    const updates: Array<CheckOrderUpdateInput> = [];
+    await post(
+      makeApp({
+        found: record({ status: 'invited', applicationUrl: 'https://credibled.example/apply/1' }),
+        onUpdate: (_id, input) => updates.push(input)
+      }),
+      {
+        uuid: 'check-1',
+        data_type: 'background_check',
+        application_status: 'In Progress',
+        application_url: 'https://whitelabel.certn.co/welcome/email?session=s&token=t'
+      }
+    );
+
+    expect(updates[0]).toEqual({ status: 'in_progress', lastOrderError: null });
   });
 
   it('does not drag an order the poller just completed back in flight', async () => {

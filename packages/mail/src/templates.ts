@@ -18,6 +18,16 @@ const escapeHtml = (value: string) =>
 
 const roleLabel = (role: MailRole) => (role === 'service-provider' ? 'service provider' : role);
 
+/** What approval unlocks, in the applicant's own terms. */
+const approvalUnlocks = (role: MailRole) =>
+  role === 'family'
+    ? 'be found by helpers and reach out to the ones you like'
+    : 'be found by families searching for services';
+
+/** What the review looks at — families list no services. */
+const reviewedThings = (role: MailRole) =>
+  role === 'family' ? 'profile and documents' : 'profile, documents, and services';
+
 const greeting = (name: string | null) => (name ? `Hi ${name},` : 'Hi,');
 
 const layout = (paragraphsHtml: string) => `<!doctype html>
@@ -207,44 +217,50 @@ export const referralInviteMail = (mail: {
   ].join('\n')
 });
 
-export const approvalRequestSubmittedMail = (mail: { name: string | null }): MailContent => ({
-  subject: 'We received your approval request',
-  html: layout(
-    paragraph(escapeHtml(greeting(mail.name))) +
-      paragraph(
-        'Your request to be approved as a service provider on Poppynz has been submitted. Our team will review your profile, documents, and services.'
-      ) +
-      paragraph("We'll email you as soon as the review is complete.")
-  ),
-  text: [
-    greeting(mail.name),
-    '',
-    'Your request to be approved as a service provider on Poppynz has been submitted. Our team will review your profile, documents, and services.',
-    '',
-    "We'll email you as soon as the review is complete."
-  ].join('\n')
-});
+export const approvalRequestSubmittedMail = (mail: {
+  name: string | null;
+  role: MailRole;
+}): MailContent => {
+  const body = `Your request to be approved as a ${roleLabel(mail.role)} on Poppynz has been submitted. Our team will review your ${reviewedThings(mail.role)}.`;
+  return {
+    subject: 'We received your approval request',
+    html: layout(
+      paragraph(escapeHtml(greeting(mail.name))) +
+        paragraph(escapeHtml(body)) +
+        paragraph("We'll email you as soon as the review is complete.")
+    ),
+    text: [
+      greeting(mail.name),
+      '',
+      body,
+      '',
+      "We'll email you as soon as the review is complete."
+    ].join('\n')
+  };
+};
 
 export const adminApprovalRequestSubmittedMail = (mail: {
-  providerName: string | null;
-  providerEmail: string;
+  applicantName: string | null;
+  applicantEmail: string;
+  role: MailRole;
 }): MailContent => {
-  const provider = mail.providerName
-    ? `${mail.providerName} (${mail.providerEmail})`
-    : mail.providerEmail;
+  const applicant = mail.applicantName
+    ? `${mail.applicantName} (${mail.applicantEmail})`
+    : mail.applicantEmail;
+  const label = roleLabel(mail.role);
   return {
-    subject: 'New service provider approval request',
+    subject: `New ${label} approval request`,
     html: layout(
       paragraph('Hi,') +
         paragraph(
-          `<strong>${escapeHtml(provider)}</strong> submitted a service provider approval request and is waiting for review.`
+          `<strong>${escapeHtml(applicant)}</strong> submitted a ${escapeHtml(label)} approval request and is waiting for review.`
         ) +
         paragraph('Review the request in the Poppynz admin dashboard.')
     ),
     text: [
       'Hi,',
       '',
-      `${provider} submitted a service provider approval request and is waiting for review.`,
+      `${applicant} submitted a ${label} approval request and is waiting for review.`,
       '',
       'Review the request in the Poppynz admin dashboard.'
     ].join('\n')
@@ -253,49 +269,45 @@ export const adminApprovalRequestSubmittedMail = (mail: {
 
 export const approvalRequestRejectedMail = (mail: {
   name: string | null;
+  role: MailRole;
   reason: string;
-}): MailContent => ({
-  subject: 'An update on your Poppynz approval request',
-  html: layout(
-    paragraph(escapeHtml(greeting(mail.name))) +
-      paragraph("We reviewed your approval request and can't approve it at this time.") +
-      paragraph(`<strong>Reason:</strong> ${escapeHtml(mail.reason)}`) +
-      paragraph(
-        'You can update your profile, documents, or services and submit a new approval request at any time.'
-      )
-  ),
-  text: [
-    greeting(mail.name),
-    '',
-    "We reviewed your approval request and can't approve it at this time.",
-    '',
-    `Reason: ${mail.reason}`,
-    '',
-    'You can update your profile, documents, or services and submit a new approval request at any time.'
-  ].join('\n')
-});
-
-export const approvalGrantedMail = (mail: {
-  name: string | null;
-  expiresAt: Date;
 }): MailContent => {
-  const expires = mail.expiresAt.toISOString().slice(0, 10);
+  const next = `You can update your ${reviewedThings(mail.role)} and submit a new approval request at any time.`;
   return {
-    subject: "You're approved on Poppynz",
+    subject: 'An update on your Poppynz approval request',
     html: layout(
       paragraph(escapeHtml(greeting(mail.name))) +
-        paragraph(
-          "Great news — your approval request has been accepted. You're now an approved service provider on Poppynz and can be found by families searching for services."
-        ) +
-        paragraph(`Your approval is valid until <strong>${expires}</strong>.`)
+        paragraph("We reviewed your approval request and can't approve it at this time.") +
+        paragraph(`<strong>Reason:</strong> ${escapeHtml(mail.reason)}`) +
+        paragraph(escapeHtml(next))
     ),
     text: [
       greeting(mail.name),
       '',
-      "Great news — your approval request has been accepted. You're now an approved service provider on Poppynz and can be found by families searching for services.",
+      "We reviewed your approval request and can't approve it at this time.",
       '',
-      `Your approval is valid until ${expires}.`
+      `Reason: ${mail.reason}`,
+      '',
+      next
     ].join('\n')
+  };
+};
+
+export const approvalGrantedMail = (mail: {
+  name: string | null;
+  role: MailRole;
+  expiresAt: Date;
+}): MailContent => {
+  const expires = mail.expiresAt.toISOString().slice(0, 10);
+  const body = `Great news — your approval request has been accepted. You're now an approved ${roleLabel(mail.role)} on Poppynz and can ${approvalUnlocks(mail.role)}.`;
+  return {
+    subject: "You're approved on Poppynz",
+    html: layout(
+      paragraph(escapeHtml(greeting(mail.name))) +
+        paragraph(escapeHtml(body)) +
+        paragraph(`Your approval is valid until <strong>${expires}</strong>.`)
+    ),
+    text: [greeting(mail.name), '', body, '', `Your approval is valid until ${expires}.`].join('\n')
   };
 };
 
@@ -338,27 +350,25 @@ export const accountUnbannedMail = (mail: { name: string | null; link: string })
 
 export const approvalRevokedMail = (mail: {
   name: string | null;
+  role: MailRole;
   reason: string;
-}): MailContent => ({
-  subject: 'Your Poppynz approval has been revoked',
-  html: layout(
-    paragraph(escapeHtml(greeting(mail.name))) +
-      paragraph('Your service provider approval on Poppynz has been revoked.') +
-      paragraph(`<strong>Reason:</strong> ${escapeHtml(mail.reason)}`) +
-      paragraph(
-        'Your profile is no longer visible to families searching for services. If you believe this is a mistake, please contact support.'
-      )
-  ),
-  text: [
-    greeting(mail.name),
-    '',
-    'Your service provider approval on Poppynz has been revoked.',
-    '',
-    `Reason: ${mail.reason}`,
-    '',
-    'Your profile is no longer visible to families searching for services. If you believe this is a mistake, please contact support.'
-  ].join('\n')
-});
+}): MailContent => {
+  const intro = `Your ${roleLabel(mail.role)} approval on Poppynz has been revoked.`;
+  const effect =
+    mail.role === 'family'
+      ? 'Your profile is no longer visible to helpers, and you can no longer search for or reach out to them. If you believe this is a mistake, please contact support.'
+      : 'Your profile is no longer visible to families searching for services. If you believe this is a mistake, please contact support.';
+  return {
+    subject: 'Your Poppynz approval has been revoked',
+    html: layout(
+      paragraph(escapeHtml(greeting(mail.name))) +
+        paragraph(escapeHtml(intro)) +
+        paragraph(`<strong>Reason:</strong> ${escapeHtml(mail.reason)}`) +
+        paragraph(escapeHtml(effect))
+    ),
+    text: [greeting(mail.name), '', intro, '', `Reason: ${mail.reason}`, '', effect].join('\n')
+  };
+};
 
 export const safetyVerificationInviteMail = (mail: {
   name: string | null;
@@ -422,18 +432,23 @@ export const safetyVerificationExpiringMail = (mail: {
 
 export const approvalExpiringMail = (mail: {
   name: string | null;
+  role: MailRole;
   expiresAt: Date;
   daysRemaining: number;
   link: string;
 }): MailContent => {
   const expires = mail.expiresAt.toISOString().slice(0, 10);
   const when = mail.daysRemaining === 1 ? 'tomorrow' : `in ${mail.daysRemaining} days`;
+  const consequence =
+    mail.role === 'family'
+      ? 'Once it expires, helpers will no longer see your profile and you will not be able to search for or reach out to them.'
+      : 'Once it expires, your profile will no longer appear when families search for services.';
   return {
     subject: `Your Poppynz approval expires ${when}`,
     html: layout(
       paragraph(escapeHtml(greeting(mail.name))) +
         paragraph(
-          `Your service provider approval expires ${escapeHtml(when)}, on <strong>${expires}</strong>. Once it expires, your profile will no longer appear when families search for services.`
+          `Your ${escapeHtml(roleLabel(mail.role))} approval expires ${escapeHtml(when)}, on <strong>${expires}</strong>. ${escapeHtml(consequence)}`
         ) +
         paragraph(
           'To stay approved, submit a new approval request from your profile before then.'
@@ -443,7 +458,7 @@ export const approvalExpiringMail = (mail: {
     text: [
       greeting(mail.name),
       '',
-      `Your service provider approval expires ${when}, on ${expires}. Once it expires, your profile will no longer appear when families search for services.`,
+      `Your ${roleLabel(mail.role)} approval expires ${when}, on ${expires}. ${consequence}`,
       '',
       'To stay approved, submit a new approval request from your profile before then.',
       '',

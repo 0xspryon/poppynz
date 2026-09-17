@@ -1,6 +1,6 @@
 <script lang="ts">
 	/** Revoke confirm: immediate loss of verified status, reason required and
-	 * shown to the provider verbatim. Emits the trimmed reason. */
+	 * shown to the applicant verbatim. Emits the trimmed reason. */
 	interface Props {
 		open: boolean;
 		applicantName: string;
@@ -29,8 +29,8 @@
 		<form class="modal-box" onsubmit={submit}>
 			<h2 class="text-lg font-bold">Revoke {applicantName}'s approval</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				This takes effect immediately: the provider loses verified status and is removed from family
-				search. The reason is <b>shown to the provider verbatim</b>.
+				This takes effect immediately: the applicant loses verified status and is removed from
+				search results. The reason is <b>shown to the applicant verbatim</b>.
 			</p>
 
 			<fieldset class="fieldset mt-4">
@@ -53,7 +53,7 @@
 			>
 				<i class="las la-info-circle text-base text-info" aria-hidden="true"></i>
 				<span class="text-[12.5px] text-info">
-					Revocation isn't a ban — the provider can fix the issue, resubmit, and be approved again.
+					Revocation isn't a ban — the applicant can fix the issue, resubmit, and be approved again.
 				</span>
 			</div>
 

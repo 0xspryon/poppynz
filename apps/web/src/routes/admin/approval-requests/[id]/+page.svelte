@@ -360,34 +360,58 @@
 					{/if}
 				</div>
 
-				<!-- Services -->
+				<!-- Services: what a helper offers, or what a family needs (context
+				     only — needs are never a condition of a family's approval). -->
 				<div class="rounded-lg border border-card-border bg-base-100 p-5">
-					<div class="mb-2 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-						Services · {detail.servicesOffered.length}
-					</div>
-					{#if detail.servicesOffered.length === 0}
-						<p class="py-2 text-[13px] text-warning">No services listed.</p>
-					{:else}
-						{#each detail.servicesOffered as service, index (service.id)}
-							<div
-								class="flex items-center justify-between gap-3 py-2.5
-									{index < detail.servicesOffered.length - 1 ? 'border-b border-base-300' : ''}"
-							>
-								<div class="min-w-0">
-									<div class="text-[13.5px] font-semibold text-base-content">{service.name}</div>
-									{#if service.description}
+					{#if detail.applicantRole === 'family'}
+						<div class="mb-2 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
+							Services needed · {detail.servicesNeeded.length}
+						</div>
+						{#if detail.servicesNeeded.length === 0}
+							<p class="py-2 text-[13px] text-base-content-muted">No needs listed yet.</p>
+						{:else}
+							{#each detail.servicesNeeded as need, index (need.id)}
+								<div
+									class="py-2.5
+										{index < detail.servicesNeeded.length - 1 ? 'border-b border-base-300' : ''}"
+								>
+									<div class="text-[13.5px] font-semibold text-base-content">{need.name}</div>
+									{#if need.description}
 										<div class="truncate text-[11.5px] text-base-content-muted">
-											{service.description}
+											{need.description}
 										</div>
 									{/if}
 								</div>
-								<span class="shrink-0 font-display text-sm font-bold text-secondary">
-									${centsToDollars(service.hourlyRateCents)}<span
-										class="text-[11px] font-normal text-outline">/hr</span
-									>
-								</span>
-							</div>
-						{/each}
+							{/each}
+						{/if}
+					{:else}
+						<div class="mb-2 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
+							Services · {detail.servicesOffered.length}
+						</div>
+						{#if detail.servicesOffered.length === 0}
+							<p class="py-2 text-[13px] text-warning">No services listed.</p>
+						{:else}
+							{#each detail.servicesOffered as service, index (service.id)}
+								<div
+									class="flex items-center justify-between gap-3 py-2.5
+									{index < detail.servicesOffered.length - 1 ? 'border-b border-base-300' : ''}"
+								>
+									<div class="min-w-0">
+										<div class="text-[13.5px] font-semibold text-base-content">{service.name}</div>
+										{#if service.description}
+											<div class="truncate text-[11.5px] text-base-content-muted">
+												{service.description}
+											</div>
+										{/if}
+									</div>
+									<span class="shrink-0 font-display text-sm font-bold text-secondary">
+										${centsToDollars(service.hourlyRateCents)}<span
+											class="text-[11px] font-normal text-outline">/hr</span
+										>
+									</span>
+								</div>
+							{/each}
+						{/if}
 					{/if}
 				</div>
 			</div>

@@ -177,6 +177,8 @@ const makeLayer = (
     hasPermission?: boolean;
     /** Whether the provider side holds a live approval (default true). */
     providerApproved?: boolean;
+    /** Whether the family side holds a live approval (default true). */
+    familyApproved?: boolean;
     /** When set, ConversationRepo.create fails with this SqlError. */
     createFailsWith?: SqlError;
     /** Per-call findByPair results (consumed in order); falls back to existingConversation. */
@@ -254,10 +256,15 @@ const makeLayer = (
       softDeleteByIdForUser: () => Effect.die('not used')
     }),
     makeApprovalRepoTest({
-      findCurrentByUserId: (userId) =>
-        (options.providerApproved ?? true)
+      findCurrentByUserId: (userId) => {
+        const approved =
+          userId === familyUser().id
+            ? (options.familyApproved ?? true)
+            : (options.providerApproved ?? true);
+        return approved
           ? Effect.succeed(currentApproval(userId))
-          : Effect.fail(new DBNotFoundError({ entity: 'approval', value: userId }))
+          : Effect.fail(new DBNotFoundError({ entity: 'approval', value: userId }));
+      }
     }),
     makeConversationRepoTest({
       create: (input) => {
@@ -520,7 +527,24 @@ describe('POST /conversations (reach-out)', () => {
         )
       )
     );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'ProviderNotApprovedError' });
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ApprovalRequiredError',
+      role: 'service-provider'
+    });
+  });
+
+  it('blocks families without a live approval from initiating reach-outs', async () => {
+    const exit = await Effect.runPromiseExit(
+      createReachoutRouteProgram(
+        makeContext({ body: { recipientUserId: 'provider-1', serviceIds: [offeredService().id] } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({ viewer: familyUser(), counterpart: providerUser(), familyApproved: false })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ApprovalRequiredError', role: 'family' });
   });
 
   it('rejects invalid payloads before touching auth or repos', async () => {

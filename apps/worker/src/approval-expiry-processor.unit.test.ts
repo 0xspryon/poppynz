@@ -29,7 +29,7 @@ const candidate = (overrides: Partial<ApprovalExpiryCandidate> = {}): ApprovalEx
   notifiedExpiresInTwoDaysAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
-  applicant: { email: 'provider@example.com', name: 'Provider User' },
+  applicant: { email: 'provider@example.com', name: 'Provider User', role: 'service-provider' },
   ...overrides
 });
 
@@ -82,6 +82,7 @@ describe('processApprovalExpiryNotifications', () => {
       {
         email: 'provider@example.com',
         name: 'Provider User',
+        role: 'service-provider',
         expiresAt: daysFromNow(20),
         daysRemaining: 20,
         link: uiOrigin
@@ -148,7 +149,7 @@ describe('processApprovalExpiryNotifications', () => {
         candidate({ id: 'approval-1' }),
         candidate({
           id: 'approval-2',
-          applicant: { email: 'other@example.com', name: null },
+          applicant: { email: 'other@example.com', name: null, role: 'family' },
           expiresAt: daysFromNow(12)
         })
       ],

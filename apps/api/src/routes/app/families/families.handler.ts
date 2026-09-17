@@ -4,9 +4,14 @@ import {
   buildFamilySearchDocument,
   getFamilySearchMinRadiusKm
 } from '@repo/typesense';
-import { ApprovalRepo, DBNotFoundError, FamilySearchRepo, UserProfileRepo } from '@repo/db';
-import { Cause, Data, Effect, Exit, Option } from 'effect';
+import { DBNotFoundError, FamilySearchRepo, UserProfileRepo } from '@repo/db';
+import { Cause, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
+import {
+  approvalGateUnavailableResponseBody,
+  approvalRequiredResponseBody,
+  requireLiveApproval
+} from '@/api/lib/approval-gate';
 import {
   requireVerifiedSafety,
   safetyVerificationGateUnavailableResponseBody,
@@ -16,8 +21,7 @@ import {
   authErrorToResponse,
   authenticate,
   handleNever,
-  requirePermissions,
-  type UserAndSession
+  requirePermissions
 } from '@/api/lib/effect-auth';
 import { presignProfileImageUrl } from '@/api/lib/profile-image';
 import { scheduleFamilySearchReconcile } from '@/api/lib/family-search-jobs';
@@ -26,19 +30,9 @@ import {
   validateFamilySearchQuery
 } from './families.validator';
 
-class ProviderNotApprovedError extends Data.TaggedError('ProviderNotApprovedError')<{}> {}
-
 // The familySearch permission says who MAY search; a live approval says who
-// may search RIGHT NOW. Admins carry the permission without an approval row,
-// so only service-provider callers go through the approval lookup.
-const ensureApprovedProvider = (userAndSession: UserAndSession) =>
-  userAndSession.user.role === 'service-provider'
-    ? ApprovalRepo.pipe(
-        Effect.flatMap((repo) => repo.findCurrentByUserId(userAndSession.user.id)),
-        Effect.catchTag('DBNotFoundError', () => Effect.fail(new ProviderNotApprovedError())),
-        Effect.asVoid
-      )
-    : Effect.void;
+// may search RIGHT NOW. Admins carry the permission without an approval row
+// and pass straight through the shared gate.
 
 const publicFamily = (
   family: {
@@ -105,7 +99,7 @@ export const searchFamiliesRouteProgram = (
     const userAndSession = yield* requirePermissions(headers, { familySearch: ['read'] })(
       authenticated
     );
-    yield* ensureApprovedProvider(userAndSession);
+    yield* requireLiveApproval(userAndSession);
     yield* requireVerifiedSafety(userAndSession);
     const minRadiusKm = yield* getFamilySearchMinRadiusKm.pipe(Effect.orElseSucceed(() => 10));
 
@@ -232,7 +226,7 @@ export const getFamilyRouteProgram = (headers: Headers, userId: string) =>
     const userAndSession = yield* requirePermissions(headers, { familySearch: ['read'] })(
       authenticated
     );
-    yield* ensureApprovedProvider(userAndSession);
+    yield* requireLiveApproval(userAndSession);
     yield* requireVerifiedSafety(userAndSession);
     const repo = yield* FamilySearchRepo;
     const candidate = yield* repo.findCandidateByUserId(userId);
@@ -259,16 +253,10 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: FamiliesRouteError) => 
       return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
     case 'SafetyVerificationGateUnavailableError':
       return c.json({ error: safetyVerificationGateUnavailableResponseBody }, 503);
-    case 'ProviderNotApprovedError':
-      return c.json(
-        {
-          error: {
-            code: 'PROVIDER_NOT_APPROVED' as const,
-            message: 'Family search is available once your profile is approved.'
-          }
-        },
-        403
-      );
+    case 'ApprovalRequiredError':
+      return c.json({ error: approvalRequiredResponseBody(error.role) }, 403);
+    case 'ApprovalGateUnavailableError':
+      return c.json({ error: approvalGateUnavailableResponseBody }, 503);
     case 'FamilySearchRequestValidationError':
       return c.json(
         { error: { code: 'INVALID_FAMILY_SEARCH' as const, message: error.message } },

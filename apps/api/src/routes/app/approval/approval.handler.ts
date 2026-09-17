@@ -32,6 +32,8 @@ import {
 import type { SqlError } from '@effect/sql/SqlError';
 import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
 import { scheduleProviderSearchReconcile } from '@/api/lib/provider-search-jobs';
+import { scheduleFamilySearchReconcile } from '@/api/lib/family-search-jobs';
+import { applicantRoleOf, type ApplicantRole } from '@/api/lib/approval-gate';
 import { publishNotificationBestEffort } from '@repo/notify';
 
 export class ApprovalRepoError extends Data.TaggedError('ApprovalRepoError')<{ cause: SqlError }> {}
@@ -44,6 +46,12 @@ export class ApprovalRequestNotFoundError extends Data.TaggedError('ApprovalRequ
 export class ApprovalEligibilityError extends Data.TaggedError('ApprovalEligibilityError')<{
   message: string;
 }> {}
+
+/** Re-indexes the side of the marketplace the applicant is listed on. */
+const scheduleSearchReconcile = (role: ApplicantRole, userId: string) =>
+  role === 'family'
+    ? scheduleFamilySearchReconcile(userId)
+    : scheduleProviderSearchReconcile(userId);
 
 export const createApprovalProgram = (userAndSession: UserAndSession, input: ApprovalInput) =>
   Effect.gen(function* () {
@@ -70,22 +78,38 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
       Effect.catchTags({
         SqlError: (cause) => Effect.fail(new ApprovalRepoError({ cause })),
         DBNotFoundError: () =>
-          Effect.fail(new ApprovalEligibilityError({ message: 'Provider profile was not found.' }))
+          Effect.fail(new ApprovalEligibilityError({ message: 'Applicant profile was not found.' }))
       })
     );
 
-    if (typeof profile.latitude !== 'number' || typeof profile.longitude !== 'number') {
+    const role = applicantRoleOf(profile.role);
+    if (role === null) {
       return yield* Effect.fail(
-        new ApprovalEligibilityError({ message: 'Provider must save a location before approval.' })
+        new ApprovalEligibilityError({
+          message: 'Only families and service providers are approved.'
+        })
       );
     }
 
-    if (services.length === 0) {
-      return yield* Effect.fail(
-        new ApprovalEligibilityError({
-          message: 'Provider must have at least one active service before approval.'
-        })
-      );
+    // A helper is approved to be booked, so their listing must be complete:
+    // a location to be found by and something to offer. A family's approval
+    // rests on documents and the safety verdict alone.
+    if (role === 'service-provider') {
+      if (typeof profile.latitude !== 'number' || typeof profile.longitude !== 'number') {
+        return yield* Effect.fail(
+          new ApprovalEligibilityError({
+            message: 'Provider must save a location before approval.'
+          })
+        );
+      }
+
+      if (services.length === 0) {
+        return yield* Effect.fail(
+          new ApprovalEligibilityError({
+            message: 'Provider must have at least one active service before approval.'
+          })
+        );
+      }
     }
 
     // Nobody becomes approved — and therefore searchable — without a current
@@ -94,13 +118,13 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
     // once: the index eligibility already keys off a live approval.
     const safetyRepo = yield* SafetyVerificationRepo;
     const verification = yield* safetyRepo
-      .findLive(input.userId, 'service-provider')
+      .findLive(input.userId, role)
       .pipe(Effect.catchTag('SqlError', (cause) => Effect.fail(new ApprovalRepoError({ cause }))));
 
     if (!isVerified(verification, toDateOnly(new Date()))) {
       return yield* Effect.fail(
         new ApprovalEligibilityError({
-          message: 'Provider must complete Poppynz safety verification before approval.'
+          message: 'Applicant must complete Poppynz safety verification before approval.'
         })
       );
     }
@@ -133,8 +157,9 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
     };
 
     // Indexing on grant is still required; expiry needs no delayed job — the
-    // search read path filters on approvalExpiresAt and re-verifies in the DB.
-    yield* scheduleProviderSearchReconcile(response.userId);
+    // search read path filters on the approval's expiry and re-verifies in
+    // the DB, on both sides of the marketplace.
+    yield* scheduleSearchReconcile(role, response.userId);
 
     const mailer = yield* Mailer;
     yield* sendMailBestEffort(
@@ -142,6 +167,7 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
       mailer.sendApprovalGranted({
         email: profile.email,
         name: profile.firstName || null,
+        role,
         expiresAt: approval.expiresAt
       })
     );
@@ -163,9 +189,9 @@ export class ApprovalNotFoundError extends Data.TaggedError('ApprovalNotFoundErr
 }> {}
 
 // Revokes a live approval before its expiry (status → rejected, reason kept
-// for the provider). No reconcile needed: the search read path re-verifies
+// for the applicant). No reconcile needed: both search read paths re-verify
 // approvals in the DB, and lazy repair deletes the stale index doc the next
-// time a search nominates this provider.
+// time a search nominates this applicant.
 export const revokeApprovalProgram = (id: string, reason: string) =>
   Effect.gen(function* () {
     const approvalRepo = yield* ApprovalRepo;
@@ -181,10 +207,11 @@ export const revokeApprovalProgram = (id: string, reason: string) =>
       Effect.gen(function* () {
         const userRepo = yield* UserRepo;
         const mailer = yield* Mailer;
-        const provider = yield* userRepo.findById(revoked.userId);
+        const applicant = yield* userRepo.findById(revoked.userId);
         yield* mailer.sendApprovalRevoked({
-          email: provider.email,
-          name: provider.name || null,
+          email: applicant.email,
+          name: applicant.name || null,
+          role: applicantRoleOf(applicant.role) ?? 'service-provider',
           reason
         });
       })

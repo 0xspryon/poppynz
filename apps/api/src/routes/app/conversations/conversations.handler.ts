@@ -1,6 +1,5 @@
 import type { SqlError } from '@effect/sql/SqlError';
 import {
-  ApprovalRepo,
   ContractRepo,
   ConversationRepo,
   ServiceNeededRepo,
@@ -24,6 +23,11 @@ import {
   authErrorToResponse,
   handleNever
 } from '@/api/lib/effect-auth';
+import {
+  approvalGateUnavailableResponseBody,
+  approvalRequiredResponseBody,
+  requireLiveApproval
+} from '@/api/lib/approval-gate';
 import {
   requireVerifiedSafety,
   safetyVerificationGateUnavailableResponseBody,
@@ -74,10 +78,6 @@ export class NotConversationReceiverError extends Data.TaggedError(
 )<{}> {}
 
 export class ConversationLockedError extends Data.TaggedError('ConversationLockedError')<{}> {}
-
-/** Reach-outs are how providers contact families they found via search, and
- * search requires a live approval — so initiating one does too. */
-export class ProviderNotApprovedError extends Data.TaggedError('ProviderNotApprovedError')<{}> {}
 
 /** Postgres unique-constraint violation (SQLSTATE 23505), possibly nested a
  * few `cause` levels deep depending on the driver wrapping. */
@@ -244,26 +244,13 @@ export const createReachoutProgram = (
       return yield* Effect.fail(new ConversationPairInvalidError());
     }
 
-    // Mirrors the family-search gate: the permission says a provider MAY
-    // contact families, a live approval says they may do it RIGHT NOW.
-    // Existing conversations are unaffected — revocation stops new contacts.
-    // Safety verification gates BOTH sides. The approval check below stays
-    // helper-specific because approval is a helper concept; verification is
-    // not, and applying it to only one role is how families ended up ungated.
+    // Mirrors the search gates: the permission says an applicant MAY contact
+    // the other side, a live approval says they may do it RIGHT NOW, and the
+    // safety verification underpins both. All three apply to families and
+    // helpers alike. Existing conversations are unaffected — revocation stops
+    // new contacts.
     yield* requireVerifiedSafety(userAndSession);
-
-    if (sender.role === 'service-provider') {
-      const approvalRepo = yield* ApprovalRepo;
-      const approval = yield* approvalRepo.findCurrentByUserId(sender.id).pipe(
-        Effect.catchTags({
-          DBNotFoundError: () => Effect.succeed(null),
-          SqlError: (cause) => Effect.fail(new ConversationRepoError({ cause }))
-        })
-      );
-      if (!approval) {
-        return yield* Effect.fail(new ProviderNotApprovedError());
-      }
-    }
+    yield* requireLiveApproval(userAndSession);
 
     const ignoredCutoff = yield* reachoutIgnoredCutoff;
     const existing = yield* conversationRepo
@@ -788,16 +775,20 @@ const conversationRouteErrorToResponse = (
       return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
     case 'SafetyVerificationGateUnavailableError':
       return c.json({ error: safetyVerificationGateUnavailableResponseBody }, 503);
-    case 'ProviderNotApprovedError':
+    case 'ApprovalRequiredError':
       return c.json(
         {
-          error: {
-            code: 'PROVIDER_NOT_APPROVED' as const,
-            message: 'You need a current approval before reaching out to families.'
-          }
+          error: approvalRequiredResponseBody(
+            error.role,
+            error.role === 'family'
+              ? 'You need a current approval before reaching out to helpers.'
+              : 'You need a current approval before reaching out to families.'
+          )
         },
         403
       );
+    case 'ApprovalGateUnavailableError':
+      return c.json({ error: approvalGateUnavailableResponseBody }, 503);
     default:
       return handleNever(c, error);
   }

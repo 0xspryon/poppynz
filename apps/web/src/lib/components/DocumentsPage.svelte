@@ -7,7 +7,8 @@
 	import {
 		getFamilyOnboardingState,
 		getOnboardingState,
-		type OnboardingDocument
+		type OnboardingDocument,
+		type OnboardingState
 	} from '$lib/api/onboarding';
 	import { uploadKycDocument } from '$lib/api/kyc-documents';
 	import {
@@ -33,8 +34,16 @@
 	const verificationHref = $derived(
 		role === 'family' ? resolve('/family/verification') : resolve('/service-provider/verification')
 	);
+	const approvalHref = $derived(
+		role === 'family' ? resolve('/family/approval') : resolve('/service-provider/approval')
+	);
 
 	let documents = $state<Array<OnboardingDocument> | null>(null);
+	/** Where the applicant stands with approval — decides the call to action
+	 * once every required document is in. */
+	let approvalHub = $state<Pick<OnboardingState, 'approval' | 'latestApprovalRequest'> | null>(
+		null
+	);
 	let loading = $state(true);
 	let errorMessage = $state('');
 
@@ -84,6 +93,10 @@
 			role === 'family' ? await getFamilyOnboardingState() : await getOnboardingState();
 		if (result.ok) {
 			documents = result.data.documents;
+			approvalHub = {
+				approval: result.data.approval,
+				latestApprovalRequest: result.data.latestApprovalRequest
+			};
 		} else {
 			errorMessage = RETRY_MESSAGE;
 		}
@@ -107,6 +120,15 @@
 	const requiredDocs = $derived(documents?.filter((doc) => !doc.isOptional) ?? []);
 	const optionalDocs = $derived(documents?.filter((doc) => doc.isOptional) ?? []);
 	const requiredSubmitted = $derived(requiredDocs.filter((doc) => doc.status !== 'missing').length);
+	const allRequiredIn = $derived(
+		requiredDocs.length > 0 && requiredSubmitted === requiredDocs.length
+	);
+	// Invite the applicant onward the moment the last required document lands:
+	// nothing until then, nothing once they're approved or already in review.
+	const approvalCta = $derived.by((): 'submit' | 'pending' | null => {
+		if (!allRequiredIn || !approvalHub || approvalHub.approval) return null;
+		return approvalHub.latestApprovalRequest?.status === 'submitted' ? 'pending' : 'submit';
+	});
 
 	function chipStatus(doc: OnboardingDocument): ChipStatus {
 		return doc.status === 'missing' ? 'missing' : doc.status;
@@ -334,6 +356,33 @@
 				</p>
 			{/if}
 		</div>
+
+		{#if approvalCta === 'submit'}
+			<div
+				class="mt-4 flex flex-wrap items-center gap-4 rounded-lg border border-success-content
+					bg-base-100 px-5 py-4"
+			>
+				<span
+					class="flex size-11 shrink-0 items-center justify-center rounded-full bg-success-content"
+				>
+					<i class="las la-user-shield text-xl text-success" aria-hidden="true"></i>
+				</span>
+				<div class="min-w-0 flex-1">
+					<div class="font-display text-[15px] font-bold text-base-content">
+						All required documents are in
+					</div>
+					<p class="mt-0.5 text-[13px] text-base-content-muted">
+						Submit your profile for approval — a Poppynz admin usually reviews within ~2 days.
+					</p>
+				</div>
+				<a href={approvalHref} class="btn btn-primary btn-sm">Submit for approval</a>
+			</div>
+		{:else if approvalCta === 'pending'}
+			<p class="mt-4 text-[13px] text-base-content-muted">
+				Your profile is with our review team.
+				<a href={approvalHref} class="link link-primary">Check your approval status</a>
+			</p>
+		{/if}
 
 		{#if optionalDocs.length > 0}
 			<div class="mt-6 mb-2.5 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">

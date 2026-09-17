@@ -4,6 +4,7 @@ import {
   ApprovalRequestRepo,
   DBNotFoundError,
   KycDocumentTypeRepo,
+  ServiceNeededRepo,
   UserProfileRepo,
   UserRepo
 } from '@repo/db';
@@ -15,6 +16,7 @@ import {
   handleNever,
   requirePermissions
 } from '@/api/lib/effect-auth';
+import { applicantRoleOf, type ApplicantRole } from '@/api/lib/approval-gate';
 import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
 import { loadChecklist, loadChecklistWithTypes } from '@/api/lib/onboarding-checklist';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
@@ -31,14 +33,22 @@ class ApprovalRequestAlreadySubmittedError extends Data.TaggedError(
   'ApprovalRequestAlreadySubmittedError'
 )<{}> {}
 
-const ensureServiceProvider = <T extends { user: { role: string | null } }>(userAndSession: T) =>
-  userAndSession.user.role === 'service-provider'
-    ? Effect.succeed(userAndSession)
+// Families and helpers go through the same approval; admins never apply.
+const ensureApplicant = <T extends { user: { role: string | null } }>(userAndSession: T) => {
+  const role = applicantRoleOf(userAndSession.user.role);
+  return role
+    ? Effect.succeed({ userAndSession, role })
     : Effect.fail(
         new ApprovalRequestValidationError({
-          message: 'Only service providers can submit approval requests.'
+          message: 'Only families and service providers can submit approval requests.'
         })
       );
+};
+
+/** A stored role that is neither applicant role means a legacy or corrupt
+ * row; presenting it as a helper keeps the admin queue rendering. */
+const roleOrProvider = (role: string | null | undefined): ApplicantRole =>
+  applicantRoleOf(role) ?? 'service-provider';
 
 const toRequestResponse = <T extends { reviewedAt: Date | null; createdAt: Date; updatedAt: Date }>(
   request: T
@@ -49,8 +59,8 @@ const toRequestResponse = <T extends { reviewedAt: Date | null; createdAt: Date;
   updatedAt: request.updatedAt.toISOString()
 });
 
-const buildWarnings = (userId: string) =>
-  loadChecklist(userId, 'service-provider').pipe(Effect.map((state) => state.warnings));
+const buildWarnings = (userId: string, role: ApplicantRole) =>
+  loadChecklist(userId, role).pipe(Effect.map((state) => state.warnings));
 
 export const createApprovalRequestRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
@@ -58,7 +68,7 @@ export const createApprovalRequestRouteProgram = (headers: Headers) =>
     const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['write'] })(
       authenticated
     );
-    const provider = yield* ensureServiceProvider(userAndSession);
+    const { userAndSession: provider, role } = yield* ensureApplicant(userAndSession);
     const repo = yield* ApprovalRequestRepo;
     const existingSubmitted = yield* repo.findSubmittedByUserId(provider.user.id).pipe(
       Effect.catchTags({
@@ -71,7 +81,7 @@ export const createApprovalRequestRouteProgram = (headers: Headers) =>
     }
 
     const [request, warnings] = yield* Effect.all(
-      [repo.createSubmitted(provider.user.id), buildWarnings(provider.user.id)],
+      [repo.createSubmitted(provider.user.id), buildWarnings(provider.user.id, role)],
       { concurrency: 'unbounded' }
     );
 
@@ -80,14 +90,16 @@ export const createApprovalRequestRouteProgram = (headers: Headers) =>
       'approval-request submitted',
       mailer.sendApprovalRequestSubmitted({
         email: provider.user.email,
-        name: provider.user.name || null
+        name: provider.user.name || null,
+        role
       })
     );
     yield* sendMailBestEffort(
       'approval-request admin notification',
       mailer.sendAdminApprovalRequestSubmitted({
-        providerName: provider.user.name || null,
-        providerEmail: provider.user.email
+        applicantName: provider.user.name || null,
+        applicantEmail: provider.user.email,
+        role
       })
     );
 
@@ -105,15 +117,20 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
       { concurrency: 'unbounded' }
     );
 
-    // Warnings reflect the provider's CURRENT checklist (a doc uploaded after
-    // submission clears the warning) — one lookup per distinct applicant.
-    const loadChecklistFor = loadChecklistWithTypes(types, 'service-provider');
-    const userIds = [...new Set(requests.map((request) => request.userId))];
+    // Warnings reflect the applicant's CURRENT checklist (a doc uploaded after
+    // submission clears the warning) — one lookup per distinct applicant,
+    // built for that applicant's role since each role owes its own documents.
+    const roleByUser = new Map(
+      requests.map((request) => [request.userId, roleOrProvider(request.applicant.role)] as const)
+    );
     const warningsByUser = new Map(
       yield* Effect.forEach(
-        userIds,
-        (userId) =>
-          loadChecklistFor(userId).pipe(Effect.map((state) => [userId, state.warnings] as const)),
+        [...roleByUser.entries()],
+        ([userId, role]) =>
+          loadChecklistWithTypes(
+            types,
+            role
+          )(userId).pipe(Effect.map((state) => [userId, state.warnings] as const)),
         { concurrency: 5 }
       )
     );
@@ -121,7 +138,7 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
     return {
       requests: requests.map((request) => ({
         ...toRequestResponse(request),
-        applicant: request.applicant,
+        applicant: { ...request.applicant, role: roleOrProvider(request.applicant.role) },
         warnings: warningsByUser.get(request.userId) ?? {
           missingRequiredDocuments: [],
           missingServicesOffered: false
@@ -138,19 +155,25 @@ export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string
     const requestRepo = yield* ApprovalRequestRepo;
     const profileRepo = yield* UserProfileRepo;
     const approvalRepo = yield* ApprovalRepo;
+    const needsRepo = yield* ServiceNeededRepo;
     const request = yield* requestRepo.findById(id);
-    const [profile, { checklist, services, warnings }, currentApproval] = yield* Effect.all(
+    const profile = yield* profileRepo.findByUserId(request.userId);
+    const role = roleOrProvider(profile.role);
+    const [{ checklist, services, warnings }, currentApproval, servicesNeeded] = yield* Effect.all(
       [
-        profileRepo.findByUserId(request.userId),
-        loadChecklist(request.userId, 'service-provider'),
+        loadChecklist(request.userId, role),
         approvalRepo
           .findCurrentByUserId(request.userId)
-          .pipe(Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)))
+          .pipe(Effect.catchTag('DBNotFoundError', () => Effect.succeed(null))),
+        // A family lists what it needs rather than what it offers; the
+        // reviewer sees it for context, it is not a condition of approval.
+        role === 'family' ? needsRepo.listByUserId(request.userId) : Effect.succeed([])
       ],
       { concurrency: 'unbounded' }
     );
     return {
       approvalRequest: toRequestResponse(request),
+      applicantRole: role,
       currentApproval: currentApproval
         ? {
             id: currentApproval.id,
@@ -166,6 +189,11 @@ export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string
         .filter((entry) => entry.isOptional)
         .map((entry) => ({ id: entry.documentTypeId, name: entry.name })),
       servicesOffered: services,
+      servicesNeeded: servicesNeeded.map((need) => ({
+        id: need.id,
+        name: need.name,
+        description: need.description
+      })),
       warnings
     };
   });
@@ -194,6 +222,7 @@ export const rejectAdminApprovalRequestRouteProgram = (
         yield* mailer.sendApprovalRequestRejected({
           email: applicant.email,
           name: applicant.name || null,
+          role: roleOrProvider(applicant.role),
           reason: input.reason
         });
       })

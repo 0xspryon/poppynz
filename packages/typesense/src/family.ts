@@ -27,10 +27,12 @@ export type FamilySearchDocument = {
   servicesNormalized: Array<string>;
   serviceDescriptions: Array<string>;
   serviceNamesText: string;
-  // End of the day the family's safety verification lapses (epoch ms). The
-  // read path filters on it so a lapsed family drops out of results before
-  // any reconcile runs — the same trick the provider index plays with
-  // `approvalExpiresAt`.
+  // When the family stops being discoverable (epoch ms): the EARLIER of the
+  // end of their safety verification's expiry day and their approval's
+  // expiry. The read path filters on it so a lapsed verdict or approval
+  // drops the family out of results before any reconcile runs — the same
+  // trick the provider index plays with `approvalExpiresAt`. The field keeps
+  // its original name so the collection schema is unchanged.
   verifiedUntil: number;
   updatedAt: number;
 };
@@ -116,13 +118,17 @@ const verifiedUntilOf = (expiresOn: string | null): number =>
 export const buildFamilySearchDocument = (
   candidate: FamilySearchCandidate
 ): FamilySearchDocument | null => {
-  const { profile, services, verification } = candidate;
+  const { profile, services, verification, approval } = candidate;
   const activeServices = services.filter((service) => service.deletedAt === null);
 
   if (profile.role !== 'family') return null;
-  // Nobody is discoverable without a current Poppynz safety verification.
-  // Families have no approval step, so this is THE gate for the index.
-  const verifiedUntil = verification ? verifiedUntilOf(verification.expiresOn) : 0;
+  // Nobody is discoverable without a current Poppynz safety verification AND
+  // a live admin approval — families are screened and approved exactly like
+  // helpers. Whichever lapses first is the cutoff the read path filters on.
+  const verifiedUntil = Math.min(
+    verification ? verifiedUntilOf(verification.expiresOn) : 0,
+    approval ? approval.expiresAt.getTime() : 0
+  );
   if (verifiedUntil <= Date.now()) return null;
   // A ban with no expiry is permanent; an expiry in the past means the ban has lapsed.
   if (profile.banned === true && (profile.banExpires === null || profile.banExpires > new Date()))

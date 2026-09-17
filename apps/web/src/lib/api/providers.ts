@@ -1,6 +1,7 @@
 /** Family marketplace: vetted-provider search + public provider profiles,
- * backed by /providers/search and /providers/:userId. Radius searches are
- * centered server-side on the family's saved profile location. */
+ * backed by /providers/search and /providers/:userId. Only approved families
+ * may search; the API answers FAMILY_NOT_APPROVED (403) otherwise. Radius
+ * searches are centered server-side on the family's saved profile location. */
 import { apiClient, call, type ApiResult, type ErrorsOf } from './client';
 
 const searchEndpoint = apiClient.providers.search.$get;

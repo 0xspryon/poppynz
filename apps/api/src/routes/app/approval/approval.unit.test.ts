@@ -13,8 +13,12 @@ import {
 } from '@repo/db';
 import { SqlError } from '@effect/sql/SqlError';
 import { MailerError, makeMailerTest } from '@/api/lib/mailer';
-import { makeProviderSearchQueueTest } from '@repo/queue';
-import { makeProviderSearchOutboxRepoTest, type ProviderSearchOutbox } from '@repo/db';
+import { makeFamilySearchQueueTest, makeProviderSearchQueueTest } from '@repo/queue';
+import {
+  makeFamilySearchOutboxRepoTest,
+  makeProviderSearchOutboxRepoTest,
+  type ProviderSearchOutbox
+} from '@repo/db';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import {
@@ -130,6 +134,10 @@ const makeLayer = (
     revokeSucceeds?: boolean;
     sentMails?: Array<{ kind: string; mail: unknown }>;
     mailerFail?: boolean;
+    /** The applicant's role, as stored on their account and profile. */
+    role?: 'family' | 'service-provider';
+    /** Which side's index reconcile was scheduled. */
+    reconciled?: Array<{ side: 'family' | 'provider'; userId: string }>;
   } = {}
 ) =>
   Layer.mergeAll(
@@ -185,7 +193,7 @@ const makeLayer = (
           createdAt: new Date('2026-06-12T00:00:00.000Z'),
           updatedAt: new Date('2026-06-12T00:00:00.000Z'),
           isAnonymous: false,
-          role: 'service-provider',
+          role: options.role ?? 'service-provider',
           banned: false,
           banReason: null,
           banExpires: null,
@@ -236,7 +244,7 @@ const makeLayer = (
         Effect.succeed({
           userId,
           email: 'provider@example.com',
-          role: 'service-provider',
+          role: options.role ?? 'service-provider',
           language: 'en',
           firstName: 'Provider',
           lastName: 'User',
@@ -260,19 +268,23 @@ const makeLayer = (
     }),
     makeServiceOfferedRepoTest({
       listByUserId: (userId) =>
-        Effect.succeed([
-          {
-            id: 'service-1',
-            userId,
-            name: 'Childcare',
-            description: null,
-            hourlyRateCents: 2500,
-            currency: 'CAD',
-            deletedAt: null,
-            createdAt: new Date('2026-06-12T00:00:00.000Z'),
-            updatedAt: new Date('2026-06-12T00:00:00.000Z')
-          }
-        ]),
+        Effect.succeed(
+          options.role === 'family'
+            ? []
+            : [
+                {
+                  id: 'service-1',
+                  userId,
+                  name: 'Childcare',
+                  description: null,
+                  hourlyRateCents: 2500,
+                  currency: 'CAD',
+                  deletedAt: null,
+                  createdAt: new Date('2026-06-12T00:00:00.000Z'),
+                  updatedAt: new Date('2026-06-12T00:00:00.000Z')
+                }
+              ]
+        ),
       create: () => Effect.fail(new SqlError({ message: 'not used' })),
       updateByIdForUser: (id) =>
         Effect.fail(new DBNotFoundError({ entity: 'serviceOffered', value: id })),
@@ -280,8 +292,26 @@ const makeLayer = (
         Effect.fail(new DBNotFoundError({ entity: 'serviceOffered', value: id }))
     }),
     makeProviderSearchQueueTest({
-      enqueueReconcile: () => Effect.succeed({ id: 'job-1', name: 'reconcile-provider' }),
+      enqueueReconcile: ({ userId }) => {
+        options.reconciled?.push({ side: 'provider', userId });
+        return Effect.succeed({ id: 'job-1', name: 'reconcile-provider' });
+      },
       enqueueReindex: () => Effect.succeed({ id: 'job-3', name: 'reindex-all-providers' })
+    }),
+    makeFamilySearchQueueTest({
+      enqueueReconcile: ({ userId }) => {
+        options.reconciled?.push({ side: 'family', userId });
+        return Effect.succeed({ id: 'job-2', name: 'reconcile-family' });
+      },
+      enqueueReindex: () => Effect.succeed({ id: 'job-4', name: 'reindex-all-families' })
+    }),
+    makeFamilySearchOutboxRepoTest({
+      createPending: (userId) => Effect.succeed(outbox(userId) as never),
+      listUnresolved: () => Effect.succeed([]),
+      markProcessing: (id) => Effect.succeed(outbox(id) as never),
+      markProcessed: (id) => Effect.succeed(outbox(id) as never),
+      markFailed: (id) => Effect.succeed(outbox(id) as never),
+      markSupersededBefore: () => Effect.succeed(0)
     }),
     makeProviderSearchOutboxRepoTest({
       createPending: (userId) => Effect.succeed(outbox(userId)),
@@ -328,6 +358,31 @@ describe('createApprovalProgram', () => {
     expect(markedApproved).toEqual([{ id: 'request-1', reviewedBy: 'admin-1' }]);
   });
 
+  it('re-indexes the helper side when a provider is approved', async () => {
+    const reconciled: Array<{ side: 'family' | 'provider'; userId: string }> = [];
+    await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(Effect.provide(makeLayer({ reconciled })))
+    );
+    expect(reconciled).toEqual([{ side: 'provider', userId: 'provider-1' }]);
+  });
+
+  it('approves a family on documents and verification alone, and re-indexes the family side', async () => {
+    const reconciled: Array<{ side: 'family' | 'provider'; userId: string }> = [];
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    // No services, and the family fixture has a location only incidentally —
+    // neither is a condition for a family.
+    const result = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(makeLayer({ role: 'family', reconciled, sentMails }))
+      )
+    );
+
+    expect(result.id).toBe('approval-1');
+    expect(reconciled).toEqual([{ side: 'family', userId: 'provider-1' }]);
+    expect(sentMails[0]?.mail).toMatchObject({ role: 'family' });
+  });
+
   it('sends an approval granted mail to the provider', async () => {
     const sentMails: Array<{ kind: string; mail: unknown }> = [];
 
@@ -341,6 +396,7 @@ describe('createApprovalProgram', () => {
         mail: {
           email: 'provider@example.com',
           name: 'Provider',
+          role: 'service-provider',
           expiresAt: new Date('2027-01-01T00:00:00.000Z')
         }
       }
@@ -435,6 +491,7 @@ describe('revokeApprovalProgram', () => {
         mail: {
           email: 'provider@example.com',
           name: 'Provider User',
+          role: 'service-provider',
           reason: 'Expired vulnerable sector check'
         }
       }

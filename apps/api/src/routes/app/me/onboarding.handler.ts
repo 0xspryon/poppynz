@@ -19,6 +19,7 @@ import {
   requirePermissions,
   type UserAndSession
 } from '@/api/lib/effect-auth';
+import { applicantRoleOf } from '@/api/lib/approval-gate';
 import { loadChecklist } from '@/api/lib/onboarding-checklist';
 import { isVerified, presentedStatus, toDateOnly } from '@/api/lib/safety-verification';
 
@@ -80,6 +81,12 @@ const ensureServiceProvider = <T extends { user: { role: string | null } }>(user
 
 const ensureFamily = <T extends { user: { role: string | null } }>(userAndSession: T) =>
   userAndSession.user.role === 'family'
+    ? Effect.succeed(userAndSession)
+    : Effect.fail(new OnboardingRoleError());
+
+/** Either applicant role — approval history is the same shape for both. */
+const ensureApplicant = <T extends { user: { role: string | null } }>(userAndSession: T) =>
+  applicantRoleOf(userAndSession.user.role)
     ? Effect.succeed(userAndSession)
     : Effect.fail(new OnboardingRoleError());
 
@@ -148,8 +155,8 @@ export const getOnboardingRouteProgram = (headers: Headers) =>
 /** The family getting-started checklist: the same steps the welcome email
  * promises, with completion derived from real data. A saved location and at
  * least one registered need are what make the family findable; the safety
- * verification is what makes them ELIGIBLE to be found — nobody is
- * discoverable, on either side, without one. */
+ * verification and an admin approval are what make them ELIGIBLE to be found
+ * — nobody is discoverable, on either side, without both. */
 export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const family = yield* ensureFamily(userAndSession);
@@ -158,21 +165,26 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
     const profileRepo = yield* UserProfileRepo;
     const needsRepo = yield* ServiceNeededRepo;
     const safetyRepo = yield* SafetyVerificationRepo;
+    const approvalRepo = yield* ApprovalRepo;
+    const approvalRequestRepo = yield* ApprovalRequestRepo;
 
-    const [profile, needs, { checklist, warnings }, verification] = yield* Effect.all(
-      [
-        profileRepo.findByUserId(userId).pipe(
-          Effect.catchTags({
-            DBNotFoundError: () => Effect.fail(new OnboardingProfileNotFoundError()),
-            SqlError: (cause) => Effect.fail(new OnboardingRepoError({ cause }))
-          })
-        ),
-        mapRepoError(needsRepo.listByUserId(userId)),
-        mapRepoError(loadChecklist(userId, 'family')),
-        mapRepoError(safetyRepo.findLive(userId, 'family'))
-      ],
-      { concurrency: 'unbounded' }
-    );
+    const [profile, needs, { checklist, warnings }, verification, approval, latestRequest] =
+      yield* Effect.all(
+        [
+          profileRepo.findByUserId(userId).pipe(
+            Effect.catchTags({
+              DBNotFoundError: () => Effect.fail(new OnboardingProfileNotFoundError()),
+              SqlError: (cause) => Effect.fail(new OnboardingRepoError({ cause }))
+            })
+          ),
+          mapRepoError(needsRepo.listByUserId(userId)),
+          mapRepoError(loadChecklist(userId, 'family')),
+          mapRepoError(safetyRepo.findLive(userId, 'family')),
+          nullOnNotFound(approvalRepo.findCurrentByUserId(userId)),
+          nullOnNotFound(approvalRequestRepo.findLatestByUserId(userId))
+        ],
+        { concurrency: 'unbounded' }
+      );
 
     const locationComplete =
       typeof profile.latitude === 'number' && typeof profile.longitude === 'number';
@@ -205,6 +217,12 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
         verified: isVerified(verification, today),
         expiresOn: isVerified(verification, today) ? (verification?.expiresOn ?? null) : null
       },
+      // Families go through the same approval as helpers once their documents
+      // are in — the same fields the helper hub reads, so one approval page
+      // serves both roles.
+      approval: toApprovalSummary(approval),
+      latestApprovalRequest: toRequestSummary(latestRequest),
+      canSubmit: latestRequest?.status !== 'submitted',
       warnings
     };
   });
@@ -218,8 +236,8 @@ export const getFamilyOnboardingRouteProgram = (headers: Headers) =>
 
 export const getOnboardingHistoryProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
-    const provider = yield* ensureServiceProvider(userAndSession);
-    const userId = provider.user.id;
+    const applicant = yield* ensureApplicant(userAndSession);
+    const userId = applicant.user.id;
 
     const approvalRepo = yield* ApprovalRepo;
     const approvalRequestRepo = yield* ApprovalRequestRepo;

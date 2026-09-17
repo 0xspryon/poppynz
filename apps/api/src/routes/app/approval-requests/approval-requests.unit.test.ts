@@ -17,7 +17,8 @@ import {
   type Session,
   type User,
   type UserProfile,
-  EmptyApprovalRepoTest
+  EmptyApprovalRepoTest,
+  makeServiceNeededRepoTest
 } from '@repo/db';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
@@ -159,6 +160,8 @@ const makeLayer = (
     services?: Array<ServiceOffered>;
     onCreateSubmitted?: (userId: string) => void;
     onReject?: (id: string, reviewedBy: string, reason: string) => void;
+    /** Family applicants list needs rather than services. */
+    needs?: Array<{ id: string; name: string; description: string | null }>;
     sentMails?: Array<{ kind: string; mail: unknown }>;
     mailerFail?: boolean;
   } = {}
@@ -183,6 +186,16 @@ const makeLayer = (
       listLapsed: () => Effect.succeed([])
     }),
     EmptyApprovalRepoTest,
+    makeServiceNeededRepoTest({
+      listByUserId: () => Effect.succeed((options.needs ?? []) as never),
+      findByIdForUser: (id) =>
+        Effect.fail(new DBNotFoundError({ entity: 'serviceNeeded', value: id })),
+      create: () => Effect.fail(new SqlError({ message: 'not used' }) as never),
+      updateByIdForUser: (id) =>
+        Effect.fail(new DBNotFoundError({ entity: 'serviceNeeded', value: id })),
+      softDeleteByIdForUser: (id) =>
+        Effect.fail(new DBNotFoundError({ entity: 'serviceNeeded', value: id }))
+    }),
     makeMailerTest({
       sendApprovalRequestSubmitted: (mail) => {
         options.sentMails?.push({ kind: 'submitted', mail });
@@ -209,7 +222,12 @@ const makeLayer = (
         Effect.succeed(
           (options.approvalRequests ?? []).map((request) => ({
             ...request,
-            applicant: { email: 'provider@example.com', firstName: 'Maria', lastName: 'Santos' }
+            applicant: {
+              email: 'provider@example.com',
+              role: options.user?.role === 'family' ? 'family' : 'service-provider',
+              firstName: 'Maria',
+              lastName: 'Santos'
+            }
           }))
         ),
       countByStatus: () => Effect.succeed({ submitted: 0, approved: 0, rejected: 0 }),
@@ -357,11 +375,61 @@ describe('createApprovalRequestRouteProgram', () => {
     );
 
     expect(sentMails).toEqual([
-      { kind: 'submitted', mail: { email: 'provider@example.com', name: 'Provider User' } },
+      {
+        kind: 'submitted',
+        mail: { email: 'provider@example.com', name: 'Provider User', role: 'service-provider' }
+      },
       {
         kind: 'admin-notification',
-        mail: { providerName: 'Provider User', providerEmail: 'provider@example.com' }
+        mail: {
+          applicantName: 'Provider User',
+          applicantEmail: 'provider@example.com',
+          role: 'service-provider'
+        }
       }
+    ]);
+  });
+
+  it('lets a family submit, judged on family documents and never on services', async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+    const family = user({
+      id: 'family-1',
+      role: 'family',
+      name: 'Priya K',
+      email: 'priya@example.com'
+    });
+
+    const result = await Effect.runPromise(
+      createApprovalRequestRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            user: family,
+            sentMails,
+            // Only the family-owed type counts; the helper's identity document
+            // must not show up as missing on a family's request.
+            documentTypes: [
+              documentType(),
+              documentType({
+                id: 'gate-1',
+                name: 'Vulnerable Sector Check',
+                appliesToRole: 'family'
+              })
+            ],
+            documents: [],
+            services: []
+          })
+        )
+      )
+    );
+
+    expect(result.status).toBe('submitted');
+    expect(result.warnings).toEqual({
+      missingRequiredDocuments: [{ documentTypeId: 'gate-1', name: 'Vulnerable Sector Check' }],
+      missingServicesOffered: false
+    });
+    expect(sentMails.map((entry) => entry.mail)).toEqual([
+      { email: 'priya@example.com', name: 'Priya K', role: 'family' },
+      { applicantName: 'Priya K', applicantEmail: 'priya@example.com', role: 'family' }
     ]);
   });
 
@@ -386,10 +454,10 @@ describe('createApprovalRequestRouteProgram', () => {
     expect(getFailure(exit)._tag).toBe('ApprovalRequestAlreadySubmittedError');
   });
 
-  it('fails when the authenticated user is not a service provider', async () => {
+  it('fails when the authenticated user is not an applicant', async () => {
     const exit = await Effect.runPromise(
       createApprovalRequestRouteProgram(new Headers()).pipe(
-        Effect.provide(makeLayer({ user: user({ role: 'family' }) })),
+        Effect.provide(makeLayer({ user: user({ role: 'admin' }) })),
         Effect.exit
       )
     );
@@ -428,9 +496,43 @@ describe('admin approval request review route programs', () => {
     expect(result.requests[0]).toMatchObject({ id: 'request-1', status: 'submitted' });
     expect(result.requests[0]?.applicant).toEqual({
       email: 'provider@example.com',
+      role: 'service-provider',
       firstName: 'Maria',
       lastName: 'Santos'
     });
+  });
+
+  it('returns a family review packet with needs instead of services', async () => {
+    const result = await Effect.runPromise(
+      getAdminApprovalRequestRouteProgram(new Headers(), 'request-1').pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            profile: profile({ role: 'family' }),
+            documentTypes: [
+              documentType(),
+              documentType({
+                id: 'gate-1',
+                name: 'Vulnerable Sector Check',
+                appliesToRole: 'family'
+              })
+            ],
+            documents: [],
+            services: [],
+            needs: [{ id: 'need-1', name: 'After-school care', description: null }]
+          })
+        )
+      )
+    );
+
+    expect(result.applicantRole).toBe('family');
+    expect(result.missingRequiredDocuments).toEqual([
+      { documentTypeId: 'gate-1', name: 'Vulnerable Sector Check' }
+    ]);
+    expect(result.warnings.missingServicesOffered).toBe(false);
+    expect(result.servicesNeeded).toEqual([
+      { id: 'need-1', name: 'After-school care', description: null }
+    ]);
   });
 
   it('returns an approval request review packet', async () => {
@@ -503,6 +605,7 @@ describe('admin approval request review route programs', () => {
         mail: {
           email: 'provider@example.com',
           name: 'Provider User',
+          role: 'service-provider',
           reason: 'Missing required documents.'
         }
       }

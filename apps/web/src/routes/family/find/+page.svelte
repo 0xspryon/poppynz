@@ -108,6 +108,9 @@
 	// --- results ---
 	let loading = $state(true);
 	let searchError = $state(false);
+	// Families browse helpers only once approved (mirrors the helper side);
+	// the API answers FAMILY_NOT_APPROVED until then, rendered as its own state.
+	let notApproved = $state(false);
 	let data = $state<ProviderSearchData | null>(null);
 	let retryTick = $state(0);
 	let requestId = 0;
@@ -141,7 +144,8 @@
 	// The tour waits for a settled page (results rendered, modal out of the
 	// way) so its anchors exist; it self-limits to one run via TOUR_KEY.
 	$effect(() => {
-		if (tourStarted || loading || !profileLoaded || !modalDecided || modalOpen) return;
+		if (tourStarted || loading || !profileLoaded || !modalDecided || modalOpen || notApproved)
+			return;
 		tourStarted = true;
 		startTourOnce(TOUR_KEY, TOUR_STEPS);
 	});
@@ -215,7 +219,10 @@
 			if (id !== requestId) return;
 			loading = false;
 			if (result.ok) {
+				notApproved = false;
 				data = result.data;
+			} else if (result.error.code === 'FAMILY_NOT_APPROVED') {
+				notApproved = true;
 			} else {
 				searchError = true;
 			}
@@ -482,327 +489,357 @@
 {/snippet}
 
 <div class="mx-auto flex max-w-6xl flex-col gap-5">
-	<!-- Search header -->
-	<form
-		class="flex flex-col gap-3 rounded-xl border border-card-border bg-base-100 p-4"
-		onsubmit={submitKeyword}
-	>
-		<div class="flex flex-col gap-3 lg:flex-row lg:items-center">
-			<label class="input flex min-w-0 flex-1 items-center gap-2" data-tour="search">
-				<i class="las la-search text-outline" aria-hidden="true"></i>
-				<input
-					type="search"
-					class="grow"
-					placeholder="Search by service, name or keyword…"
-					aria-label="Search providers"
-					bind:value={qInput}
-				/>
-			</label>
-			<button type="submit" class="btn btn-primary lg:w-auto">Search</button>
+	{#if notApproved}
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
+			<span class="flex size-14 items-center justify-center rounded-full bg-warning-content">
+				<i class="las la-user-shield text-2xl text-warning" aria-hidden="true"></i>
+			</span>
+			<h1 class="font-display text-lg font-bold text-base-content">
+				Finding help unlocks once you're approved
+			</h1>
+			<p class="max-w-sm text-sm text-base-content-muted">
+				Upload your documents, then submit your profile for review. When the Poppynz team has
+				approved it, you'll be able to browse and contact helpers near you.
+			</p>
+			<a href={resolve('/family/approval')} class="btn btn-primary btn-sm">
+				Check your approval status
+			</a>
 		</div>
-
-		<div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-			<div class="flex min-w-0 items-center gap-1.5 text-sm text-base-content-muted">
-				<i class="las la-map-marker text-neutral" aria-hidden="true"></i>
-				{#if !profileLoaded}
-					<span class="skeleton h-4 w-40"></span>
-				{:else if city}
-					<span class="truncate">In <strong class="text-base-content">{city}</strong></span>
-					{#if hasLocation}
-						<button
-							type="button"
-							class="shrink-0 text-xs font-semibold text-primary"
-							onclick={() => selectCity('')}
-						>
-							Search near me
-						</button>
-					{/if}
-				{:else if hasLocation}
-					<span class="truncate">Near <strong class="text-base-content">{originLabel}</strong></span
-					>
-					<a href={resolve('/family/profile')} class="shrink-0 text-xs font-semibold text-primary">
-						Change
-					</a>
-				{:else}
-					<span>No home location saved.</span>
-					<a href={resolve('/family/profile')} class="shrink-0 text-xs font-semibold text-primary">
-						Set your location
-					</a>
-				{/if}
+	{:else}
+		<!-- Search header -->
+		<form
+			class="flex flex-col gap-3 rounded-xl border border-card-border bg-base-100 p-4"
+			onsubmit={submitKeyword}
+		>
+			<div class="flex flex-col gap-3 lg:flex-row lg:items-center">
+				<label class="input flex min-w-0 flex-1 items-center gap-2" data-tour="search">
+					<i class="las la-search text-outline" aria-hidden="true"></i>
+					<input
+						type="search"
+						class="grow"
+						placeholder="Search by service, name or keyword…"
+						aria-label="Search providers"
+						bind:value={qInput}
+					/>
+				</label>
+				<button type="submit" class="btn btn-primary lg:w-auto">Search</button>
 			</div>
 
-			<div class="join" role="group" aria-label="Search radius" data-tour="radius">
-				<button
-					type="button"
-					class="btn join-item btn-sm {radiusKm == null
-						? 'btn-secondary'
-						: 'btn-ghost border border-outline-variant'}"
-					onclick={() => pickRadius(null)}
-				>
-					Anywhere
-				</button>
-				{#each RADIUS_PRESETS as preset (preset)}
+			<div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+				<div class="flex min-w-0 items-center gap-1.5 text-sm text-base-content-muted">
+					<i class="las la-map-marker text-neutral" aria-hidden="true"></i>
+					{#if !profileLoaded}
+						<span class="skeleton h-4 w-40"></span>
+					{:else if city}
+						<span class="truncate">In <strong class="text-base-content">{city}</strong></span>
+						{#if hasLocation}
+							<button
+								type="button"
+								class="shrink-0 text-xs font-semibold text-primary"
+								onclick={() => selectCity('')}
+							>
+								Search near me
+							</button>
+						{/if}
+					{:else if hasLocation}
+						<span class="truncate"
+							>Near <strong class="text-base-content">{originLabel}</strong></span
+						>
+						<a
+							href={resolve('/family/profile')}
+							class="shrink-0 text-xs font-semibold text-primary"
+						>
+							Change
+						</a>
+					{:else}
+						<span>No home location saved.</span>
+						<a
+							href={resolve('/family/profile')}
+							class="shrink-0 text-xs font-semibold text-primary"
+						>
+							Set your location
+						</a>
+					{/if}
+				</div>
+
+				<div class="join" role="group" aria-label="Search radius" data-tour="radius">
 					<button
 						type="button"
-						class="btn join-item btn-sm {radiusKm === preset
+						class="btn join-item btn-sm {radiusKm == null
 							? 'btn-secondary'
 							: 'btn-ghost border border-outline-variant'}"
-						disabled={!hasLocation}
-						onclick={() => pickRadius(preset)}
+						onclick={() => pickRadius(null)}
 					>
-						{preset} km
+						Anywhere
 					</button>
-				{/each}
-			</div>
-		</div>
-	</form>
-
-	<div class="flex items-start gap-6">
-		<!-- Desktop filter rail -->
-		<aside class="hidden w-64 shrink-0 flex-col gap-4 lg:flex" data-tour="filters">
-			{@render filterControls()}
-		</aside>
-
-		<section class="min-w-0 flex-1" aria-live="polite" data-tour="results">
-			<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-				<h1 class="font-display text-xl font-bold text-base-content">
-					{#if loading && !data}
-						Searching…
-					{:else}
-						{total} vetted {total === 1 ? 'helper' : 'helpers'}{radiusKm != null
-							? ' near you'
-							: city
-								? ` in ${city}`
-								: ''}
-					{/if}
-				</h1>
-				<div class="flex items-center gap-2">
-					<button
-						type="button"
-						class="btn relative btn-sm lg:hidden"
-						data-tour="filters-mobile"
-						onclick={() => (sheetOpen = true)}
-					>
-						<i class="las la-sliders-h" aria-hidden="true"></i>
-						Filters
-						{#if activeFilterCount > 0}
-							<span
-								class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center
-									rounded-full bg-accent text-[10px] font-bold text-accent-content"
-							>
-								{activeFilterCount}
-							</span>
-						{/if}
-					</button>
-					<label class="flex items-center gap-1.5 text-xs text-base-content-muted" data-tour="sort">
-						Sort by
-						<select class="select select-sm w-auto" bind:value={sort} onchange={resetToFirstPage}>
-							<option value="relevance">Relevance</option>
-							{#if radiusKm != null}
-								<option value="distance">Distance (nearest)</option>
-							{/if}
-							<option value="price_asc">Price: low to high</option>
-							<option value="price_desc">Price: high to low</option>
-							<option value="newest">Newest</option>
-						</select>
-					</label>
-				</div>
-			</div>
-
-			{#if filtersActive}
-				<div class="mb-4 flex flex-wrap items-center gap-1.5">
-					{#if q}
+					{#each RADIUS_PRESETS as preset (preset)}
 						<button
 							type="button"
-							class="badge gap-1 border-none bg-base-400 text-secondary"
-							onclick={() => {
-								q = '';
-								qInput = '';
-								resetToFirstPage();
-							}}
+							class="btn join-item btn-sm {radiusKm === preset
+								? 'btn-secondary'
+								: 'btn-ghost border border-outline-variant'}"
+							disabled={!hasLocation}
+							onclick={() => pickRadius(preset)}
 						>
-							“{q}” <i class="las la-times" aria-hidden="true"></i>
+							{preset} km
 						</button>
-					{/if}
-					{#if service}
-						<button
-							type="button"
-							class="badge gap-1 border-none bg-base-400 text-secondary"
-							onclick={() => toggleService(service)}
-						>
-							{service} <i class="las la-times" aria-hidden="true"></i>
-						</button>
-					{/if}
-					{#if city}
-						<button
-							type="button"
-							class="badge gap-1 border-none bg-base-400 text-secondary"
-							onclick={() => {
-								city = '';
-								resetToFirstPage();
-							}}
-						>
-							{city} <i class="las la-times" aria-hidden="true"></i>
-						</button>
-					{/if}
-					{#if rateChipLabel}
-						<button
-							type="button"
-							class="badge gap-1 border-none bg-base-400 text-secondary"
-							onclick={() => {
-								minCents = null;
-								maxCents = null;
-								rateMinInput = '';
-								rateMaxInput = '';
-								resetToFirstPage();
-							}}
-						>
-							{rateChipLabel} <i class="las la-times" aria-hidden="true"></i>
-						</button>
-					{/if}
-					<button type="button" class="text-xs font-semibold text-primary" onclick={clearFilters}>
-						Clear all
-					</button>
-				</div>
-			{/if}
-
-			{#if loading}
-				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-					{#each Array.from({ length: 6 }, (_, index) => index) as index (index)}
-						<div class="flex flex-col gap-3 rounded-xl border border-card-border bg-base-100 p-4">
-							<div class="flex items-center gap-3">
-								<div class="skeleton size-[52px] shrink-0 rounded-full"></div>
-								<div class="flex-1 space-y-2">
-									<div class="skeleton h-3.5 w-2/3"></div>
-									<div class="skeleton h-3 w-1/2"></div>
-								</div>
-							</div>
-							<div class="skeleton h-3 w-full"></div>
-							<div class="skeleton h-3 w-4/5"></div>
-							<div class="flex gap-1.5">
-								<div class="skeleton h-6 w-20 rounded-pill"></div>
-								<div class="skeleton h-6 w-24 rounded-pill"></div>
-							</div>
-						</div>
 					{/each}
 				</div>
-			{:else if searchError}
-				<div
-					class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
-				>
-					<span class="flex size-14 items-center justify-center rounded-full bg-error-content">
-						<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
-					</span>
-					<h2 class="font-display text-lg font-bold text-base-content">
-						Something went wrong on our side
-					</h2>
-					<p class="max-w-sm text-sm text-base-content-muted">
-						Your search didn't load. Your filters are safe — try again in a moment.
-					</p>
-					<button
-						type="button"
-						class="btn btn-primary btn-sm"
-						onclick={() => (retryTick = retryTick + 1)}
-					>
-						<i class="las la-redo-alt" aria-hidden="true"></i>
-						Retry search
-					</button>
-				</div>
-			{:else if total === 0 && filtersActive}
-				<div
-					class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
-				>
-					<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
-						<i class="las la-search text-2xl text-neutral" aria-hidden="true"></i>
-					</span>
-					<h2 class="font-display text-lg font-bold text-base-content">
-						No helpers match this search
-					</h2>
-					<p class="max-w-sm text-sm text-base-content-muted">
-						{#if city}
-							Try another city, removing a filter, or searching a different term.
+			</div>
+		</form>
+
+		<div class="flex items-start gap-6">
+			<!-- Desktop filter rail -->
+			<aside class="hidden w-64 shrink-0 flex-col gap-4 lg:flex" data-tour="filters">
+				{@render filterControls()}
+			</aside>
+
+			<section class="min-w-0 flex-1" aria-live="polite" data-tour="results">
+				<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+					<h1 class="font-display text-xl font-bold text-base-content">
+						{#if loading && !data}
+							Searching…
 						{:else}
-							Try widening your radius, removing a filter, or searching a different term.
+							{total} vetted {total === 1 ? 'helper' : 'helpers'}{radiusKm != null
+								? ' near you'
+								: city
+									? ` in ${city}`
+									: ''}
 						{/if}
-					</p>
-					<div class="flex flex-wrap justify-center gap-2">
-						{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
-							<button type="button" class="btn btn-primary btn-sm" onclick={expandRadius}>
-								Expand radius to {RADIUS_PRESETS.find((preset) => preset > (radiusKm ?? 0))} km
-							</button>
-						{:else if city && hasLocation}
-							<button type="button" class="btn btn-primary btn-sm" onclick={() => selectCity('')}>
-								Search near me instead
-							</button>
-						{/if}
-						<button type="button" class="btn btn-sm" onclick={clearFilters}>Clear filters</button>
+					</h1>
+					<div class="flex items-center gap-2">
+						<button
+							type="button"
+							class="btn relative btn-sm lg:hidden"
+							data-tour="filters-mobile"
+							onclick={() => (sheetOpen = true)}
+						>
+							<i class="las la-sliders-h" aria-hidden="true"></i>
+							Filters
+							{#if activeFilterCount > 0}
+								<span
+									class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center
+									rounded-full bg-accent text-[10px] font-bold text-accent-content"
+								>
+									{activeFilterCount}
+								</span>
+							{/if}
+						</button>
+						<label
+							class="flex items-center gap-1.5 text-xs text-base-content-muted"
+							data-tour="sort"
+						>
+							Sort by
+							<select class="select select-sm w-auto" bind:value={sort} onchange={resetToFirstPage}>
+								<option value="relevance">Relevance</option>
+								{#if radiusKm != null}
+									<option value="distance">Distance (nearest)</option>
+								{/if}
+								<option value="price_asc">Price: low to high</option>
+								<option value="price_desc">Price: high to low</option>
+								<option value="newest">Newest</option>
+							</select>
+						</label>
 					</div>
+				</div>
+
+				{#if filtersActive}
+					<div class="mb-4 flex flex-wrap items-center gap-1.5">
+						{#if q}
+							<button
+								type="button"
+								class="badge gap-1 border-none bg-base-400 text-secondary"
+								onclick={() => {
+									q = '';
+									qInput = '';
+									resetToFirstPage();
+								}}
+							>
+								“{q}” <i class="las la-times" aria-hidden="true"></i>
+							</button>
+						{/if}
+						{#if service}
+							<button
+								type="button"
+								class="badge gap-1 border-none bg-base-400 text-secondary"
+								onclick={() => toggleService(service)}
+							>
+								{service} <i class="las la-times" aria-hidden="true"></i>
+							</button>
+						{/if}
+						{#if city}
+							<button
+								type="button"
+								class="badge gap-1 border-none bg-base-400 text-secondary"
+								onclick={() => {
+									city = '';
+									resetToFirstPage();
+								}}
+							>
+								{city} <i class="las la-times" aria-hidden="true"></i>
+							</button>
+						{/if}
+						{#if rateChipLabel}
+							<button
+								type="button"
+								class="badge gap-1 border-none bg-base-400 text-secondary"
+								onclick={() => {
+									minCents = null;
+									maxCents = null;
+									rateMinInput = '';
+									rateMaxInput = '';
+									resetToFirstPage();
+								}}
+							>
+								{rateChipLabel} <i class="las la-times" aria-hidden="true"></i>
+							</button>
+						{/if}
+						<button type="button" class="text-xs font-semibold text-primary" onclick={clearFilters}>
+							Clear all
+						</button>
+					</div>
+				{/if}
+
+				{#if loading}
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+						{#each Array.from({ length: 6 }, (_, index) => index) as index (index)}
+							<div class="flex flex-col gap-3 rounded-xl border border-card-border bg-base-100 p-4">
+								<div class="flex items-center gap-3">
+									<div class="skeleton size-[52px] shrink-0 rounded-full"></div>
+									<div class="flex-1 space-y-2">
+										<div class="skeleton h-3.5 w-2/3"></div>
+										<div class="skeleton h-3 w-1/2"></div>
+									</div>
+								</div>
+								<div class="skeleton h-3 w-full"></div>
+								<div class="skeleton h-3 w-4/5"></div>
+								<div class="flex gap-1.5">
+									<div class="skeleton h-6 w-20 rounded-pill"></div>
+									<div class="skeleton h-6 w-24 rounded-pill"></div>
+								</div>
+							</div>
+						{/each}
+					</div>
+				{:else if searchError}
 					<div
-						class="mt-2 flex w-full max-w-sm flex-col items-center gap-2 border-t
-							border-card-border pt-4"
+						class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
 					>
-						<p class="text-xs text-base-content-muted">
-							Still stuck? Tell us — a Poppynz administrator will be informed of your search and
-							reach out to help.
+						<span class="flex size-14 items-center justify-center rounded-full bg-error-content">
+							<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
+						</span>
+						<h2 class="font-display text-lg font-bold text-base-content">
+							Something went wrong on our side
+						</h2>
+						<p class="max-w-sm text-sm text-base-content-muted">
+							Your search didn't load. Your filters are safe — try again in a moment.
 						</p>
 						<button
 							type="button"
 							class="btn btn-primary btn-sm"
-							onclick={() => (assistOpen = true)}
+							onclick={() => (retryTick = retryTick + 1)}
 						>
-							<i class="las la-hands-helping" aria-hidden="true"></i>
-							Get help from our team
+							<i class="las la-redo-alt" aria-hidden="true"></i>
+							Retry search
 						</button>
 					</div>
-				</div>
-			{:else if total === 0}
-				<div
-					class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
-				>
-					<span class="flex size-14 items-center justify-center rounded-full bg-warning-content">
-						<i class="las la-seedling text-2xl text-warning" aria-hidden="true"></i>
-					</span>
-					<h2 class="font-display text-lg font-bold text-base-content">
-						We're growing in your area
-					</h2>
-					<p class="max-w-sm text-sm text-base-content-muted">
-						Poppynz is new around here — vetted helpers near you are joining every week. Widen the
-						radius to see who's a little further out.
-					</p>
-					{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
-						<button
-							type="button"
-							class="btn btn-primary btn-sm"
-							onclick={() => pickRadius(RADIUS_PRESETS[RADIUS_PRESETS.length - 1])}
+				{:else if total === 0 && filtersActive}
+					<div
+						class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+					>
+						<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
+							<i class="las la-search text-2xl text-neutral" aria-hidden="true"></i>
+						</span>
+						<h2 class="font-display text-lg font-bold text-base-content">
+							No helpers match this search
+						</h2>
+						<p class="max-w-sm text-sm text-base-content-muted">
+							{#if city}
+								Try another city, removing a filter, or searching a different term.
+							{:else}
+								Try widening your radius, removing a filter, or searching a different term.
+							{/if}
+						</p>
+						<div class="flex flex-wrap justify-center gap-2">
+							{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
+								<button type="button" class="btn btn-primary btn-sm" onclick={expandRadius}>
+									Expand radius to {RADIUS_PRESETS.find((preset) => preset > (radiusKm ?? 0))} km
+								</button>
+							{:else if city && hasLocation}
+								<button type="button" class="btn btn-primary btn-sm" onclick={() => selectCity('')}>
+									Search near me instead
+								</button>
+							{/if}
+							<button type="button" class="btn btn-sm" onclick={clearFilters}>Clear filters</button>
+						</div>
+						<div
+							class="mt-2 flex w-full max-w-sm flex-col items-center gap-2 border-t
+							border-card-border pt-4"
 						>
-							Search within {RADIUS_PRESETS[RADIUS_PRESETS.length - 1]} km
-						</button>
-					{/if}
-				</div>
-			{:else if data}
-				<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-					{#each data.providers as provider (provider.userId)}
-						<ProviderCard
-							{provider}
-							href={withQuery(
-								resolve('/family/providers/[userId]', { userId: provider.userId }),
-								detailQs(provider.distanceKm)
-							)}
-						/>
-					{/each}
-				</div>
+							<p class="text-xs text-base-content-muted">
+								Still stuck? Tell us — a Poppynz administrator will be informed of your search and
+								reach out to help.
+							</p>
+							<button
+								type="button"
+								class="btn btn-primary btn-sm"
+								onclick={() => (assistOpen = true)}
+							>
+								<i class="las la-hands-helping" aria-hidden="true"></i>
+								Get help from our team
+							</button>
+						</div>
+					</div>
+				{:else if total === 0}
+					<div
+						class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+					>
+						<span class="flex size-14 items-center justify-center rounded-full bg-warning-content">
+							<i class="las la-seedling text-2xl text-warning" aria-hidden="true"></i>
+						</span>
+						<h2 class="font-display text-lg font-bold text-base-content">
+							We're growing in your area
+						</h2>
+						<p class="max-w-sm text-sm text-base-content-muted">
+							Poppynz is new around here — vetted helpers near you are joining every week. Widen the
+							radius to see who's a little further out.
+						</p>
+						{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
+							<button
+								type="button"
+								class="btn btn-primary btn-sm"
+								onclick={() => pickRadius(RADIUS_PRESETS[RADIUS_PRESETS.length - 1])}
+							>
+								Search within {RADIUS_PRESETS[RADIUS_PRESETS.length - 1]} km
+							</button>
+						{/if}
+					</div>
+				{:else if data}
+					<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+						{#each data.providers as provider (provider.userId)}
+							<ProviderCard
+								{provider}
+								href={withQuery(
+									resolve('/family/providers/[userId]', { userId: provider.userId }),
+									detailQs(provider.distanceKm)
+								)}
+							/>
+						{/each}
+					</div>
 
-				<div class="mt-6">
-					<Pagination
-						page={pageNumber}
-						{totalPages}
-						label="Search result pages"
-						onselect={(next) => (pageNumber = next)}
-					/>
-				</div>
-			{/if}
-		</section>
-	</div>
+					<div class="mt-6">
+						<Pagination
+							page={pageNumber}
+							{totalPages}
+							label="Search result pages"
+							onselect={(next) => (pageNumber = next)}
+						/>
+					</div>
+				{/if}
+			</section>
+		</div>
+	{/if}
 </div>
 
 {#if onboarding}
@@ -817,7 +854,7 @@
 />
 
 <!-- Mobile filter bottom sheet -->
-{#if sheetOpen}
+{#if sheetOpen && !notApproved}
 	<div
 		class="modal modal-bottom modal-open lg:hidden"
 		role="dialog"

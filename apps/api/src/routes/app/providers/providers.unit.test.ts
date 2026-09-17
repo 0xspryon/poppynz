@@ -1,5 +1,6 @@
 import {
   DBNotFoundError,
+  makeApprovalRepoTest,
   makeProviderSearchOutboxRepoTest,
   makeProviderSearchRepoTest,
   makeSafetyVerificationRepoTest,
@@ -141,6 +142,8 @@ const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
 const makeLayer = (
   options: {
     hasPermission?: boolean;
+    /** Whether the searching family holds a live approval (default true). */
+    approved?: boolean;
     hasLocation?: boolean;
     documents?: Array<ProviderSearchDocument>;
     searchPages?: Array<Array<ProviderSearchDocument>>;
@@ -191,6 +194,28 @@ const makeLayer = (
               url: `https://files.example.com/${input.bucket}/${input.key}?sig=test`,
               expiresAt: new Date('2026-06-12T00:05:00.000Z')
             })
+    }),
+    // Families browse helpers only once approved, exactly like helpers
+    // browse families; approved unless a test says otherwise.
+    makeApprovalRepoTest({
+      findCurrentByUserId: (userId) =>
+        (options.approved ?? true)
+          ? Effect.succeed({
+              id: 'approval-1',
+              userId,
+              approvalRequestId: 'request-1',
+              approvedBy: 'admin-1',
+              expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+              status: 'approved',
+              reason: null,
+              notifiedExpiresInOneMonthAt: null,
+              notifiedExpiresInTwoWeeksAt: null,
+              notifiedExpiresInOneWeekAt: null,
+              notifiedExpiresInTwoDaysAt: null,
+              createdAt: new Date('2026-06-12T00:00:00.000Z'),
+              updatedAt: new Date('2026-06-12T00:00:00.000Z')
+            })
+          : Effect.fail(new DBNotFoundError({ entity: 'approval', value: userId }))
     }),
     makeAuthServiceTest({
       getSession: () =>
@@ -453,6 +478,15 @@ describe('provider search route program', () => {
     );
 
     expect(getFailure(exit)._tag).toBe('ProviderSearchRequestValidationError');
+  });
+
+  it('blocks a family without a live approval from searching', async () => {
+    const exit = await Effect.runPromiseExit(
+      searchProvidersRouteProgram(new Headers(), {}).pipe(
+        Effect.provide(makeLayer({ approved: false }))
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ApprovalRequiredError', role: 'family' });
   });
 
   it('requires provider search read permission', async () => {

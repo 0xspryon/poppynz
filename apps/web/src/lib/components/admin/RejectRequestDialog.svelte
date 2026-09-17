@@ -1,5 +1,5 @@
 <script lang="ts">
-	/** Reject dialog (design 8c): reason required, shown to the provider
+	/** Reject dialog (design 8c): reason required, shown to the applicant
 	 * verbatim. Emits the trimmed reason. */
 	interface Props {
 		open: boolean;
@@ -28,7 +28,7 @@
 		<form class="modal-box" onsubmit={submit}>
 			<h2 class="text-lg font-bold">Reject this application</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				The reason is <b>shown to the provider verbatim</b> — write something specific and actionable
+				The reason is <b>shown to the applicant verbatim</b> — write something specific and actionable
 				so they can fix it and resubmit.
 			</p>
 
@@ -52,7 +52,7 @@
 			>
 				<i class="las la-info-circle text-base text-info" aria-hidden="true"></i>
 				<span class="text-[12.5px] text-info">
-					Rejection isn't final — the provider can fix the issues and submit again.
+					Rejection isn't final — the applicant can fix the issues and submit again.
 				</span>
 			</div>
 

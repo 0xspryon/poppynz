@@ -10,12 +10,17 @@
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 	type Filter = 'needs-action' | 'all' | 'approved' | 'rejected';
+	type RoleFilter = 'all' | 'family' | 'service-provider';
 
 	let queue = $state<ApprovalQueue | null>(null);
 	let loading = $state(true);
 	let errorMessage = $state('');
 	let filter = $state<Filter>('needs-action');
+	let roleFilter = $state<RoleFilter>('all');
 	let search = $state('');
+
+	const roleLabel = (role: ApprovalQueueEntry['applicant']['role']) =>
+		role === 'family' ? 'Family' : 'Helper';
 
 	async function load() {
 		errorMessage = '';
@@ -72,6 +77,7 @@
 			if (filter === 'needs-action' && entry.status !== 'submitted') return false;
 			if (filter === 'approved' && entry.status !== 'approved') return false;
 			if (filter === 'rejected' && entry.status !== 'rejected') return false;
+			if (roleFilter !== 'all' && entry.applicant.role !== roleFilter) return false;
 			if (query) {
 				const haystack = `${applicantName(entry)} ${entry.applicant.email}`.toLowerCase();
 				if (!haystack.includes(query)) return false;
@@ -89,6 +95,12 @@
 			{ key: 'rejected', label: `Rejected${counts ? ` · ${counts.rejected}` : ''}` }
 		];
 	});
+
+	const roleFilters: Array<{ key: RoleFilter; label: string }> = [
+		{ key: 'all', label: 'Everyone' },
+		{ key: 'family', label: 'Families' },
+		{ key: 'service-provider', label: 'Helpers' }
+	];
 </script>
 
 <svelte:head>
@@ -100,7 +112,7 @@
 		<div>
 			<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Approval queue</h1>
 			<p class="mt-1 text-sm text-base-content-muted">
-				Provider applications awaiting your decision.
+				Family and helper applications awaiting your decision.
 			</p>
 		</div>
 		<label class="input w-full sm:w-60">
@@ -109,7 +121,7 @@
 		</label>
 	</div>
 
-	<div class="mt-4 mb-4 flex flex-wrap gap-1.5">
+	<div class="mt-4 mb-4 flex flex-wrap items-center gap-1.5">
 		{#each filters as entry (entry.key)}
 			<button
 				type="button"
@@ -118,6 +130,19 @@
 					? 'bg-secondary font-semibold text-secondary-content'
 					: 'border border-outline-variant bg-base-100 font-medium text-base-content-muted'}"
 				onclick={() => (filter = entry.key)}
+			>
+				{entry.label}
+			</button>
+		{/each}
+		<span class="mx-1 hidden h-5 w-px bg-outline-variant sm:block" aria-hidden="true"></span>
+		{#each roleFilters as entry (entry.key)}
+			<button
+				type="button"
+				class="rounded-pill px-3.5 py-2 text-[12.5px]
+					{roleFilter === entry.key
+					? 'bg-primary font-semibold text-primary-content'
+					: 'border border-outline-variant bg-base-100 font-medium text-base-content-muted'}"
+				onclick={() => (roleFilter = entry.key)}
 			>
 				{entry.label}
 			</button>
@@ -134,7 +159,7 @@
 		<p
 			class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm text-base-content-muted"
 		>
-			{search.trim() || filter !== 'all'
+			{search.trim() || filter !== 'all' || roleFilter !== 'all'
 				? 'No applications match this view.'
 				: 'No applications yet.'}
 		</p>
@@ -168,7 +193,12 @@
 							<div class="truncate text-[13.5px] font-semibold text-base-content">
 								{applicantName(entry)}
 							</div>
-							<div class="truncate text-[11.5px] text-outline">{entry.applicant.email}</div>
+							<div class="truncate text-[11.5px] text-outline">
+								<span class="font-medium text-base-content-muted"
+									>{roleLabel(entry.applicant.role)}</span
+								>
+								· {entry.applicant.email}
+							</div>
 						</div>
 					</div>
 					<div class="mt-2 lg:mt-0">

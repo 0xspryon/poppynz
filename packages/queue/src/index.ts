@@ -102,11 +102,13 @@ export type EnqueuedJob = {
 
 const providerSearchReconcileDeduplicationId = (userId: string) =>
   `provider-search-reconcile-${userId}`;
-const providerSearchReindexDeduplicationId = 'provider-search-reindex';
+/** Shared by the admin reindex endpoint and the worker's boot reindex, so a
+ * full rebuild already queued is never doubled up. */
+export const providerSearchReindexDeduplicationId = 'provider-search-reindex';
 
 export const familySearchReconcileDeduplicationId = (userId: string) =>
   `family-search-reconcile-${userId}`;
-const familySearchReindexDeduplicationId = 'family-search-reindex';
+export const familySearchReindexDeduplicationId = 'family-search-reindex';
 
 export class ProviderSearchQueueError extends Data.TaggedError('ProviderSearchQueueError')<{
   operation: 'enqueueReconcile' | 'enqueueReindex';
@@ -258,7 +260,6 @@ export const FamilySearchQueueLive = Layer.effect(
 export const makeFamilySearchQueueTest = (implementation: Context.Tag.Service<FamilySearchQueue>) =>
   Layer.succeed(FamilySearchQueue, implementation);
 
-
 export class SafetyVerificationQueueError extends Data.TaggedError('SafetyVerificationQueueError')<{
   operation: 'enqueueOrder';
   cause: unknown;
@@ -273,7 +274,9 @@ export const makeSafetyVerificationQueue = (connection: QueueOptions['connection
 export class SafetyVerificationQueue extends Context.Tag('@repo/queue/SafetyVerificationQueue')<
   SafetyVerificationQueue,
   {
-    enqueueOrder: (input: PlaceCheckOrderJob) => Effect.Effect<EnqueuedJob, SafetyVerificationQueueError>;
+    enqueueOrder: (
+      input: PlaceCheckOrderJob
+    ) => Effect.Effect<EnqueuedJob, SafetyVerificationQueueError>;
   }
 >() {}
 

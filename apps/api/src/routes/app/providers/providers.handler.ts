@@ -8,6 +8,11 @@ import { DBNotFoundError, ProviderSearchRepo, UserProfileRepo } from '@repo/db';
 import { Cause, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
+  approvalGateUnavailableResponseBody,
+  approvalRequiredResponseBody,
+  requireLiveApproval
+} from '@/api/lib/approval-gate';
+import {
   requireVerifiedSafety,
   safetyVerificationGateUnavailableResponseBody,
   safetyVerificationRequiredResponseBody
@@ -98,6 +103,9 @@ export const searchProvidersRouteProgram = (
     const userAndSession = yield* requirePermissions(headers, { providerSearch: ['read'] })(
       authenticated
     );
+    // Mirrors family search: a family browses helpers only once an admin has
+    // approved them, on top of their own safety verification.
+    yield* requireLiveApproval(userAndSession);
     yield* requireVerifiedSafety(userAndSession);
     const minRadiusKm = yield* getProviderSearchMinRadiusKm.pipe(Effect.orElseSucceed(() => 10));
 
@@ -225,7 +233,11 @@ export const searchProvidersRouteProgram = (
 export const getProviderRouteProgram = (headers: Headers, userId: string) =>
   Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
-    yield* requirePermissions(headers, { providerSearch: ['read'] })(authenticated);
+    const userAndSession = yield* requirePermissions(headers, { providerSearch: ['read'] })(
+      authenticated
+    );
+    yield* requireLiveApproval(userAndSession);
+    yield* requireVerifiedSafety(userAndSession);
     const repo = yield* ProviderSearchRepo;
     const candidate = yield* repo.findCandidateByUserId(userId);
     const imageUrl = yield* presignProfileImageUrl(candidate.profile.image);
@@ -251,6 +263,10 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: ProvidersRouteError) =>
       return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
     case 'SafetyVerificationGateUnavailableError':
       return c.json({ error: safetyVerificationGateUnavailableResponseBody }, 503);
+    case 'ApprovalRequiredError':
+      return c.json({ error: approvalRequiredResponseBody(error.role) }, 403);
+    case 'ApprovalGateUnavailableError':
+      return c.json({ error: approvalGateUnavailableResponseBody }, 503);
     case 'ProviderSearchRequestValidationError':
       return c.json(
         { error: { code: 'INVALID_PROVIDER_SEARCH' as const, message: error.message } },

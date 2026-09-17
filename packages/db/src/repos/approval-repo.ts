@@ -36,7 +36,7 @@ export type ApprovalExpiryNotifiedStamps = Partial<
 >;
 
 export type ApprovalExpiryCandidate = Approval & {
-  applicant: { email: string; name: string | null };
+  applicant: { email: string; name: string | null; role: string | null };
 };
 
 export class ApprovalRepo extends Context.Tag('@repo/db/ApprovalRepo')<
@@ -121,7 +121,12 @@ export const ApprovalRepoLive = Layer.effect(
           ),
       listExpiringForNotification: (now, until) =>
         db
-          .select({ approval, applicantEmail: user.email, applicantName: user.name })
+          .select({
+            approval,
+            applicantEmail: user.email,
+            applicantName: user.name,
+            applicantRole: user.role
+          })
           .from(approval)
           .innerJoin(user, eq(approval.userId, user.id))
           .where(
@@ -138,7 +143,11 @@ export const ApprovalRepoLive = Layer.effect(
             Effect.map((rows) =>
               rows.map((row) => ({
                 ...row.approval,
-                applicant: { email: row.applicantEmail, name: row.applicantName }
+                applicant: {
+                  email: row.applicantEmail,
+                  name: row.applicantName,
+                  role: row.applicantRole
+                }
               }))
             )
           ),

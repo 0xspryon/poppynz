@@ -78,8 +78,9 @@ describe('makeMailer (resend mode)', () => {
         'springfield@poppynz.com',
         'kay@poppynz.com'
       ]).sendAdminApprovalRequestSubmitted({
-        providerName: 'Provider User',
-        providerEmail: 'provider@example.com'
+        applicantName: 'Provider User',
+        role: 'service-provider',
+        applicantEmail: 'provider@example.com'
       })
     );
 
@@ -94,8 +95,9 @@ describe('makeMailer (resend mode)', () => {
 
     await Effect.runPromise(
       resendMailer([]).sendAdminApprovalRequestSubmitted({
-        providerName: 'Provider User',
-        providerEmail: 'provider@example.com'
+        applicantName: 'Provider User',
+        role: 'service-provider',
+        applicantEmail: 'provider@example.com'
       })
     );
 
@@ -127,6 +129,7 @@ describe('makeMailer (resend mode)', () => {
       resendMailer().sendApprovalGranted({
         email: 'provider@example.com',
         name: 'Provider',
+        role: 'service-provider',
         expiresAt: new Date('2027-01-01T00:00:00.000Z')
       })
     );
@@ -145,6 +148,7 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
       gatedMailer('staging').sendApprovalGranted({
         email: 'helper@poppynz.com',
         name: 'Helper',
+        role: 'service-provider',
         expiresAt: new Date('2027-01-01T00:00:00.000Z')
       })
     );
@@ -162,6 +166,7 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
       gatedMailer('staging', ['Ops.Admin@Gmail.com']).sendApprovalGranted({
         email: 'ops.admin@gmail.com',
         name: 'Ops',
+        role: 'service-provider',
         expiresAt: new Date('2027-01-01T00:00:00.000Z')
       })
     );
@@ -177,6 +182,7 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
       gatedMailer('staging').sendApprovalGranted({
         email: 'user@example.com',
         name: 'User',
+        role: 'service-provider',
         expiresAt: new Date('2027-01-01T00:00:00.000Z')
       })
     );
@@ -198,7 +204,11 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
         adminNotificationEmails: ['kay@poppynz.com', 'watcher@example.com'],
         environment: 'staging',
         adminAccounts: []
-      }).sendAdminApprovalRequestSubmitted({ providerName: 'P', providerEmail: 'p@example.com' })
+      }).sendAdminApprovalRequestSubmitted({
+        applicantName: 'P',
+        applicantEmail: 'p@example.com',
+        role: 'service-provider'
+      })
     );
 
     expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).to).toEqual(['kay@poppynz.com']);
@@ -214,6 +224,7 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
       gatedMailer('dev').sendApprovalGranted({
         email: 'helper@poppynz.com',
         name: 'Helper',
+        role: 'service-provider',
         expiresAt: new Date('2027-01-01T00:00:00.000Z')
       })
     );
@@ -250,6 +261,7 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
       resendMailer().sendApprovalGranted({
         email: 'user@example.com',
         name: 'User',
+        role: 'service-provider',
         expiresAt: new Date('2027-01-01T00:00:00.000Z')
       })
     );
@@ -282,6 +294,7 @@ describe('makeMailer (log mode, no RESEND_API_KEY)', () => {
       logMailer().sendApprovalRequestRejected({
         email: 'provider@example.com',
         name: 'Provider',
+        role: 'service-provider',
         reason: 'Missing documents'
       })
     );

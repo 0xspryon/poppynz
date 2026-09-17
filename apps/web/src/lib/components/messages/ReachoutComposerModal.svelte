@@ -83,6 +83,8 @@
 			RECIPIENT_NOT_FOUND: (error) => toast.error(error.message),
 			CONVERSATION_PAIR_INVALID: (error) => toast.error(error.message),
 			PROVIDER_NOT_APPROVED: (error) => toast.error(error.message),
+			FAMILY_NOT_APPROVED: (error) => toast.error(error.message),
+			APPROVAL_UNAVAILABLE: (error) => toast.error(error.message),
 			// Safety verification gates both roles, so this can fire for a family
 			// as well as a helper — send them to the screen that fixes it.
 			SAFETY_VERIFICATION_REQUIRED: (error) => toast.error(error.message),

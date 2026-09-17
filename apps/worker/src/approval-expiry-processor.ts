@@ -34,6 +34,8 @@ const notifyCandidate = (candidate: ApprovalExpiryCandidate, now: Date, uiOrigin
     yield* mailer.sendApprovalExpiring({
       email: candidate.applicant.email,
       name: candidate.applicant.name || null,
+      // Families and helpers share the approval table; the copy differs.
+      role: candidate.applicant.role === 'family' ? 'family' : 'service-provider',
       expiresAt: candidate.expiresAt,
       daysRemaining: Math.max(1, Math.ceil(remainingMs / dayMs)),
       link: uiOrigin
@@ -54,7 +56,7 @@ const notifyCandidate = (candidate: ApprovalExpiryCandidate, now: Date, uiOrigin
     return 'notified' as const;
   });
 
-/** Daily sweep: warn providers whose current approval expires within 30 days.
+/** Daily sweep: warn applicants whose current approval expires within 30 days.
  * Idempotent — each tier fires at most once per approval (persisted stamps),
  * so re-runs and retries send nothing extra. Per-candidate failures are
  * logged and skipped; the batch always completes. */

@@ -1,5 +1,7 @@
 import {
   DBNotFoundError,
+  EmptyApprovalRepoTest,
+  EmptyApprovalRequestRepoTest,
   EmptyKycDocumentRepoTest,
   EmptyServiceOfferedRepoTest,
   makeKycDocumentTypeRepoTest,
@@ -131,6 +133,9 @@ const makeLayer = (
     // kyc_documents.
     EmptyKycDocumentRepoTest,
     EmptyServiceOfferedRepoTest,
+    // No approval and no request yet unless a test says otherwise.
+    EmptyApprovalRepoTest,
+    EmptyApprovalRequestRepoTest,
     makeKycDocumentTypeRepoTest({
       listActive: () => Effect.succeed(options.types ?? []),
       findActiveById: (id) =>

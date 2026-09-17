@@ -92,10 +92,12 @@ const familyDocument = (overrides: Partial<FamilySearchDocument> = {}): FamilySe
 const candidate = (
   userId = 'family-1',
   overrides: Partial<FamilySearchCandidate['profile']> = {},
-  // Verified by default: nobody is discoverable without it.
-  verification: FamilySearchCandidate['verification'] = { expiresOn: '2099-01-01' }
+  // Verified and approved by default: nobody is discoverable without both.
+  verification: FamilySearchCandidate['verification'] = { expiresOn: '2099-01-01' },
+  approval: FamilySearchCandidate['approval'] = { expiresAt: new Date('2099-01-01T00:00:00.000Z') }
 ): FamilySearchCandidate => ({
   verification,
+  approval,
   profile: {
     userId,
     language: 'en',
@@ -493,7 +495,7 @@ describe('family search route program', () => {
       )
     );
 
-    expect(getFailure(exit)._tag).toBe('ProviderNotApprovedError');
+    expect(getFailure(exit)._tag).toBe('ApprovalRequiredError');
   });
 
   it('lets admins search without an approval row', async () => {
@@ -569,6 +571,6 @@ describe('family detail route program', () => {
       )
     );
 
-    expect(getFailure(exit)._tag).toBe('ProviderNotApprovedError');
+    expect(getFailure(exit)._tag).toBe('ApprovalRequiredError');
   });
 });

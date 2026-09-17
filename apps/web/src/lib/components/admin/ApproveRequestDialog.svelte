@@ -94,7 +94,7 @@
 					onchange={() => (preset = 'custom')}
 				/>
 				<p class="label text-xs">
-					Must be a future date. The provider sees this date and can be re-approved later.
+					Must be a future date. The applicant sees this date and can be re-approved later.
 				</p>
 			</fieldset>
 

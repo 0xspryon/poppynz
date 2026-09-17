@@ -10,6 +10,8 @@ export type ApprovalRequestStatus = ApprovalRequest['status'];
 
 export type ApprovalRequestApplicant = {
   email: string;
+  /** The applicant's account role — families and helpers share one queue. */
+  role: string | null;
   firstName: string | null;
   lastName: string | null;
 };
@@ -75,6 +77,7 @@ export const ApprovalRequestRepoLive = Layer.effect(
           .select({
             request: approvalRequest,
             email: user.email,
+            role: user.role,
             firstName: userProfile.firstName,
             lastName: userProfile.lastName
           })
@@ -89,6 +92,7 @@ export const ApprovalRequestRepoLive = Layer.effect(
                 ...row.request,
                 applicant: {
                   email: row.email,
+                  role: row.role,
                   firstName: row.firstName ?? null,
                   lastName: row.lastName ?? null
                 }

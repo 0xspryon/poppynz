@@ -34,9 +34,8 @@
 	const messagesHref = $derived(
 		role === 'family' ? resolve('/family/messages') : resolve('/service-provider/messages')
 	);
-	// Families have no approval page (yet) — for them the modal always shows.
 	const approvalHref = $derived(
-		role === 'service-provider' ? resolve('/service-provider/approval') : null
+		role === 'family' ? resolve('/family/approval') : resolve('/service-provider/approval')
 	);
 	const contractsHref = $derived(
 		role === 'family' ? resolve('/family/contracts') : resolve('/service-provider/contracts')
@@ -53,7 +52,7 @@
 			: resolve('/service-provider/contracts/[id]', { id });
 
 	const onMessagesPage = () => page.url.pathname.startsWith(messagesHref);
-	const onApprovalPage = () => approvalHref !== null && page.url.pathname.startsWith(approvalHref);
+	const onApprovalPage = () => page.url.pathname.startsWith(approvalHref);
 	const onContractsPage = () => page.url.pathname.startsWith(contractsHref);
 	// Both pages subscribe themselves and refetch; a toast there would be noise.
 	const onVerificationPage = () =>

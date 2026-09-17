@@ -27,9 +27,11 @@ import {
   approvalExpirySchedulerId,
   familySearchJobNames,
   familySearchQueueDefinition,
+  familySearchReindexDeduplicationId,
   getRedisConnection,
   providerSearchJobNames,
   providerSearchQueueDefinition,
+  providerSearchReindexDeduplicationId,
   queues,
   safetyVerificationExpiryCronPattern,
   safetyVerificationExpirySchedulerId,
@@ -249,6 +251,33 @@ const enqueueUnresolvedFamilyOutboxRows = async () => {
 };
 
 void enqueueUnresolvedFamilyOutboxRows().catch((cause) => {
+  // TODO: log this failure to Sentry once error reporting is wired.
+  console.error(cause);
+});
+
+// Full rebuild of both search indexes on every launch. A fresh Typesense has
+// no collections at all (until now only an admin-triggered reindex created
+// them, so every search 502'd on a new stack), and a restart is also the
+// moment the index is most likely to have drifted from the database. The
+// rebuild is idempotent, reads the DB as the source of truth, and dedupes
+// against a reindex an admin may already have queued.
+const enqueueFullReindexOnBoot = async () => {
+  await Promise.all([
+    providerSearchQueue.add(
+      providerSearchJobNames.reindexAllProviders,
+      {},
+      { deduplication: { id: providerSearchReindexDeduplicationId } }
+    ),
+    familySearchQueue.add(
+      familySearchJobNames.reindexAllFamilies,
+      {},
+      { deduplication: { id: familySearchReindexDeduplicationId } }
+    )
+  ]);
+  console.log('search: queued a full reindex of providers and families on boot');
+};
+
+void enqueueFullReindexOnBoot().catch((cause) => {
   // TODO: log this failure to Sentry once error reporting is wired.
   console.error(cause);
 });

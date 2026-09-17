@@ -21,7 +21,7 @@ import {
 
 export class MailerError extends Data.TaggedError('MailerError')<{
   cause: unknown;
-}> { }
+}> {}
 
 export type MagicLinkMail = {
   email: string;
@@ -39,35 +39,41 @@ export type ReferralInviteMail = {
 export type ApprovalRequestSubmittedMail = {
   email: string;
   name: string | null;
+  role: MailRole;
 };
 
 /** Recipients come from ADMIN_NOTIFICATION_EMAILS, not from the payload. */
 export type AdminApprovalRequestSubmittedMail = {
-  providerName: string | null;
-  providerEmail: string;
+  applicantName: string | null;
+  applicantEmail: string;
+  role: MailRole;
 };
 
 export type ApprovalRequestRejectedMail = {
   email: string;
   name: string | null;
+  role: MailRole;
   reason: string;
 };
 
 export type ApprovalGrantedMail = {
   email: string;
   name: string | null;
+  role: MailRole;
   expiresAt: Date;
 };
 
 export type ApprovalRevokedMail = {
   email: string;
   name: string | null;
+  role: MailRole;
   reason: string;
 };
 
 export type ApprovalExpiringMail = {
   email: string;
   name: string | null;
+  role: MailRole;
   expiresAt: Date;
   daysRemaining: number;
   link: string;
@@ -147,45 +153,45 @@ export class Mailer extends Context.Tag('@api/lib/Mailer')<
     sendAccountBanned: (mail: AccountBannedMail) => Effect.Effect<void, MailerError>;
     sendAccountUnbanned: (mail: AccountUnbannedMail) => Effect.Effect<void, MailerError>;
   }
->() { }
+>() {}
 
 const RESEND_EMAILS_URL = 'https://api.resend.com/emails';
 
 const makeResendDeliver =
   (options: { apiKey: string; from: string }) =>
-    (to: ReadonlyArray<string>, content: MailContent): Effect.Effect<void, MailerError> =>
-      Effect.tryPromise({
-        try: async () => {
-          const response = await fetch(RESEND_EMAILS_URL, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${options.apiKey}`,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-              from: options.from,
-              to,
-              subject: content.subject,
-              html: content.html,
-              text: content.text
-            })
-          });
-          if (!response.ok) {
-            const body = await response.text().catch(() => '');
-            throw new Error(`Resend responded ${response.status}: ${body}`);
-          }
-        },
-        catch: (cause) => new MailerError({ cause })
-      });
+  (to: ReadonlyArray<string>, content: MailContent): Effect.Effect<void, MailerError> =>
+    Effect.tryPromise({
+      try: async () => {
+        const response = await fetch(RESEND_EMAILS_URL, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${options.apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            from: options.from,
+            to,
+            subject: content.subject,
+            html: content.html,
+            text: content.text
+          })
+        });
+        if (!response.ok) {
+          const body = await response.text().catch(() => '');
+          throw new Error(`Resend responded ${response.status}: ${body}`);
+        }
+      },
+      catch: (cause) => new MailerError({ cause })
+    });
 
 /** Dev log-mode delivery. The magic-link line keeps its exact historical
  * format — the local sign-in recipe reads the link out of the api logs. */
 const makeLogDeliver =
   () =>
-    (to: ReadonlyArray<string>, content: MailContent): Effect.Effect<void, MailerError> =>
-      Effect.sync(() => {
-        console.log(`[mail] to ${to.join(', ')}: ${content.subject}\n${content.text}`);
-      });
+  (to: ReadonlyArray<string>, content: MailContent): Effect.Effect<void, MailerError> =>
+    Effect.sync(() => {
+      console.log(`[mail] to ${to.join(', ')}: ${content.subject}\n${content.text}`);
+    });
 
 export const makeMailer = (config: {
   resendApiKey: Option.Option<string>;
@@ -229,10 +235,10 @@ export const makeMailer = (config: {
         suppressed.length === 0
           ? Effect.void
           : Effect.sync(() => {
-            console.log(
-              `[mail] suppressed (${config.environment}) to ${suppressed.join(', ')}: ${content.subject}`
-            );
-          }),
+              console.log(
+                `[mail] suppressed (${config.environment}) to ${suppressed.join(', ')}: ${content.subject}`
+              );
+            }),
         allowed.length === 0 ? Effect.void : send(allowed, content)
       ],
       { discard: true }

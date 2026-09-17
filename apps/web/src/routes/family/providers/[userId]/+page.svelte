@@ -19,6 +19,7 @@
 	let provider = $state<ProviderDetail | null>(null);
 	let loading = $state(true);
 	let notFound = $state(false);
+	let notApproved = $state(false);
 	let loadError = $state(false);
 	let composerOpen = $state(false);
 	let conversation = $state<ConversationLookup>(null);
@@ -43,6 +44,7 @@
 		if (!id) return;
 		loading = true;
 		notFound = false;
+		notApproved = false;
 		loadError = false;
 		void getProvider(id).then((result) => {
 			loading = false;
@@ -50,6 +52,8 @@
 				provider = result.data;
 			} else if (result.error.code === 'PROVIDER_NOT_FOUND') {
 				notFound = true;
+			} else if (result.error.code === 'FAMILY_NOT_APPROVED') {
+				notApproved = true;
 			} else {
 				loadError = true;
 			}
@@ -131,6 +135,24 @@
 			</div>
 			<div class="skeleton h-4 w-full"></div>
 			<div class="skeleton h-4 w-2/3"></div>
+		</div>
+	{:else if notApproved}
+		<div
+			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
+		>
+			<span class="flex size-14 items-center justify-center rounded-full bg-warning-content">
+				<i class="las la-user-shield text-2xl text-warning" aria-hidden="true"></i>
+			</span>
+			<h1 class="font-display text-lg font-bold text-base-content">
+				Helper profiles unlock once you're approved
+			</h1>
+			<p class="max-w-sm text-sm text-base-content-muted">
+				Submit your profile for review; once the Poppynz team approves it you can view and contact
+				helpers.
+			</p>
+			<a href={resolve('/family/approval')} class="btn btn-primary btn-sm">
+				Check your approval status
+			</a>
 		</div>
 	{:else if notFound}
 		<div

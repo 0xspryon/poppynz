@@ -1,0 +1,803 @@
+{
+  "title": "Site header (en)",
+  "type": "type_header",
+  "lang": "en",
+  "elements": [
+    {
+      "id": "84c1aad",
+      "elType": "e-flexbox",
+      "settings": {
+        "classes": {
+          "$$type": "classes",
+          "value": [
+            "hdr"
+          ]
+        },
+        "tag": {
+          "$$type": "string",
+          "value": "header"
+        }
+      },
+      "styles": {},
+      "elements": [
+        {
+          "id": "118909c",
+          "elType": "e-flexbox",
+          "settings": {
+            "classes": {
+              "$$type": "classes",
+              "value": [
+                "brand"
+              ]
+            },
+            "link": {
+              "$$type": "link",
+              "value": {
+                "destination": {
+                  "$$type": "url",
+                  "value": "/"
+                },
+                "isTargetBlank": {
+                  "$$type": "boolean",
+                  "value": false
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              }
+            },
+            "tag": {
+              "$$type": "string",
+              "value": "a"
+            }
+          },
+          "styles": {},
+          "elements": [
+            {
+              "id": "5b63287",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "brand-mark"
+                  ]
+                },
+                "image": {
+                  "$$type": "image",
+                  "value": {
+                    "src": {
+                      "$$type": "image-src",
+                      "value": {
+                        "id": {
+                          "$$type": "media-hash",
+                          "value": "aa834f2dc467"
+                        },
+                        "url": null,
+                        "alt": {
+                          "$$type": "string",
+                          "value": ""
+                        }
+                      }
+                    },
+                    "size": {
+                      "$$type": "string",
+                      "value": "full"
+                    }
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Logo mark"
+              },
+              "version": "0.0",
+              "widgetType": "e-image"
+            },
+            {
+              "id": "7e05f6c",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": []
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "span"
+                },
+                "paragraph": {
+                  "$$type": "html-v3",
+                  "value": {
+                    "content": {
+                      "$$type": "string",
+                      "value": "poppynz"
+                    },
+                    "children": []
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Brand name"
+              },
+              "version": "0.0",
+              "widgetType": "e-paragraph"
+            }
+          ],
+          "editor_settings": {
+            "title": "Brand"
+          },
+          "version": "0.0"
+        },
+        {
+          "id": "c8f9af2",
+          "elType": "e-flexbox",
+          "settings": {
+            "classes": {
+              "$$type": "classes",
+              "value": [
+                "hdr-nav"
+              ]
+            },
+            "tag": {
+              "$$type": "string",
+              "value": "div"
+            }
+          },
+          "styles": {},
+          "elements": [
+            {
+              "id": "c3a2e00",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/for-families"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "d818ea0",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "For families"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "For families"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "For families"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "e06fe01",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/for-helpers"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "2e3234b",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "For helpers"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "For helpers"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "For helpers"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "624264c",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/safety-and-trust"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "cbb01da",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Safety & trust"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Safety & trust"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Safety & trust"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "82df7ca",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/daycare-matching"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "ff04694",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Daycare"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Daycare"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                },
+                {
+                  "id": "8f92086",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "badge-new",
+                        "anim-wiggle-badge"
+                      ]
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "New"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Badge"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Daycare"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "59603b5",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/blog"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "1f616d8",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Blog"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Blog"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Blog"
+              },
+              "version": "0.0"
+            }
+          ],
+          "editor_settings": {
+            "title": "Nav"
+          },
+          "version": "0.0"
+        },
+        {
+          "id": "7a1e94a",
+          "elType": "e-flexbox",
+          "settings": {
+            "classes": {
+              "$$type": "classes",
+              "value": [
+                "hdr-actions"
+              ]
+            },
+            "tag": {
+              "$$type": "string",
+              "value": "div"
+            }
+          },
+          "styles": {},
+          "elements": [
+            {
+              "id": "19c600a",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "lang"
+                  ]
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "div"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "7aa7736",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "lang-item",
+                        "lang-on"
+                      ]
+                    },
+                    "link": {
+                      "$$type": "link",
+                      "value": {
+                        "destination": {
+                          "$$type": "url",
+                          "value": "/"
+                        },
+                        "isTargetBlank": {
+                          "$$type": "boolean",
+                          "value": false
+                        },
+                        "tag": {
+                          "$$type": "string",
+                          "value": "a"
+                        }
+                      }
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "EN"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "EN"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                },
+                {
+                  "id": "5b33658",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "lang-item"
+                      ]
+                    },
+                    "link": {
+                      "$$type": "link",
+                      "value": {
+                        "destination": {
+                          "$$type": "url",
+                          "value": "/fr/"
+                        },
+                        "isTargetBlank": {
+                          "$$type": "boolean",
+                          "value": false
+                        },
+                        "tag": {
+                          "$$type": "string",
+                          "value": "a"
+                        }
+                      }
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "FR"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "FR"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Language"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "4b3ebef",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "signin"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "https://app.poppynz.com/auth/sign-in"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "span"
+                },
+                "paragraph": {
+                  "$$type": "html-v3",
+                  "value": {
+                    "content": {
+                      "$$type": "string",
+                      "value": "Sign in"
+                    },
+                    "children": []
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Sign in"
+              },
+              "version": "0.0",
+              "widgetType": "e-paragraph"
+            },
+            {
+              "id": "b11fe18",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "getstarted"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "https://app.poppynz.com/auth/sign-up"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "span"
+                },
+                "paragraph": {
+                  "$$type": "html-v3",
+                  "value": {
+                    "content": {
+                      "$$type": "string",
+                      "value": "Get started"
+                    },
+                    "children": []
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Get started"
+              },
+              "version": "0.0",
+              "widgetType": "e-paragraph"
+            }
+          ],
+          "editor_settings": {
+            "title": "Actions"
+          },
+          "version": "0.0"
+        }
+      ],
+      "editor_settings": {
+        "title": "Header (en)"
+      },
+      "version": "0.0"
+    }
+  ],
+  "_css": {}
+}

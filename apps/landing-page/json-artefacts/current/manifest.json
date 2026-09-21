@@ -1,0 +1,155 @@
+{
+  "builderVersion": "1",
+  "elementorVersion": "4.2.4",
+  "builtAt": "2026-09-21T10:19:45.477Z",
+  "entries": [
+    "pages/home.en.json",
+    "pages/home.fr.json",
+    "templates/footer.en.json",
+    "templates/footer.fr.json",
+    "templates/header.en.json",
+    "templates/header.fr.json"
+  ],
+  "media": {
+    "0e6f53b6917e": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:clipboard-list"
+    },
+    "127ff18862ba": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:shield-alt"
+    },
+    "17f4a33ec469": {
+      "ext": "webp",
+      "alt": "Petites courses",
+      "key": "svc:packages"
+    },
+    "208de3b99c1c": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:lock"
+    },
+    "304c7724fedf": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:map-marked-alt"
+    },
+    "34fb1e397be9": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:check-circle"
+    },
+    "3c13e25f4886": {
+      "ext": "webp",
+      "alt": "Tutorat",
+      "key": "svc:tutoring"
+    },
+    "4b503b342852": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:user-shield"
+    },
+    "54e1b74c3758": {
+      "ext": "webp",
+      "alt": "Visites aux aînés",
+      "key": "svc:elderly-check-in"
+    },
+    "5b36b8d13979": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:arrow-right"
+    },
+    "5d6d976e115c": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:stopwatch"
+    },
+    "5faf2817e4f3": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:plus"
+    },
+    "6384061d6697": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:file-signature"
+    },
+    "708a78b4e587": {
+      "ext": "webp",
+      "alt": "Aide au jardin",
+      "key": "svc:yard-help"
+    },
+    "728940238b53": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:star"
+    },
+    "750f9d5f1508": {
+      "ext": "webp",
+      "alt": "Garde d’enfants",
+      "key": "svc:childcare"
+    },
+    "862199bab8b2": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:check"
+    },
+    "88598564d508": {
+      "ext": "webp",
+      "alt": "Garde d’animaux",
+      "key": "svc:pet-minding"
+    },
+    "8ac0f28bedb9": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:heart"
+    },
+    "aa834f2dc467": {
+      "ext": "svg",
+      "alt": "Poppynz",
+      "key": "logo-mark"
+    },
+    "aeb29f239dcb": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:smile-wink"
+    },
+    "baa1fb0663f5": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:id-card"
+    },
+    "d2f6fab7166f": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:map-marker"
+    },
+    "dd689c79cd4a": {
+      "ext": "webp",
+      "alt": "Entretien ménager léger",
+      "key": "svc:light-housekeeping"
+    },
+    "e9dff1d24699": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:home"
+    },
+    "ea089cc5a7b7": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:hand-holding-heart"
+    },
+    "eb85c116f6e6": {
+      "ext": "webp",
+      "alt": "Préparation des repas",
+      "key": "svc:meal-preparation"
+    },
+    "ffd611c5a7f5": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:search"
+    }
+  }
+}

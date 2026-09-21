@@ -1,6 +1,8 @@
 import { cls } from "./classes";
+import type { Lang } from "./content/types";
 import { lintCssMap, normalizeCss, parseCssKey, type CssMap } from "./css";
 import { elementId, localStyleId } from "./ids";
+import type { MediaRegistry } from "./media";
 import { bool, classes as classesProp, html, imageRef, link as linkProp, str, svgRef, videoRef } from "./props";
 
 export type ContainerTag = "div" | "header" | "section" | "article" | "aside" | "footer" | "a" | "button";
@@ -137,3 +139,5 @@ export function assertUniqueIds(roots: El[]): void {
     throw new Error(duplicates.join("\n"));
   }
 }
+
+export type Recipe = { kind: "page" | "header" | "footer"; key: string; build(lang: Lang, media: MediaRegistry): El[] };

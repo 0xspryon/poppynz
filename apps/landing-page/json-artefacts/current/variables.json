@@ -1,0 +1,142 @@
+[
+  {
+    "label": "navy",
+    "type": "global-color-variable",
+    "value": "#1A3375"
+  },
+  {
+    "label": "sky",
+    "type": "global-color-variable",
+    "value": "#37B5FF"
+  },
+  {
+    "label": "sky-hover",
+    "type": "global-color-variable",
+    "value": "#1FA6F3"
+  },
+  {
+    "label": "sky-light",
+    "type": "global-color-variable",
+    "value": "#8FCDFF"
+  },
+  {
+    "label": "teal",
+    "type": "global-color-variable",
+    "value": "#005782"
+  },
+  {
+    "label": "ink",
+    "type": "global-color-variable",
+    "value": "#001E30"
+  },
+  {
+    "label": "muted",
+    "type": "global-color-variable",
+    "value": "#444650"
+  },
+  {
+    "label": "muted-2",
+    "type": "global-color-variable",
+    "value": "#757681"
+  },
+  {
+    "label": "page",
+    "type": "global-color-variable",
+    "value": "#F7F9FF"
+  },
+  {
+    "label": "white",
+    "type": "global-color-variable",
+    "value": "#FFFFFF"
+  },
+  {
+    "label": "line",
+    "type": "global-color-variable",
+    "value": "#D6E2F2"
+  },
+  {
+    "label": "line-2",
+    "type": "global-color-variable",
+    "value": "#C5C6D2"
+  },
+  {
+    "label": "tint",
+    "type": "global-color-variable",
+    "value": "#E1F0FF"
+  },
+  {
+    "label": "tint-2",
+    "type": "global-color-variable",
+    "value": "#ECF4FF"
+  },
+  {
+    "label": "tint-line",
+    "type": "global-color-variable",
+    "value": "#CBE6FF"
+  },
+  {
+    "label": "pink",
+    "type": "global-color-variable",
+    "value": "#FCE3F4"
+  },
+  {
+    "label": "pink-line",
+    "type": "global-color-variable",
+    "value": "#F5C9E4"
+  },
+  {
+    "label": "magenta",
+    "type": "global-color-variable",
+    "value": "#EA42B9"
+  },
+  {
+    "label": "magenta-ink",
+    "type": "global-color-variable",
+    "value": "#A5106F"
+  },
+  {
+    "label": "ok",
+    "type": "global-color-variable",
+    "value": "#0B7A52"
+  },
+  {
+    "label": "ok-bg",
+    "type": "global-color-variable",
+    "value": "#E3F4EC"
+  },
+  {
+    "label": "navy-text",
+    "type": "global-color-variable",
+    "value": "#B9C6E8"
+  },
+  {
+    "label": "navy-note",
+    "type": "global-color-variable",
+    "value": "#8B9BC9"
+  },
+  {
+    "label": "orange",
+    "type": "global-color-variable",
+    "value": "#F26E21"
+  },
+  {
+    "label": "orange-bg",
+    "type": "global-color-variable",
+    "value": "#FDEBE0"
+  },
+  {
+    "label": "orange-line",
+    "type": "global-color-variable",
+    "value": "#F5C9A8"
+  },
+  {
+    "label": "font-display",
+    "type": "global-font-variable",
+    "value": "Hanken Grotesk"
+  },
+  {
+    "label": "font-body",
+    "type": "global-font-variable",
+    "value": "Inter"
+  }
+]

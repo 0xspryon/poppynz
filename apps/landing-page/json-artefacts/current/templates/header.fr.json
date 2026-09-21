@@ -1,0 +1,803 @@
+{
+  "title": "Site header (fr)",
+  "type": "type_header",
+  "lang": "fr",
+  "elements": [
+    {
+      "id": "84c1aad",
+      "elType": "e-flexbox",
+      "settings": {
+        "classes": {
+          "$$type": "classes",
+          "value": [
+            "hdr"
+          ]
+        },
+        "tag": {
+          "$$type": "string",
+          "value": "header"
+        }
+      },
+      "styles": {},
+      "elements": [
+        {
+          "id": "118909c",
+          "elType": "e-flexbox",
+          "settings": {
+            "classes": {
+              "$$type": "classes",
+              "value": [
+                "brand"
+              ]
+            },
+            "link": {
+              "$$type": "link",
+              "value": {
+                "destination": {
+                  "$$type": "url",
+                  "value": "/fr/"
+                },
+                "isTargetBlank": {
+                  "$$type": "boolean",
+                  "value": false
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              }
+            },
+            "tag": {
+              "$$type": "string",
+              "value": "a"
+            }
+          },
+          "styles": {},
+          "elements": [
+            {
+              "id": "5b63287",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "brand-mark"
+                  ]
+                },
+                "image": {
+                  "$$type": "image",
+                  "value": {
+                    "src": {
+                      "$$type": "image-src",
+                      "value": {
+                        "id": {
+                          "$$type": "media-hash",
+                          "value": "aa834f2dc467"
+                        },
+                        "url": null,
+                        "alt": {
+                          "$$type": "string",
+                          "value": ""
+                        }
+                      }
+                    },
+                    "size": {
+                      "$$type": "string",
+                      "value": "full"
+                    }
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Logo mark"
+              },
+              "version": "0.0",
+              "widgetType": "e-image"
+            },
+            {
+              "id": "7e05f6c",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": []
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "span"
+                },
+                "paragraph": {
+                  "$$type": "html-v3",
+                  "value": {
+                    "content": {
+                      "$$type": "string",
+                      "value": "poppynz"
+                    },
+                    "children": []
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Brand name"
+              },
+              "version": "0.0",
+              "widgetType": "e-paragraph"
+            }
+          ],
+          "editor_settings": {
+            "title": "Brand"
+          },
+          "version": "0.0"
+        },
+        {
+          "id": "c8f9af2",
+          "elType": "e-flexbox",
+          "settings": {
+            "classes": {
+              "$$type": "classes",
+              "value": [
+                "hdr-nav"
+              ]
+            },
+            "tag": {
+              "$$type": "string",
+              "value": "div"
+            }
+          },
+          "styles": {},
+          "elements": [
+            {
+              "id": "c3a2e00",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/fr/pour-les-familles"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "d818ea0",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Pour les familles"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Pour les familles"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Pour les familles"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "e06fe01",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/fr/pour-les-aides"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "2e3234b",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Pour les aides"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Pour les aides"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Pour les aides"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "624264c",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/fr/securite-et-confiance"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "cbb01da",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Sécurité et confiance"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Sécurité et confiance"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Sécurité et confiance"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "82df7ca",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/fr/jumelage-garderie"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "ff04694",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Garderie"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Garderie"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                },
+                {
+                  "id": "8f92086",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "badge-new",
+                        "anim-wiggle-badge"
+                      ]
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Nouveau"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Badge"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Garderie"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "59603b5",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "nav-link"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "/fr/blogue"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "a"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "1f616d8",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": []
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Blogue"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Blogue"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Blogue"
+              },
+              "version": "0.0"
+            }
+          ],
+          "editor_settings": {
+            "title": "Nav"
+          },
+          "version": "0.0"
+        },
+        {
+          "id": "7a1e94a",
+          "elType": "e-flexbox",
+          "settings": {
+            "classes": {
+              "$$type": "classes",
+              "value": [
+                "hdr-actions"
+              ]
+            },
+            "tag": {
+              "$$type": "string",
+              "value": "div"
+            }
+          },
+          "styles": {},
+          "elements": [
+            {
+              "id": "19c600a",
+              "elType": "e-flexbox",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "lang"
+                  ]
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "div"
+                }
+              },
+              "styles": {},
+              "elements": [
+                {
+                  "id": "7aa7736",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "lang-item"
+                      ]
+                    },
+                    "link": {
+                      "$$type": "link",
+                      "value": {
+                        "destination": {
+                          "$$type": "url",
+                          "value": "/"
+                        },
+                        "isTargetBlank": {
+                          "$$type": "boolean",
+                          "value": false
+                        },
+                        "tag": {
+                          "$$type": "string",
+                          "value": "a"
+                        }
+                      }
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "EN"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "EN"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                },
+                {
+                  "id": "5b33658",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "lang-item",
+                        "lang-on"
+                      ]
+                    },
+                    "link": {
+                      "$$type": "link",
+                      "value": {
+                        "destination": {
+                          "$$type": "url",
+                          "value": "/fr/"
+                        },
+                        "isTargetBlank": {
+                          "$$type": "boolean",
+                          "value": false
+                        },
+                        "tag": {
+                          "$$type": "string",
+                          "value": "a"
+                        }
+                      }
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "FR"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "FR"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
+              "editor_settings": {
+                "title": "Language"
+              },
+              "version": "0.0"
+            },
+            {
+              "id": "4b3ebef",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "signin"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "https://app.poppynz.com/auth/sign-in"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "span"
+                },
+                "paragraph": {
+                  "$$type": "html-v3",
+                  "value": {
+                    "content": {
+                      "$$type": "string",
+                      "value": "Connexion"
+                    },
+                    "children": []
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Connexion"
+              },
+              "version": "0.0",
+              "widgetType": "e-paragraph"
+            },
+            {
+              "id": "b11fe18",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "getstarted"
+                  ]
+                },
+                "link": {
+                  "$$type": "link",
+                  "value": {
+                    "destination": {
+                      "$$type": "url",
+                      "value": "https://app.poppynz.com/auth/sign-up"
+                    },
+                    "isTargetBlank": {
+                      "$$type": "boolean",
+                      "value": false
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "a"
+                    }
+                  }
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "span"
+                },
+                "paragraph": {
+                  "$$type": "html-v3",
+                  "value": {
+                    "content": {
+                      "$$type": "string",
+                      "value": "Commencer"
+                    },
+                    "children": []
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Commencer"
+              },
+              "version": "0.0",
+              "widgetType": "e-paragraph"
+            }
+          ],
+          "editor_settings": {
+            "title": "Actions"
+          },
+          "version": "0.0"
+        }
+      ],
+      "editor_settings": {
+        "title": "Header (fr)"
+      },
+      "version": "0.0"
+    }
+  ],
+  "_css": {}
+}

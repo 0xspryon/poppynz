@@ -1,13 +1,29 @@
-export type Command = "build" | "check";
+import { resolve } from "node:path";
+import { lintClasses } from "./classes";
+import { buildArtefact } from "./emit/artefact";
+import { footerRecipe } from "./recipes/footer";
+import { headerRecipe } from "./recipes/header";
+import { homeRecipe } from "./recipes/home";
+
+export const RECIPES = [headerRecipe, footerRecipe, homeRecipe];
 
 export async function runCli(argv: string[]): Promise<number> {
-  const [cmd] = argv;
+  const [cmd, name = "current"] = argv;
   if (cmd !== "build" && cmd !== "check") {
-    console.error(`usage: bun run src/cli.ts build|check (got "${cmd ?? ""}")`);
+    console.error(`usage: bun run src/cli.ts build|check [build-name] (got "${cmd ?? ""}")`);
     return 2;
   }
-  // Later tasks register recipes here; with none registered both commands succeed.
-  console.log(`${cmd}: nothing to do yet`);
+  const problems = lintClasses();
+  if (problems.length) { console.error(problems.join("\n")); return 1; }
+  const outDir = resolve(import.meta.dir, "../../json-artefacts", name);
+  if (cmd === "check") {
+    const { mkdtempSync } = await import("node:fs"); const { tmpdir } = await import("node:os");
+    await buildArtefact({ outDir: mkdtempSync(resolve(tmpdir(), "poppynz-check-")), recipes: RECIPES });
+    console.log("check: ok");
+    return 0;
+  }
+  const m = await buildArtefact({ outDir, recipes: RECIPES });
+  console.log(`build: ${m.entries.length} entries, ${Object.keys(m.media).length} media files -> ${outDir}`);
   return 0;
 }
 

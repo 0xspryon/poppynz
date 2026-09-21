@@ -1,0 +1,920 @@
+[
+  {
+    "id": "g-ccfc59a",
+    "label": "wrap",
+    "css": {
+      "desktop": "max-width:1920px;margin-left:auto;margin-right:auto;width:100%"
+    }
+  },
+  {
+    "id": "g-74459ca",
+    "label": "sec",
+    "css": {
+      "desktop": "padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px)"
+    }
+  },
+  {
+    "id": "g-46fd83f",
+    "label": "sec-x",
+    "css": {
+      "desktop": "padding-left:clamp(24px,5vw,96px);padding-right:clamp(24px,5vw,96px)"
+    }
+  },
+  {
+    "id": "g-574ff46",
+    "label": "band",
+    "css": {
+      "desktop": "background-color:var(--white);border-top-width:1.5px;border-bottom-width:1.5px;border-top-style:solid;border-bottom-style:solid;border-color:var(--line)"
+    }
+  },
+  {
+    "id": "g-f1b5c02",
+    "label": "band-top",
+    "css": {
+      "desktop": "background-color:var(--white);border-top-width:1.5px;border-top-style:solid;border-color:var(--line)"
+    }
+  },
+  {
+    "id": "g-f3311d3",
+    "label": "navy",
+    "css": {
+      "desktop": "background-color:var(--navy);color:var(--white)"
+    }
+  },
+  {
+    "id": "g-30bda51",
+    "label": "stack-16",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:16px"
+    }
+  },
+  {
+    "id": "g-fa4811b",
+    "label": "stack-20",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:20px"
+    }
+  },
+  {
+    "id": "g-860260b",
+    "label": "stack-24",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:24px"
+    }
+  },
+  {
+    "id": "g-3598e6c",
+    "label": "grid-2",
+    "css": {
+      "desktop": "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:clamp(32px,5vw,64px);align-items:center"
+    }
+  },
+  {
+    "id": "g-127d441",
+    "label": "grid-cards",
+    "css": {
+      "desktop": "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px"
+    }
+  },
+  {
+    "id": "g-120bd97",
+    "label": "btn-row",
+    "css": {
+      "desktop": "display:flex;flex-wrap:wrap;gap:14px;align-items:center"
+    }
+  },
+  {
+    "id": "g-e4669bf",
+    "label": "btn-row-center",
+    "css": {
+      "desktop": "display:flex;flex-wrap:wrap;justify-content:center;gap:14px"
+    }
+  },
+  {
+    "id": "g-72e04b9",
+    "label": "eyebrow",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:600;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);display:flex;align-items:center;gap:10px"
+    }
+  },
+  {
+    "id": "g-28753a4",
+    "label": "eyebrow-light",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:600;font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--sky-light);display:flex;align-items:center;gap:10px"
+    }
+  },
+  {
+    "id": "g-b999a7c",
+    "label": "dash",
+    "css": {
+      "desktop": "display:inline-block;width:22px;height:2px;border-radius:2px;background-color:currentColor"
+    }
+  },
+  {
+    "id": "g-d304ba2",
+    "label": "label",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:600;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--teal)"
+    }
+  },
+  {
+    "id": "g-346b81a",
+    "label": "h1",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:800;font-size:clamp(38px,5vw,68px);line-height:1.05;letter-spacing:-.02em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-490b283",
+    "label": "h2",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:800;font-size:clamp(30px,3.6vw,44px);line-height:1.1;letter-spacing:-.02em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-d2322b5",
+    "label": "h2-light",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:clamp(30px,3.6vw,44px);line-height:1.1;letter-spacing:-.02em;color:var(--white)"
+    }
+  },
+  {
+    "id": "g-1333ea0",
+    "label": "h2-sm",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:800;font-size:clamp(28px,3.4vw,40px);line-height:1.1;letter-spacing:-.02em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-e406d7a",
+    "label": "h2-cta",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:800;font-size:clamp(32px,4.2vw,52px);line-height:1.05;letter-spacing:-.02em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-6f207f8",
+    "label": "h3",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:21px;letter-spacing:-.01em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-5b8b2da",
+    "label": "h3-lg",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:24px;letter-spacing:-.01em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-60564fa",
+    "label": "h3-light",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:24px;letter-spacing:-.01em;color:var(--white)"
+    }
+  },
+  {
+    "id": "g-a175755",
+    "label": "hl-wavy",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-fdebd5d",
+    "label": "em-accent",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-727b79a",
+    "label": "accent",
+    "css": {
+      "desktop": "color:var(--sky)"
+    }
+  },
+  {
+    "id": "g-13edbe8",
+    "label": "lead",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:17px;line-height:1.6;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-05cbb97",
+    "label": "lead-light",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:17px;line-height:1.6;color:var(--navy-text)"
+    }
+  },
+  {
+    "id": "g-e9a0442",
+    "label": "lead-lg",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:clamp(16px,1.4vw,19px);line-height:1.6;color:var(--muted);max-width:540px"
+    }
+  },
+  {
+    "id": "g-e93ce6e",
+    "label": "body-15",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:15px;line-height:1.55;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-7ed22d5",
+    "label": "body-15-light",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:15px;line-height:1.6;color:var(--navy-text)"
+    }
+  },
+  {
+    "id": "g-e37a635",
+    "label": "body-16",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:16px;line-height:1.6;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-c105211",
+    "label": "body-18",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:18px;line-height:1.6;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-2197d76",
+    "label": "muted-14",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:14px;line-height:1.5;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-e720eef",
+    "label": "muted-13",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:13px;line-height:1.5;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-3dab67f",
+    "label": "note-light",
+    "css": {
+      "desktop": "display:flex;align-items:center;gap:8px;font-family:var(--font-body);font-size:13px;color:var(--navy-note)"
+    }
+  },
+  {
+    "id": "g-ac05c7d",
+    "label": "trust",
+    "css": {
+      "desktop": "display:flex;align-items:flex-start;gap:8px;font-family:var(--font-body);font-size:14px;line-height:1.5;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-1436add",
+    "label": "btn-primary",
+    "css": {
+      "desktop": "display:inline-block;padding:16px 30px;border-radius:999px;background-color:var(--sky);color:var(--white);font-family:var(--font-body);font-weight:600;font-size:16px;text-decoration:none;box-shadow:0 10px 24px -10px rgba(55,181,255,.65);transition:transform .25s",
+      "desktop:hover": "background-color:var(--sky-hover);color:var(--white);transform:translateY(-2px) scale(1.02)",
+      "mobile": "padding:14px 24px"
+    }
+  },
+  {
+    "id": "g-f0812ea",
+    "label": "btn-primary-14",
+    "css": {
+      "desktop": "display:inline-block;padding:14px 26px;border-radius:999px;background-color:var(--sky);color:var(--white);font-family:var(--font-body);font-weight:600;font-size:15px;text-decoration:none;box-shadow:0 10px 24px -10px rgba(55,181,255,.65);transition:transform .25s",
+      "desktop:hover": "background-color:var(--sky-hover);color:var(--white);transform:translateY(-2px) scale(1.02)"
+    }
+  },
+  {
+    "id": "g-6b60c69",
+    "label": "btn-outline",
+    "css": {
+      "desktop": "display:inline-block;padding:15px 26px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:var(--navy);color:var(--navy);font-family:var(--font-body);font-weight:600;font-size:16px;text-decoration:none",
+      "desktop:hover": "background-color:var(--tint-2)"
+    }
+  },
+  {
+    "id": "g-f48f9ed",
+    "label": "btn-ghost-light-15",
+    "css": {
+      "desktop": "display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.35);color:var(--white);font-family:var(--font-body);font-weight:600;font-size:15px;text-decoration:none",
+      "desktop:hover": "background-color:rgba(255,255,255,.08);color:var(--white)"
+    }
+  },
+  {
+    "id": "g-9d61ec4",
+    "label": "link-arrow",
+    "css": {
+      "desktop": "display:inline-flex;align-items:center;gap:8px;font-family:var(--font-body);font-weight:600;font-size:15px;color:var(--navy);text-decoration:none",
+      "desktop:hover": "color:var(--teal)"
+    }
+  },
+  {
+    "id": "g-cc0256d",
+    "label": "signin",
+    "css": {
+      "desktop": "padding:10px 14px;border-radius:8px;font-family:var(--font-body);font-weight:600;font-size:15px;color:var(--navy);text-decoration:none",
+      "desktop:hover": "background-color:var(--tint-2)"
+    }
+  },
+  {
+    "id": "g-25139a8",
+    "label": "getstarted",
+    "css": {
+      "desktop": "padding:11px 22px;border-radius:999px;background-color:var(--sky);color:var(--white);font-family:var(--font-body);font-weight:600;font-size:15px;text-decoration:none;box-shadow:0 10px 24px -10px rgba(55,181,255,.65);transition:transform .25s",
+      "desktop:hover": "background-color:var(--sky-hover);color:var(--white);transform:translateY(-2px) scale(1.02)"
+    }
+  },
+  {
+    "id": "g-a5ccda2",
+    "label": "nav-link",
+    "css": {
+      "desktop": "padding:8px 12px;border-radius:8px;font-family:var(--font-body);font-weight:500;font-size:15px;color:var(--navy);text-decoration:none;display:inline-flex;align-items:center;gap:6px",
+      "desktop:hover": "background-color:var(--tint-2)"
+    }
+  },
+  {
+    "id": "g-58d7224",
+    "label": "badge-new",
+    "css": {
+      "desktop": "display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;background-color:var(--pink);color:var(--magenta-ink);font-family:var(--font-body);font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase"
+    }
+  },
+  {
+    "id": "g-7572559",
+    "label": "lang",
+    "css": {
+      "desktop": "display:flex;border-width:1.5px;border-style:solid;border-color:var(--line-2);border-radius:8px;padding:2px;gap:0"
+    }
+  },
+  {
+    "id": "g-74da4ac",
+    "label": "lang-item",
+    "css": {
+      "desktop": "padding:5px 9px;border-radius:6px;color:var(--muted);font-family:var(--font-body);font-weight:600;font-size:12px;letter-spacing:.04em;text-decoration:none"
+    }
+  },
+  {
+    "id": "g-d1d0df2",
+    "label": "lang-on",
+    "css": {
+      "desktop": "background-color:var(--navy);color:var(--white)"
+    }
+  },
+  {
+    "id": "g-5f84464",
+    "label": "icon-18",
+    "css": {
+      "desktop": "width:18px;height:18px"
+    }
+  },
+  {
+    "id": "g-fe81529",
+    "label": "icon-20",
+    "css": {
+      "desktop": "width:20px;height:20px"
+    }
+  },
+  {
+    "id": "g-dd7069d",
+    "label": "icon-22",
+    "css": {
+      "desktop": "width:22px;height:22px"
+    }
+  },
+  {
+    "id": "g-b94239b",
+    "label": "icon-24",
+    "css": {
+      "desktop": "width:24px;height:24px"
+    }
+  },
+  {
+    "id": "g-d659c26",
+    "label": "icon-teal",
+    "css": {
+      "desktop": "color:var(--teal)"
+    }
+  },
+  {
+    "id": "g-43c79de",
+    "label": "icon-ok",
+    "css": {
+      "desktop": "color:var(--ok)"
+    }
+  },
+  {
+    "id": "g-7bf2afb",
+    "label": "icon-sky",
+    "css": {
+      "desktop": "color:var(--sky)"
+    }
+  },
+  {
+    "id": "g-117da62",
+    "label": "icon-sky-light",
+    "css": {
+      "desktop": "color:var(--sky-light)"
+    }
+  },
+  {
+    "id": "g-8099e9c",
+    "label": "icon-magenta",
+    "css": {
+      "desktop": "color:var(--magenta)"
+    }
+  },
+  {
+    "id": "g-fb44246",
+    "label": "icon-white",
+    "css": {
+      "desktop": "color:var(--white)"
+    }
+  },
+  {
+    "id": "g-a3fa9e0",
+    "label": "bubble",
+    "css": {
+      "desktop": "display:flex;width:44px;height:44px;align-items:center;justify-content:center;border-radius:999px;background-color:var(--tint);transition:transform .3s",
+      "desktop:hover": "transform:rotate(-8deg) scale(1.1)"
+    }
+  },
+  {
+    "id": "g-b910bed",
+    "label": "bubble-40",
+    "css": {
+      "desktop": "width:40px;height:40px"
+    }
+  },
+  {
+    "id": "g-f3a8962",
+    "label": "bubble-48",
+    "css": {
+      "desktop": "width:48px;height:48px"
+    }
+  },
+  {
+    "id": "g-c30d765",
+    "label": "bubble-light",
+    "css": {
+      "desktop": "display:flex;width:48px;height:48px;align-items:center;justify-content:center;border-radius:999px;background-color:rgba(255,255,255,.1)"
+    }
+  },
+  {
+    "id": "g-aaca0f5",
+    "label": "avatar",
+    "css": {
+      "desktop": "display:flex;width:36px;height:36px;align-items:center;justify-content:center;border-radius:999px;background-color:var(--sky);color:var(--white);font-family:var(--font-body);font-weight:700;font-size:14px"
+    }
+  },
+  {
+    "id": "g-c6c2d39",
+    "label": "vetted",
+    "css": {
+      "desktop": "display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:4px;background-color:var(--ok-bg);color:var(--ok);font-family:var(--font-body);font-weight:600;font-size:12px"
+    }
+  },
+  {
+    "id": "g-4ed5d2e",
+    "label": "city",
+    "css": {
+      "desktop": "display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;background-color:var(--tint);font-family:var(--font-body);font-weight:500;font-size:14px;color:var(--navy);transition:transform .25s",
+      "desktop:hover": "transform:translateY(-3px) rotate(-2deg)"
+    }
+  },
+  {
+    "id": "g-35abceb",
+    "label": "city-next",
+    "css": {
+      "desktop": "display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;border-width:1.5px;border-style:dashed;border-color:var(--line-2);font-family:var(--font-body);font-weight:500;font-size:14px;color:var(--muted);transform:rotate(-2deg)"
+    }
+  },
+  {
+    "id": "g-5dd2199",
+    "label": "card",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:14px;padding:28px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:var(--line);background-color:var(--page);transition:transform .25s"
+    }
+  },
+  {
+    "id": "g-fedc147",
+    "label": "card-lift",
+    "css": {
+      "desktop:hover": "border-color:var(--sky-light);background-color:var(--tint-2);transform:translateY(-4px) rotate(-0.6deg)"
+    }
+  },
+  {
+    "id": "g-2c11b38",
+    "label": "card-lift-r",
+    "css": {
+      "desktop:hover": "border-color:var(--sky-light);background-color:var(--tint-2);transform:translateY(-4px) rotate(0.6deg)"
+    }
+  },
+  {
+    "id": "g-65c368f",
+    "label": "hero-card",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line);box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12);text-decoration:none;transition:transform .25s"
+    }
+  },
+  {
+    "id": "g-15acc29",
+    "label": "hero-card-l",
+    "css": {
+      "desktop:hover": "border-color:var(--sky);background-color:var(--tint-2);transform:translateY(-4px) rotate(-0.8deg)"
+    }
+  },
+  {
+    "id": "g-45edcd4",
+    "label": "hero-card-r",
+    "css": {
+      "desktop:hover": "border-color:var(--navy);background-color:var(--tint-2);transform:translateY(-4px) rotate(0.8deg)"
+    }
+  },
+  {
+    "id": "g-ff5409f",
+    "label": "hero-card-title",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:18px;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-c13fcc9",
+    "label": "hero-card-text",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:14px;line-height:1.5;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-db734f0",
+    "label": "go-sky",
+    "css": {
+      "desktop": "display:inline-flex;align-self:flex-start;align-items:center;gap:8px;padding:10px 18px;color:var(--white);font-family:var(--font-body);font-weight:600;font-size:14px;border-radius:999px;background-color:var(--sky);box-shadow:0 10px 24px -10px rgba(55,181,255,.65)"
+    }
+  },
+  {
+    "id": "g-6f39303",
+    "label": "go-navy",
+    "css": {
+      "desktop": "display:inline-flex;align-self:flex-start;align-items:center;gap:8px;padding:10px 18px;color:var(--white);font-family:var(--font-body);font-weight:600;font-size:14px;border-radius:8px;background-color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-1205a46",
+    "label": "step-num",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:700;font-size:13px;letter-spacing:.08em;color:var(--teal);display:inline-block;transform:rotate(6deg)"
+    }
+  },
+  {
+    "id": "g-964be4b",
+    "label": "step-top",
+    "css": {
+      "desktop": "display:flex;justify-content:space-between;align-items:center;width:100%"
+    }
+  },
+  {
+    "id": "g-961e38b",
+    "label": "svc",
+    "css": {
+      "desktop": "position:relative;display:flex;flex-direction:column;gap:10px;min-height:320px;padding:24px 24px 0;border-radius:12px;border-width:1.5px;border-style:solid;border-color:var(--tint-line);background-color:var(--tint);overflow:hidden;text-decoration:none;transition:transform .25s",
+      "desktop:hover": "border-color:var(--sky-light);transform:translateY(-4px) rotate(0.6deg)"
+    }
+  },
+  {
+    "id": "g-eb22a41",
+    "label": "svc-pink",
+    "css": {
+      "desktop": "background-color:var(--pink);border-color:var(--pink-line)",
+      "desktop:hover": "border-color:var(--magenta)"
+    }
+  },
+  {
+    "id": "g-81cc066",
+    "label": "svc-title",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:21px;letter-spacing:-.01em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-e7cc5cd",
+    "label": "svc-text",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:14px;line-height:1.5;color:var(--muted);max-width:30ch"
+    }
+  },
+  {
+    "id": "g-81983ee",
+    "label": "svc-art",
+    "css": {
+      "desktop": "display:block;align-self:flex-end;margin-top:auto;margin-right:-4px;margin-bottom:-6px;height:160px;width:auto;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,29,90,.12))"
+    }
+  },
+  {
+    "id": "g-7a674c3",
+    "label": "quote",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:20px;padding:32px;border-radius:8px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line);box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12);transition:transform .3s",
+      "desktop:hover": "transform:rotate(0) translateY(-4px)"
+    }
+  },
+  {
+    "id": "g-b39f86e",
+    "label": "quote-text",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:500;font-style:italic;font-size:22px;line-height:1.45;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-9e0574a",
+    "label": "quote-who",
+    "css": {
+      "desktop": "display:flex;align-items:center;gap:12px;margin-top:auto"
+    }
+  },
+  {
+    "id": "g-f1e5d7a",
+    "label": "panel",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:20px;padding:32px;border-radius:14px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line);box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12)"
+    }
+  },
+  {
+    "id": "g-bc0a188",
+    "label": "panel-navy",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:20px;padding:32px;border-radius:14px;background-color:var(--navy);color:var(--white);box-shadow:0 28px 60px -30px rgba(0,29,90,.4)"
+    }
+  },
+  {
+    "id": "g-edc0045",
+    "label": "card-shadow",
+    "css": {
+      "desktop": "box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12)"
+    }
+  },
+  {
+    "id": "g-531181f",
+    "label": "shadow-deep",
+    "css": {
+      "desktop": "box-shadow:0 28px 60px -30px rgba(0,29,90,.4)"
+    }
+  },
+  {
+    "id": "g-20f4655",
+    "label": "checks",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:12px;font-family:var(--font-body);font-size:15px;line-height:1.5;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-daecd7e",
+    "label": "check-row",
+    "css": {
+      "desktop": "display:flex;gap:10px;align-items:flex-start"
+    }
+  },
+  {
+    "id": "g-0da4a90",
+    "label": "credibled",
+    "css": {
+      "desktop": "display:flex;align-items:center;gap:10px;margin-top:auto;padding:12px 14px;border-radius:8px;background-color:var(--orange-bg);border-width:1.5px;border-style:solid;border-color:var(--orange-line);font-family:var(--font-body);font-weight:500;font-size:13px;line-height:1.4;color:var(--ink)"
+    }
+  },
+  {
+    "id": "g-69eb76c",
+    "label": "dot",
+    "css": {
+      "desktop": "flex-shrink:0;width:10px;height:10px;border-radius:999px;background-color:var(--orange)"
+    }
+  },
+  {
+    "id": "g-00836bc",
+    "label": "float-card",
+    "css": {
+      "desktop": "position:absolute;inset-inline-end:16px;inset-block-start:24px;display:flex;align-items:center;gap:12px;padding:12px 14px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line);border-radius:8px;box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12)"
+    }
+  },
+  {
+    "id": "g-416b67d",
+    "label": "media-box",
+    "css": {
+      "desktop": "position:relative;height:clamp(320px,45vw,640px);border-radius:14px;overflow:hidden;box-shadow:0 28px 60px -30px rgba(0,29,90,.4);background-color:var(--tint)"
+    }
+  },
+  {
+    "id": "g-6da83f4",
+    "label": "cta-inner",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;align-items:center;gap:24px;text-align:center;padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px)"
+    }
+  },
+  {
+    "id": "g-17fa668",
+    "label": "ftr",
+    "css": {
+      "desktop": "padding:clamp(48px,6vw,64px) clamp(24px,5vw,96px) 40px;background-color:var(--page);border-top-width:1.5px;border-top-style:solid;border-color:var(--line)"
+    }
+  },
+  {
+    "id": "g-e6e19b4",
+    "label": "ftr-grid",
+    "css": {
+      "desktop": "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:40px"
+    }
+  },
+  {
+    "id": "g-0971e0a",
+    "label": "ftr-col",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:12px"
+    }
+  },
+  {
+    "id": "g-6c7587e",
+    "label": "ftr-link",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-size:15px;color:var(--navy);text-decoration:none",
+      "desktop:hover": "color:var(--teal)"
+    }
+  },
+  {
+    "id": "g-f1bc732",
+    "label": "ftr-bottom",
+    "css": {
+      "desktop": "display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-top:48px;padding-top:24px;border-top-width:1.5px;border-top-style:solid;border-color:var(--line);font-family:var(--font-body);font-size:13px;color:var(--muted)"
+    }
+  },
+  {
+    "id": "g-8c4d3a9",
+    "label": "brand",
+    "css": {
+      "desktop": "display:inline-flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:800;font-size:20px;letter-spacing:-.02em;color:var(--navy);text-decoration:none"
+    }
+  },
+  {
+    "id": "g-f417314",
+    "label": "brand-mark",
+    "css": {
+      "desktop": "width:32px;height:32px"
+    }
+  },
+  {
+    "id": "g-4ccdcbc",
+    "label": "hdr",
+    "css": {
+      "desktop": "position:sticky;inset-block-start:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding:14px clamp(24px,5vw,96px);border-bottom-width:1.5px;border-bottom-style:solid;border-color:var(--line);background-color:rgba(247,249,255,.94);backdrop-filter:blur(8px)"
+    }
+  },
+  {
+    "id": "g-6644b5c",
+    "label": "hdr-nav",
+    "css": {
+      "desktop": "display:flex;flex-wrap:wrap;justify-content:center;gap:4px;flex-grow:1"
+    }
+  },
+  {
+    "id": "g-f5e84ab",
+    "label": "hdr-actions",
+    "css": {
+      "desktop": "display:flex;align-items:center;gap:12px"
+    }
+  },
+  {
+    "id": "g-bbfd403",
+    "label": "deco",
+    "css": {
+      "desktop": "position:absolute;inset-block-start:0;inset-inline-start:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:0"
+    }
+  },
+  {
+    "id": "g-fffaa64",
+    "label": "deco-d1",
+    "css": {
+      "desktop": "position:absolute;inset-inline-start:6%;inset-block-start:14%;width:14px;height:14px;border-radius:999px;background-color:var(--tint-line)"
+    }
+  },
+  {
+    "id": "g-a6f7311",
+    "label": "deco-d2",
+    "css": {
+      "desktop": "position:absolute;inset-inline-start:44%;inset-block-start:8%;width:9px;height:9px;border-radius:999px;background-color:var(--magenta);opacity:.55"
+    }
+  },
+  {
+    "id": "g-28a0ba9",
+    "label": "deco-d3",
+    "css": {
+      "desktop": "position:absolute;inset-inline-start:52%;inset-block-start:70%;width:22px;height:22px;color:var(--sky)"
+    }
+  },
+  {
+    "id": "g-4fbb112",
+    "label": "deco-d4",
+    "css": {
+      "desktop": "position:absolute;inset-inline-start:2%;inset-block-end:12%;width:22px;height:22px;border-radius:999px;border-width:2px;border-style:solid;border-color:var(--sky-light)"
+    }
+  },
+  {
+    "id": "g-a60f7fa",
+    "label": "deco-d5",
+    "css": {
+      "desktop": "position:absolute;inset-inline-end:4%;inset-block-end:18%;width:18px;height:18px;color:var(--magenta);opacity:.5"
+    }
+  },
+  {
+    "id": "g-8626110",
+    "label": "hero-copy",
+    "css": {
+      "desktop": "position:relative;z-index:1;display:flex;flex-direction:column;gap:28px"
+    }
+  },
+  {
+    "id": "g-f04af61",
+    "label": "hero",
+    "css": {
+      "desktop": "position:relative;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:clamp(32px,5vw,64px);padding:clamp(48px,7vw,80px) clamp(24px,5vw,96px);align-items:center;max-width:1920px;margin-left:auto;margin-right:auto"
+    }
+  },
+  {
+    "id": "g-fd94862",
+    "label": "anim-float",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-9251f3a",
+    "label": "anim-wave",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-3a0f74e",
+    "label": "anim-bob",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-a95f8d5",
+    "label": "anim-wiggle",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-5ada18d",
+    "label": "anim-wiggle-badge",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-6bfb8ce",
+    "label": "anim-beat",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-75b00fc",
+    "label": "anim-twinkle",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-4ca32e9",
+    "label": "anim-drift",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-a38061b",
+    "label": "anim-drift-rev",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-2e680d5",
+    "label": "anim-drift-slow",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
+    "id": "g-de1869c",
+    "label": "anim-ring",
+    "css": {
+      "desktop": ""
+    }
+  }
+]

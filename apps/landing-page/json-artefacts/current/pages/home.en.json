@@ -7527,7 +7527,7 @@
       "desktop": "flex-direction:column;gap:40px"
     },
     "e-4a3d426-f510720": {
-      "desktop": "flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px 40px"
+      "desktop": "flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;column-gap:40px"
     },
     "e-cee7434-1c2830e": {
       "desktop": "max-width:620px"

@@ -25,6 +25,17 @@
 .elementor .hl-wavy em{font-style:normal;text-decoration:underline wavy var(--sky);text-decoration-thickness:.06em;text-underline-offset:.14em}
 .elementor .em-accent em{font-style:normal;color:var(--sky)}
 
+/* Elementor's own base rules (.elementor-element{width:100%} and .e-con{width:var(--width,100%)})
+ * stretch every atomic container to the full width of its parent. For a row-direction e-flexbox
+ * parent this forces flex-basis:auto to resolve to 100%, so each child wraps onto its own line
+ * instead of sitting side by side (header nav, footer bottom bar, any multi-item row). For a
+ * column-direction flex parent or a grid parent it is harmless (width:auto lets the existing
+ * align-items:stretch / grid stretch behaviour produce the same fill). Widen the selector's
+ * specificity (0,3,0) past both base rules (0,2,0 and 0,1,0) so it always wins regardless of
+ * stylesheet order, and scope it to e-flexbox containers only (div-block/grid children in the
+ * project already carry an explicit width on their own class). See pitfalls.md. */
+.elementor .e-flexbox-base.e-con{width:auto}
+
 /* FAQ items (Plan 2): the toggle script adds/removes .is-open on the item container. */
 .elementor .faq-answer{display:none}
 .elementor .faq-item.is-open .faq-answer{display:block}

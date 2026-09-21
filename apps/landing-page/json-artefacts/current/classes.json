@@ -24,14 +24,14 @@
     "id": "g-574ff46",
     "label": "band",
     "css": {
-      "desktop": "background-color:var(--white);border-top-width:1.5px;border-bottom-width:1.5px;border-top-style:solid;border-bottom-style:solid;border-color:var(--line)"
+      "desktop": "background-color:var(--white);border-top-width:1.5px;border-bottom-width:1.5px;border-style:solid;border-color:var(--line)"
     }
   },
   {
     "id": "g-f1b5c02",
     "label": "band-top",
     "css": {
-      "desktop": "background-color:var(--white);border-top-width:1.5px;border-top-style:solid;border-color:var(--line)"
+      "desktop": "background-color:var(--white);border-top-width:1.5px;border-style:solid;border-color:var(--line)"
     }
   },
   {
@@ -352,17 +352,17 @@
     }
   },
   {
-    "id": "g-74da4ac",
-    "label": "lang-item",
-    "css": {
-      "desktop": "padding:5px 9px;border-radius:6px;color:var(--muted);font-family:var(--font-body);font-weight:600;font-size:12px;letter-spacing:.04em;text-decoration:none"
-    }
-  },
-  {
     "id": "g-d1d0df2",
     "label": "lang-on",
     "css": {
       "desktop": "background-color:var(--navy);color:var(--white)"
+    }
+  },
+  {
+    "id": "g-74da4ac",
+    "label": "lang-item",
+    "css": {
+      "desktop": "padding:5px 9px;border-radius:6px;color:var(--muted);font-family:var(--font-body);font-weight:600;font-size:12px;letter-spacing:.04em;text-decoration:none"
     }
   },
   {
@@ -436,14 +436,6 @@
     }
   },
   {
-    "id": "g-a3fa9e0",
-    "label": "bubble",
-    "css": {
-      "desktop": "display:flex;width:44px;height:44px;align-items:center;justify-content:center;border-radius:999px;background-color:var(--tint);transition:transform .3s",
-      "desktop:hover": "transform:rotate(-8deg) scale(1.1)"
-    }
-  },
-  {
     "id": "g-b910bed",
     "label": "bubble-40",
     "css": {
@@ -455,6 +447,14 @@
     "label": "bubble-48",
     "css": {
       "desktop": "width:48px;height:48px"
+    }
+  },
+  {
+    "id": "g-a3fa9e0",
+    "label": "bubble",
+    "css": {
+      "desktop": "display:flex;width:44px;height:44px;align-items:center;justify-content:center;border-radius:999px;background-color:var(--tint);transition:transform .3s",
+      "desktop:hover": "transform:rotate(-8deg) scale(1.1)"
     }
   },
   {
@@ -578,19 +578,19 @@
     }
   },
   {
-    "id": "g-961e38b",
-    "label": "svc",
-    "css": {
-      "desktop": "position:relative;display:flex;flex-direction:column;gap:10px;min-height:320px;padding:24px 24px 0;border-radius:12px;border-width:1.5px;border-style:solid;border-color:var(--tint-line);background-color:var(--tint);overflow:hidden;text-decoration:none;transition:transform .25s",
-      "desktop:hover": "border-color:var(--sky-light);transform:translateY(-4px) rotate(0.6deg)"
-    }
-  },
-  {
     "id": "g-eb22a41",
     "label": "svc-pink",
     "css": {
       "desktop": "background-color:var(--pink);border-color:var(--pink-line)",
       "desktop:hover": "border-color:var(--magenta)"
+    }
+  },
+  {
+    "id": "g-961e38b",
+    "label": "svc",
+    "css": {
+      "desktop": "position:relative;display:flex;flex-direction:column;gap:10px;min-height:320px;padding:24px 24px 0;border-radius:12px;border-width:1.5px;border-style:solid;border-color:var(--tint-line);background-color:var(--tint);overflow:hidden;text-decoration:none;transition:transform .25s",
+      "desktop:hover": "border-color:var(--sky-light);transform:translateY(-4px) rotate(0.6deg)"
     }
   },
   {
@@ -619,7 +619,7 @@
     "label": "quote",
     "css": {
       "desktop": "display:flex;flex-direction:column;gap:20px;padding:32px;border-radius:8px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line);box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12);transition:transform .3s",
-      "desktop:hover": "transform:rotate(0) translateY(-4px)"
+      "desktop:hover": "transform:rotate(0deg) translateY(-4px)"
     }
   },
   {
@@ -689,7 +689,7 @@
     "id": "g-69eb76c",
     "label": "dot",
     "css": {
-      "desktop": "flex-shrink:0;width:10px;height:10px;border-radius:999px;background-color:var(--orange)"
+      "desktop": "flex:0 0 auto;width:10px;height:10px;border-radius:999px;background-color:var(--orange)"
     }
   },
   {
@@ -717,7 +717,7 @@
     "id": "g-17fa668",
     "label": "ftr",
     "css": {
-      "desktop": "padding:clamp(48px,6vw,64px) clamp(24px,5vw,96px) 40px;background-color:var(--page);border-top-width:1.5px;border-top-style:solid;border-color:var(--line)"
+      "desktop": "padding:clamp(48px,6vw,64px) clamp(24px,5vw,96px) 40px;background-color:var(--page);border-top-width:1.5px;border-style:solid;border-color:var(--line)"
     }
   },
   {
@@ -746,7 +746,7 @@
     "id": "g-f1bc732",
     "label": "ftr-bottom",
     "css": {
-      "desktop": "display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-top:48px;padding-top:24px;border-top-width:1.5px;border-top-style:solid;border-color:var(--line);font-family:var(--font-body);font-size:13px;color:var(--muted)"
+      "desktop": "display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-top:48px;padding-top:24px;border-top-width:1.5px;border-style:solid;border-color:var(--line);font-family:var(--font-body);font-size:13px;color:var(--muted)"
     }
   },
   {
@@ -767,14 +767,14 @@
     "id": "g-4ccdcbc",
     "label": "hdr",
     "css": {
-      "desktop": "position:sticky;inset-block-start:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px 24px;padding:14px clamp(24px,5vw,96px);border-bottom-width:1.5px;border-bottom-style:solid;border-color:var(--line);background-color:rgba(247,249,255,.94);backdrop-filter:blur(8px)"
+      "desktop": "position:sticky;inset-block-start:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;column-gap:24px;padding:14px clamp(24px,5vw,96px);border-bottom-width:1.5px;border-style:solid;border-color:var(--line);background-color:rgba(247,249,255,.94);backdrop-filter:blur(8px)"
     }
   },
   {
     "id": "g-6644b5c",
     "label": "hdr-nav",
     "css": {
-      "desktop": "display:flex;flex-wrap:wrap;justify-content:center;gap:4px;flex-grow:1"
+      "desktop": "display:flex;flex-wrap:wrap;justify-content:center;gap:4px;flex:1 1 auto"
     }
   },
   {
@@ -788,7 +788,7 @@
     "id": "g-bbfd403",
     "label": "deco",
     "css": {
-      "desktop": "position:absolute;inset-block-start:0;inset-inline-start:0;width:100%;height:100%;pointer-events:none;overflow:hidden;z-index:0"
+      "desktop": "position:absolute;inset-block-start:0;inset-inline-start:0;width:100%;height:100%;overflow:hidden;z-index:0"
     }
   },
   {
@@ -802,7 +802,7 @@
     "id": "g-a6f7311",
     "label": "deco-d2",
     "css": {
-      "desktop": "position:absolute;inset-inline-start:44%;inset-block-start:8%;width:9px;height:9px;border-radius:999px;background-color:var(--magenta);opacity:.55"
+      "desktop": "position:absolute;inset-inline-start:44%;inset-block-start:8%;width:9px;height:9px;border-radius:999px;background-color:var(--magenta);opacity:55%"
     }
   },
   {
@@ -823,7 +823,7 @@
     "id": "g-a60f7fa",
     "label": "deco-d5",
     "css": {
-      "desktop": "position:absolute;inset-inline-end:4%;inset-block-end:18%;width:18px;height:18px;color:var(--magenta);opacity:.5"
+      "desktop": "position:absolute;inset-inline-end:4%;inset-block-end:18%;width:18px;height:18px;color:var(--magenta);opacity:50%"
     }
   },
   {

@@ -109,7 +109,7 @@ export const homeRecipe: Recipe = {
 
     const services = flex("home/services", { title: "Services", tag: "section", classes: ["band"] }, [
       flex("home/services/wrap", { title: "Wrap", classes: ["sec", "wrap"], css: { desktop: "flex-direction:column;gap:40px" } }, [
-        flex("home/services/head", { title: "Heading row", css: { desktop: "flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px 40px" } }, [
+        flex("home/services/head", { title: "Heading row", css: { desktop: "flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;column-gap:40px" } }, [
           flex("home/services/intro", { title: "Intro", classes: ["stack-16"], css: { desktop: "max-width:620px" } }, [
             text("home/services/eyebrow", { title: "Eyebrow", classes: ["eyebrow"], text: c.servicesHeader.eyebrow }),
             flex("home/services/h2row", { title: "Title row", css: { desktop: "align-items:center;gap:12px;flex-wrap:wrap" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], text: c.servicesHeader.title }), icon("home/services/wink", "smile-wink", ["icon-24", "icon-sky", "anim-wiggle"])]),

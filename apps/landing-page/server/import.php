@@ -50,26 +50,58 @@ if ( $changed ) { $repo->save( $coll ); }
 
 // ---- 3. global classes (convert first, abort on problems)
 $gcr = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( pz_kit() );
-$current = $gcr->all(); $items = $current->get_items()->all(); $gorder = $current->get_order()->all();
+$current = $gcr->all(); $items = $current->get_items()->all(); $existing_order = $current->get_order()->all();
+$artefact_order = [];
 foreach ( pz_json( 'classes.json' ) as $c ) {
 	$variants = pz_convert_map( $c['css'], 'class ' . $c['label'] );
 	$new = [ 'id' => $c['id'], 'label' => $c['label'], 'type' => 'class', 'variants' => $variants ];
 	$was = $items[ $c['id'] ] ?? null;
 	pz_note( 'classes', $c['label'], $was ? ( wp_json_encode( $was['variants'] ) === wp_json_encode( $variants ) ? 'unchanged' : 'updated' ) : 'created' );
 	$items[ $c['id'] ] = $new;
-	if ( ! in_array( $c['id'], $gorder, true ) ) { $gorder[] = $c['id']; }
+	$artefact_order[] = $c['id'];
 }
+// classes.json is authoritative for ORDER, not just content: Elementor prints global classes in
+// reversed declaration order (see pitfalls.md), so a modifier class that must win over its base
+// class on a shared property only does so if it sorts correctly relative to the base — and
+// merely appending missing ids (the previous behaviour) never re-sorts ids that already existed
+// from an earlier import, silently freezing the order from the very first run forever. Put the
+// artefact's order first; keep any pre-existing id the artefact no longer knows about at the end.
+$gorder = array_values( array_unique( array_merge( $artefact_order, $existing_order ) ) );
 $gcr->put( $items, $gorder );
+// Also sync the PREVIEW context (Global_Classes_Repository::CONTEXT_PREVIEW), not just frontend.
+// The Elementor editor's Style panel and canvas read the preview-context order/items, which our
+// frontend-only put() above never touches; left unsynced, every class shows as a "some classes
+// are missing" warning the first time an imported page is opened in the editor, and the canvas
+// renders completely unstyled (no fonts, no flex/grid, no colors) even though the live frontend
+// is correct. Confirmed live: editor showed the warning until this ran, then showed the class
+// chips normally and the canvas matched the frontend.
+\Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( pz_kit() )->set_preview( true )->put( $items, $gorder );
+
+// Elementor's global-classes CSS bundler (Global_Classes_Relations::extract_class_ids_from_post)
+// resolves the *class id* (e.g. "g-ccfc59a") out of an element's `classes` prop, not its label.
+// Global_Classes_Repository::get_by_ids() then does a hard id lookup with no fallback, so any
+// element that references a class by its label (as the artefact does, for readability) never
+// gets linked to that class and its CSS is silently never printed for that document. Build the
+// label -> id map here and translate every `classes` prop value through it before saving.
+$label_to_id = [];
+foreach ( pz_json( 'classes.json' ) as $c ) { $label_to_id[ $c['label'] ] = $c['id']; }
 
 // ---- helpers for documents
-function pz_fill_styles( array &$elements, array $css_map, array $media_ids ): void {
+function pz_fill_styles( array &$elements, array $css_map, array $media_ids, array $label_to_id ): void {
 	foreach ( $elements as &$el ) {
-		foreach ( $el['styles'] ?? [] as $sid => &$style ) {
-			if ( isset( $css_map[ $sid ] ) ) { $style['variants'] = pz_convert_map( $css_map[ $sid ], ( $el['editor_settings']['title'] ?? $el['id'] ) . " ($sid)" ); }
+		// `foreach ($el['styles'] ?? [] as &$style)` looks equivalent but is NOT: binding a
+		// by-reference foreach to a `??` expression (rather than a bare lvalue) hands back a
+		// reference into a throwaway copy, so every write below silently vanished and no local
+		// per-element css was ever applied. Guard with isset() first and iterate the real array.
+		if ( isset( $el['styles'] ) ) {
+			foreach ( $el['styles'] as $sid => &$style ) {
+				if ( isset( $css_map[ $sid ] ) ) { $style['variants'] = pz_convert_map( $css_map[ $sid ], ( $el['editor_settings']['title'] ?? $el['id'] ) . " ($sid)" ); }
+			}
+			unset( $style );
 		}
-		unset( $style );
 		$el['settings'] = pz_swap_media( $el['settings'], $media_ids );
-		if ( ! empty( $el['elements'] ) ) { pz_fill_styles( $el['elements'], $css_map, $media_ids ); }
+		$el['settings'] = pz_swap_classes( $el['settings'], $label_to_id );
+		if ( ! empty( $el['elements'] ) ) { pz_fill_styles( $el['elements'], $css_map, $media_ids, $label_to_id ); }
 	}
 	unset( $el );
 }
@@ -83,13 +115,43 @@ function pz_swap_media( $node, array $media_ids ) {
 	}
 	return $node;
 }
+/** Translate global-class labels to their real class id inside every `classes` prop
+ * ({'$$type':'classes','value':[...]}). Values not found in $label_to_id (a local per-element
+ * style id like "e-dc222f5-702a727") are left untouched. */
+function pz_swap_classes( $node, array $label_to_id ) {
+	if ( is_array( $node ) ) {
+		if ( ( $node['$$type'] ?? null ) === 'classes' && is_array( $node['value'] ?? null ) ) {
+			$node['value'] = array_map( fn( $v ) => $label_to_id[ $v ] ?? $v, $node['value'] );
+			return $node;
+		}
+		foreach ( $node as $k => $v ) { $node[ $k ] = pz_swap_classes( $v, $label_to_id ); }
+	}
+	return $node;
+}
+/** Elementor regenerates a fresh random `interaction_id` for every hover/scroll interaction on
+ * every save() call, even when nothing else changed; strip it before comparing so unrelated
+ * re-saves report as unchanged instead of a spurious update. */
+function pz_strip_volatile( &$node ): void {
+	if ( ! is_array( $node ) ) { return; }
+	if ( isset( $node['interaction_id'] ) && is_array( $node['interaction_id'] ) && array_key_exists( 'value', $node['interaction_id'] ) ) {
+		$node['interaction_id']['value'] = '~';
+	}
+	foreach ( $node as &$child ) { pz_strip_volatile( $child ); }
+	unset( $child );
+}
+function pz_normalized_elementor_data( int $post_id ): string {
+	$data = json_decode( (string) get_post_meta( $post_id, '_elementor_data', true ), true );
+	if ( ! is_array( $data ) ) { return (string) get_post_meta( $post_id, '_elementor_data', true ); }
+	pz_strip_volatile( $data );
+	return wp_json_encode( $data );
+}
 function pz_save_document( int $post_id, array $elements, array $page_settings ): bool {
 	$doc = \Elementor\Plugin::$instance->documents->get( $post_id, false );
 	$doc->set_is_built_with_elementor( true );
-	$before = get_post_meta( $post_id, '_elementor_data', true );
+	$before = pz_normalized_elementor_data( $post_id );
 	$ok = $doc->save( [ 'elements' => $elements, 'settings' => $page_settings ] );
 	if ( ! $ok ) { throw new Exception( "document save returned false for post $post_id" ); }
-	return get_post_meta( $post_id, '_elementor_data', true ) !== $before;
+	return pz_normalized_elementor_data( $post_id ) !== $before;
 }
 
 // ---- 4. header/footer templates per language
@@ -102,11 +164,12 @@ foreach ( $manifest['entries'] as $entry ) {
 		if ( ! function_exists( 'pll_get_post_language' ) || pll_get_post_language( $cand->ID ) === $t['lang'] ) { $found = $cand->ID; break; }
 	}
 	$pid = $found ?: wp_insert_post( [ 'post_title' => $t['title'], 'post_type' => 'elementor-hf', 'post_status' => 'publish' ] );
+	if ( function_exists( 'pll_set_post_language' ) ) { pll_set_post_language( $pid, $t['lang'] ); }
 	update_post_meta( $pid, 'ehf_template_type', $t['type'] );
 	update_post_meta( $pid, 'ehf_target_include_locations', [ 'rule' => [ 'basic-global' ], 'specific' => [] ] );
 	update_post_meta( $pid, 'ehf_target_exclude_locations', [ 'rule' => [], 'specific' => [] ] );
 	update_post_meta( $pid, 'ehf_target_user_roles', [] );
-	$elements = $t['elements']; pz_fill_styles( $elements, $t['_css'], $media_ids );
+	$elements = $t['elements']; pz_fill_styles( $elements, $t['_css'], $media_ids, $label_to_id );
 	$changed = pz_save_document( $pid, $elements, [] );
 	pz_note( 'templates', $entry, $found ? ( $changed ? 'updated' : 'unchanged' ) : 'created' );
 	$hf_ids[ $kind ][ $t['lang'] ] = $pid;
@@ -123,7 +186,7 @@ foreach ( $manifest['entries'] as $entry ) {
 	}
 	$pid = $found ?: wp_insert_post( [ 'post_title' => $p['title'], 'post_name' => $slug, 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => '' ] );
 	if ( function_exists( 'pll_set_post_language' ) ) { pll_set_post_language( $pid, $p['lang'] ); }
-	$elements = $p['elements']; pz_fill_styles( $elements, $p['_css'], $media_ids );
+	$elements = $p['elements']; pz_fill_styles( $elements, $p['_css'], $media_ids, $label_to_id );
 	$changed = pz_save_document( $pid, $elements, [ 'hide_title' => 'yes', 'template' => 'elementor_header_footer' ] );
 	update_post_meta( $pid, '_wp_page_template', 'elementor_header_footer' );
 	pz_note( 'pages', $entry, $found ? ( $changed ? 'updated' : 'unchanged' ) : 'created' );

@@ -1,0 +1,32 @@
+/* Looping decorative motion. Applied through the anim-* global classes; entrance effects are V4 interactions. */
+@keyframes float{0%,100%{transform:translateY(0) rotate(-1.5deg)}50%{transform:translateY(-8px) rotate(-1.5deg)}}
+@keyframes wave{0%,100%{transform:rotate(0)}25%{transform:rotate(14deg)}75%{transform:rotate(-8deg)}}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+@keyframes wiggle{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}
+@keyframes wiggle-badge{0%,100%{transform:rotate(-6deg)}50%{transform:rotate(2deg)}}
+@keyframes beat{0%,100%{transform:scale(1)}30%{transform:scale(1.25)}50%{transform:scale(1)}}
+@keyframes twinkle{0%,100%{opacity:.35;transform:scale(.8) rotate(0)}50%{opacity:1;transform:scale(1.1) rotate(20deg)}}
+@keyframes ring{0%,100%{transform:translateY(-50%) rotate(0)}15%{transform:translateY(-50%) rotate(-3deg)}30%{transform:translateY(-50%) rotate(2.5deg)}45%{transform:translateY(-50%) rotate(-1.5deg)}60%{transform:translateY(-50%) rotate(1deg)}75%{transform:translateY(-50%) rotate(0)}}
+@keyframes drift{0%,100%{transform:translate(0,0)}33%{transform:translate(6px,-10px)}66%{transform:translate(-4px,-4px)}}
+
+.elementor .anim-float{animation:float 5s ease-in-out infinite}
+.elementor .anim-wave{display:inline-block;transform-origin:70% 90%;animation:wave 3s ease-in-out infinite}
+.elementor .anim-bob{display:inline-block;animation:bob 2.4s ease-in-out infinite}
+.elementor .anim-wiggle{display:inline-block;transform-origin:left center;animation:wiggle 3s ease-in-out infinite}
+.elementor .anim-wiggle-badge{animation:wiggle-badge 2s ease-in-out infinite}
+.elementor .anim-beat{display:inline-block;animation:beat 1.6s ease-in-out infinite}
+.elementor .anim-twinkle{animation:twinkle 4s ease-in-out infinite}
+.elementor .anim-drift{animation:drift 9s ease-in-out infinite}
+.elementor .anim-drift-rev{animation:drift 11s ease-in-out infinite reverse}
+.elementor .anim-drift-slow{animation:drift 13s ease-in-out infinite}
+.elementor .anim-ring{animation:ring 6s ease-in-out infinite}
+
+/* The only descendant rules in the project: inline emphasis inside V4 headings (see pitfalls.md). */
+.elementor .hl-wavy em{font-style:normal;text-decoration:underline wavy var(--sky);text-decoration-thickness:.06em;text-underline-offset:.14em}
+.elementor .em-accent em{font-style:normal;color:var(--sky)}
+
+/* FAQ items (Plan 2): the toggle script adds/removes .is-open on the item container. */
+.elementor .faq-answer{display:none}
+.elementor .faq-item.is-open .faq-answer{display:block}
+
+@media (prefers-reduced-motion:reduce){.elementor [class*="anim-"]{animation:none!important}}

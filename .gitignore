@@ -36,3 +36,6 @@ yarn-error.log*
 
 dist
 /bun_node_modules
+
+# subagent-driven-development scratch
+.superpowers/

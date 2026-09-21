@@ -13,6 +13,8 @@ describe("props", () => {
     expect(() => html("<div>x</div>")).toThrow(/div/);
     expect(() => html('<span class="x">x</span>')).toThrow(/attribute/);
     expect(() => html('<a href="/x">ok</a>')).not.toThrow();
+    expect(() => html("a<br/>b")).not.toThrow();
+    expect(() => html("a<br />b")).not.toThrow();
   });
   test("classes validates names", () => {
     expect(classes(["btn-primary"])).toEqual({ $$type: "classes", value: ["btn-primary"] });

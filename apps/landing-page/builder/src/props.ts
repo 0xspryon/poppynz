@@ -8,7 +8,7 @@ export function html(value: string) {
   for (const m of value.matchAll(/<\/?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>/g)) {
     const tag = m[1].toLowerCase();
     if (!(ALLOWED_INLINE_TAGS as readonly string[]).includes(tag)) throw new Error(`html(): tag <${tag}> is not allowed in V4 text`);
-    const attrs = m[2].trim();
+    const attrs = m[2].trim().replace(/\/\s*$/, "");
     if (attrs && !(tag === "a" && /^href="[^"]*"$/.test(attrs))) throw new Error(`html(): attribute "${attrs}" on <${tag}> is stripped by Elementor`);
   }
   return { $$type: "html-v3" as const, value: { content: str(value), children: [] as unknown[] } };

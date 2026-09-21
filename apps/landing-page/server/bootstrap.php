@@ -73,6 +73,19 @@ if ( $pz_elementor_ready() ) {
 	$settings['container_width']   = [ 'unit' => 'px', 'size' => 1920, 'sizes' => [] ];
 	$settings['container_padding'] = [ 'unit' => 'px', 'top' => '0', 'right' => '0', 'bottom' => '0', 'left' => '0', 'isLinked' => true ];
 	$settings['space_between_widgets'] = [ 'unit' => 'px', 'column' => '0', 'row' => '0', 'isLinked' => true, 'size' => 0 ];
+	// Page-level (body/link) design defaults: without these Elementor/Hello fall back to their
+	// own base styles (white body, rgb(51,51,51) text, system font, line-height 1.5, Hello's
+	// pink rgb(204,51,102) link color) instead of the design's body{background:#F7F9FF;color:#001E30;
+	// font-family:Inter} / a{color:#1A3375} hover #005782. See references/poppynz.md fix wave 3.
+	$settings['body_background_background'] = 'classic';
+	$settings['body_background_color']      = '#F7F9FF';
+	$settings['body_color']                 = '#001E30';
+	$settings['body_typography_typography']  = 'custom';
+	$settings['body_typography_font_family'] = 'Inter';
+	$settings['body_typography_font_weight'] = '400';
+	$settings['body_typography_line_height'] = [ 'unit' => 'em', 'size' => 1.2, 'sizes' => [] ];
+	$settings['link_normal_color'] = '#1A3375';
+	$settings['link_hover_color']  = '#005782';
 	$kit->update_meta( '_elementor_page_settings', $settings );
 	pz_note( 'kit', 'defaults', 'set' );
 	pz_note( 'kit', 'atomic_active', \Elementor\Plugin::$instance->experiments->is_feature_active( 'e_atomic_elements' ) ? 'yes' : 'NO (turn on e_atomic_elements)' );

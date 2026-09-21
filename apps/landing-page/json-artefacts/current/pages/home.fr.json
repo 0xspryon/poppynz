@@ -1287,6 +1287,39 @@
               "widgetType": "e-self-hosted-video"
             },
             {
+              "id": "d499961",
+              "elType": "widget",
+              "settings": {
+                "classes": {
+                  "$$type": "classes",
+                  "value": [
+                    "media-credit"
+                  ]
+                },
+                "tag": {
+                  "$$type": "string",
+                  "value": "span"
+                },
+                "paragraph": {
+                  "$$type": "html-v3",
+                  "value": {
+                    "content": {
+                      "$$type": "string",
+                      "value": "Video: RDNE Stock project / Pexels"
+                    },
+                    "children": []
+                  }
+                }
+              },
+              "styles": {},
+              "elements": [],
+              "editor_settings": {
+                "title": "Video credit"
+              },
+              "version": "0.0",
+              "widgetType": "e-paragraph"
+            },
+            {
               "id": "adbcda2",
               "elType": "e-flexbox",
               "settings": {
@@ -4674,10 +4707,10 @@
                             "classes": {
                               "$$type": "classes",
                               "value": [
-                                "e-ffc9de5-7438dc4",
                                 "icon-24",
                                 "icon-sky",
-                                "anim-wiggle"
+                                "anim-wiggle",
+                                "icon-inline"
                               ]
                             },
                             "svg": {
@@ -4691,22 +4724,7 @@
                               }
                             }
                           },
-                          "styles": {
-                            "e-ffc9de5-7438dc4": {
-                              "id": "e-ffc9de5-7438dc4",
-                              "type": "class",
-                              "label": "local",
-                              "variants": [
-                                {
-                                  "meta": {
-                                    "breakpoint": "desktop",
-                                    "state": null
-                                  },
-                                  "props": {}
-                                }
-                              ]
-                            }
-                          },
+                          "styles": {},
                           "elements": [],
                           "editor_settings": {
                             "title": "smile-wink"
@@ -6687,7 +6705,41 @@
                   ]
                 }
               },
-              "elements": [],
+              "elements": [
+                {
+                  "id": "f484e02",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "photo-credit"
+                      ]
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Photo by Centre for Ageing Better on Unsplash"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Photo credit"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
               "editor_settings": {
                 "title": "Photo"
               },
@@ -7879,7 +7931,41 @@
                   ]
                 }
               },
-              "elements": [],
+              "elements": [
+                {
+                  "id": "49fd45b",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "photo-credit"
+                      ]
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Photo by Adam Winger on Unsplash"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Photo credit"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                }
+              ],
               "editor_settings": {
                 "title": "Photo"
               },
@@ -8298,13 +8384,10 @@
       "desktop": "padding:0;max-width:620px"
     },
     "e-e4bdec8-875eb71": {
-      "desktop": "padding:0;align-items:center;gap:12px;flex-wrap:wrap"
+      "desktop": "padding:0;display:block"
     },
     "e-baf4749-97132b0": {
-      "desktop": "flex:1 1 0%;min-width:0"
-    },
-    "e-ffc9de5-7438dc4": {
-      "desktop": "align-self:flex-start"
+      "desktop": "display:inline"
     },
     "e-fc2d4bd-1c01c8f": {
       "desktop": "max-width:380px"
@@ -8340,7 +8423,7 @@
       "desktop": "grid-template-rows:auto;padding:0;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));border-radius:14px;overflow:hidden;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line)"
     },
     "e-ce0ed0f-81618a0": {
-      "desktop": "min-width:0;padding:0;min-height:320px;background-color:var(--tint);background-image:url(https://images.unsplash.com/photo-1658314755707-1fbdf7c40145?auto=format&fit=crop&w=1200&q=80);background-size:cover;background-position:center"
+      "desktop": "min-width:0;padding:0;position:relative;min-height:320px;background-color:var(--tint);background-image:url(https://images.unsplash.com/photo-1658314755707-1fbdf7c40145?auto=format&fit=crop&w=1200&q=80);background-size:cover;background-position:center"
     },
     "e-6c9daad-b82692e": {
       "desktop": "padding:clamp(28px,4vw,56px)"
@@ -8370,7 +8453,7 @@
       "desktop": "padding:0"
     },
     "e-b9aac0e-de0fec5": {
-      "desktop": "min-width:0;padding:0;height:clamp(240px,30vw,340px);border-radius:14px;overflow:hidden;background-image:url(https://images.unsplash.com/photo-1583468991267-3f068b607ae1?auto=format&fit=crop&w=1000&q=80);background-size:cover;background-position:center"
+      "desktop": "min-width:0;padding:0;position:relative;height:clamp(240px,30vw,340px);border-radius:14px;overflow:hidden;background-image:url(https://images.unsplash.com/photo-1583468991267-3f068b607ae1?auto=format&fit=crop&w=1000&q=80);background-size:cover;background-position:center"
     },
     "e-230d76b-2862c99": {
       "desktop": "padding:0"

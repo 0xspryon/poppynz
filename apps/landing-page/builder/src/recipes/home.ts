@@ -48,6 +48,7 @@ export const homeRecipe: Recipe = {
       ]),
       block("home/hero/media", { title: "Video", classes: ["media-box"] }, [
         video("home/hero/video", { title: "Hero video", css: { desktop: "width:100%;height:100%;object-fit:cover" }, url: c.hero.video.src }),
+        text("home/hero/media/credit", { title: "Video credit", tag: "span", classes: ["media-credit"], text: c.hero.video.credit }),
         flex("home/hero/float", { title: "Floating card", classes: ["float-card", "anim-float"] }, [
           text("home/hero/float/av", { title: "Avatar", tag: "span", classes: ["avatar"], text: c.hero.floatCard.initial }),
           flex("home/hero/float/lines", { title: "Lines", css: { desktop: "flex-direction:column;gap:3px" } }, [
@@ -112,15 +113,15 @@ export const homeRecipe: Recipe = {
         flex("home/services/head", { title: "Heading row", css: { desktop: "flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;column-gap:40px" } }, [
           flex("home/services/intro", { title: "Intro", classes: ["stack-16"], css: { desktop: "max-width:620px" } }, [
             text("home/services/eyebrow", { title: "Eyebrow", classes: ["eyebrow"], text: c.servicesHeader.eyebrow }),
-            // The heading is a block-level e-heading widget that otherwise takes the row's full
-            // width, pushing the wink icon onto its own line below. `width:auto` / `flex:0 1 auto`
-            // alone do not help: with flex-wrap on the row, the wrap decision uses the heading's
-            // unshrunk (hypothetical) size, so it still claims the whole line by itself. What works
-            // is `flex:1 1 0%;min-width:0` (grow to fill the row minus the icon, but allow shrinking
-            // below content width so it wraps its own text instead of pushing the icon down) paired
-            // with `align-self:flex-start` on the icon so it sits at the top of the heading instead
-            // of centered against its full (possibly two-line) height. Confirmed live on staging.
-            flex("home/services/h2row", { title: "Title row", css: { desktop: "align-items:center;gap:12px;flex-wrap:wrap" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], css: { desktop: "flex:1 1 0%;min-width:0" }, text: c.servicesHeader.title }), icon("home/services/wink", "smile-wink", ["icon-24", "icon-sky", "anim-wiggle"], "align-self:flex-start")]),
+            // The design puts the wink icon inline right after "Family Life" inside the H2 itself
+            // (`<h2>…Family Life <i class="las la-smile-wink"></i></h2>`). html-v3 only allows
+            // inline tags with no attributes except a[href], so the icon can't be an inline child
+            // of the heading's own text; the nearest native-V4 equivalent is to make the row block
+            // (not flex), the heading `display:inline` so it flows as text, and the icon wrapper
+            // `display:inline-block` (class `icon-inline`) so it sits on the same line right after
+            // the heading's last word. Confirmed by DOM-patching staging live before committing to
+            // this: the icon lands inline immediately after "Family Life", matching the design.
+            flex("home/services/h2row", { title: "Title row", css: { desktop: "display:block" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], css: { desktop: "display:inline" }, text: c.servicesHeader.title }), icon("home/services/wink", "smile-wink", ["icon-24", "icon-sky", "anim-wiggle", "icon-inline"])]),
           ]),
           text("home/services/lead", { title: "Lead", classes: ["body-16"], css: { desktop: "max-width:380px" }, text: c.servicesHeader.lead }),
         ]),
@@ -141,7 +142,9 @@ export const homeRecipe: Recipe = {
 
     const neighbourhood = flex("home/hood", { title: "Neighbourhood", tag: "section", classes: ["wrap"], css: { desktop: "padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px)" } }, [
       grid("home/hood/card", { title: "Card", classes: ["card-shadow"], css: { desktop: "grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));border-radius:14px;overflow:hidden;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line)" } }, [
-        block("home/hood/photo", { title: "Photo", css: { desktop: "min-height:320px;background-color:var(--tint);background-image:url(https://images.unsplash.com/photo-1658314755707-1fbdf7c40145?auto=format&fit=crop&w=1200&q=80);background-size:cover;background-position:center" } }, []),
+        block("home/hood/photo", { title: "Photo", css: { desktop: "position:relative;min-height:320px;background-color:var(--tint);background-image:url(https://images.unsplash.com/photo-1658314755707-1fbdf7c40145?auto=format&fit=crop&w=1200&q=80);background-size:cover;background-position:center" } }, [
+          text("home/hood/photo/credit", { title: "Photo credit", tag: "span", classes: ["photo-credit"], text: c.neighbourhood.credit }),
+        ]),
         flex("home/hood/copy", { title: "Copy", classes: ["stack-24"], css: { desktop: "padding:clamp(28px,4vw,56px)" } }, [
           text("home/hood/eyebrow", { title: "Eyebrow", classes: ["eyebrow"], text: c.neighbourhood.eyebrow }),
           heading("home/hood/h2", { title: "H2", tag: "h2", classes: ["h2-sm"], text: c.neighbourhood.title }),
@@ -166,7 +169,9 @@ export const homeRecipe: Recipe = {
             button("home/helpers/cta2", { title: c.helpers.ctaSecondary, classes: ["btn-ghost-light-15"], text: c.helpers.ctaSecondary, link: "page:helpers" }),
           ]),
         ]),
-        block("home/helpers/photo", { title: "Photo", css: { desktop: "height:clamp(240px,30vw,340px);border-radius:14px;overflow:hidden;background-image:url(https://images.unsplash.com/photo-1583468991267-3f068b607ae1?auto=format&fit=crop&w=1000&q=80);background-size:cover;background-position:center" } }, []),
+        block("home/helpers/photo", { title: "Photo", css: { desktop: "position:relative;height:clamp(240px,30vw,340px);border-radius:14px;overflow:hidden;background-image:url(https://images.unsplash.com/photo-1583468991267-3f068b607ae1?auto=format&fit=crop&w=1000&q=80);background-size:cover;background-position:center" } }, [
+          text("home/helpers/photo/credit", { title: "Photo credit", tag: "span", classes: ["photo-credit"], text: c.helpers.credit }),
+        ]),
       ]),
     ]);
 

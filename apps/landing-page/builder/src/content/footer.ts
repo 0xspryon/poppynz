@@ -19,9 +19,11 @@ export const FOOTER: Localized<FooterContent> = {
     columns: [
       { heading: "Poppynz", links: [
         { label: "For families", page: "families" }, { label: "For helpers", page: "helpers" },
-        { label: "Safety & trust", page: "safety" }, { label: "Daycare matching", page: "daycare" }, { label: "Blog", page: "blog" } ] },
+        { label: "Safety & trust", page: "safety" }, { label: "Daycare matching", page: "daycare" },
+        { label: "Pricing & fees", url: "#" }, { label: "About", url: "#" }, { label: "Blog", page: "blog" } ] },
       { heading: "Support", links: [
-        { label: "Sign in", url: "https://app.poppynz.com/auth/sign-in" }, { label: "Contact", url: "mailto:support@poppynz.com" } ] },
+        { label: "Help & FAQ", url: "#" }, { label: "Contact", url: "mailto:support@poppynz.com" },
+        { label: "Sign in", url: "https://app.poppynz.com/auth/sign-in" }, { label: "Refer someone", url: "#" } ] },
       { heading: "Legal", links: [
         { label: "Privacy Policy", page: "privacy" }, { label: "Terms of Service", page: "terms" }, { label: "Service Agreement", page: "agreement" } ] },
     ],
@@ -35,9 +37,11 @@ export const FOOTER: Localized<FooterContent> = {
     columns: [
       { heading: "Poppynz", links: [
         { label: "Pour les familles", page: "families" }, { label: "Pour les aides", page: "helpers" },
-        { label: "Sécurité et confiance", page: "safety" }, { label: "Jumelage garderie", page: "daycare" }, { label: "Blogue", page: "blog" } ] },
+        { label: "Sécurité et confiance", page: "safety" }, { label: "Jumelage garderie", page: "daycare" },
+        { label: "Tarifs et frais", url: "#" }, { label: "À propos", url: "#" }, { label: "Blogue", page: "blog" } ] },
       { heading: "Soutien", links: [
-        { label: "Connexion", url: "https://app.poppynz.com/auth/sign-in" }, { label: "Nous joindre", url: "mailto:support@poppynz.com" } ] },
+        { label: "Aide et FAQ", url: "#" }, { label: "Nous joindre", url: "mailto:support@poppynz.com" },
+        { label: "Connexion", url: "https://app.poppynz.com/auth/sign-in" }, { label: "Recommander quelqu’un", url: "#" } ] },
       { heading: "Mentions légales", links: [
         { label: "Politique de confidentialité", page: "privacy" }, { label: "Conditions d’utilisation", page: "terms" }, { label: "Entente de service", page: "agreement" } ] },
     ],

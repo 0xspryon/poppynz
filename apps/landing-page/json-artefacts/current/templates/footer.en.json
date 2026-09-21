@@ -719,6 +719,106 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
+                          "value": "#"
+                        },
+                        "isTargetBlank": {
+                          "$$type": "boolean",
+                          "value": false
+                        },
+                        "tag": {
+                          "$$type": "string",
+                          "value": "a"
+                        }
+                      }
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Pricing & fees"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Pricing & fees"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                },
+                {
+                  "id": "5fdb107",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "ftr-link"
+                      ]
+                    },
+                    "link": {
+                      "$$type": "link",
+                      "value": {
+                        "destination": {
+                          "$$type": "url",
+                          "value": "#"
+                        },
+                        "isTargetBlank": {
+                          "$$type": "boolean",
+                          "value": false
+                        },
+                        "tag": {
+                          "$$type": "string",
+                          "value": "a"
+                        }
+                      }
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "About"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "About"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                },
+                {
+                  "id": "c80a2cc",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "ftr-link"
+                      ]
+                    },
+                    "link": {
+                      "$$type": "link",
+                      "value": {
+                        "destination": {
+                          "$$type": "url",
                           "value": "/blog"
                         },
                         "isTargetBlank": {
@@ -841,7 +941,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-in"
+                          "value": "#"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -862,7 +962,7 @@
                       "value": {
                         "content": {
                           "$$type": "string",
-                          "value": "Sign in"
+                          "value": "Help & FAQ"
                         },
                         "children": []
                       }
@@ -871,7 +971,7 @@
                   "styles": {},
                   "elements": [],
                   "editor_settings": {
-                    "title": "Sign in"
+                    "title": "Help & FAQ"
                   },
                   "version": "0.0",
                   "widgetType": "e-paragraph"
@@ -922,6 +1022,106 @@
                   "elements": [],
                   "editor_settings": {
                     "title": "Contact"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                },
+                {
+                  "id": "1346cbb",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "ftr-link"
+                      ]
+                    },
+                    "link": {
+                      "$$type": "link",
+                      "value": {
+                        "destination": {
+                          "$$type": "url",
+                          "value": "https://app.poppynz.com/auth/sign-in"
+                        },
+                        "isTargetBlank": {
+                          "$$type": "boolean",
+                          "value": false
+                        },
+                        "tag": {
+                          "$$type": "string",
+                          "value": "a"
+                        }
+                      }
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Sign in"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Sign in"
+                  },
+                  "version": "0.0",
+                  "widgetType": "e-paragraph"
+                },
+                {
+                  "id": "9c79407",
+                  "elType": "widget",
+                  "settings": {
+                    "classes": {
+                      "$$type": "classes",
+                      "value": [
+                        "ftr-link"
+                      ]
+                    },
+                    "link": {
+                      "$$type": "link",
+                      "value": {
+                        "destination": {
+                          "$$type": "url",
+                          "value": "#"
+                        },
+                        "isTargetBlank": {
+                          "$$type": "boolean",
+                          "value": false
+                        },
+                        "tag": {
+                          "$$type": "string",
+                          "value": "a"
+                        }
+                      }
+                    },
+                    "tag": {
+                      "$$type": "string",
+                      "value": "span"
+                    },
+                    "paragraph": {
+                      "$$type": "html-v3",
+                      "value": {
+                        "content": {
+                          "$$type": "string",
+                          "value": "Refer someone"
+                        },
+                        "children": []
+                      }
+                    }
+                  },
+                  "styles": {},
+                  "elements": [],
+                  "editor_settings": {
+                    "title": "Refer someone"
                   },
                   "version": "0.0",
                   "widgetType": "e-paragraph"
@@ -1167,6 +1367,7 @@
             "classes": {
               "$$type": "classes",
               "value": [
+                "e-82fe285-443d24c",
                 "ftr-bottom"
               ]
             },
@@ -1175,7 +1376,22 @@
               "value": "div"
             }
           },
-          "styles": {},
+          "styles": {
+            "e-82fe285-443d24c": {
+              "id": "e-82fe285-443d24c",
+              "type": "class",
+              "label": "local",
+              "variants": [
+                {
+                  "meta": {
+                    "breakpoint": "desktop",
+                    "state": null
+                  },
+                  "props": {}
+                }
+              ]
+            }
+          },
           "elements": [
             {
               "id": "6583e69",
@@ -1476,6 +1692,9 @@
     },
     "e-58d95db-6ed27bb": {
       "desktop": "padding:0"
+    },
+    "e-82fe285-443d24c": {
+      "desktop": "padding-right:0;padding-bottom:0;padding-left:0"
     },
     "e-6583e69-af7b284": {
       "desktop": "padding:0;align-items:center;gap:6px;flex-wrap:wrap"

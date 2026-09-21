@@ -5,7 +5,7 @@ export type HomeContent = {
     eyebrow: string; title: string; titleHighlight: string; lead: string;
     cardLeft: { title: string; text: string; cta: string }; cardRight: { title: string; text: string; cta: string };
     trust: string; floatCard: { initial: string; name: string; meta: string; vetted: string };
-    video: { src: string; poster: string };
+    video: { src: string; poster: string; credit: string };
   };
   how: { eyebrow: string; title: string; lead: string };
   steps: { n: string; icon: string; title: string; text: string }[];
@@ -18,9 +18,9 @@ export type HomeContent = {
   servicesHeader: { eyebrow: string; title: string; lead: string };
   services: { file: string; name: string; text: string }[];
   quotes: { initial: string; text: string; who: string }[];
-  neighbourhood: { eyebrow: string; title: string; lead: string; next: string; note: string; alt: string };
+  neighbourhood: { eyebrow: string; title: string; lead: string; next: string; note: string; alt: string; credit: string };
   cities: string[];
-  helpers: { eyebrow: string; title: string; titleAccent: string; titleTail: string; lead: string; ctaPrimary: string; ctaSecondary: string; alt: string };
+  helpers: { eyebrow: string; title: string; titleAccent: string; titleTail: string; lead: string; ctaPrimary: string; ctaSecondary: string; alt: string; credit: string };
   cta: { title: string; text: string; find: string; become: string };
 };
 
@@ -33,7 +33,7 @@ const en: HomeContent = {
     cardRight: { title: "I want to help", text: "Set your own services and rates, and support families in your community.", cta: "Become a helper" },
     trust: "Background-checked helpers · PIPEDA-compliant · End-to-end encrypted",
     floatCard: { initial: "M", name: "Maria O.", meta: "Childcare · $28/hr · 1.2 km", vetted: "Vetted" },
-    video: { src: "https://videos.pexels.com/video-files/7102352/7102352-hd_1920_1080_30fps.mp4", poster: "https://images.pexels.com/videos/7102352/art-beads-beads-bracelets-building-blocks-7102352.jpeg?auto=compress&w=1260" },
+    video: { src: "https://videos.pexels.com/video-files/7102352/7102352-hd_1920_1080_30fps.mp4", poster: "https://images.pexels.com/videos/7102352/art-beads-beads-bracelets-building-blocks-7102352.jpeg?auto=compress&w=1260", credit: "Video: RDNE Stock project / Pexels" },
   },
   how: { eyebrow: "How It Works", title: "Getting Started Is Simple", lead: "Here’s how you can find the perfect Mom Helper for your family, no bidding, no surge pricing, just a clear hourly rate agreed in writing." },
   steps: [
@@ -65,9 +65,9 @@ const en: HomeContent = {
     { initial: "ER", text: `“The daycare matching service helped us find a spot within a week after months of searching on our own. Worth every penny!”`, who: "Emma Rodriguez · Parent of Three" },
     { initial: "MC", text: `“The meal prep service has been a game-changer for our busy household. I can finally enjoy quality time with my kids without stressing about dinner.”`, who: "Michael Chen · Single Dad" },
   ],
-  neighbourhood: { eyebrow: "Poppynz in Your Neighbourhood", title: "Trusted Help, Right Around the Corner", lead: "We match you with Mom Helpers by distance, so the person watering your plants or walking your dog is usually just a few blocks away, a trusted neighbour, ready when you need them.", next: "Your city next?", note: "All prices in CAD. Data handled under PIPEDA.", alt: "Front porch, residential Canadian street" },
+  neighbourhood: { eyebrow: "Poppynz in Your Neighbourhood", title: "Trusted Help, Right Around the Corner", lead: "We match you with Mom Helpers by distance, so the person watering your plants or walking your dog is usually just a few blocks away, a trusted neighbour, ready when you need them.", next: "Your city next?", note: "All prices in CAD. Data handled under PIPEDA.", alt: "Front porch, residential Canadian street", credit: "Photo by Centre for Ageing Better on Unsplash" },
   cities: ["Mississauga", "Toronto", "Ottawa", "Calgary", "Vancouver"],
-  helpers: { eyebrow: "For helpers", title: "Earn Flexibly.", titleAccent: "Support", titleTail: "Your Community.", lead: "Become a Mom Helper and earn income on your own schedule. Set your services and hourly rate in CAD, work when and where you choose, and keep 85% of what you earn. Experienced helpers can grow into Major-domo status.", ctaPrimary: "Become a helper", ctaSecondary: "See what’s required", alt: "Tutor and student at a kitchen table" },
+  helpers: { eyebrow: "For helpers", title: "Earn Flexibly.", titleAccent: "Support", titleTail: "Your Community.", lead: "Become a Mom Helper and earn income on your own schedule. Set your services and hourly rate in CAD, work when and where you choose, and keep 85% of what you earn. Experienced helpers can grow into Major-domo status.", ctaPrimary: "Become a helper", ctaSecondary: "See what’s required", alt: "Tutor and student at a kitchen table", credit: "Photo by Adam Winger on Unsplash" },
   cta: { title: "Ready to Find Your Perfect Helper?", text: "Join Poppynz today and connect with certified Mom Helpers in your area. Sign in with a magic link, no password needed.", find: "Find a helper", become: "Become a helper" },
 };
 
@@ -80,7 +80,7 @@ const fr: HomeContent = {
     cardRight: { title: "Je veux aider", text: "Définissez vos services et vos tarifs, et soutenez les familles de votre communauté.", cta: "Devenir aide familiale" },
     trust: "Aides vérifiées · Conforme à la LPRPDE · Chiffrement de bout en bout",
     floatCard: { initial: "M", name: "Maria O.", meta: "Garde d’enfants · 28 $/h · 1,2 km", vetted: "Vérifiée" },
-    video: { src: "https://videos.pexels.com/video-files/7102352/7102352-hd_1920_1080_30fps.mp4", poster: "https://images.pexels.com/videos/7102352/art-beads-beads-bracelets-building-blocks-7102352.jpeg?auto=compress&w=1260" },
+    video: { src: "https://videos.pexels.com/video-files/7102352/7102352-hd_1920_1080_30fps.mp4", poster: "https://images.pexels.com/videos/7102352/art-beads-beads-bracelets-building-blocks-7102352.jpeg?auto=compress&w=1260", credit: "Video: RDNE Stock project / Pexels" },
   },
   how: { eyebrow: "Comment ça marche", title: "Commencer, c’est simple", lead: "Voici comment trouver l’aide familiale idéale pour votre famille : pas d’enchères, pas de tarification dynamique, juste un tarif horaire clair convenu par écrit." },
   steps: [
@@ -112,9 +112,9 @@ const fr: HomeContent = {
     { initial: "ER", text: "« Le service de jumelage garderie nous a trouvé une place en une semaine, après des mois de recherche. Ça vaut chaque dollar! »", who: "Emma Rodriguez · Mère de trois enfants" },
     { initial: "MC", text: "« La préparation des repas a changé la donne pour notre famille occupée. Je profite enfin de mes enfants sans stresser pour le souper. »", who: "Michael Chen · Père monoparental" },
   ],
-  neighbourhood: { eyebrow: "Poppynz dans votre quartier", title: "Une aide de confiance, tout près de chez vous", lead: "Nous vous jumelons avec des aides familiales selon la distance : la personne qui arrose vos plantes ou promène votre chien habite souvent à quelques rues, une voisine de confiance, prête quand vous en avez besoin.", next: "Votre ville ensuite?", note: "Tous les prix en CAD. Données traitées selon la LPRPDE.", alt: "Perron d’une rue résidentielle canadienne" },
+  neighbourhood: { eyebrow: "Poppynz dans votre quartier", title: "Une aide de confiance, tout près de chez vous", lead: "Nous vous jumelons avec des aides familiales selon la distance : la personne qui arrose vos plantes ou promène votre chien habite souvent à quelques rues, une voisine de confiance, prête quand vous en avez besoin.", next: "Votre ville ensuite?", note: "Tous les prix en CAD. Données traitées selon la LPRPDE.", alt: "Perron d’une rue résidentielle canadienne", credit: "Photo by Centre for Ageing Better on Unsplash" },
   cities: ["Mississauga", "Toronto", "Ottawa", "Calgary", "Vancouver"],
-  helpers: { eyebrow: "Pour les aides", title: "Gagnez avec souplesse.", titleAccent: "Soutenez", titleTail: "votre communauté.", lead: "Devenez aide familiale et gagnez un revenu selon votre horaire. Définissez vos services et votre tarif horaire en CAD, travaillez quand et où vous le voulez, et conservez 85 % de vos gains. Les aides expérimentées peuvent accéder au statut de Major-domo.", ctaPrimary: "Devenir aide familiale", ctaSecondary: "Voir les conditions", alt: "Tutrice et élève à une table de cuisine" },
+  helpers: { eyebrow: "Pour les aides", title: "Gagnez avec souplesse.", titleAccent: "Soutenez", titleTail: "votre communauté.", lead: "Devenez aide familiale et gagnez un revenu selon votre horaire. Définissez vos services et votre tarif horaire en CAD, travaillez quand et où vous le voulez, et conservez 85 % de vos gains. Les aides expérimentées peuvent accéder au statut de Major-domo.", ctaPrimary: "Devenir aide familiale", ctaSecondary: "Voir les conditions", alt: "Tutrice et élève à une table de cuisine", credit: "Photo by Adam Winger on Unsplash" },
   cta: { title: "Prêt à trouver l’aide idéale?", text: "Rejoignez Poppynz dès aujourd’hui et entrez en contact avec des aides familiales certifiées près de chez vous. Connexion par lien magique, sans mot de passe.", find: "Trouver une aide", become: "Devenir aide familiale" },
 };
 

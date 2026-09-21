@@ -63,12 +63,14 @@ const defs: Record<string, CssMap> = {
     desktop: `display:inline-block;padding:14px 26px;border-radius:999px;background-color:${v("sky")};color:${v("white")};${BODY};font-weight:600;font-size:15px;text-decoration:none;${SHADOW_SKY};transition:transform .25s`,
     "desktop:hover": `background-color:${v("sky-hover")};color:${v("white")};${LIFT}`,
   },
+  // Elementor's e-button base style ships its own blue background (rgb(55,94,251)); an outline/ghost
+  // button must zero it explicitly or the base shows through wherever our class doesn't set one.
   "btn-outline": {
-    desktop: `display:inline-block;padding:15px 26px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:${v("navy")};color:${v("navy")};${BODY};font-weight:600;font-size:16px;text-decoration:none`,
+    desktop: `display:inline-block;padding:15px 26px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:${v("navy")};color:${v("navy")};background-color:transparent;${BODY};font-weight:600;font-size:16px;text-decoration:none`,
     "desktop:hover": `background-color:${v("tint-2")}`,
   },
   "btn-ghost-light-15": {
-    desktop: `display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.35);color:${v("white")};${BODY};font-weight:600;font-size:15px;text-decoration:none`,
+    desktop: `display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.35);color:${v("white")};background-color:transparent;${BODY};font-weight:600;font-size:15px;text-decoration:none`,
     "desktop:hover": `background-color:rgba(255,255,255,.08);color:${v("white")}`,
   },
   "link-arrow": {
@@ -150,7 +152,23 @@ const defs: Record<string, CssMap> = {
   dot: { desktop: `flex:0 0 auto;width:10px;height:10px;border-radius:999px;background-color:${v("orange")}` },
   "float-card": { desktop: `position:absolute;inset-inline-end:16px;inset-block-start:24px;display:flex;align-items:center;gap:12px;padding:12px 14px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};border-radius:8px;${SHADOW_CARD}` },
   "media-box": { desktop: `position:relative;height:clamp(320px,45vw,640px);border-radius:14px;overflow:hidden;${SHADOW_DEEP};background-color:${v("tint")}` },
-  "cta-inner": { desktop: "display:flex;flex-direction:column;align-items:center;gap:24px;text-align:center;padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px)" },
+  // media-box/img-slot overlay credits (design's .media-credit / .img-slot .credit).
+  "media-credit": { desktop: `position:absolute;inset-inline-end:10px;inset-block-end:10px;padding:4px 8px;border-radius:4px;background-color:rgba(0,30,48,.55);color:${v("white")};${BODY};font-weight:500;font-size:11px` },
+  "photo-credit": { desktop: `position:absolute;inset-inline-start:6px;inset-block-end:6px;padding:3px 7px;border-radius:5px;background-color:rgba(0,0,0,.55);color:${v("white")};font-family:system-ui,-apple-system,sans-serif;font-size:10px;line-height:1.2` },
+  // width:100% is needed because this is the sole child of a row-direction e-flexbox (`band-top`
+  // doesn't set flex-direction) and Elementor's `.e-con{width:var(--width)}` falls back to the
+  // theme's `--width:auto` for a row parent, so an unsized flex child shrink-wraps to its content
+  // instead of filling the row. See pitfalls.md ("Elementor's own base rule .e-con{width:...}").
+  "cta-inner": { desktop: "display:flex;flex-direction:column;align-items:center;gap:24px;text-align:center;width:100%;padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px)" },
+  // Inline placement for an e-svg icon sitting right after inline heading text (e.g. the services
+  // wink icon after "Family Life"). The e-svg widget's root in this stack is a <div> wrapper around
+  // the real <svg>, not the <svg> itself, so ordinary inline-block on that wrapper puts it on the
+  // text's line. `vertical-align` is not in the 4.2.4 atomic converter's supported property list
+  // (aborts the import as customCss) so this relies on inline-block's default baseline alignment,
+  // confirmed acceptable live on staging (icon sits right after the last word, very slightly lower
+  // than exact cap-height centering — not the same pixel-for-pixel position as the design's <i>
+  // inline in the text flow, but reads correctly at a glance).
+  "icon-inline": { desktop: "display:inline-block;margin-left:12px" },
   // footer
   ftr: { desktop: `padding:clamp(48px,6vw,64px) clamp(24px,5vw,96px) 40px;background-color:${v("page")};border-top-width:1.5px;border-right-width:0;border-bottom-width:0;border-left-width:0;border-style:solid;border-color:${v("line")}` },
   "ftr-grid": { desktop: "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:40px" },

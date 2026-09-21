@@ -67,15 +67,19 @@ function base(path: string, c: Common, elType: string, widgetType?: string): El 
 // global class) so they always take effect without relying on the theme to not apply.
 type ContainerKind = "flex" | "block" | "grid";
 
-function declaresProp(css: string | undefined, prop: RegExp): boolean {
-  if (!css) return false;
-  return css.split(";").some((raw) => {
+function declaredProps(css: string | undefined): string[] {
+  if (!css) return [];
+  return css.split(";").flatMap((raw) => {
     const decl = raw.trim();
-    if (!decl) return false;
+    if (!decl) return [];
     const colon = decl.indexOf(":");
-    if (colon < 0) return false;
-    return prop.test(decl.slice(0, colon).trim().toLowerCase());
+    if (colon < 0) return [];
+    return [decl.slice(0, colon).trim().toLowerCase()];
   });
+}
+
+function declaresProp(css: string | undefined, prop: RegExp): boolean {
+  return declaredProps(css).some((p) => prop.test(p));
 }
 
 function classesDeclareProp(classes: string[] | undefined, prop: RegExp): boolean {
@@ -92,19 +96,59 @@ function ownCssDeclaresProp(css: CssMap | undefined, prop: RegExp): boolean {
   return false;
 }
 
-const PADDING_RE = /^padding(-.+)?$/;
 const MIN_WIDTH_RE = /^min-width$/;
 const GRID_ROWS_RE = /^grid-template-rows$/;
 
+// Which physical sides a padding-family property covers. A partial declaration (e.g. only
+// `padding-top`) must not suppress the neutralising default on the OTHER sides, or Elementor's
+// `.e-flexbox-base{padding:10px}` (etc.) base style keeps applying to whichever side nobody
+// explicitly zeroed — see pitfalls.md ("Partial padding declarations").
+type Side = "top" | "right" | "bottom" | "left";
+const SIDE_ORDER: Side[] = ["top", "right", "bottom", "left"];
+const PADDING_SIDES: Record<string, Side[]> = {
+  padding: ["top", "right", "bottom", "left"],
+  "padding-top": ["top"],
+  "padding-right": ["right"],
+  "padding-bottom": ["bottom"],
+  "padding-left": ["left"],
+  "padding-block": ["top", "bottom"],
+  "padding-block-start": ["top"],
+  "padding-block-end": ["bottom"],
+  "padding-inline": ["left", "right"],
+  "padding-inline-start": ["left"],
+  "padding-inline-end": ["right"],
+};
+
+function coveredPaddingSides(props: string[]): Set<Side> {
+  const covered = new Set<Side>();
+  for (const prop of props) for (const side of PADDING_SIDES[prop] ?? []) covered.add(side);
+  return covered;
+}
+
+function paddingCoverage(classes: string[] | undefined, css: CssMap | undefined): Set<Side> {
+  const covered = new Set<Side>();
+  for (const label of classes ?? []) {
+    const gc = CLASSES[label];
+    if (!gc) continue;
+    for (const v of Object.values(gc.css)) for (const s of coveredPaddingSides(declaredProps(v))) covered.add(s);
+  }
+  for (const v of Object.values(css ?? {})) for (const s of coveredPaddingSides(declaredProps(v))) covered.add(s);
+  return covered;
+}
+
 export function withDefaults(kind: ContainerKind, classes: string[] | undefined, css: CssMap | undefined): CssMap | undefined {
-  const hasPadding = classesDeclareProp(classes, PADDING_RE) || ownCssDeclaresProp(css, PADDING_RE);
+  const coveredSides = paddingCoverage(classes, css);
   const hasMinWidth = classesDeclareProp(classes, MIN_WIDTH_RE) || ownCssDeclaresProp(css, MIN_WIDTH_RE);
   const hasGridRows = classesDeclareProp(classes, GRID_ROWS_RE) || ownCssDeclaresProp(css, GRID_ROWS_RE);
 
   const prepend: string[] = [];
   if (kind === "grid" && !hasGridRows) prepend.push("grid-template-rows:auto");
   if (kind === "block" && !hasMinWidth) prepend.push("min-width:0");
-  if (!hasPadding) prepend.push("padding:0");
+  if (coveredSides.size === 0) {
+    prepend.push("padding:0");
+  } else if (coveredSides.size < 4) {
+    for (const side of SIDE_ORDER) if (!coveredSides.has(side)) prepend.push(`padding-${side}:0`);
+  }
 
   if (!prepend.length) return css;
 

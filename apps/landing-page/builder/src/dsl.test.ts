@@ -91,4 +91,17 @@ describe("withDefaults (native base-style overrides)", () => {
     expect(Object.keys(f._css)).toHaveLength(0);
     expect((f.settings.classes as any).value).toEqual(["card"]);
   });
+  test("a class that only sets padding-top (ftr-bottom) gets the other three sides zeroed, not padding-top", () => {
+    expect(withDefaults("flex", ["ftr-bottom"], undefined)).toEqual({ desktop: "padding-right:0;padding-bottom:0;padding-left:0" });
+  });
+  test("own css with only padding-left set gets the other three sides zeroed", () => {
+    expect(withDefaults("flex", undefined, { desktop: "padding-left:12px" })).toEqual({
+      desktop: "padding-top:0;padding-right:0;padding-bottom:0;padding-left:12px",
+    });
+  });
+  test("padding-inline shorthand covers left and right, leaving top/bottom zeroed", () => {
+    expect(withDefaults("flex", undefined, { desktop: "padding-inline:12px" })).toEqual({
+      desktop: "padding-top:0;padding-bottom:0;padding-inline:12px",
+    });
+  });
 });

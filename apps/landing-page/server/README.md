@@ -14,4 +14,4 @@ Order for a fresh site:
 6. `bootstrap.php` once per site, then `import.php` for every deploy. `snapshot.php` before importing on production.
 7. `verify.php` after every import.
 
-Elementor must be active for `lib.php` to load (`bootstrap.php` handles a bare site: run it, then run it a second time so Polylang is loaded).
+On a bare site, run `bootstrap.php` twice: the first run installs and activates the plugins, the second configures Elementor and Polylang (their singletons only load on the next request).

@@ -9,6 +9,8 @@ require_once ABSPATH . 'wp-admin/includes/theme.php';
 require_once ABSPATH . 'wp-admin/includes/file.php';
 require_once ABSPATH . 'wp-admin/includes/misc.php';
 
+$pz_elementor_ready = fn() => class_exists( '\Elementor\Plugin' ) && ! empty( \Elementor\Plugin::$instance ) && isset( \Elementor\Plugin::$instance->kits_manager );
+
 const PZ_VERSIONS = [
 	'theme:hello-elementor'  => 'https://downloads.wordpress.org/theme/hello-elementor.3.5.1.zip',
 	'plugin:elementor'       => 'https://downloads.wordpress.org/plugin/elementor.4.2.4.zip',
@@ -65,7 +67,7 @@ update_option( 'elementor_disable_typography_schemes', 'yes' );
 flush_rewrite_rules();
 
 // 4. Elementor kit defaults (V3 container width and padding so any legacy element behaves).
-if ( class_exists( '\Elementor\Plugin' ) ) {
+if ( $pz_elementor_ready() ) {
 	$kit = pz_kit();
 	$settings = $kit->get_meta( '_elementor_page_settings' ) ?: [];
 	$settings['container_width']   = [ 'unit' => 'px', 'size' => 1920, 'sizes' => [] ];
@@ -74,7 +76,7 @@ if ( class_exists( '\Elementor\Plugin' ) ) {
 	$kit->update_meta( '_elementor_page_settings', $settings );
 	pz_note( 'kit', 'defaults', 'set' );
 	pz_note( 'kit', 'atomic_active', \Elementor\Plugin::$instance->experiments->is_feature_active( 'e_atomic_elements' ) ? 'yes' : 'NO (turn on e_atomic_elements)' );
-}
+} else { pz_note( 'kit', 'elementor', 'not loaded in this request; re-run bootstrap once' ); }
 
 // 5. Polylang languages and translatable post types.
 if ( function_exists( 'PLL' ) ) {
@@ -91,6 +93,6 @@ if ( function_exists( 'PLL' ) ) {
 	pz_note( 'polylang', 'options', 'default en, elementor-hf translatable' );
 } else { pz_note( 'polylang', 'PLL', 'not loaded in this request; re-run bootstrap once' ); }
 
-if ( class_exists( '\Elementor\Plugin' ) ) { \Elementor\Plugin::$instance->files_manager->clear_cache(); }
+if ( $pz_elementor_ready() ) { \Elementor\Plugin::$instance->files_manager->clear_cache(); }
 pz_note( 'front', home_url( '/' ), (string) pz_front( home_url( '/' ) ) );
 return pz_report();

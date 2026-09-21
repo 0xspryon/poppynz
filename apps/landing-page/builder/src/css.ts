@@ -18,6 +18,14 @@ const BANNED: Record<string, string> = {
   inset: "`inset` shorthand is dropped by Elementor; use inset-block-start etc.",
   "text-wrap": "`text-wrap` is not in the V4 style schema",
   "text-underline-offset": "`text-underline-offset` is not in the V4 style schema",
+  "pointer-events": "`pointer-events` is never converted by the 4.2.4 atomic CSS converter, and Free strips it as customCss anyway; it cannot be expressed in this stack at all",
+  "border-top-style": "per-side `border-*-style` is always left in customCss and aborts the import; use the unified `border-style` plus explicit per-side `border-*-width` (zero the sides you are not giving a real width)",
+  "border-right-style": "per-side `border-*-style` is always left in customCss and aborts the import; use the unified `border-style` plus explicit per-side `border-*-width` (zero the sides you are not giving a real width)",
+  "border-bottom-style": "per-side `border-*-style` is always left in customCss and aborts the import; use the unified `border-style` plus explicit per-side `border-*-width` (zero the sides you are not giving a real width)",
+  "border-left-style": "per-side `border-*-style` is always left in customCss and aborts the import; use the unified `border-style` plus explicit per-side `border-*-width` (zero the sides you are not giving a real width)",
+  "flex-grow": "`flex-grow` longhand is never converted; use the `flex` shorthand (`flex:<grow> <shrink> <basis>`)",
+  "flex-shrink": "`flex-shrink` longhand is never converted; use the `flex` shorthand (`flex:<grow> <shrink> <basis>`)",
+  "flex-basis": "`flex-basis` longhand is never converted; use the `flex` shorthand (`flex:<grow> <shrink> <basis>`)",
 };
 
 export function lintCss(css: string): string[] {
@@ -32,6 +40,9 @@ export function lintCss(css: string): string[] {
     if (BANNED[prop]) out.push(BANNED[prop]);
     else if (prop === "animation" || prop.startsWith("animation-")) out.push(`\`${prop}\` is rejected by Elementor; use an anim-* class`);
     else if (prop === "transition" && /\b(cubic-bezier|ease|linear|steps)\b/.test(value)) out.push("`transition` easing is dropped by Elementor; write `transition: <prop> <duration>` only");
+    else if (prop === "gap" && value.split(/\s+/).filter(Boolean).length > 1) out.push("two-value `gap:<row> <col>` is never converted; use `gap:<row>;column-gap:<col>`");
+    else if (prop === "opacity" && /^-?\d*\.?\d+$/.test(value)) out.push("unitless decimal `opacity` is never converted; use a percentage, e.g. `opacity:50%`");
+    else if (prop === "transform" && /rotate[xyz]?\(\s*0\s*\)/i.test(value)) out.push("a unitless zero angle in `transform` (e.g. `rotate(0)`) is never converted; use an explicit unit, e.g. `rotate(0deg)`");
   }
   return out;
 }

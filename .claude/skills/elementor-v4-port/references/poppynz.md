@@ -35,7 +35,7 @@ No layout differences that make a section unrecognisable remain: header, hero, "
 1. `cd apps/landing-page/builder && bun test && bun run build`; commit `json-artefacts/current`.
 2. `bash .claude/skills/elementor-v4-port/scripts/pack.sh current`
 3. `novamira/create-upload-link` {"path":"wp-content/novamira-sandbox/poppynz-artefact.zip","overwrite":true} on the target server, then `push.sh <zip> <token> <site url>`.
-4. `execute-php`: `server/unpack.php`; first time only `server/bootstrap.php` (twice on a bare site); production only `server/snapshot.php`; then `server/import.php`; then `server/verify.php`.
+4. `execute-php`: `server/unpack.php`; first time only `server/bootstrap.php` (twice on a bare site); production only `server/snapshot.php`; then `server/import.php`; then `server/verify.php`. **If this deploy changed anything under `theme/poppynz/` (e.g. `anim.css`), re-run bootstrap's theme-copy step (its step 2) even on a non-first deploy** — `import.php` never touches theme files, only `unpack.php`'s zip extraction plus that copy step do, and skipping it silently leaves the live theme file stale while everything else (classes, pages) updates correctly. Then bypass the CSS file's own browser cache when verifying — see pitfalls.md ("`anim.css`...enqueued with a STATIC version string").
 5. `render.sh <url> wp-<key>` and compare with `dump_design.sh` slices.
 
 ## Editor check

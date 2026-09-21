@@ -65,7 +65,9 @@ foreach ( pz_json( 'classes.json' ) as $c ) {
 // class on a shared property only does so if it sorts correctly relative to the base — and
 // merely appending missing ids (the previous behaviour) never re-sorts ids that already existed
 // from an earlier import, silently freezing the order from the very first run forever. Put the
-// artefact's order first; keep any pre-existing id the artefact no longer knows about at the end.
+// artefact's order first; keep any pre-existing id the artefact no longer knows about at the end —
+// a class created directly in wp-admin (not by this importer) is kept, just demoted below every
+// artefact class, so it never wins a same-element property conflict against one we manage.
 $gorder = array_values( array_unique( array_merge( $artefact_order, $existing_order ) ) );
 $gcr->put( $items, $gorder );
 // Also sync the PREVIEW context (Global_Classes_Repository::CONTEXT_PREVIEW), not just frontend.
@@ -74,7 +76,10 @@ $gcr->put( $items, $gorder );
 // are missing" warning the first time an imported page is opened in the editor, and the canvas
 // renders completely unstyled (no fonts, no flex/grid, no colors) even though the live frontend
 // is correct. Confirmed live: editor showed the warning until this ran, then showed the class
-// chips normally and the canvas matched the frontend.
+// chips normally and the canvas matched the frontend. Note this preview put() overwrites the
+// preview context wholesale, so any not-yet-published edit made to a class in the editor (a draft
+// change sitting only in preview) is discarded by the next import — expected for this pipeline,
+// since the artefact is the single source of truth, but worth knowing if someone is mid-edit.
 \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( pz_kit() )->set_preview( true )->put( $items, $gorder );
 
 // Elementor's global-classes CSS bundler (Global_Classes_Relations::extract_class_ids_from_post)
@@ -117,11 +122,17 @@ function pz_swap_media( $node, array $media_ids ) {
 }
 /** Translate global-class labels to their real class id inside every `classes` prop
  * ({'$$type':'classes','value':[...]}). Values not found in $label_to_id (a local per-element
- * style id like "e-dc222f5-702a727") are left untouched. */
+ * style id like "e-dc222f5-702a727") are left untouched; anything that is neither a known label
+ * nor a local style id is a typo or a stale/renamed class reference in the artefact and throws
+ * rather than silently shipping a class name that will never resolve to any CSS. */
 function pz_swap_classes( $node, array $label_to_id ) {
 	if ( is_array( $node ) ) {
 		if ( ( $node['$$type'] ?? null ) === 'classes' && is_array( $node['value'] ?? null ) ) {
-			$node['value'] = array_map( fn( $v ) => $label_to_id[ $v ] ?? $v, $node['value'] );
+			$node['value'] = array_map( function ( $v ) use ( $label_to_id ) {
+				if ( isset( $label_to_id[ $v ] ) ) { return $label_to_id[ $v ]; }
+				if ( preg_match( '/^e-[0-9a-f]{7}-[0-9a-f]{7}$/', $v ) ) { return $v; }
+				throw new Exception( "unknown class \"$v\"" );
+			}, $node['value'] );
 			return $node;
 		}
 		foreach ( $node as $k => $v ) { $node[ $k ] = pz_swap_classes( $v, $label_to_id ); }

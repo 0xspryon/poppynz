@@ -24,14 +24,14 @@
     "id": "g-574ff46",
     "label": "band",
     "css": {
-      "desktop": "background-color:var(--white);border-top-width:1.5px;border-bottom-width:1.5px;border-style:solid;border-color:var(--line)"
+      "desktop": "background-color:var(--white);border-top-width:1.5px;border-bottom-width:1.5px;border-left-width:0;border-right-width:0;border-style:solid;border-color:var(--line)"
     }
   },
   {
     "id": "g-f1b5c02",
     "label": "band-top",
     "css": {
-      "desktop": "background-color:var(--white);border-top-width:1.5px;border-style:solid;border-color:var(--line)"
+      "desktop": "background-color:var(--white);border-top-width:1.5px;border-right-width:0;border-bottom-width:0;border-left-width:0;border-style:solid;border-color:var(--line)"
     }
   },
   {
@@ -717,7 +717,7 @@
     "id": "g-17fa668",
     "label": "ftr",
     "css": {
-      "desktop": "padding:clamp(48px,6vw,64px) clamp(24px,5vw,96px) 40px;background-color:var(--page);border-top-width:1.5px;border-style:solid;border-color:var(--line)"
+      "desktop": "padding:clamp(48px,6vw,64px) clamp(24px,5vw,96px) 40px;background-color:var(--page);border-top-width:1.5px;border-right-width:0;border-bottom-width:0;border-left-width:0;border-style:solid;border-color:var(--line)"
     }
   },
   {
@@ -746,7 +746,7 @@
     "id": "g-f1bc732",
     "label": "ftr-bottom",
     "css": {
-      "desktop": "display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-top:48px;padding-top:24px;border-top-width:1.5px;border-style:solid;border-color:var(--line);font-family:var(--font-body);font-size:13px;color:var(--muted)"
+      "desktop": "display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center;margin-top:48px;padding-top:24px;border-top-width:1.5px;border-right-width:0;border-bottom-width:0;border-left-width:0;border-style:solid;border-color:var(--line);font-family:var(--font-body);font-size:13px;color:var(--muted)"
     }
   },
   {
@@ -767,7 +767,7 @@
     "id": "g-4ccdcbc",
     "label": "hdr",
     "css": {
-      "desktop": "position:sticky;inset-block-start:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;column-gap:24px;padding:14px clamp(24px,5vw,96px);border-bottom-width:1.5px;border-style:solid;border-color:var(--line);background-color:rgba(247,249,255,.94);backdrop-filter:blur(8px)"
+      "desktop": "position:sticky;inset-block-start:0;z-index:20;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;column-gap:24px;padding:14px clamp(24px,5vw,96px);border-bottom-width:1.5px;border-top-width:0;border-right-width:0;border-left-width:0;border-style:solid;border-color:var(--line);background-color:rgba(247,249,255,.94);backdrop-filter:blur(8px)"
     }
   },
   {

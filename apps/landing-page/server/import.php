@@ -1,0 +1,142 @@
+<?php
+// Import the unpacked artefact into this site. Idempotent. Run through novamira/execute-php without the first line.
+set_time_limit( 600 );
+require_once WP_CONTENT_DIR . '/novamira-sandbox/artefact/server/lib.php';
+require_once ABSPATH . 'wp-admin/includes/file.php';
+require_once ABSPATH . 'wp-admin/includes/media.php';
+require_once ABSPATH . 'wp-admin/includes/image.php';
+wp_set_current_user( 1 );
+$manifest = pz_json( 'manifest.json' );
+if ( ( $manifest['elementorVersion'] ?? '' ) !== ELEMENTOR_VERSION ) { throw new Exception( "artefact built for Elementor {$manifest['elementorVersion']}, site runs " . ELEMENTOR_VERSION ); }
+
+// ---- 1. media by content hash
+add_filter( 'upload_mimes', fn( $m ) => $m + [ 'svg' => 'image/svg+xml' ] );
+add_filter( 'wp_check_filetype_and_ext', function ( $d, $file, $filename ) { if ( str_ends_with( strtolower( $filename ), '.svg' ) ) { $d['ext'] = 'svg'; $d['type'] = 'image/svg+xml'; } return $d; }, 10, 3 );
+$media_ids = [];
+foreach ( $manifest['media'] as $hash => $m ) {
+	$id = pz_find_media( $hash );
+	if ( ! $id ) {
+		$src = pz_artefact_dir() . "media/$hash.{$m['ext']}";
+		$name = preg_replace( '/[^a-z0-9-]+/', '-', strtolower( str_replace( [ 'icon:', 'svc:', 'media:' ], '', $m['key'] ) ) ) . "-$hash.{$m['ext']}";
+		$up = wp_upload_bits( $name, null, file_get_contents( $src ) );
+		if ( ! empty( $up['error'] ) ) { throw new Exception( "upload $name: {$up['error']}" ); }
+		$type = wp_check_filetype( $up['file'] )['type'] ?: ( $m['ext'] === 'svg' ? 'image/svg+xml' : 'image/webp' );
+		$id = wp_insert_attachment( [ 'post_mime_type' => $type, 'post_title' => $m['key'], 'post_status' => 'inherit' ], $up['file'] );
+		if ( $m['ext'] !== 'svg' ) { wp_update_attachment_metadata( $id, wp_generate_attachment_metadata( $id, $up['file'] ) ); }
+		update_post_meta( $id, '_poppynz_hash', $hash );
+		if ( $m['alt'] ) { update_post_meta( $id, '_wp_attachment_image_alt', $m['alt'] ); }
+		pz_note( 'media', $m['key'], 'created' );
+	} else { pz_note( 'media', $m['key'], 'unchanged' ); }
+	$media_ids[ $hash ] = (int) $id;
+}
+
+// ---- 2. variables by label
+$repo = new \Elementor\Modules\Variables\Storage\Variables_Repository( pz_kit() );
+$coll = $repo->load();
+$by_label = [];
+foreach ( $coll->all() as $id => $var ) { $by_label[ $var->label() ] = $var; }
+$order = count( $by_label ); $now = current_time( 'mysql' ); $changed = false;
+foreach ( pz_json( 'variables.json' ) as $v ) {
+	if ( isset( $by_label[ $v['label'] ] ) ) {
+		$existing = $by_label[ $v['label'] ];
+		$cur = $existing->value(); $cur = is_array( $cur ) ? ( $cur['value'] ?? null ) : $cur;
+		if ( $cur !== $v['value'] ) { $existing->set_value( $v['value'] ); $changed = true; pz_note( 'variables', $v['label'], 'updated' ); } else { pz_note( 'variables', $v['label'], 'unchanged' ); }
+	} else {
+		$coll->add_variable( \Elementor\Modules\Variables\Storage\Entities\Variable::from_array( [ 'id' => \Elementor\Modules\AtomicWidgets\Utils\Utils::generate_id( 'e-gv-' ), 'type' => $v['type'], 'label' => $v['label'], 'value' => $v['value'], 'order' => ++$order, 'created_at' => $now, 'updated_at' => $now ] ) );
+		$changed = true; pz_note( 'variables', $v['label'], 'created' );
+	}
+}
+if ( $changed ) { $repo->save( $coll ); }
+
+// ---- 3. global classes (convert first, abort on problems)
+$gcr = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( pz_kit() );
+$current = $gcr->all(); $items = $current->get_items()->all(); $gorder = $current->get_order()->all();
+foreach ( pz_json( 'classes.json' ) as $c ) {
+	$variants = pz_convert_map( $c['css'], 'class ' . $c['label'] );
+	$new = [ 'id' => $c['id'], 'label' => $c['label'], 'type' => 'class', 'variants' => $variants ];
+	$was = $items[ $c['id'] ] ?? null;
+	pz_note( 'classes', $c['label'], $was ? ( wp_json_encode( $was['variants'] ) === wp_json_encode( $variants ) ? 'unchanged' : 'updated' ) : 'created' );
+	$items[ $c['id'] ] = $new;
+	if ( ! in_array( $c['id'], $gorder, true ) ) { $gorder[] = $c['id']; }
+}
+$gcr->put( $items, $gorder );
+
+// ---- helpers for documents
+function pz_fill_styles( array &$elements, array $css_map, array $media_ids ): void {
+	foreach ( $elements as &$el ) {
+		foreach ( $el['styles'] ?? [] as $sid => &$style ) {
+			if ( isset( $css_map[ $sid ] ) ) { $style['variants'] = pz_convert_map( $css_map[ $sid ], ( $el['editor_settings']['title'] ?? $el['id'] ) . " ($sid)" ); }
+		}
+		unset( $style );
+		$el['settings'] = pz_swap_media( $el['settings'], $media_ids );
+		if ( ! empty( $el['elements'] ) ) { pz_fill_styles( $el['elements'], $css_map, $media_ids ); }
+	}
+}
+function pz_swap_media( $node, array $media_ids ) {
+	if ( is_array( $node ) ) {
+		if ( ( $node['$$type'] ?? null ) === 'media-hash' ) {
+			if ( ! isset( $media_ids[ $node['value'] ] ) ) { throw new Exception( 'unknown media hash ' . $node['value'] ); }
+			return [ '$$type' => 'image-attachment-id', 'value' => $media_ids[ $node['value'] ] ];
+		}
+		foreach ( $node as $k => $v ) { $node[ $k ] = pz_swap_media( $v, $media_ids ); }
+	}
+	return $node;
+}
+function pz_save_document( int $post_id, array $elements, array $page_settings ): bool {
+	$doc = \Elementor\Plugin::$instance->documents->get( $post_id, false );
+	$doc->set_is_built_with_elementor( true );
+	$before = get_post_meta( $post_id, '_elementor_data', true );
+	$ok = $doc->save( [ 'elements' => $elements, 'settings' => $page_settings ] );
+	if ( ! $ok ) { throw new Exception( "document save returned false for post $post_id" ); }
+	return get_post_meta( $post_id, '_elementor_data', true ) !== $before;
+}
+
+// ---- 4. header/footer templates per language
+$hf_ids = [ 'header' => [], 'footer' => [] ];
+foreach ( $manifest['entries'] as $entry ) {
+	if ( ! str_starts_with( $entry, 'templates/' ) ) { continue; }
+	$t = pz_json( $entry ); $kind = str_contains( $entry, 'header' ) ? 'header' : 'footer';
+	$ex = get_posts( [ 'post_type' => 'elementor-hf', 'title' => $t['title'], 'post_status' => 'any', 'numberposts' => 1 ] );
+	$pid = $ex ? $ex[0]->ID : wp_insert_post( [ 'post_title' => $t['title'], 'post_type' => 'elementor-hf', 'post_status' => 'publish' ] );
+	update_post_meta( $pid, 'ehf_template_type', $t['type'] );
+	update_post_meta( $pid, 'ehf_target_include_locations', [ 'rule' => [ 'basic-global' ], 'specific' => [] ] );
+	update_post_meta( $pid, 'ehf_target_exclude_locations', [ 'rule' => [], 'specific' => [] ] );
+	update_post_meta( $pid, 'ehf_target_user_roles', [] );
+	$elements = $t['elements']; pz_fill_styles( $elements, $t['_css'], $media_ids );
+	$changed = pz_save_document( $pid, $elements, [] );
+	pz_note( 'templates', $entry, $ex ? ( $changed ? 'updated' : 'unchanged' ) : 'created' );
+	$hf_ids[ $kind ][ $t['lang'] ] = $pid;
+}
+// ---- 5. pages per key and language
+$page_ids = [];
+foreach ( $manifest['entries'] as $entry ) {
+	if ( ! str_starts_with( $entry, 'pages/' ) ) { continue; }
+	$p = pz_json( $entry );
+	$slug = $p['slug'] !== '' ? $p['slug'] : ( $p['lang'] === 'en' ? 'home' : 'accueil' );
+	$found = null;
+	foreach ( get_posts( [ 'post_type' => 'page', 'name' => $slug, 'post_status' => 'any', 'numberposts' => -1, 'lang' => '' ] ) as $cand ) {
+		if ( ! function_exists( 'pll_get_post_language' ) || pll_get_post_language( $cand->ID ) === $p['lang'] ) { $found = $cand->ID; break; }
+	}
+	$pid = $found ?: wp_insert_post( [ 'post_title' => $p['title'], 'post_name' => $slug, 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => '' ] );
+	if ( function_exists( 'pll_set_post_language' ) ) { pll_set_post_language( $pid, $p['lang'] ); }
+	$elements = $p['elements']; pz_fill_styles( $elements, $p['_css'], $media_ids );
+	$changed = pz_save_document( $pid, $elements, [ 'hide_title' => 'yes', 'template' => 'elementor_header_footer' ] );
+	update_post_meta( $pid, '_wp_page_template', 'elementor_header_footer' );
+	pz_note( 'pages', $entry, $found ? ( $changed ? 'updated' : 'unchanged' ) : 'created' );
+	$page_ids[ $p['key'] ][ $p['lang'] ] = $pid;
+}
+// ---- 6. Polylang links
+if ( function_exists( 'pll_save_post_translations' ) ) {
+	foreach ( array_merge( array_values( $page_ids ), array_values( $hf_ids ) ) as $group ) { if ( count( $group ) > 1 ) { pll_save_post_translations( $group ); } }
+	pz_note( 'polylang', 'links', count( $page_ids ) . ' page groups, ' . count( array_filter( $hf_ids ) ) . ' template kinds' );
+}
+// ---- 7. front page
+if ( isset( $page_ids['home']['en'] ) ) {
+	update_option( 'show_on_front', 'page' ); update_option( 'page_on_front', $page_ids['home']['en'] );
+	pz_note( 'options', 'front_page', 'home.en' );
+}
+\Elementor\Plugin::$instance->files_manager->clear_cache();
+$report = pz_report();
+$report['urls'] = [];
+foreach ( $page_ids as $key => $langs ) { foreach ( $langs as $lang => $pid ) { $u = get_permalink( $pid ); $report['urls'][ "$key.$lang" ] = [ 'url' => $u, 'status' => pz_front( $u ) ]; } }
+return $report;

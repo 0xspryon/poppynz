@@ -1,7 +1,7 @@
 import { cls } from "./classes";
 import { lintCssMap, normalizeCss, parseCssKey, type CssMap } from "./css";
 import { elementId, localStyleId } from "./ids";
-import { bool, classes as classesProp, html, imageRef, link as linkProp, num, str, svgRef, videoRef } from "./props";
+import { bool, classes as classesProp, html, imageRef, link as linkProp, str, svgRef, videoRef } from "./props";
 
 export type ContainerTag = "div" | "header" | "section" | "article" | "aside" | "footer" | "a" | "button";
 export type Interaction = { trigger: "load" | "scrollIn"; effect: "fade" | "slide" | "scale"; direction?: "left" | "right" | "top" | "bottom"; durationMs?: number; delayMs?: number };
@@ -110,4 +110,30 @@ export function collectCss(root: El): Record<string, CssMap> {
   const out: Record<string, CssMap> = { ...root._css };
   for (const child of root.elements) Object.assign(out, collectCss(child));
   return out;
+}
+
+export function assertUniqueIds(roots: El[]): void {
+  const idMap: Map<string, string[]> = new Map();
+
+  function walk(el: El) {
+    if (!idMap.has(el.id)) {
+      idMap.set(el.id, []);
+    }
+    idMap.get(el.id)!.push(el.editor_settings.title);
+    for (const child of el.elements) walk(child);
+  }
+
+  for (const root of roots) walk(root);
+
+  const duplicates: string[] = [];
+  for (const [id, titles] of idMap) {
+    if (titles.length > 1) {
+      const titleList = titles.map(t => `"${t}"`).join(", ");
+      duplicates.push(`duplicate element id ${id}: ${titleList}`);
+    }
+  }
+
+  if (duplicates.length > 0) {
+    throw new Error(duplicates.join("\n"));
+  }
 }

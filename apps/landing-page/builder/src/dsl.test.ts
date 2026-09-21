@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { button, collectCss, flex, heading, svg, text } from "./dsl";
+import { assertUniqueIds, button, collectCss, flex, heading, svg, text } from "./dsl";
 
 describe("dsl", () => {
   const h1 = heading("home/hero/h1", { title: "H1", tag: "h1", classes: ["h1"], text: "Your Family's <em>Perfect Helper</em>", interaction: { trigger: "load", effect: "slide", direction: "bottom" } });
@@ -50,5 +50,13 @@ describe("dsl", () => {
   test("collectCss walks the tree", () => {
     const all = collectCss(root);
     expect(Object.keys(all)).toHaveLength(1);
+  });
+  test("assertUniqueIds passes on valid tree", () => {
+    expect(() => assertUniqueIds([root])).not.toThrow();
+  });
+  test("assertUniqueIds throws on duplicate element ids", () => {
+    const a = text("dup", { title: "Dup A", text: "a" });
+    const b = text("dup", { title: "Dup B", text: "b" });
+    expect(() => assertUniqueIds([a, b])).toThrow(/duplicate element id/);
   });
 });

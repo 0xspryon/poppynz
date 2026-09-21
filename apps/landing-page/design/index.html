@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poppynz — Your Family’s Perfect Helper</title>
+<link rel="icon" href="/assets/logo-mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=Inter:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/line-awesome@1.3.0/dist/line-awesome/css/line-awesome.min.css">
+<link rel="stylesheet" href="/css/site.css?v=2f907a81">
+<style>
+.hero-card{display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background:#fff;border:1.5px solid #D6E2F2;box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12)}
+.hero-card.l:hover{border-color:#37B5FF;background:#ECF4FF;transform:translateY(-4px) rotate(-0.8deg)}
+.hero-card.r:hover{border-color:#1A3375;background:#ECF4FF;transform:translateY(-4px) rotate(0.8deg)}
+.hero-card .t{font:700 18px 'Hanken Grotesk';color:#1A3375}
+.hero-card .d{font:400 14px/1.5 'Inter';color:#444650}
+.hero-card .go{display:inline-flex;align-self:flex-start;align-items:center;gap:8px;padding:10px 18px;color:#fff;font:600 14px 'Inter'}
+.hero-card .go i{display:inline-block;animation:bob 2.4s ease-in-out infinite}
+.step{display:flex;flex-direction:column;gap:14px;padding:28px;border-radius:8px;border:1.5px solid #D6E2F2;background:#F7F9FF}
+.step:hover{border-color:#8FCDFF;background:#ECF4FF;transform:translateY(-4px) rotate(-0.6deg)}
+.step .top{display:flex;justify-content:space-between;align-items:center}
+.step .n{font:700 13px 'Inter';letter-spacing:.08em;color:#005782;display:inline-block;transform:rotate(6deg)}
+.svc{position:relative;display:flex;flex-direction:column;gap:10px;min-height:320px;padding:24px 24px 0;border-radius:12px;border:1.5px solid #CBE6FF;background:#E1F0FF;overflow:hidden}
+.svc.pink{background:#FCE3F4;border-color:#F5C9E4}
+.svc:hover{border-color:#8FCDFF;transform:translateY(-4px) rotate(0.6deg)}
+.svc.pink:hover{border-color:#EA42B9}
+.svc:nth-child(even):hover{transform:translateY(-4px) rotate(-0.6deg)}
+.svc .t{font:700 21px 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.svc .d{font:400 14px/1.5 'Inter';color:#444650;max-width:30ch}
+.svc .art{display:block;align-self:flex-end;margin:auto -4px -6px 0;height:160px;width:auto;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,29,90,.12));transition:transform .35s cubic-bezier(.34,1.56,.64,1)}
+.svc:hover .art{transform:translateY(-4px) scale(1.06) rotate(-1deg)}
+.quote{display:flex;flex-direction:column;gap:20px;padding:32px;border-radius:8px;background:#fff;border:1.5px solid #D6E2F2;box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12);transition:transform .3s}
+.quote:hover{transform:rotate(0) translateY(-4px)!important}
+.quote blockquote{font:500 italic 22px/1.45 'Hanken Grotesk';color:#1A3375}
+.quote figcaption{display:flex;align-items:center;gap:12px;margin-top:auto}
+.quote figcaption span:last-child{font:400 14px 'Inter';color:#444650}
+.city{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;background:#E1F0FF;font:500 14px 'Inter';color:#1A3375;transition:transform .25s cubic-bezier(.34,1.56,.64,1),background .2s}
+.city:hover{transform:translateY(-3px) rotate(-2deg)}
+.city i{color:#005782}
+.float-card{position:absolute;right:16px;top:24px;display:flex;align-items:center;gap:12px;padding:12px 14px;background:#fff;border:1.5px solid #D6E2F2;border-radius:8px;box-shadow:0 1px 3px rgba(0,29,90,.06),0 8px 24px -12px rgba(0,29,90,.12);pointer-events:none;animation:float 5s ease-in-out infinite}
+</style>
+</head>
+<body>
+<div class="site">
+<header class="hdr">
+  <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+  <nav>
+    <a href="/for-families">For families</a>
+    <a href="/for-helpers">For helpers</a>
+    <a href="/safety-and-trust">Safety &amp; trust</a>
+    <a href="/daycare-matching">Daycare<span class="badge-new">New</span></a>
+    <a href="/blog">Blog</a>
+  </nav>
+  <div class="hdr-actions">
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+    <a href="https://app.poppynz.com/auth/sign-in" class="signin">Sign in</a>
+    <a href="https://app.poppynz.com/auth/sign-up" class="getstarted">Get started</a>
+  </div>
+</header>
+
+<section data-section="Hero" style="position:relative;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,460px),1fr));gap:clamp(32px,5vw,64px);padding:clamp(48px,7vw,80px) clamp(24px,5vw,96px);align-items:center;max-width:1920px;margin:0 auto">
+<div aria-hidden="true" class="deco">
+  <span class="d1"></span>
+  <span class="d2"></span>
+  <i class="las la-star d3"></i>
+  <span class="d4"></span>
+  <i class="las la-heart d5"></i>
+</div>
+  <div class="hero-copy" style="gap:28px">
+    <p class="eyebrow"><span class="dash"></span>On-demand Family Support</p>
+    <h1 style="font:800 clamp(38px,5vw,68px)/1.05 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375;text-wrap:balance">Your Family’s <span style="text-decoration:underline wavy #37B5FF;text-decoration-thickness:.06em;text-underline-offset:.14em">Perfect Helper</span></h1>
+    <p style="font:400 clamp(16px,1.4vw,19px)/1.6 'Inter';color:#444650;max-width:540px">Connecting busy families with certified Mom Helpers for childcare, meal prep, housekeeping, and more, all background-verified and ready to lend a hand.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:16px;max-width:580px">
+      <a href="https://app.poppynz.com/auth/sign-up" class="hero-card l">
+        <span class="bubble bubble-40"><i class="las la-search"></i></span>
+        <span class="t">I need help</span>
+        <span class="d">Browse verified Mom Helpers in your area and find the perfect fit for your family.</span>
+        <span class="go" style="border-radius:999px;background:#37B5FF;box-shadow:0 10px 24px -10px rgba(55,181,255,.65)">Find a helper <i class="las la-arrow-right"></i></span>
+      </a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="hero-card r">
+        <span class="bubble bubble-40"><i class="las la-hand-holding-heart" style="display:inline-block;transform-origin:70% 90%;animation:wave 3s ease-in-out infinite"></i></span>
+        <span class="t">I want to help</span>
+        <span class="d">Set your own services and rates, and support families in your community.</span>
+        <span class="go" style="border-radius:8px;background:#1A3375">Become a helper <i class="las la-arrow-right"></i></span>
+      </a>
+    </div>
+    <p class="trust"><i class="las la-shield-alt"></i>Background-checked helpers · PIPEDA-compliant · End-to-end encrypted</p>
+  </div>
+  <div style="position:relative;height:clamp(320px,45vw,640px)">
+    <div style="position:absolute;inset:0;border-radius:14px;overflow:hidden;box-shadow:0 28px 60px -30px rgba(0,29,90,.4)"><div id="home-hero" class="media"><video autoplay muted loop playsinline preload="metadata" poster="https://images.pexels.com/videos/7102352/art-beads-beads-bracelets-building-blocks-7102352.jpeg?auto=compress&w=1260"><source src="https://videos.pexels.com/video-files/7102352/7102352-hd_1920_1080_30fps.mp4" type="video/mp4"></video><a href="https://www.pexels.com/video/mom-telling-story-to-her-child-7102352/" target="_blank" rel="noopener" class="media-credit">Video: RDNE Stock project / Pexels</a></div></div>
+    <div class="float-card">
+      <span style="display:flex;width:40px;height:40px;align-items:center;justify-content:center;border-radius:999px;background:#37B5FF;color:#fff;font:700 15px 'Inter'">M</span>
+      <span style="display:flex;flex-direction:column;gap:3px"><span style="font:700 15px 'Hanken Grotesk';color:#001E30">Maria O.</span><span style="font:400 13px 'Inter';color:#444650">Childcare · $28/hr · 1.2 km</span></span>
+      <span class="vetted" style="margin-left:8px"><i class="las la-check-circle"></i>Vetted</span>
+    </div>
+  </div>
+</section>
+
+<section data-section="How it works" class="band">
+  <div class="wrap" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:clamp(32px,5vw,64px);padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px);align-items:start">
+    <div class="stack-16" style="max-width:420px">
+      <p class="eyebrow">How It Works</p>
+      <h2 class="h2">Getting Started Is Simple</h2>
+      <p class="lead">Here’s how you can find the perfect Mom Helper for your family, no bidding, no surge pricing, just a clear hourly rate agreed in writing.</p>
+    </div>
+    <ol class="span-2" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px">
+      <li class="step">
+        <span class="top"><span class="bubble"><i class="las la-clipboard-list"></i></span><span class="n">01</span></span>
+        <h3 class="h3">Create Your Account</h3>
+        <p class="body-15">Sign up as a family with a magic link and tell us about your household and care needs. A quick safety check lets helpers know you’re verified too.</p>
+      </li>
+      <li class="step">
+        <span class="top"><span class="bubble"><i class="las la-map-marked-alt"></i></span><span class="n">02</span></span>
+        <h3 class="h3">Find Your Perfect Helper</h3>
+        <p class="body-15">Browse profiles of verified Mom Helpers in your area, photo, bio, services with hourly rates, distance, and the Vetted badge.</p>
+      </li>
+      <li class="step">
+        <span class="top"><span class="bubble"><i class="las la-file-signature"></i></span><span class="n">03</span></span>
+        <h3 class="h3">Schedule Your Service</h3>
+        <p class="body-15">Connect with your helper, book on-demand or regular help, and put the details into a simple written agreement.</p>
+      </li>
+      <li class="step">
+        <span class="top"><span class="bubble"><i class="las la-stopwatch"></i></span><span class="n">04</span></span>
+        <h3 class="h3">Simple Payment</h3>
+        <p class="body-15">Enjoy secure, automated payments after each session based on the helper’s rate, plus a 5% service fee. That’s it!</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section data-section="Two-way safety" class="sec wrap">
+  <div class="stack-16" style="max-width:800px;margin-bottom:48px">
+    <p class="eyebrow">Trusted Care, Both Ways</p>
+    <h2 class="h2">Peace of mind for families, and dignity for helpers. Every Mom Helper is verified before you can find them, and every family is verified before helpers can find you.</h2>
+  </div>
+  <div class="grid-cards">
+    <div class="panel">
+      <span class="bubble bubble-48"><i class="las la-id-card"></i></span>
+      <h3 class="h3-lg">Verified Helpers</h3>
+      <ul class="checks">
+        <li><i class="las la-check"></i>Government photo ID</li>
+        <li><i class="las la-check"></i>Vulnerable Sector Check</li>
+        <li><i class="las la-check"></i>Enhanced criminal record check</li>
+        <li><i class="las la-plus plus"></i>Optional: First Aid, ECE, PSW credentials</li>
+      </ul>
+      <div class="credibled"><span class="dot"></span><span>Record checks fetched through our partner <strong>Credibled</strong></span></div>
+    </div>
+    <div class="panel-navy">
+      <span class="bubble-light"><i class="las la-user-shield"></i></span>
+      <h3 class="h3-lg" style="color:#fff">Reviewed by Real People</h3>
+      <p style="font:400 15px/1.6 'Inter';color:#B9C6E8">Before a helper appears in search, a member of the Poppynz team personally reviews their documents. Automated checks help us along, but a real person makes the call.</p>
+      <p style="font:400 15px/1.6 'Inter';color:#B9C6E8">Know someone who’d make a great Mom Helper? Members can refer them, and referrals go through the very same review.</p>
+      <p class="note-light" style="margin-top:auto"><i class="las la-lock" style="font-size:16px"></i>PIPEDA-compliant · End-to-end encrypted messaging</p>
+    </div>
+    <div class="panel">
+      <span class="bubble bubble-48"><i class="las la-home"></i></span>
+      <h3 class="h3-lg">Verified Families</h3>
+      <p style="font:400 15px/1.6 'Inter';color:#444650">Before a helper can see your profile, you’ll complete a short safety check. That way, helpers only ever hear from verified families.</p>
+      <a href="/safety-and-trust" class="link-arrow" style="margin-top:auto">Learn about our safety checks <i class="las la-arrow-right"></i></a>
+    </div>
+  </div>
+</section>
+
+<section data-section="Services" class="band">
+  <div class="sec wrap">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:24px 40px;margin-bottom:40px">
+      <div class="stack-16" style="max-width:620px">
+        <p class="eyebrow">What We Offer</p>
+        <h2 class="h2" style="text-wrap:initial">Support for Every Part of Family Life <i class="las la-smile-wink" style="display:inline-block;color:#37B5FF;animation:wiggle 2.5s ease-in-out infinite"></i></h2>
+      </div>
+      <p class="body-16" style="max-width:380px">Mom Helpers list the services they offer along with their hourly rate. Need something a little different? Helpers can offer custom services too.</p>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px">
+      <a href="https://app.poppynz.com/auth/sign-up" class="svc">
+        <span class="t">Childcare</span>
+        <span class="d">Quality care for your children in your home, tailored to their age and interests.</span>
+        <img class="art" src="/assets/services/childcare.webp" width="400" height="396" alt="" loading="lazy">
+      </a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="svc pink">
+        <span class="t">Tutoring</span>
+        <span class="d">Academic support and homework help for students of all ages.</span>
+        <img class="art" src="/assets/services/tutoring.webp" width="400" height="400" alt="" loading="lazy">
+      </a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="svc">
+        <span class="t">Elderly check-in</span>
+        <span class="d">Compassionate check-ins for elderly family members, for peace of mind.</span>
+        <img class="art" src="/assets/services/elderly-check-in.webp" width="326" height="400" alt="" loading="lazy">
+      </a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="svc pink">
+        <span class="t">Pet minding</span>
+        <span class="d">Caring attention for your furry family members, feeding, walking, and playtime.</span>
+        <img class="art" src="/assets/services/pet-minding.webp" width="400" height="360" alt="" loading="lazy">
+      </a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="svc pink">
+        <span class="t">Meal preparation</span>
+        <span class="d">Nutritious meals prepared fresh in your kitchen, to your family’s tastes.</span>
+        <img class="art" src="/assets/services/meal-preparation.webp" width="390" height="400" alt="" loading="lazy">
+      </a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="svc">
+        <span class="t">Light housekeeping</span>
+        <span class="d">Keeping your living space tidy, from vacuuming to laundry and dishes.</span>
+        <img class="art" src="/assets/services/light-housekeeping.webp" width="211" height="400" alt="" loading="lazy">
+      </a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="svc pink">
+        <span class="t">Yard help</span>
+        <span class="d">From weeding to light clean-ups, we keep your yard neat and tidy.</span>
+        <img class="art" src="/assets/services/yard-help.webp" width="395" height="400" alt="" loading="lazy">
+      </a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="svc">
+        <span class="t">Small errands</span>
+        <span class="d">Out when a delivery arrives? Helpers bring in packages, water plants, and take out the rubbish!</span>
+        <img class="art" src="/assets/services/packages.webp" width="400" height="368" alt="" loading="lazy">
+      </a>
+    </div>
+  </div>
+</section>
+
+<section data-section="Testimonials" class="wrap" style="padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px) 48px">
+  <div class="grid-cards">
+    <figure class="quote" style="transform:rotate(-1.2deg)">
+      <blockquote>“The daycare matching service helped us find a spot within a week after months of searching on our own. Worth every penny!”</blockquote>
+      <figcaption><span class="avatar">SJ</span><span>Sarah Johnson · Working Mom</span></figcaption>
+    </figure>
+    <figure class="quote" style="transform:rotate(0.8deg)">
+      <blockquote>“The daycare matching service helped us find a spot within a week after months of searching on our own. Worth every penny!”</blockquote>
+      <figcaption><span class="avatar">ER</span><span>Emma Rodriguez · Parent of Three</span></figcaption>
+    </figure>
+    <figure class="quote" style="transform:rotate(-0.6deg)">
+      <blockquote>“The meal prep service has been a game-changer for our busy household. I can finally enjoy quality time with my kids without stressing about dinner.”</blockquote>
+      <figcaption><span class="avatar">MC</span><span>Michael Chen · Single Dad</span></figcaption>
+    </figure>
+  </div>
+</section>
+
+<section data-section="Neighbourhood" class="wrap" style="padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px)">
+  <div class="card-shadow" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));border-radius:14px;overflow:hidden;background:#fff;border:1.5px solid #D6E2F2">
+    <div style="min-height:320px"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1658314755707-1fbdf7c40145?auto=format&fit=crop&w=1200&q=80" alt="Front porch, residential Canadian street" loading="lazy"><span class="credit">Photo by <a href="https://unsplash.com/@ageing_better?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Centre for Ageing Better</a> on <a href="https://unsplash.com/?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Unsplash</a></span></figure></div>
+    <div class="stack-24" style="padding:clamp(28px,4vw,56px)">
+      <p class="eyebrow">Poppynz in Your Neighbourhood</p>
+      <h2 class="h2-sm">Trusted Help, Right Around the Corner</h2>
+      <p class="lead">We match you with Mom Helpers by distance, so the person watering your plants or walking your dog is usually just a few blocks away, a trusted neighbour, ready when you need them.</p>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        <span class="city"><i class="las la-map-marker"></i>Mississauga</span><span class="city"><i class="las la-map-marker"></i>Toronto</span><span class="city"><i class="las la-map-marker"></i>Ottawa</span><span class="city"><i class="las la-map-marker"></i>Calgary</span><span class="city"><i class="las la-map-marker"></i>Vancouver</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;border:1.5px dashed #C5C6D2;font:500 14px 'Inter';color:#444650;transform:rotate(-2deg)"><i class="las la-star" style="color:#EA42B9"></i>Your city next?</span>
+      </div>
+      <p class="muted-14">All prices in CAD. Data handled under PIPEDA.</p>
+    </div>
+  </div>
+</section>
+
+<section data-section="Become a helper" class="wrap" style="padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px)">
+  <div class="grid-2 navy shadow-deep" style="padding:clamp(32px,5vw,64px);border-radius:14px">
+    <div class="stack-24">
+      <p class="eyebrow-light"><span class="dash"></span>For helpers</p>
+      <h2 class="h2-light">Earn Flexibly. <span class="accent">Support</span> Your Community.</h2>
+      <p class="lead-light" style="max-width:560px">Become a Mom Helper and earn income on your own schedule. Set your services and hourly rate in CAD, work when and where you choose, and keep 85% of what you earn. Experienced helpers can grow into Major-domo status.</p>
+      <div class="btn-row">
+        <a href="https://app.poppynz.com/auth/sign-up" class="btn-primary-14">Become a helper</a>
+        <a href="/for-helpers" class="btn-ghost-light-15">See what’s required</a>
+      </div>
+    </div>
+    <div style="height:clamp(240px,30vw,340px);border-radius:14px;overflow:hidden"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1583468991267-3f068b607ae1?auto=format&fit=crop&w=1000&q=80" alt="Tutor and student at a kitchen table" loading="lazy"><span class="credit">Photo by <a href="https://unsplash.com/@awcreativeut?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Adam Winger</a> on <a href="https://unsplash.com/?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Unsplash</a></span></figure></div>
+  </div>
+</section>
+
+<section data-section="Final CTA" class="cta band-top">
+  <div class="cta-inner">
+    <h2 class="h2-cta">Ready to Find Your Perfect Helper?</h2>
+    <p>Join Poppynz today and connect with certified Mom Helpers in your area. Sign in with a magic link, no password needed.</p>
+    <div class="btn-row-center">
+      <a href="https://app.poppynz.com/auth/sign-up" class="btn-primary">Find a helper</a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="btn-outline">Become a helper</a>
+    </div>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="ftr-grid">
+    <div class="ftr-brand">
+      <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+      <p style="font:400 14px/1.6 'Inter';color:#444650;max-width:320px">Vetted Mom Helpers for Canadian families. Trust runs both ways.</p>
+      <p style="display:flex;align-items:flex-start;gap:8px;font:400 13px/1.5 'Inter';color:#444650"><i class="las la-shield-alt" style="font-size:16px;color:#005782"></i>Background-checked · PIPEDA-compliant · End-to-end encrypted</p>
+      <a href="mailto:support@poppynz.com" style="font:400 14px 'Inter'">support@poppynz.com</a>
+    </div>
+    <div class="ftr-col"><span class="label">Poppynz</span><a href="/for-families">For families</a><a href="/for-helpers">For helpers</a><a href="/safety-and-trust">Safety &amp; trust</a><a href="/daycare-matching">Daycare matching</a><a href="#">Pricing &amp; fees</a><a href="#">About</a><a href="/blog">Blog</a></div>
+    <div class="ftr-col"><span class="label">Support</span><a href="#">Help &amp; FAQ</a><a href="#">Contact</a><a href="https://app.poppynz.com/auth/sign-in">Sign in</a><a href="#">Refer someone</a></div>
+    <div class="ftr-col"><span class="label">Legal</span><a href="/privacy-policy">Privacy Policy</a><a href="/terms-of-service">Terms of Service</a><a href="/service-agreement">Service Agreement</a></div>
+  </div>
+  <div class="ftr-bottom">
+    <span style="display:inline-flex;align-items:center;gap:6px">© 2026 Poppynz Inc. · Made with care in Toronto, ON <i class="las la-heart heart"></i> · Prices in CAD</span>
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+  </div>
+</footer>
+</div>
+<script src="/js/site.js?v=96c5f81d"></script>
+</body>
+</html>

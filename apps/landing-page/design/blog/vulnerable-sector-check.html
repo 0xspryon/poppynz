@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>What a Vulnerable Sector Check actually checks, and what it doesn’t — Poppynz</title>
+<link rel="icon" href="/assets/logo-mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=Inter:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/line-awesome@1.3.0/dist/line-awesome/css/line-awesome.min.css">
+<link rel="stylesheet" href="/css/site.css?v=2f907a81">
+<style>
+.crumb{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font:500 14px 'Inter';color:#444650}
+.crumb a{display:inline-flex;align-items:center;gap:6px}
+.crumb a:hover{transform:translateX(-2px)}
+.share{display:flex;width:40px;height:40px;align-items:center;justify-content:center;border-radius:999px;border:1.5px solid #D6E2F2;background:#fff;font-size:18px;color:#1A3375}
+.share:hover{background:#ECF4FF;border-color:#8FCDFF;transform:translateY(-3px) rotate(-4deg)}
+.byline{display:flex;align-items:center;gap:12px}
+.byline .avatar{width:44px;height:44px;font-size:15px}
+.article-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,720px) minmax(0,1fr);gap:clamp(24px,4vw,64px);align-items:start}
+.article-grid>aside{position:sticky;top:96px;display:flex;flex-direction:column;gap:14px;min-width:0}
+@media (max-width:1100px){.article-grid{grid-template-columns:minmax(0,1fr);max-width:760px;margin:0 auto}.article-grid>aside{position:static}}
+.toc{display:flex;flex-direction:column;gap:2px;border-left:1.5px solid #D6E2F2}
+.toc li{margin-left:-1.5px}
+.toc a{display:block;padding:8px 14px;border-left:2px solid transparent;font:500 14px/1.4 'Inter';color:#444650}
+.toc a:hover{color:#1A3375;border-left-color:#37B5FF;background:#ECF4FF}
+.prose{display:flex;flex-direction:column;gap:26px;min-width:0;font:400 18px/1.7 'Inter';color:#1D2A3A}
+.prose .intro{font:500 21px/1.6 'Inter';color:#001E30}
+.prose h2{font:800 clamp(26px,2.6vw,34px)/1.15 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375;padding-top:16px;scroll-margin-top:96px}
+.prose ol{list-style:decimal;padding-left:22px;display:flex;flex-direction:column;gap:10px}
+.prose ol li{display:list-item}
+.prose ul.checks li{display:flex}
+.prose .levels+p,.prose .cmp-grid+p{margin-top:0}
+.prose a.inline{font-weight:600;text-decoration:underline;text-underline-offset:.15em}
+.levels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:14px}
+.level{display:flex;flex-direction:column;gap:12px;padding:22px;border-radius:8px;border:1.5px solid #D6E2F2;background:#F7F9FF}
+.level.hi{border-color:#8FCDFF;background:#ECF4FF}
+.level .n{font:700 13px 'Inter';letter-spacing:.08em;color:#005782}
+.level h3{font:700 20px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.level p{font:400 14px/1.55 'Inter';color:#444650}
+.level .tag{margin-top:auto;display:inline-flex;align-items:center;gap:6px;font:600 12px 'Inter'}
+.level .tag i{font-size:16px}
+.cmp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}
+.cmp{display:flex;flex-direction:column;gap:14px;padding:26px;border-radius:12px;background:#fff;border:1.5px solid #D6E2F2}
+.cmp h3{display:flex;align-items:center;gap:10px;font:700 19px 'Hanken Grotesk';color:#1A3375}
+.cmp h3 i{font-size:22px}
+.cmp ul{display:flex;flex-direction:column;gap:10px;font:400 15px/1.5 'Inter';color:#444650}
+.cmp li{display:flex;gap:10px}
+.cmp li i{font-size:18px;flex:none}
+.quote{display:flex;flex-direction:column;gap:14px;padding:32px;border-radius:12px;background:#1A3375;color:#fff}
+.quote>i{font-size:34px;color:#37B5FF}
+.quote p{font:500 italic clamp(20px,2vw,26px)/1.4 'Hanken Grotesk'}
+.quote footer{font:400 14px 'Inter';color:#B9C6E8}
+.callout{display:flex;gap:14px;padding:20px 22px;border-radius:8px;background:#FDEBE0;border:1.5px solid #F5C9A8}
+.callout i{flex:none;font-size:22px;color:#F26E21}
+.callout p{font:400 15px/1.55 'Inter';color:#001E30}
+.pill{padding:8px 14px;border-radius:999px;border:1.5px solid #D6E2F2;background:#fff;font:500 14px 'Inter';color:#1A3375}
+.pill:hover{background:#ECF4FF;border-color:#8FCDFF;transform:translateY(-3px) rotate(-1deg)}
+.side-card{display:flex;flex-direction:column;gap:16px;padding:26px;border-radius:12px;background:#fff;border:1.5px solid #D6E2F2}
+.side-card h3{font:700 20px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.side-card p{font:400 14px/1.55 'Inter';color:#444650}
+.side-card .btn-primary-14{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;font-size:14px}
+.related{display:flex;flex-direction:column;border-radius:8px;overflow:hidden;background:#F7F9FF;border:1.5px solid #D6E2F2}
+.related:hover{border-color:#8FCDFF;transform:translateY(-4px)}
+.related .pic{height:200px;overflow:hidden}
+.related .body{display:flex;flex-direction:column;gap:12px;padding:22px;flex:1}
+.related h3{font:700 21px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.meta{display:flex;gap:10px;align-items:center}
+.meta .rd{font:400 13px 'Inter';color:#444650}
+</style>
+</head>
+<body>
+<div class="site">
+<header class="hdr">
+  <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+  <nav>
+    <a href="/for-families">For families</a>
+    <a href="/for-helpers">For helpers</a>
+    <a href="/safety-and-trust">Safety &amp; trust</a>
+    <a href="/daycare-matching">Daycare<span class="badge-new">New</span></a>
+    <a href="/blog" class="active">Blog</a>
+  </nav>
+  <div class="hdr-actions">
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+    <a href="https://app.poppynz.com/auth/sign-in" class="signin">Sign in</a>
+    <a href="https://app.poppynz.com/auth/sign-up" class="getstarted">Get started</a>
+  </div>
+</header>
+
+<section data-section="Article header" style="padding:clamp(40px,6vw,64px) clamp(24px,5vw,96px) 40px;max-width:1920px;margin:0 auto;display:flex;flex-direction:column;gap:24px;animation:rise .7s cubic-bezier(.2,.8,.2,1) both">
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px 24px">
+    <nav aria-label="Breadcrumb" class="crumb">
+      <a href="/blog"><i class="las la-arrow-left"></i>Blog</a><span style="color:#C5C6D2">/</span><span>Safety</span>
+    </nav>
+    <div class="meta" style="margin-left:auto"><span class="chip chip-info">Safety</span><span class="rd">8 min read</span></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <h1 style="font:800 clamp(34px,4.4vw,58px)/1.05 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375;text-wrap:balance">What a Vulnerable Sector Check actually checks, and what it doesn’t</h1>
+    <p style="font:400 clamp(17px,1.4vw,20px)/1.6 'Inter';color:#444650;max-width:70ch">Every Poppynz helper has one. Here’s how it differs from a standard police check, why it takes longer, and how to read one if a helper shares it with you.</p>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px 32px;padding-top:24px;border-top:1.5px solid #D6E2F2">
+    <div class="byline"><span class="avatar">P</span><span style="display:flex;flex-direction:column;gap:2px"><span style="font:700 15px 'Hanken Grotesk';color:#001E30">Poppynz team</span><span style="font:400 13px 'Inter';color:#444650">Published 12 Sept 2026 · Updated 18 Sept 2026</span></span></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font:500 13px 'Inter';color:#444650;margin-right:4px">Share</span>
+      <a href="#" aria-label="Share on Facebook" class="share"><i class="lab la-facebook-f"></i></a>
+      <a href="#" aria-label="Share on LinkedIn" class="share"><i class="lab la-linkedin-in"></i></a>
+      <a href="#" aria-label="Share on WhatsApp" class="share"><i class="lab la-whatsapp"></i></a>
+    </div>
+  </div>
+</section>
+
+<section data-section="Hero image" style="padding:0 clamp(24px,5vw,96px) clamp(40px,5vw,64px);max-width:1920px;margin:0 auto">
+  <figure style="display:flex;flex-direction:column;gap:12px">
+    <div class="shadow-deep" style="height:clamp(260px,42vw,560px);border-radius:14px;overflow:hidden"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1714646793075-6dbfc604e664?auto=format&fit=crop&w=1800&q=80" alt="Helper and child on the living-room floor" loading="lazy"><span class="credit">Photo by <a href="https://unsplash.com/@silverkblack?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Vitaly Gariev</a> on <a href="https://unsplash.com/?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Unsplash</a></span></figure></div>
+    <figcaption style="font:400 13px/1.5 'Inter';color:#444650">A Vulnerable Sector Check is required for anyone working with children or vulnerable adults in a position of trust.</figcaption>
+  </figure>
+</section>
+
+<section data-section="Article body" style="padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px);max-width:1920px;margin:0 auto">
+  <div class="article-grid">
+
+    <aside>
+      <p class="eyebrow">In this article</p>
+      <ol class="toc">
+        <li><a href="#what-is">What a VSC is</a></li>
+        <li><a href="#three-levels">The three levels, side by side</a></li>
+        <li><a href="#what-it-checks">What it checks, and what it doesn’t</a></li>
+        <li><a href="#why-longer">Why it takes longer</a></li>
+        <li><a href="#how-to-read">How to read one if a helper shares it</a></li>
+        <li><a href="#poppynz">What Poppynz does with it</a></li>
+      </ol>
+    </aside>
+
+    <article class="prose">
+      <p class="intro">If you’ve ever hired anyone to look after your kids, you’ve probably been told they have a “police check”. That phrase covers three very different documents. The one that matters most for childcare, and the one every Poppynz helper must hold, is the <strong>Vulnerable Sector Check</strong>, or VSC.</p>
+      <h2 id="what-is">What a VSC is</h2>
+      <p>A VSC is the deepest of the three levels of record check issued by Canadian police services. It exists for one situation: a person taking a position of trust or authority over children or vulnerable adults. Helpers can’t simply request one for themselves; the organisation asking for it, in this case Poppynz through our partner Credibled, must confirm the role qualifies.</p>
+<p>It’s built on top of the two lighter checks, so everything they cover, it covers too. The difference is what gets added on top.</p>
+
+      <h2 id="three-levels">The three levels, side by side</h2>
+      <div class="levels">
+  <div class="level"><span class="n">LEVEL 1</span><h3>Criminal Record Check</h3><p>Convictions on the national repository. Same-day, name-based.</p><span class="tag" style="color:#B3261E"><i class="las la-times"></i>Not enough for childcare</span></div>
+  <div class="level"><span class="n">LEVEL 2</span><h3>Criminal Record &amp; Judicial Matters</h3><p>Adds outstanding charges, warrants, peace bonds and probation.</p><span class="tag" style="color:#0B7A52"><i class="las la-check"></i>Required by Poppynz</span></div>
+  <div class="level hi"><span class="n">LEVEL 3</span><h3>Vulnerable Sector Check</h3><p>Adds pardoned sexual offences and local non-conviction records.</p><span class="tag" style="color:#0B7A52"><i class="las la-check"></i>Required by Poppynz</span></div>
+</div>
+<p>The first two are what most people mean by “police check”. They confirm whether someone has criminal convictions on the national database. Only the VSC goes further and asks the local police to search for <em>pardoned</em> sexual offences and non-conviction information they consider relevant to the role.</p>
+
+      <h2 id="what-it-checks">What it checks, and what it doesn’t</h2>
+      <div class="cmp-grid">
+  <div class="cmp card-shadow"><h3><i class="las la-check-circle" style="color:#0B7A52"></i>Included</h3><ul>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>Criminal convictions on the national repository</span></li>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>Outstanding charges and warrants</span></li>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>Judicial orders such as peace bonds and probation</span></li>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>Pardoned sexual offences (record suspensions)</span></li>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>Local police non-conviction information relevant to the role</span></li>
+  </ul></div>
+  <div class="cmp card-shadow"><h3><i class="las la-times-circle" style="color:#B3261E"></i>Not included</h3><ul>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Records from outside Canada</span></li>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Driving history or provincial offences</span></li>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Credit history or employment references</span></li>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Youth records, in most circumstances</span></li>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Anything that happens <em>after</em> the check is issued</span></li>
+  </ul></div>
+</div>
+<p>That last point is the one families forget. A VSC is a snapshot. It says nothing about what a person did last week. This is why we ask helpers to renew theirs every two years, and why the Vetted badge on a profile shows the date it was last reviewed.</p>
+<blockquote class="quote shadow-deep"><i class="las la-quote-right" aria-hidden="true"></i><p>A clear check is the start of trust, not the end of it. It tells you what the police know. It doesn’t tell you who someone is.</p><footer>Poppynz team</footer></blockquote>
+
+      <h2 id="why-longer">Why it takes longer</h2>
+      <p>A basic check can come back in minutes. A VSC routinely takes one to four weeks, and here’s why: if the applicant’s name and date of birth match anyone with a pardoned sexual offence, the police must confirm identity with fingerprints before the result is released. Common names get caught in this net constantly. It isn’t a red flag, just a slow one.</p>
+<p>Two practical consequences for you as a family. First, a helper who says “my VSC is still in progress” is telling the truth more often than not. Second, on Poppynz, helpers don’t appear in search until the result is in and a person on our team has read it, so what you see in the app is already past this step.</p>
+
+      <h2 id="how-to-read">How to read one if a helper shares it</h2>
+      <p>Helpers aren’t obliged to show you the document, but many do. A few things to look for:</p>
+<ol>
+  <li><strong>The issuing service.</strong> It should be a Canadian police service, and the address on it should be where the helper lives.</li>
+  <li><strong>The level.</strong> The heading will say “Vulnerable Sector” explicitly. If it just says “Criminal Record Check”, it’s the lighter level.</li>
+  <li><strong>The date.</strong> Anything older than two years is out of date for Poppynz purposes.</li>
+  <li><strong>The result.</strong> It’s usually a single line: “No record”, or a list. If there is a list, that’s a conversation, not automatically a no.</li>
+</ol>
+<div class="callout"><i class="las la-info-circle"></i><p>A record check is personal information under PIPEDA. If a helper shares theirs, don’t photograph it, forward it, or store it. Look, and hand it back.</p></div>
+
+      <h2 id="poppynz">What Poppynz does with it</h2>
+      <p>Every helper submits government photo ID, an enhanced criminal record check and a VSC before their profile goes live. The checks are fetched through Credibled and read by a member of our team, not an algorithm. If anything on the result needs a second look, we talk to the helper before deciding. Families never see the document itself, only the Vetted badge and its review date.</p>
+<p>You can read the full process, including what we ask of families in return, on our <a href="/safety-and-trust" class="inline">Safety &amp; Trust</a> page.</p>
+      
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:12px">
+        <a href="/blog" class="pill">Safety</a>
+        <a href="/blog" class="pill">For families</a>
+        <a href="/blog" class="pill">Verification</a>
+        <a href="/blog" class="pill">PIPEDA</a>
+      </div>
+    </article>
+
+    <aside>
+      <div class="side-card card-shadow">
+        <span class="bubble"><i class="las la-shield-alt"></i></span>
+        <h3>Every helper is Vetted before you can find them</h3>
+        <p>ID, enhanced record check and VSC, reviewed by a real person.</p>
+        <a href="https://app.poppynz.com/auth/sign-up" class="btn-primary-14">Find a helper <i class="las la-arrow-right"></i></a>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section data-section="Keep reading" class="band">
+  <div class="sec wrap" style="display:flex;flex-direction:column;gap:32px">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:16px 40px">
+      <div style="display:flex;flex-direction:column;gap:12px"><p class="eyebrow">Keep Reading</p><h2 class="h2-sm" style="text-wrap:initial">More on Safety</h2></div>
+      <a href="/blog" class="link-arrow">All articles <i class="las la-arrow-right"></i></a>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:24px">
+      <a href="/blog/why-families-get-verified" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1504151932400-72d4384f04b3?auto=format&fit=crop&w=900&q=80" alt="Parent holding a baby, reading" loading="lazy"><span class="credit">Photo by Picsea on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">Safety</span><span class="rd">5 min read</span></div>
+          <h3>Why families get verified too</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">7 Aug 2026</span>
+        </div>
+      </a>
+      <a href="/blog/reading-a-helper-profile" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1713942590283-59867d5e3f8d?auto=format&fit=crop&w=900&q=80" alt="Helper reading to a child" loading="lazy"><span class="credit">Photo by Vitaly Gariev on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">For families</span><span class="rd">7 min read</span></div>
+          <h3>Reading a helper profile: photo, bio, rates, distance, Vetted</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">14 Aug 2026</span>
+        </div>
+      </a>
+      <a href="/blog/put-it-in-writing" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1583468982228-19f19164aee2?auto=format&fit=crop&w=900&q=80" alt="Parent and child at a library table" loading="lazy"><span class="credit">Photo by Adam Winger on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">Agreements</span><span class="rd">4 min read</span></div>
+          <h3>Why we ask you to put it in writing</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">21 Aug 2026</span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section data-section="Newsletter" style="padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px);max-width:1920px;margin:0 auto">
+  <div class="newsletter navy shadow-deep">
+    <img class="bell" src="/assets/illustrations/bell.svg" width="200" height="220" alt="" aria-hidden="true">
+    <div class="stack-16">
+      <p class="eyebrow-light"><span class="dash"></span>Once a month</p>
+      <h2 style="font:700 clamp(28px,3.2vw,38px)/1.1 'Hanken Grotesk';letter-spacing:-.02em;color:#fff">Stay in the Loop With <span class="accent">Poppynz</span></h2>
+      <p style="font:400 16px/1.6 'Inter';color:#B9C6E8">One email a month with new guides and neighbourhoods. Unsubscribe any time, we never share your address.</p>
+    </div>
+    <form onsubmit="return false">
+      <span class="email">you@example.ca</span>
+      <a href="#" class="btn-primary-14" style="display:flex;align-items:center;padding:0 24px;height:52px">Subscribe</a>
+    </form>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="ftr-grid">
+    <div class="ftr-brand">
+      <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+      <p style="font:400 14px/1.6 'Inter';color:#444650;max-width:320px">Vetted Mom Helpers for Canadian families. Trust runs both ways.</p>
+      <p style="display:flex;align-items:flex-start;gap:8px;font:400 13px/1.5 'Inter';color:#444650"><i class="las la-shield-alt" style="font-size:16px;color:#005782"></i>Background-checked · PIPEDA-compliant · End-to-end encrypted</p>
+      <a href="mailto:support@poppynz.com" style="font:400 14px 'Inter'">support@poppynz.com</a>
+    </div>
+    <div class="ftr-col"><span class="label">Poppynz</span><a href="/for-families">For families</a><a href="/for-helpers">For helpers</a><a href="/safety-and-trust">Safety &amp; trust</a><a href="/daycare-matching">Daycare matching</a><a href="#">Pricing &amp; fees</a><a href="#">About</a><a href="/blog">Blog</a></div>
+    <div class="ftr-col"><span class="label">Support</span><a href="#">Help &amp; FAQ</a><a href="#">Contact</a><a href="https://app.poppynz.com/auth/sign-in">Sign in</a><a href="#">Refer someone</a></div>
+    <div class="ftr-col"><span class="label">Legal</span><a href="/privacy-policy">Privacy Policy</a><a href="/terms-of-service">Terms of Service</a><a href="/service-agreement">Service Agreement</a></div>
+  </div>
+  <div class="ftr-bottom">
+    <span style="display:inline-flex;align-items:center;gap:6px">© 2026 Poppynz Inc. · Made with care in Toronto, ON <i class="las la-heart heart"></i> · Prices in CAD</span>
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+  </div>
+</footer>
+</div>
+<script src="/js/site.js?v=96c5f81d"></script>
+</body>
+</html>

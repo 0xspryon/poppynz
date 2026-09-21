@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading a helper profile: photo, bio, rates, distance, Vetted — Poppynz</title>
+<link rel="icon" href="/assets/logo-mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=Inter:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/line-awesome@1.3.0/dist/line-awesome/css/line-awesome.min.css">
+<link rel="stylesheet" href="/css/site.css?v=2f907a81">
+<style>
+.crumb{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font:500 14px 'Inter';color:#444650}
+.crumb a{display:inline-flex;align-items:center;gap:6px}
+.crumb a:hover{transform:translateX(-2px)}
+.share{display:flex;width:40px;height:40px;align-items:center;justify-content:center;border-radius:999px;border:1.5px solid #D6E2F2;background:#fff;font-size:18px;color:#1A3375}
+.share:hover{background:#ECF4FF;border-color:#8FCDFF;transform:translateY(-3px) rotate(-4deg)}
+.byline{display:flex;align-items:center;gap:12px}
+.byline .avatar{width:44px;height:44px;font-size:15px}
+.article-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,720px) minmax(0,1fr);gap:clamp(24px,4vw,64px);align-items:start}
+.article-grid>aside{position:sticky;top:96px;display:flex;flex-direction:column;gap:14px;min-width:0}
+@media (max-width:1100px){.article-grid{grid-template-columns:minmax(0,1fr);max-width:760px;margin:0 auto}.article-grid>aside{position:static}}
+.toc{display:flex;flex-direction:column;gap:2px;border-left:1.5px solid #D6E2F2}
+.toc li{margin-left:-1.5px}
+.toc a{display:block;padding:8px 14px;border-left:2px solid transparent;font:500 14px/1.4 'Inter';color:#444650}
+.toc a:hover{color:#1A3375;border-left-color:#37B5FF;background:#ECF4FF}
+.prose{display:flex;flex-direction:column;gap:26px;min-width:0;font:400 18px/1.7 'Inter';color:#1D2A3A}
+.prose .intro{font:500 21px/1.6 'Inter';color:#001E30}
+.prose h2{font:800 clamp(26px,2.6vw,34px)/1.15 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375;padding-top:16px;scroll-margin-top:96px}
+.prose ol{list-style:decimal;padding-left:22px;display:flex;flex-direction:column;gap:10px}
+.prose ol li{display:list-item}
+.prose ul.checks li{display:flex}
+.prose .levels+p,.prose .cmp-grid+p{margin-top:0}
+.prose a.inline{font-weight:600;text-decoration:underline;text-underline-offset:.15em}
+.levels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:14px}
+.level{display:flex;flex-direction:column;gap:12px;padding:22px;border-radius:8px;border:1.5px solid #D6E2F2;background:#F7F9FF}
+.level.hi{border-color:#8FCDFF;background:#ECF4FF}
+.level .n{font:700 13px 'Inter';letter-spacing:.08em;color:#005782}
+.level h3{font:700 20px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.level p{font:400 14px/1.55 'Inter';color:#444650}
+.level .tag{margin-top:auto;display:inline-flex;align-items:center;gap:6px;font:600 12px 'Inter'}
+.level .tag i{font-size:16px}
+.cmp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}
+.cmp{display:flex;flex-direction:column;gap:14px;padding:26px;border-radius:12px;background:#fff;border:1.5px solid #D6E2F2}
+.cmp h3{display:flex;align-items:center;gap:10px;font:700 19px 'Hanken Grotesk';color:#1A3375}
+.cmp h3 i{font-size:22px}
+.cmp ul{display:flex;flex-direction:column;gap:10px;font:400 15px/1.5 'Inter';color:#444650}
+.cmp li{display:flex;gap:10px}
+.cmp li i{font-size:18px;flex:none}
+.quote{display:flex;flex-direction:column;gap:14px;padding:32px;border-radius:12px;background:#1A3375;color:#fff}
+.quote>i{font-size:34px;color:#37B5FF}
+.quote p{font:500 italic clamp(20px,2vw,26px)/1.4 'Hanken Grotesk'}
+.quote footer{font:400 14px 'Inter';color:#B9C6E8}
+.callout{display:flex;gap:14px;padding:20px 22px;border-radius:8px;background:#FDEBE0;border:1.5px solid #F5C9A8}
+.callout i{flex:none;font-size:22px;color:#F26E21}
+.callout p{font:400 15px/1.55 'Inter';color:#001E30}
+.pill{padding:8px 14px;border-radius:999px;border:1.5px solid #D6E2F2;background:#fff;font:500 14px 'Inter';color:#1A3375}
+.pill:hover{background:#ECF4FF;border-color:#8FCDFF;transform:translateY(-3px) rotate(-1deg)}
+.side-card{display:flex;flex-direction:column;gap:16px;padding:26px;border-radius:12px;background:#fff;border:1.5px solid #D6E2F2}
+.side-card h3{font:700 20px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.side-card p{font:400 14px/1.55 'Inter';color:#444650}
+.side-card .btn-primary-14{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;font-size:14px}
+.related{display:flex;flex-direction:column;border-radius:8px;overflow:hidden;background:#F7F9FF;border:1.5px solid #D6E2F2}
+.related:hover{border-color:#8FCDFF;transform:translateY(-4px)}
+.related .pic{height:200px;overflow:hidden}
+.related .body{display:flex;flex-direction:column;gap:12px;padding:22px;flex:1}
+.related h3{font:700 21px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.meta{display:flex;gap:10px;align-items:center}
+.meta .rd{font:400 13px 'Inter';color:#444650}
+</style>
+</head>
+<body>
+<div class="site">
+<header class="hdr">
+  <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+  <nav>
+    <a href="/for-families">For families</a>
+    <a href="/for-helpers">For helpers</a>
+    <a href="/safety-and-trust">Safety &amp; trust</a>
+    <a href="/daycare-matching">Daycare<span class="badge-new">New</span></a>
+    <a href="/blog" class="active">Blog</a>
+  </nav>
+  <div class="hdr-actions">
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+    <a href="https://app.poppynz.com/auth/sign-in" class="signin">Sign in</a>
+    <a href="https://app.poppynz.com/auth/sign-up" class="getstarted">Get started</a>
+  </div>
+</header>
+
+<section data-section="Article header" style="padding:clamp(40px,6vw,64px) clamp(24px,5vw,96px) 40px;max-width:1920px;margin:0 auto;display:flex;flex-direction:column;gap:24px;animation:rise .7s cubic-bezier(.2,.8,.2,1) both">
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px 24px">
+    <nav aria-label="Breadcrumb" class="crumb">
+      <a href="/blog"><i class="las la-arrow-left"></i>Blog</a><span style="color:#C5C6D2">/</span><span>For families</span>
+    </nav>
+    <div class="meta" style="margin-left:auto"><span class="chip chip-info">For families</span><span class="rd">7 min read</span></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <h1 style="font:800 clamp(34px,4.4vw,58px)/1.05 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375;text-wrap:balance">Reading a helper profile: photo, bio, rates, distance, Vetted</h1>
+    <p style="font:400 clamp(17px,1.4vw,20px)/1.6 'Inter';color:#444650;max-width:70ch">Every field on a profile is there for a reason. Here is what to look for and what to ask about in your first message.</p>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px 32px;padding-top:24px;border-top:1.5px solid #D6E2F2">
+    <div class="byline"><span class="avatar">P</span><span style="display:flex;flex-direction:column;gap:2px"><span style="font:700 15px 'Hanken Grotesk';color:#001E30">Poppynz team</span><span style="font:400 13px 'Inter';color:#444650">Published 14 Aug 2026</span></span></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font:500 13px 'Inter';color:#444650;margin-right:4px">Share</span>
+      <a href="#" aria-label="Share on Facebook" class="share"><i class="lab la-facebook-f"></i></a>
+      <a href="#" aria-label="Share on LinkedIn" class="share"><i class="lab la-linkedin-in"></i></a>
+      <a href="#" aria-label="Share on WhatsApp" class="share"><i class="lab la-whatsapp"></i></a>
+    </div>
+  </div>
+</section>
+
+<section data-section="Hero image" style="padding:0 clamp(24px,5vw,96px) clamp(40px,5vw,64px);max-width:1920px;margin:0 auto">
+  <figure style="display:flex;flex-direction:column;gap:12px">
+    <div class="shadow-deep" style="height:clamp(260px,42vw,560px);border-radius:14px;overflow:hidden"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1713942590283-59867d5e3f8d?auto=format&fit=crop&w=1800&q=80" alt="Helper reading to a child" loading="lazy"><span class="credit">Photo by <a href="https://unsplash.com/@silverkblack?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Vitaly Gariev</a> on <a href="https://unsplash.com/?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Unsplash</a></span></figure></div>
+    <figcaption style="font:400 13px/1.5 'Inter';color:#444650">A profile tells you what a helper does and what we have checked. The first message tells you the rest.</figcaption>
+  </figure>
+</section>
+
+<section data-section="Article body" style="padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px);max-width:1920px;margin:0 auto">
+  <div class="article-grid">
+
+    <aside>
+      <p class="eyebrow">In this article</p>
+      <ol class="toc">
+        <li><a href="#photo-and-bio">The photo and the bio</a></li>
+        <li><a href="#services-and-rates">Services and rates</a></li>
+        <li><a href="#distance">Distance</a></li>
+        <li><a href="#the-vetted-badge">The Vetted badge and its date</a></li>
+        <li><a href="#first-message">What to ask in your first message</a></li>
+      </ol>
+    </aside>
+
+    <article class="prose">
+      <p class="intro">When you search on Poppynz you see a list of helpers near you, each with a photo, a short bio, their services with hourly rates, the distance from your home, and a Vetted badge. That’s a lot of information in a small card. Here’s how to read it.</p>
+      <h2 id="photo-and-bio">The photo and the bio</h2>
+      <p>The photo is a real photo of the helper, checked against their government ID by a member of our team. It should look like a person you’d open the door to, not a headshot from a studio. The bio is written by the helper. Read it for specifics: which ages they’ve looked after, whether they mention a certificate, how they describe what they enjoy. A bio that names things (“I’ve done after-school pick-ups for two families for three years”) tells you more than one that promises things (“reliable, caring, flexible”).</p>
+
+      <h2 id="services-and-rates">Services and rates</h2>
+      <p>Each service a helper offers has its own hourly rate in CAD, set by the helper. A profile might list childcare at $28, tutoring at $32 and meal prep at $26. If a helper offers something unusual, it appears as a custom service with its own line. What you pay is the rate plus a 5% Poppynz service fee, and you see the total before you agree to anything. There are no subscriptions or minimums.</p>
+<div class="callout"><i class="las la-info-circle"></i><p>A rate well below everyone nearby isn’t a bargain, it’s a question. Ask it kindly. Often the answer is “I’m new and building reviews,” which is fine.</p></div>
+
+      <h2 id="distance">Distance</h2>
+      <p>Helpers are matched by distance from your postal code, not by city name, so someone across a municipal boundary can be closer than someone in “your” city. Distance matters more than people expect. A helper twelve minutes away can do a last-minute evening. A helper forty minutes away, however lovely, mostly can’t.</p>
+
+      <h2 id="the-vetted-badge">The Vetted badge and its date</h2>
+      <p>The badge means three things have been submitted and read by a person on our team: government photo ID, an enhanced criminal record check, and a Vulnerable Sector Check, both fetched through our partner Credibled. Families never see the documents themselves. What you see is the badge and the date it was last reviewed.</p>
+<ul class="checks">
+  <li><i class="las la-check" style="color:#0B7A52"></i><span><strong>Vetted</strong> with a recent date: the checks are in and were read by an admin.</span></li>
+  <li><i class="las la-check" style="color:#0B7A52"></i><span><strong>Major-domo</strong>: a helper with a sustained record here, completed agreements and a clean review history.</span></li>
+  <li><i class="las la-check" style="color:#0B7A52"></i><span><strong>Optional credentials</strong> such as first aid, ECE or PSW, verified when the helper uploads them.</span></li>
+</ul>
+<p>Checks are renewed every two years. If you want to understand what the VSC does and doesn’t cover, we wrote it up in <a href="/blog/vulnerable-sector-check" class="inline">this article</a>.</p>
+
+      <h2 id="first-message">What to ask in your first message</h2>
+      <p>Messaging on Poppynz is end-to-end encrypted, and a helper can only see your profile once you’ve completed the short family safety check. Keep the first message concrete. Five questions that get useful answers:</p>
+<ol>
+  <li><strong>Availability.</strong> “Are you free Tuesdays and Thursdays from 3:30 to 6?” beats “What’s your availability?”</li>
+  <li><strong>Experience with your situation.</strong> Twins, a toddler with a peanut allergy, a grade 4 reader who hates reading. Say it and ask.</li>
+  <li><strong>How they’d handle a specific moment.</strong> Bedtime refusal, a scraped knee, a homework meltdown. You’re listening for calm, not a script.</li>
+  <li><strong>References.</strong> Helpers aren’t required to give them, but many will offer a family they’ve worked with here.</li>
+  <li><strong>A short first booking.</strong> Two hours while you’re home. It answers more than any message can.</li>
+</ol>
+<blockquote class="quote shadow-deep"><i class="las la-quote-right" aria-hidden="true"></i><p>The profile tells you what we checked. The first booking tells you whether your kids run to the door.</p><footer>Poppynz team</footer></blockquote>
+      
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:12px">
+        <a href="/blog" class="pill">For families</a>
+        <a href="/blog" class="pill">Verification</a>
+        <a href="/blog" class="pill">Getting started</a>
+      </div>
+    </article>
+
+    <aside>
+      <div class="side-card card-shadow">
+        <span class="bubble"><i class="las la-shield-alt"></i></span>
+        <h3>Every helper is Vetted before you can find them</h3>
+        <p>ID, enhanced record check and VSC, reviewed by a real person.</p>
+        <a href="https://app.poppynz.com/auth/sign-up" class="btn-primary-14">Find a helper <i class="las la-arrow-right"></i></a>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section data-section="Keep reading" class="band">
+  <div class="sec wrap" style="display:flex;flex-direction:column;gap:32px">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:16px 40px">
+      <div style="display:flex;flex-direction:column;gap:12px"><p class="eyebrow">Keep Reading</p><h2 class="h2-sm" style="text-wrap:initial">More from the blog</h2></div>
+      <a href="/blog" class="link-arrow">All articles <i class="las la-arrow-right"></i></a>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:24px">
+      <a href="/blog/vulnerable-sector-check" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1714646793075-6dbfc604e664?auto=format&fit=crop&w=900&q=80" alt="Helper and child on the living-room floor" loading="lazy"><span class="credit">Photo by Vitaly Gariev on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">Safety</span><span class="rd">8 min read</span></div>
+          <h3>What a Vulnerable Sector Check actually checks, and what it doesn’t</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">12 Sept 2026</span>
+        </div>
+      </a>
+      <a href="/blog/why-families-get-verified" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1504151932400-72d4384f04b3?auto=format&fit=crop&w=900&q=80" alt="Parent holding a baby, reading" loading="lazy"><span class="credit">Photo by Picsea on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">Safety</span><span class="rd">5 min read</span></div>
+          <h3>Why families get verified too</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">7 Aug 2026</span>
+        </div>
+      </a>
+      <a href="/blog/put-it-in-writing" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1583468982228-19f19164aee2?auto=format&fit=crop&w=900&q=80" alt="Parent and child at a library table" loading="lazy"><span class="credit">Photo by Adam Winger on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">Agreements</span><span class="rd">4 min read</span></div>
+          <h3>Why we ask you to put it in writing</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">21 Aug 2026</span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section data-section="Newsletter" style="padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px);max-width:1920px;margin:0 auto">
+  <div class="newsletter navy shadow-deep">
+    <img class="bell" src="/assets/illustrations/bell.svg" width="200" height="220" alt="" aria-hidden="true">
+    <div class="stack-16">
+      <p class="eyebrow-light"><span class="dash"></span>Once a month</p>
+      <h2 style="font:700 clamp(28px,3.2vw,38px)/1.1 'Hanken Grotesk';letter-spacing:-.02em;color:#fff">Stay in the Loop With <span class="accent">Poppynz</span></h2>
+      <p style="font:400 16px/1.6 'Inter';color:#B9C6E8">One email a month with new guides and neighbourhoods. Unsubscribe any time, we never share your address.</p>
+    </div>
+    <form onsubmit="return false">
+      <span class="email">you@example.ca</span>
+      <a href="#" class="btn-primary-14" style="display:flex;align-items:center;padding:0 24px;height:52px">Subscribe</a>
+    </form>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="ftr-grid">
+    <div class="ftr-brand">
+      <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+      <p style="font:400 14px/1.6 'Inter';color:#444650;max-width:320px">Vetted Mom Helpers for Canadian families. Trust runs both ways.</p>
+      <p style="display:flex;align-items:flex-start;gap:8px;font:400 13px/1.5 'Inter';color:#444650"><i class="las la-shield-alt" style="font-size:16px;color:#005782"></i>Background-checked · PIPEDA-compliant · End-to-end encrypted</p>
+      <a href="mailto:support@poppynz.com" style="font:400 14px 'Inter'">support@poppynz.com</a>
+    </div>
+    <div class="ftr-col"><span class="label">Poppynz</span><a href="/for-families">For families</a><a href="/for-helpers">For helpers</a><a href="/safety-and-trust">Safety &amp; trust</a><a href="/daycare-matching">Daycare matching</a><a href="#">Pricing &amp; fees</a><a href="#">About</a><a href="/blog">Blog</a></div>
+    <div class="ftr-col"><span class="label">Support</span><a href="#">Help &amp; FAQ</a><a href="#">Contact</a><a href="https://app.poppynz.com/auth/sign-in">Sign in</a><a href="#">Refer someone</a></div>
+    <div class="ftr-col"><span class="label">Legal</span><a href="/privacy-policy">Privacy Policy</a><a href="/terms-of-service">Terms of Service</a><a href="/service-agreement">Service Agreement</a></div>
+  </div>
+  <div class="ftr-bottom">
+    <span style="display:inline-flex;align-items:center;gap:6px">© 2026 Poppynz Inc. · Made with care in Toronto, ON <i class="las la-heart heart"></i> · Prices in CAD</span>
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+  </div>
+</footer>
+</div>
+<script src="/js/site.js?v=96c5f81d"></script>
+</body>
+</html>

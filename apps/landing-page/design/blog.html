@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blog — Poppynz</title>
+<link rel="icon" href="/assets/logo-mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=Inter:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/line-awesome@1.3.0/dist/line-awesome/css/line-awesome.min.css">
+<link rel="stylesheet" href="/css/site.css?v=2f907a81">
+<style>
+.tag{padding:8px 14px;border-radius:999px;border:1.5px solid #D6E2F2;background:#fff;font:500 14px 'Inter';color:#1A3375}
+.tag:hover{background:#ECF4FF;border-color:#8FCDFF;transform:translateY(-4px) rotate(0.6deg)}
+.featured{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));border-radius:14px;overflow:hidden;background:#fff;border:1.5px solid #D6E2F2}
+.featured:hover{border-color:#8FCDFF}
+.post{display:flex;flex-direction:column;border-radius:8px;overflow:hidden;background:#fff;border:1.5px solid #D6E2F2}
+.post:hover{border-color:#8FCDFF}
+.post .pic{height:220px;overflow:hidden;transition:transform .4s}
+.post .pic:hover{transform:scale(1.03)}
+.post .body{display:flex;flex-direction:column;gap:12px;padding:24px;flex:1}
+.post h3{font:700 22px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.meta{display:flex;gap:10px;align-items:center}
+.meta .rd{font:400 13px 'Inter';color:#444650}
+.search{display:flex;align-items:center;gap:10px;padding:0 14px;height:48px;width:min(100%,320px);border-radius:8px;border:1.5px solid #C5C6D2;background:#fff}
+.search i{font-size:20px;color:#757681}
+.search span{font:400 15px 'Inter';color:#757681}
+</style>
+</head>
+<body>
+<div class="site">
+<header class="hdr">
+  <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+  <nav>
+    <a href="/for-families">For families</a>
+    <a href="/for-helpers">For helpers</a>
+    <a href="/safety-and-trust">Safety &amp; trust</a>
+    <a href="/daycare-matching">Daycare<span class="badge-new">New</span></a>
+    <a href="/blog" class="active">Blog</a>
+  </nav>
+  <div class="hdr-actions">
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+    <a href="https://app.poppynz.com/auth/sign-in" class="signin">Sign in</a>
+    <a href="https://app.poppynz.com/auth/sign-up" class="getstarted">Get started</a>
+  </div>
+</header>
+
+<section data-section="Blog header" style="padding:clamp(48px,7vw,72px) clamp(24px,5vw,96px) 40px;display:flex;flex-direction:column;gap:28px">
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:24px 40px">
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <p class="eyebrow"><span class="dash"></span>The Poppynz blog</p>
+      <h1 style="font:800 clamp(36px,4.4vw,56px)/1.05 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375">Tips &amp; Stories for Busy Families</h1>
+      <p style="font:400 18px/1.6 'Inter';color:#444650;max-width:600px">Helpful guides on safety, rates, agreements and everyday care, for families and the Mom Helpers who support them.</p>
+    </div>
+    <form class="search" onsubmit="return false"><i class="las la-search"></i><span>Search articles</span></form>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <a href="#" class="tag">All</a>
+    <a href="#" class="tag">Safety</a>
+    <a href="#" class="tag">For families</a>
+    <a href="#" class="tag">For helpers</a>
+    <a href="#" class="tag">Rates &amp; fees</a>
+    <a href="#" class="tag">Agreements</a>
+    <a href="#" class="tag">Elder care</a>
+    <a href="#" class="tag">Daycare</a>
+    <a href="#" class="tag">Our story</a>
+  </div>
+</section>
+
+<section data-section="Featured post" style="padding:0 clamp(24px,5vw,96px) 48px">
+  <a href="/blog/vulnerable-sector-check" class="featured card-shadow">
+    <div style="min-height:440px"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1714646793075-6dbfc604e664?auto=format&fit=crop&w=1400&q=80" alt="Helper and child on the living-room floor" loading="lazy"><span class="credit">Photo by Vitaly Gariev on Unsplash</span></figure></div>
+    <div style="display:flex;flex-direction:column;gap:18px;padding:48px">
+      <div class="meta"><span class="chip chip-info">Safety</span><span class="rd">8 min read</span></div>
+      <h2 style="font:800 clamp(26px,3vw,36px)/1.12 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375">What a Vulnerable Sector Check actually checks, and what it doesn’t</h2>
+      <p class="body-16">Every Poppynz helper has one. Here’s how it differs from a standard police check, why it takes longer, and how to read one if a helper shares it with you.</p>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:auto"><span class="avatar">P</span><span style="font:400 14px 'Inter';color:#444650">Poppynz team · 12 Sept 2026</span></div>
+    </div>
+  </a>
+</section>
+
+<section data-section="Post grid" style="padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px)">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:24px">
+    <a href="/blog/hourly-rate" class="post card-shadow">
+      <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1583468991267-3f068b607ae1?auto=format&fit=crop&w=900&q=80" alt="Helper at a kitchen table" loading="lazy"><span class="credit">Photo by Adam Winger on Unsplash</span></figure></div>
+      <div class="body">
+        <div class="meta"><span class="chip chip-info">For helpers</span><span class="rd">5 min read</span></div>
+        <h3>How to set an hourly rate you can stand behind</h3>
+        <p class="body-15">What helpers in Mississauga and Ottawa charge for childcare, tutoring and meal prep, and how the 15% service fee works.</p>
+        <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">4 Sept 2026</span>
+      </div>
+    </a>
+    <a href="/blog/tuesday-check-in" class="post card-shadow">
+      <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1702648156180-25d8be9c9527?auto=format&fit=crop&w=900&q=80" alt="Older man and helper on a sofa" loading="lazy"><span class="credit">Photo by Centre for Ageing Better on Unsplash</span></figure></div>
+      <div class="body">
+        <div class="meta"><span class="chip chip-info">Elder care</span><span class="rd">6 min read</span></div>
+        <h3>The Tuesday check-in: what a good elderly visit looks like</h3>
+        <p class="body-15">Twenty minutes, a cup of tea and a short note home. A helper and a daughter describe the routine that works.</p>
+        <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">28 Aug 2026</span>
+      </div>
+    </a>
+    <a href="/blog/put-it-in-writing" class="post card-shadow">
+      <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1583468982228-19f19164aee2?auto=format&fit=crop&w=900&q=80" alt="Parent and child at a library table" loading="lazy"><span class="credit">Photo by Adam Winger on Unsplash</span></figure></div>
+      <div class="body">
+        <div class="meta"><span class="chip chip-info">Agreements</span><span class="rd">4 min read</span></div>
+        <h3>Why we ask you to put it in writing</h3>
+        <p class="body-15">The written agreement isn’t legalese. It’s hours, rate, and what happens when a session runs long.</p>
+        <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">21 Aug 2026</span>
+      </div>
+    </a>
+    <a href="/blog/reading-a-helper-profile" class="post card-shadow">
+      <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1713942590283-59867d5e3f8d?auto=format&fit=crop&w=900&q=80" alt="Helper reading to a child" loading="lazy"><span class="credit">Photo by Vitaly Gariev on Unsplash</span></figure></div>
+      <div class="body">
+        <div class="meta"><span class="chip chip-info">For families</span><span class="rd">7 min read</span></div>
+        <h3>Reading a helper profile: photo, bio, rates, distance, Vetted</h3>
+        <p class="body-15">Every field on a profile is there for a reason. Here is what to look for and what to ask about in your first message.</p>
+        <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">14 Aug 2026</span>
+      </div>
+    </a>
+    <a href="/blog/why-families-get-verified" class="post card-shadow">
+      <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1504151932400-72d4384f04b3?auto=format&fit=crop&w=900&q=80" alt="Parent holding a baby, reading" loading="lazy"><span class="credit">Photo by Picsea on Unsplash</span></figure></div>
+      <div class="body">
+        <div class="meta"><span class="chip chip-info">Safety</span><span class="rd">5 min read</span></div>
+        <h3>Why families get verified too</h3>
+        <p class="body-15">Helpers walk into strangers’ homes. The family safety check is how we make that a fair exchange.</p>
+        <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">7 Aug 2026</span>
+      </div>
+    </a>
+    <a href="/blog/daycare-matching" class="post card-shadow">
+      <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1532789339108-2ebc484efbf1?auto=format&fit=crop&w=900&q=80" alt="Two children reading on a sofa" loading="lazy"><span class="credit">Photo by Ben Mullins on Unsplash</span></figure></div>
+      <div class="body">
+        <div class="meta"><span class="chip chip-info">Daycare</span><span class="rd">3 min read</span></div>
+        <h3>Daycare matching, without the waitlist fee</h3>
+        <p class="body-15">How registering interest works, what a daycare sees, and what we can and can’t promise.</p>
+        <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">31 Jul 2026</span>
+      </div>
+    </a>
+    <a href="/blog/born-from-a-need" class="post card-shadow">
+      <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1561525140-c2a4cc68e4bd?auto=format&fit=crop&w=900&q=80" alt="Family together outdoors at golden hour" loading="lazy"><span class="credit">Photo by Jessica Rockowitz on Unsplash</span></figure></div>
+      <div class="body">
+        <div class="meta"><span class="chip chip-info">Our story</span><span class="rd">4 min read</span></div>
+        <h3>Poppynz: Born From a Need, Fueled by Heart</h3>
+        <p class="body-15">There was no one to call and no magic button to press. So we built one. The founder on why Poppynz exists.</p>
+        <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">1 Jan 2025</span>
+      </div>
+    </a>
+  </div>
+  <div style="display:flex;justify-content:center;margin-top:48px"><a href="#" class="btn-outline-sm">Load more articles</a></div>
+</section>
+
+<section data-section="Newsletter" style="padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px);max-width:1920px;margin:0 auto">
+  <div class="newsletter navy shadow-deep">
+    <img class="bell" src="/assets/illustrations/bell.svg" width="200" height="220" alt="" aria-hidden="true">
+    <div class="stack-16">
+      <p class="eyebrow-light"><span class="dash"></span>Once a month</p>
+      <h2 style="font:700 clamp(28px,3.2vw,38px)/1.1 'Hanken Grotesk';letter-spacing:-.02em;color:#fff">Stay in the Loop With <span class="accent">Poppynz</span></h2>
+      <p style="font:400 16px/1.6 'Inter';color:#B9C6E8">One email a month with new guides and neighbourhoods. Unsubscribe any time, we never share your address.</p>
+    </div>
+    <form onsubmit="return false">
+      <span class="email">you@example.ca</span>
+      <a href="#" class="btn-primary-14" style="display:flex;align-items:center;padding:0 24px;height:52px">Subscribe</a>
+    </form>
+  </div>
+</section>
+
+
+<footer class="ftr">
+  <div class="ftr-grid">
+    <div class="ftr-brand">
+      <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+      <p style="font:400 14px/1.6 'Inter';color:#444650;max-width:320px">Vetted Mom Helpers for Canadian families. Trust runs both ways.</p>
+      <p style="display:flex;align-items:flex-start;gap:8px;font:400 13px/1.5 'Inter';color:#444650"><i class="las la-shield-alt" style="font-size:16px;color:#005782"></i>Background-checked · PIPEDA-compliant · End-to-end encrypted</p>
+      <a href="mailto:support@poppynz.com" style="font:400 14px 'Inter'">support@poppynz.com</a>
+    </div>
+    <div class="ftr-col"><span class="label">Poppynz</span><a href="/for-families">For families</a><a href="/for-helpers">For helpers</a><a href="/safety-and-trust">Safety &amp; trust</a><a href="/daycare-matching">Daycare matching</a><a href="#">Pricing &amp; fees</a><a href="#">About</a><a href="/blog">Blog</a></div>
+    <div class="ftr-col"><span class="label">Support</span><a href="#">Help &amp; FAQ</a><a href="#">Contact</a><a href="https://app.poppynz.com/auth/sign-in">Sign in</a><a href="#">Refer someone</a></div>
+    <div class="ftr-col"><span class="label">Legal</span><a href="/privacy-policy">Privacy Policy</a><a href="/terms-of-service">Terms of Service</a><a href="/service-agreement">Service Agreement</a></div>
+  </div>
+  <div class="ftr-bottom">
+    <span style="display:inline-flex;align-items:center;gap:6px">© 2026 Poppynz Inc. · Made with care in Toronto, ON <i class="las la-heart heart"></i> · Prices in CAD</span>
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+  </div>
+</footer>
+</div>
+<script src="/js/site.js?v=96c5f81d"></script>
+</body>
+</html>

@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daycare matching — Poppynz</title>
+<link rel="icon" href="/assets/logo-mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=Inter:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/line-awesome@1.3.0/dist/line-awesome/css/line-awesome.min.css">
+<link rel="stylesheet" href="/css/site.css?v=2f907a81">
+<style>
+.dstep{display:flex;flex-direction:column;gap:14px;padding:28px;border-radius:8px;border:1.5px solid #D6E2F2;background:#F7F9FF}
+.dstep:hover{border-color:#8FCDFF;background:#ECF4FF;transform:translateY(-4px) rotate(-0.6deg)}
+.dstep .n{font:700 13px 'Inter';letter-spacing:.08em;color:#005782;display:inline-block;padding:3px 8px;border-radius:999px;background:#E1F0FF;transform:rotate(6deg)}
+</style>
+</head>
+<body>
+<div class="site">
+<header class="hdr">
+  <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+  <nav>
+    <a href="/for-families">For families</a>
+    <a href="/for-helpers">For helpers</a>
+    <a href="/safety-and-trust">Safety &amp; trust</a>
+    <a href="/daycare-matching" class="active">Daycare<span class="badge-new">New</span></a>
+    <a href="/blog">Blog</a>
+  </nav>
+  <div class="hdr-actions">
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+    <a href="https://app.poppynz.com/auth/sign-in" class="signin">Sign in</a>
+    <a href="https://app.poppynz.com/auth/sign-up" class="getstarted">Get started</a>
+  </div>
+</header>
+
+<section data-section="Hero" style="position:relative;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:64px;padding:clamp(48px,7vw,80px) clamp(24px,5vw,96px);align-items:center">
+<div aria-hidden="true" class="deco">
+  <span class="d1"></span>
+  <span class="d2"></span>
+  <i class="las la-star d3"></i>
+  <span class="d4"></span>
+  <i class="las la-heart d5"></i>
+</div>
+  <div class="hero-copy" style="gap:24px">
+    <p class="eyebrow"><span class="dash"></span>Daycare matching</p>
+    <h1 style="font:800 clamp(38px,4.6vw,60px)/1.05 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375;text-wrap:balance">Find the Perfect Daycare Spot for Your Child</h1>
+    <p style="font:400 19px/1.6 'Inter';color:#444650;max-width:540px">Tell us your postal code, how many children you have and when you need a place. When a nearby daycare has an opening, we’ll let you know, it’s free to register your interest!</p>
+    <div class="btn-row">
+      <a href="https://app.poppynz.com/auth/sign-up" class="btn-primary-15">Register interest</a>
+      <a href="#daycares" class="btn-outline-14">I run a daycare</a>
+    </div>
+    <p class="trust" style="align-items:center;line-height:normal"><i class="las la-shield-alt"></i>Your details are only shared with a daycare when a spot matches · PIPEDA-compliant</p>
+  </div>
+  <div style="height:clamp(320px,42vw,560px);border-radius:14px;overflow:hidden;box-shadow:0 28px 60px -30px rgba(0,29,90,.4)"><div id="dc-hero" class="media"><video autoplay muted loop playsinline preload="metadata" poster="https://images.pexels.com/videos/8612324/pexels-photo-8612324.jpeg?auto=compress&w=1260"><source src="https://videos.pexels.com/video-files/8612324/8612324-hd_1920_1080_25fps.mp4" type="video/mp4"></video><a href="https://www.pexels.com/video/woman-reading-a-book-to-the-children-8612324/" target="_blank" rel="noopener" class="media-credit">Video: Yan Krukau / Pexels</a></div></div>
+</section>
+
+<section data-section="For families" class="band" style="padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px)">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:64px;align-items:start">
+    <div class="stack-16">
+      <p class="eyebrow">For families</p>
+      <h2 class="h2" style="text-wrap:initial">Getting Matched Is Simple</h2>
+      <p class="lead">Finding reliable daycare shouldn’t be stressful. We keep one list of families looking in each area, so daycares with an opening know exactly who to call.</p>
+    </div>
+    <ol style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:20px">
+      <li class="dstep">
+        <span style="display:flex;justify-content:space-between;align-items:center"><span class="bubble bubble-tint"><i class="las la-map-marker"></i></span><span class="n">01</span></span>
+        <h3 class="h3">Your postal code</h3>
+        <p class="body-15">So we know which area to watch. We match by distance, not by city name.</p>
+      </li>
+      <li class="dstep">
+        <span style="display:flex;justify-content:space-between;align-items:center"><span class="bubble bubble-tint"><i class="las la-child"></i></span><span class="n">02</span></span>
+        <h3 class="h3">How many children</h3>
+        <p class="body-15">And their ages, daycares accept specific age ranges.</p>
+      </li>
+      <li class="dstep">
+        <span style="display:flex;justify-content:space-between;align-items:center"><span class="bubble bubble-tint"><i class="las la-calendar"></i></span><span class="n">03</span></span>
+        <h3 class="h3">When you need a spot</h3>
+        <p class="body-15">Your desired start date. Flexible is fine; say so.</p>
+      </li>
+      <li class="dstep">
+        <span style="display:flex;justify-content:space-between;align-items:center"><span class="bubble bubble-tint"><i class="las la-bell"></i></span><span class="n">04</span></span>
+        <h3 class="h3">How to reach you</h3>
+        <p class="body-15">Name, email, phone. We only pass these to a daycare with a matching opening.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section data-section="Notification" style="padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px);display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:64px;align-items:center">
+  <div style="display:flex;justify-content:center">
+    <div class="shadow-deep" style="width:440px;max-width:100%;display:flex;flex-direction:column;gap:16px;padding:24px;border-radius:14px;background:#fff;border:1.5px solid #D6E2F2">
+      <div style="display:flex;align-items:center;justify-content:space-between"><span class="chip chip-req" style="display:inline-flex;align-items:center;gap:6px;transform:rotate(-3deg)"><i class="las la-bell" style="display:inline-block;transform-origin:top center;animation:wiggle 1.2s ease-in-out infinite"></i>New spot!</span><span style="font:400 13px 'Inter';color:#444650">Today, 9:12</span></div>
+      <h3 style="font:700 22px 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375">Maple Lane Home Daycare has 1 opening</h3>
+      <ul style="display:flex;flex-direction:column;gap:8px;font:400 15px 'Inter';color:#001E30">
+        <li style="display:flex;gap:10px"><i class="las la-map-marker" style="color:#005782;font-size:18px"></i>L5B · 1.8 km from you</li>
+        <li style="display:flex;gap:10px"><i class="las la-child" style="color:#005782;font-size:18px"></i>Ages 18 months – 4 years</li>
+        <li style="display:flex;gap:10px"><i class="las la-calendar" style="color:#005782;font-size:18px"></i>From 3 November</li>
+      </ul>
+      <a href="#" style="align-self:flex-start;padding:11px 20px;border-radius:999px;background:#37B5FF;color:#fff;font:600 14px 'Inter';box-shadow:0 10px 24px -10px rgba(55,181,255,.65)">Contact the daycare</a>
+    </div>
+  </div>
+  <div class="stack-20">
+    <p class="eyebrow">What you receive</p>
+    <h2 class="h2-sm" style="text-wrap:initial">Real Openings, Real Details</h2>
+    <p class="lead">Distance, ages accepted, start date and how to get in touch. You contact the daycare directly, we don’t sit in the middle of the conversation.</p>
+    <p style="font:400 15px/1.6 'Inter';color:#444650">We should be honest: registering interest doesn’t guarantee a spot, and we can’t promise there’s a daycare near you with one. What we can promise is that you’ll hear first when there is.</p>
+  </div>
+</section>
+
+<section id="daycares" data-section="For daycares" style="padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px)">
+  <div class="navy shadow-deep" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,400px),1fr));gap:64px;align-items:center;padding:clamp(32px,5vw,64px);border-radius:14px">
+    <div class="stack-24">
+      <p class="eyebrow-light"><span class="dash"></span>For daycares</p>
+      <h2 class="h2-light">Have an <span class="accent">Opening</span>? Families Nearby Are Looking.</h2>
+      <p class="lead-light" style="max-width:520px">List your daycare’s name and address, how many spots and which ages, plus a short description. Families already registered in your area are notified, no directory to be buried in.</p>
+      <a href="https://app.poppynz.com/auth/sign-up" class="btn-primary-14" style="align-self:flex-start">List an opening</a>
+    </div>
+    <ul style="display:flex;flex-direction:column;gap:12px">
+      <li class="row-dark"><span class="num-light">01</span><span style="font:400 16px 'Inter';color:#fff">Daycare name and address</span></li>
+      <li class="row-dark"><span class="num-light">02</span><span style="font:400 16px 'Inter';color:#fff">Number of spots and ages accepted</span></li>
+      <li class="row-dark"><span class="num-light">03</span><span style="font:400 16px 'Inter';color:#fff">A short description of your daycare and services</span></li>
+      <li class="row-dark"><span class="num-light">04</span><span style="font:400 16px 'Inter';color:#fff">Contact details, families reach you directly</span></li>
+      <li class="row-dark" style="align-items:flex-end;padding-bottom:0;overflow:hidden"><img src="/assets/illustrations/providers.webp" width="285" height="400" alt="" loading="lazy" style="flex:none;height:96px;width:auto;margin-bottom:-2px"><span style="font:400 15px/1.5 'Inter';color:#B9C6E8;padding:14px 0">Questions about listing? A real person on our team helps daycares get set up. <a href="mailto:support@poppynz.com" style="color:#fff;font-weight:600">support@poppynz.com</a></span></li>
+    </ul>
+  </div>
+</section>
+
+<section data-section="Final CTA" class="cta band-top">
+  <div class="cta-inner" style="max-width:720px">
+    <h2 style="font:800 clamp(32px,4vw,48px)/1.05 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375">Ready to Find Your Daycare Spot?</h2>
+    <p>One account covers daycare matching and everything else on Poppynz, helpers, messaging, agreements.</p>
+    <div class="btn-row-center">
+      <a href="https://app.poppynz.com/auth/sign-up" class="btn-primary">Register as a family</a>
+      <a href="https://app.poppynz.com/auth/sign-up" class="btn-outline">Register a daycare</a>
+    </div>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="ftr-grid">
+    <div class="ftr-brand">
+      <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+      <p style="font:400 14px/1.6 'Inter';color:#444650;max-width:320px">Vetted Mom Helpers for Canadian families. Trust runs both ways.</p>
+      <p style="display:flex;align-items:flex-start;gap:8px;font:400 13px/1.5 'Inter';color:#444650"><i class="las la-shield-alt" style="font-size:16px;color:#005782"></i>Background-checked · PIPEDA-compliant · End-to-end encrypted</p>
+      <a href="mailto:support@poppynz.com" style="font:400 14px 'Inter'">support@poppynz.com</a>
+    </div>
+    <div class="ftr-col"><span class="label">Poppynz</span><a href="/for-families">For families</a><a href="/for-helpers">For helpers</a><a href="/safety-and-trust">Safety &amp; trust</a><a href="/daycare-matching">Daycare matching</a><a href="#">Pricing &amp; fees</a><a href="#">About</a><a href="/blog">Blog</a></div>
+    <div class="ftr-col"><span class="label">Support</span><a href="#">Help &amp; FAQ</a><a href="#">Contact</a><a href="https://app.poppynz.com/auth/sign-in">Sign in</a><a href="#">Refer someone</a></div>
+    <div class="ftr-col"><span class="label">Legal</span><a href="/privacy-policy">Privacy Policy</a><a href="/terms-of-service">Terms of Service</a><a href="/service-agreement">Service Agreement</a></div>
+  </div>
+  <div class="ftr-bottom">
+    <span style="display:inline-flex;align-items:center;gap:6px">© 2026 Poppynz Inc. · Made with care in Toronto, ON <i class="las la-heart heart"></i> · Prices in CAD</span>
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+  </div>
+</footer>
+</div>
+<script src="/js/site.js?v=96c5f81d"></script>
+</body>
+</html>

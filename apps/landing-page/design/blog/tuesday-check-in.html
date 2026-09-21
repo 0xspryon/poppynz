@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Tuesday check-in: what a good elderly visit looks like — Poppynz</title>
+<link rel="icon" href="/assets/logo-mark.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=Inter:wght@400..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/line-awesome@1.3.0/dist/line-awesome/css/line-awesome.min.css">
+<link rel="stylesheet" href="/css/site.css?v=2f907a81">
+<style>
+.crumb{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font:500 14px 'Inter';color:#444650}
+.crumb a{display:inline-flex;align-items:center;gap:6px}
+.crumb a:hover{transform:translateX(-2px)}
+.share{display:flex;width:40px;height:40px;align-items:center;justify-content:center;border-radius:999px;border:1.5px solid #D6E2F2;background:#fff;font-size:18px;color:#1A3375}
+.share:hover{background:#ECF4FF;border-color:#8FCDFF;transform:translateY(-3px) rotate(-4deg)}
+.byline{display:flex;align-items:center;gap:12px}
+.byline .avatar{width:44px;height:44px;font-size:15px}
+.article-grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,720px) minmax(0,1fr);gap:clamp(24px,4vw,64px);align-items:start}
+.article-grid>aside{position:sticky;top:96px;display:flex;flex-direction:column;gap:14px;min-width:0}
+@media (max-width:1100px){.article-grid{grid-template-columns:minmax(0,1fr);max-width:760px;margin:0 auto}.article-grid>aside{position:static}}
+.toc{display:flex;flex-direction:column;gap:2px;border-left:1.5px solid #D6E2F2}
+.toc li{margin-left:-1.5px}
+.toc a{display:block;padding:8px 14px;border-left:2px solid transparent;font:500 14px/1.4 'Inter';color:#444650}
+.toc a:hover{color:#1A3375;border-left-color:#37B5FF;background:#ECF4FF}
+.prose{display:flex;flex-direction:column;gap:26px;min-width:0;font:400 18px/1.7 'Inter';color:#1D2A3A}
+.prose .intro{font:500 21px/1.6 'Inter';color:#001E30}
+.prose h2{font:800 clamp(26px,2.6vw,34px)/1.15 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375;padding-top:16px;scroll-margin-top:96px}
+.prose ol{list-style:decimal;padding-left:22px;display:flex;flex-direction:column;gap:10px}
+.prose ol li{display:list-item}
+.prose ul.checks li{display:flex}
+.prose .levels+p,.prose .cmp-grid+p{margin-top:0}
+.prose a.inline{font-weight:600;text-decoration:underline;text-underline-offset:.15em}
+.levels{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,200px),1fr));gap:14px}
+.level{display:flex;flex-direction:column;gap:12px;padding:22px;border-radius:8px;border:1.5px solid #D6E2F2;background:#F7F9FF}
+.level.hi{border-color:#8FCDFF;background:#ECF4FF}
+.level .n{font:700 13px 'Inter';letter-spacing:.08em;color:#005782}
+.level h3{font:700 20px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.level p{font:400 14px/1.55 'Inter';color:#444650}
+.level .tag{margin-top:auto;display:inline-flex;align-items:center;gap:6px;font:600 12px 'Inter'}
+.level .tag i{font-size:16px}
+.cmp-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:16px}
+.cmp{display:flex;flex-direction:column;gap:14px;padding:26px;border-radius:12px;background:#fff;border:1.5px solid #D6E2F2}
+.cmp h3{display:flex;align-items:center;gap:10px;font:700 19px 'Hanken Grotesk';color:#1A3375}
+.cmp h3 i{font-size:22px}
+.cmp ul{display:flex;flex-direction:column;gap:10px;font:400 15px/1.5 'Inter';color:#444650}
+.cmp li{display:flex;gap:10px}
+.cmp li i{font-size:18px;flex:none}
+.quote{display:flex;flex-direction:column;gap:14px;padding:32px;border-radius:12px;background:#1A3375;color:#fff}
+.quote>i{font-size:34px;color:#37B5FF}
+.quote p{font:500 italic clamp(20px,2vw,26px)/1.4 'Hanken Grotesk'}
+.quote footer{font:400 14px 'Inter';color:#B9C6E8}
+.callout{display:flex;gap:14px;padding:20px 22px;border-radius:8px;background:#FDEBE0;border:1.5px solid #F5C9A8}
+.callout i{flex:none;font-size:22px;color:#F26E21}
+.callout p{font:400 15px/1.55 'Inter';color:#001E30}
+.pill{padding:8px 14px;border-radius:999px;border:1.5px solid #D6E2F2;background:#fff;font:500 14px 'Inter';color:#1A3375}
+.pill:hover{background:#ECF4FF;border-color:#8FCDFF;transform:translateY(-3px) rotate(-1deg)}
+.side-card{display:flex;flex-direction:column;gap:16px;padding:26px;border-radius:12px;background:#fff;border:1.5px solid #D6E2F2}
+.side-card h3{font:700 20px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.side-card p{font:400 14px/1.55 'Inter';color:#444650}
+.side-card .btn-primary-14{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 20px;font-size:14px}
+.related{display:flex;flex-direction:column;border-radius:8px;overflow:hidden;background:#F7F9FF;border:1.5px solid #D6E2F2}
+.related:hover{border-color:#8FCDFF;transform:translateY(-4px)}
+.related .pic{height:200px;overflow:hidden}
+.related .body{display:flex;flex-direction:column;gap:12px;padding:22px;flex:1}
+.related h3{font:700 21px/1.2 'Hanken Grotesk';letter-spacing:-.01em;color:#1A3375}
+.meta{display:flex;gap:10px;align-items:center}
+.meta .rd{font:400 13px 'Inter';color:#444650}
+</style>
+</head>
+<body>
+<div class="site">
+<header class="hdr">
+  <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+  <nav>
+    <a href="/for-families">For families</a>
+    <a href="/for-helpers">For helpers</a>
+    <a href="/safety-and-trust">Safety &amp; trust</a>
+    <a href="/daycare-matching">Daycare<span class="badge-new">New</span></a>
+    <a href="/blog" class="active">Blog</a>
+  </nav>
+  <div class="hdr-actions">
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+    <a href="https://app.poppynz.com/auth/sign-in" class="signin">Sign in</a>
+    <a href="https://app.poppynz.com/auth/sign-up" class="getstarted">Get started</a>
+  </div>
+</header>
+
+<section data-section="Article header" style="padding:clamp(40px,6vw,64px) clamp(24px,5vw,96px) 40px;max-width:1920px;margin:0 auto;display:flex;flex-direction:column;gap:24px;animation:rise .7s cubic-bezier(.2,.8,.2,1) both">
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px 24px">
+    <nav aria-label="Breadcrumb" class="crumb">
+      <a href="/blog"><i class="las la-arrow-left"></i>Blog</a><span style="color:#C5C6D2">/</span><span>Elder care</span>
+    </nav>
+    <div class="meta" style="margin-left:auto"><span class="chip chip-info">Elder care</span><span class="rd">6 min read</span></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:20px">
+    <h1 style="font:800 clamp(34px,4.4vw,58px)/1.05 'Hanken Grotesk';letter-spacing:-.02em;color:#1A3375;text-wrap:balance">The Tuesday check-in: what a good elderly visit looks like</h1>
+    <p style="font:400 clamp(17px,1.4vw,20px)/1.6 'Inter';color:#444650;max-width:70ch">Twenty minutes, a cup of tea and a short note home. A helper and a daughter describe the routine that works.</p>
+  </div>
+  <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px 32px;padding-top:24px;border-top:1.5px solid #D6E2F2">
+    <div class="byline"><span class="avatar">P</span><span style="display:flex;flex-direction:column;gap:2px"><span style="font:700 15px 'Hanken Grotesk';color:#001E30">Poppynz team</span><span style="font:400 13px 'Inter';color:#444650">Published 28 Aug 2026</span></span></div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font:500 13px 'Inter';color:#444650;margin-right:4px">Share</span>
+      <a href="#" aria-label="Share on Facebook" class="share"><i class="lab la-facebook-f"></i></a>
+      <a href="#" aria-label="Share on LinkedIn" class="share"><i class="lab la-linkedin-in"></i></a>
+      <a href="#" aria-label="Share on WhatsApp" class="share"><i class="lab la-whatsapp"></i></a>
+    </div>
+  </div>
+</section>
+
+<section data-section="Hero image" style="padding:0 clamp(24px,5vw,96px) clamp(40px,5vw,64px);max-width:1920px;margin:0 auto">
+  <figure style="display:flex;flex-direction:column;gap:12px">
+    <div class="shadow-deep" style="height:clamp(260px,42vw,560px);border-radius:14px;overflow:hidden"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1702648156180-25d8be9c9527?auto=format&fit=crop&w=1800&q=80" alt="Older man and helper on a sofa" loading="lazy"><span class="credit">Photo by <a href="https://unsplash.com/@ageing_better?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Centre for Ageing Better</a> on <a href="https://unsplash.com/?utm_source=poppynz&utm_medium=referral" target="_blank" rel="noopener noreferrer">Unsplash</a></span></figure></div>
+    <figcaption style="font:400 13px/1.5 'Inter';color:#444650">Most check-ins are unremarkable. That is the point of them.</figcaption>
+  </figure>
+</section>
+
+<section data-section="Article body" style="padding:0 clamp(24px,5vw,96px) clamp(56px,8vw,96px);max-width:1920px;margin:0 auto">
+  <div class="article-grid">
+
+    <aside>
+      <p class="eyebrow">In this article</p>
+      <ol class="toc">
+        <li><a href="#what-a-check-in-is">What a check-in is, and isn’t</a></li>
+        <li><a href="#the-routine">The routine that works</a></li>
+        <li><a href="#the-note-home">The note home</a></li>
+        <li><a href="#setting-it-up">Setting it up on Poppynz</a></li>
+        <li><a href="#when-to-escalate">When a visit turns into a phone call</a></li>
+      </ol>
+    </aside>
+
+    <article class="prose">
+      <p class="intro">Robert is 81 and lives alone in Calgary. His daughter Danielle lives forty minutes away and works full time. Twice a week, on Tuesday and Friday mornings, a Poppynz helper named Jean lets herself in with the paper. We asked both of them what a visit actually looks like.</p>
+      <h2 id="what-a-check-in-is">What a check-in is, and isn’t</h2>
+      <p>An elderly check-in is a short, scheduled visit whose whole purpose is to confirm someone is all right and to leave them a little better than you found them. It’s company, a look around, and a note to the family. It isn’t personal care. Helpers on Poppynz don’t bathe, dress or lift, and they don’t give medication. If a family needs that, they need a PSW, and some of our helpers hold that certificate and list it on their profile.</p>
+<div class="cmp-grid">
+  <div class="cmp card-shadow"><h3><i class="las la-check-circle" style="color:#0B7A52"></i>A check-in includes</h3><ul>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>A hello at an agreed time, at the door or with a key</span></li>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>A look around: heating, food in the fridge, the phone working</span></li>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>Conversation, a hot drink, the paper, a short walk if wanted</span></li>
+    <li><i class="las la-check" style="color:#0B7A52"></i><span>A short written note to the family after each visit</span></li>
+  </ul></div>
+  <div class="cmp card-shadow"><h3><i class="las la-times-circle" style="color:#B3261E"></i>A check-in doesn’t include</h3><ul>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Personal care such as bathing or dressing</span></li>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Giving or managing medication</span></li>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Lifting, transfers or mobility support</span></li>
+    <li><i class="las la-minus" style="color:#757681"></i><span>Anything medical, ever</span></li>
+  </ul></div>
+</div>
+
+      <h2 id="the-routine">The routine that works</h2>
+      <p>Jean’s visits run about twenty minutes, and they run the same way every time. “I put the kettle on before I say anything else,” she says. “While it boils I walk through the kitchen and the hall. Then we sit down and I lose the argument about the Flames.”</p>
+<ol>
+  <li><strong>Arrive at the same time.</strong> Robert knows it’s Jean at 9:30, not a stranger. Consistency is most of the comfort.</li>
+  <li><strong>Look before you talk.</strong> Is the house warm? Is there food that isn’t past its date? Any mail piling up, any new bruise, any smell of gas? Two minutes, quietly.</li>
+  <li><strong>Sit down.</strong> The visit is the conversation, not the checklist. Twenty minutes of real attention beats an hour of hovering.</li>
+  <li><strong>Leave a note.</strong> Before she goes, Jean writes three or four lines in the app for Danielle.</li>
+</ol>
+
+      <h2 id="the-note-home">The note home</h2>
+      <p>Danielle says the note is the whole reason she books the visits. “I don’t need a report. I need to know he ate, he was himself, and nothing looked off.” A good note is short, specific and boring: what he had for breakfast, what mood he was in, and anything that changed since last time. Jean’s note from a Tuesday in July read, in full: “Porridge, grumpy about the rain, new stack of unopened mail on the hall table, otherwise fine.”</p>
+<blockquote class="quote shadow-deep"><i class="las la-quote-right" aria-hidden="true"></i><p>I don’t need a report. I need to know he ate, he was himself, and nothing looked off. That’s all I wanted.</p><footer>Danielle, Calgary</footer></blockquote>
+
+      <h2 id="setting-it-up">Setting it up on Poppynz</h2>
+      <p>Check-ins are booked like any other service on Poppynz: the family and helper agree the details and put them into a written agreement before the first visit. For elder care, the agreement should be specific about a few things families often leave out.</p>
+<ul class="checks">
+  <li><i class="las la-check" style="color:#0B7A52"></i><span>The days and the time window, and who holds a key</span></li>
+  <li><i class="las la-check" style="color:#0B7A52"></i><span>What “fine” means for this person, and what to do if there’s no answer at the door</span></li>
+  <li><i class="las la-check" style="color:#0B7A52"></i><span>Who to call, in what order, if something is wrong</span></li>
+  <li><i class="las la-check" style="color:#0B7A52"></i><span>The rate per visit and whether a longer stay is billed by the hour</span></li>
+</ul>
+<p>Helpers are matched by distance from the older person’s home, not the family’s, so a daughter in Calgary can book a helper for her father in Mississauga. Every helper has a Vulnerable Sector Check, which covers vulnerable adults as well as children, and families complete a short safety check too.</p>
+
+      <h2 id="when-to-escalate">When a visit turns into a phone call</h2>
+      <p>Once, Jean arrived to find Robert in his chair, confused and cold, with the furnace off. She didn’t write a note. She called Danielle, then stayed until she arrived. The agreement had the order of calls written down, so there was no deciding to do.</p>
+<div class="callout"><i class="las la-info-circle"></i><p>If a helper can’t get an answer at the door at the agreed time, the agreement should say what happens next: call the family first, then a neighbour, then emergency services. Write it down before it’s needed.</p></div>
+      
+
+      <div style="display:flex;flex-wrap:wrap;gap:8px;padding-top:12px">
+        <a href="/blog" class="pill">Elder care</a>
+        <a href="/blog" class="pill">For families</a>
+        <a href="/blog" class="pill">For helpers</a>
+      </div>
+    </article>
+
+    <aside>
+      <div class="side-card card-shadow">
+        <span class="bubble"><i class="las la-shield-alt"></i></span>
+        <h3>Every helper is Vetted before you can find them</h3>
+        <p>ID, enhanced record check and VSC, reviewed by a real person.</p>
+        <a href="https://app.poppynz.com/auth/sign-up" class="btn-primary-14">Find a helper <i class="las la-arrow-right"></i></a>
+      </div>
+    </aside>
+  </div>
+</section>
+
+<section data-section="Keep reading" class="band">
+  <div class="sec wrap" style="display:flex;flex-direction:column;gap:32px">
+    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:end;gap:16px 40px">
+      <div style="display:flex;flex-direction:column;gap:12px"><p class="eyebrow">Keep Reading</p><h2 class="h2-sm" style="text-wrap:initial">More from the blog</h2></div>
+      <a href="/blog" class="link-arrow">All articles <i class="las la-arrow-right"></i></a>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:24px">
+      <a href="/blog/why-families-get-verified" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1504151932400-72d4384f04b3?auto=format&fit=crop&w=900&q=80" alt="Parent holding a baby, reading" loading="lazy"><span class="credit">Photo by Picsea on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">Safety</span><span class="rd">5 min read</span></div>
+          <h3>Why families get verified too</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">7 Aug 2026</span>
+        </div>
+      </a>
+      <a href="/blog/put-it-in-writing" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1583468982228-19f19164aee2?auto=format&fit=crop&w=900&q=80" alt="Parent and child at a library table" loading="lazy"><span class="credit">Photo by Adam Winger on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">Agreements</span><span class="rd">4 min read</span></div>
+          <h3>Why we ask you to put it in writing</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">21 Aug 2026</span>
+        </div>
+      </a>
+      <a href="/blog/hourly-rate" class="related">
+        <div class="pic"><figure class="img-slot"><img src="https://images.unsplash.com/photo-1583468991267-3f068b607ae1?auto=format&fit=crop&w=900&q=80" alt="Helper at a kitchen table" loading="lazy"><span class="credit">Photo by Adam Winger on Unsplash</span></figure></div>
+        <div class="body">
+          <div class="meta"><span class="chip chip-info">For helpers</span><span class="rd">5 min read</span></div>
+          <h3>How to set an hourly rate you can stand behind</h3>
+          <span style="margin-top:auto;font:400 13px 'Inter';color:#444650">4 Sept 2026</span>
+        </div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section data-section="Newsletter" style="padding:clamp(56px,8vw,96px) clamp(24px,5vw,96px);max-width:1920px;margin:0 auto">
+  <div class="newsletter navy shadow-deep">
+    <img class="bell" src="/assets/illustrations/bell.svg" width="200" height="220" alt="" aria-hidden="true">
+    <div class="stack-16">
+      <p class="eyebrow-light"><span class="dash"></span>Once a month</p>
+      <h2 style="font:700 clamp(28px,3.2vw,38px)/1.1 'Hanken Grotesk';letter-spacing:-.02em;color:#fff">Stay in the Loop With <span class="accent">Poppynz</span></h2>
+      <p style="font:400 16px/1.6 'Inter';color:#B9C6E8">One email a month with new guides and neighbourhoods. Unsubscribe any time, we never share your address.</p>
+    </div>
+    <form onsubmit="return false">
+      <span class="email">you@example.ca</span>
+      <a href="#" class="btn-primary-14" style="display:flex;align-items:center;padding:0 24px;height:52px">Subscribe</a>
+    </form>
+  </div>
+</section>
+
+<footer class="ftr">
+  <div class="ftr-grid">
+    <div class="ftr-brand">
+      <a href="/" class="brand"><img src="/assets/logo-mark.svg" alt="">poppynz</a>
+      <p style="font:400 14px/1.6 'Inter';color:#444650;max-width:320px">Vetted Mom Helpers for Canadian families. Trust runs both ways.</p>
+      <p style="display:flex;align-items:flex-start;gap:8px;font:400 13px/1.5 'Inter';color:#444650"><i class="las la-shield-alt" style="font-size:16px;color:#005782"></i>Background-checked · PIPEDA-compliant · End-to-end encrypted</p>
+      <a href="mailto:support@poppynz.com" style="font:400 14px 'Inter'">support@poppynz.com</a>
+    </div>
+    <div class="ftr-col"><span class="label">Poppynz</span><a href="/for-families">For families</a><a href="/for-helpers">For helpers</a><a href="/safety-and-trust">Safety &amp; trust</a><a href="/daycare-matching">Daycare matching</a><a href="#">Pricing &amp; fees</a><a href="#">About</a><a href="/blog">Blog</a></div>
+    <div class="ftr-col"><span class="label">Support</span><a href="#">Help &amp; FAQ</a><a href="#">Contact</a><a href="https://app.poppynz.com/auth/sign-in">Sign in</a><a href="#">Refer someone</a></div>
+    <div class="ftr-col"><span class="label">Legal</span><a href="/privacy-policy">Privacy Policy</a><a href="/terms-of-service">Terms of Service</a><a href="/service-agreement">Service Agreement</a></div>
+  </div>
+  <div class="ftr-bottom">
+    <span style="display:inline-flex;align-items:center;gap:6px">© 2026 Poppynz Inc. · Made with care in Toronto, ON <i class="las la-heart heart"></i> · Prices in CAD</span>
+    <div class="lang"><span class="on">EN</span><span>FR</span></div>
+  </div>
+</footer>
+</div>
+<script src="/js/site.js?v=96c5f81d"></script>
+</body>
+</html>

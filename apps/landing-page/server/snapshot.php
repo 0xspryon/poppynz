@@ -8,6 +8,8 @@ foreach ( get_posts( [ 'post_type' => [ 'page', 'elementor-hf', 'e_global_class'
 }
 foreach ( [ '_elementor_page_settings', '_elementor_global_variables', '_elementor_global_classes_order', '_elementor_global_classes_labels', '_elementor_global_classes_post_ids' ] as $k ) { $snap['kit']['meta'][ $k ] = get_post_meta( $kit_id, $k, true ); }
 foreach ( [ 'show_on_front', 'page_on_front' ] as $o ) { $snap['options'][ $o ] = get_option( $o ); }
+$json = wp_json_encode( $snap );
+if ( false === $json ) { return [ 'error' => 'json encode failed: ' . json_last_error_msg() ]; }
 $file = $dir . date( 'Y-m-d_His' ) . '.json';
-file_put_contents( $file, wp_json_encode( $snap ) );
+if ( false === file_put_contents( $file, $json ) ) { return [ 'error' => 'write failed' ]; }
 return [ 'file' => $file, 'posts' => count( $snap['posts'] ), 'size' => filesize( $file ) ];

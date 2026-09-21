@@ -14,4 +14,7 @@ Order for a fresh site:
 6. `bootstrap.php` once per site, then `import.php` for every deploy. `snapshot.php` before importing on production.
 7. `verify.php` after every import.
 
+`restore.php` restores snapshotted posts, kit meta and options. Posts created after the snapshot are
+reported under `'unexpected'` and must be removed by hand.
+
 On a bare site, run `bootstrap.php` twice: the first run installs and activates the plugins, the second configures Elementor and Polylang (their singletons only load on the next request).

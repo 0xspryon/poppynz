@@ -52,7 +52,8 @@ if ( $changed ) { $repo->save( $coll ); }
 $gcr = \Elementor\Modules\GlobalClasses\Global_Classes_Repository::make( pz_kit() );
 $current = $gcr->all(); $items = $current->get_items()->all(); $existing_order = $current->get_order()->all();
 $artefact_order = [];
-foreach ( pz_json( 'classes.json' ) as $c ) {
+$classes = pz_json( 'classes.json' );
+foreach ( $classes as $c ) {
 	$variants = pz_convert_map( $c['css'], 'class ' . $c['label'] );
 	$new = [ 'id' => $c['id'], 'label' => $c['label'], 'type' => 'class', 'variants' => $variants ];
 	$was = $items[ $c['id'] ] ?? null;
@@ -89,7 +90,7 @@ $gcr->put( $items, $gorder );
 // gets linked to that class and its CSS is silently never printed for that document. Build the
 // label -> id map here and translate every `classes` prop value through it before saving.
 $label_to_id = [];
-foreach ( pz_json( 'classes.json' ) as $c ) { $label_to_id[ $c['label'] ] = $c['id']; }
+foreach ( $classes as $c ) { $label_to_id[ $c['label'] ] = $c['id']; }
 
 // ---- helpers for documents
 function pz_fill_styles( array &$elements, array $css_map, array $media_ids, array $label_to_id ): void {
@@ -158,6 +159,7 @@ function pz_normalized_elementor_data( int $post_id ): string {
 }
 function pz_save_document( int $post_id, array $elements, array $page_settings ): bool {
 	$doc = \Elementor\Plugin::$instance->documents->get( $post_id, false );
+	if ( ! $doc ) { throw new Exception( "no Elementor document for post $post_id" ); }
 	$doc->set_is_built_with_elementor( true );
 	$before = pz_normalized_elementor_data( $post_id );
 	$ok = $doc->save( [ 'elements' => $elements, 'settings' => $page_settings ] );

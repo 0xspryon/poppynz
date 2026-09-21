@@ -101,6 +101,7 @@ if ( function_exists( 'PLL' ) ) {
 	$o = PLL()->options;
 	$o['default_lang'] = 'en';
 	$o['hide_default'] = true;
+	$o['redirect_lang'] = true; // front page URL is /fr/, not /fr/accueil/
 	$o['post_types']   = array_values( array_unique( array_merge( (array) ( $o['post_types'] ?? [] ), [ 'elementor-hf', 'elementor_library' ] ) ) );
 	if ( method_exists( $o, 'save' ) ) { $o->save(); }
 	pz_note( 'polylang', 'options', 'default en, elementor-hf translatable' );

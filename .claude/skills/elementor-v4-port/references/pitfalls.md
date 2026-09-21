@@ -43,3 +43,4 @@
 - Elementor CSS is cached in uploads/elementor/css; `files_manager->clear_cache()` after imports, and render with a `?v=` query.
 - The built-in browser pane is narrow (1024px); the editor panel scrolls horizontally. Use `read_page` refs for clicks, not coordinates.
 - Editor Publish is disabled when nothing changed; a round-trip test needs a real edit.
+- Theme CSS exceptions (the only hand CSS): keyframes behind `anim-*` classes, the `.hl-wavy em`/`.em-accent em` rules, the `--width:auto` flex-row fix, and `text-wrap:balance` on the heading classes (`h1`, `h2`, `h2-light`, `h2-sm`, `h2-cta`) because the design relies on balanced heading breaks and the 4.2.4 converter has no `text-wrap`. Bump the theme `Version` in style.css whenever `anim.css` changes: it is the cache-buster for the enqueued stylesheet.

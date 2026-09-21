@@ -12,6 +12,11 @@ export class MediaRegistry {
 
   add(key: string, sourcePath: string, alt = ""): MediaFile {
     const abs = resolve(HERE, sourcePath);
+    const existing = this.files.get(key);
+    if (existing) {
+      if (existing.sourcePath !== abs) throw new Error(`media key "${key}" already registered with a different file`);
+      return existing;
+    }
     if (!existsSync(abs)) throw new Error(`media "${key}": file not found ${abs}`);
     const hash = createHash("sha1").update(readFileSync(abs)).digest("hex").slice(0, 12);
     const f: MediaFile = { key, hash, ext: extname(abs).slice(1).toLowerCase(), sourcePath: abs, alt };

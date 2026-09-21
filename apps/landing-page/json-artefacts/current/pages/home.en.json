@@ -4408,7 +4408,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Childcare"
                                 }
                               }
                             },
@@ -4557,7 +4557,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Tutoring"
                                 }
                               }
                             },
@@ -4705,7 +4705,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Elderly check-in"
                                 }
                               }
                             },
@@ -4854,7 +4854,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Pet minding"
                                 }
                               }
                             },
@@ -5003,7 +5003,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Meal preparation"
                                 }
                               }
                             },
@@ -5151,7 +5151,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Light housekeeping"
                                 }
                               }
                             },
@@ -5300,7 +5300,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Yard help"
                                 }
                               }
                             },
@@ -5448,7 +5448,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Small errands"
                                 }
                               }
                             },

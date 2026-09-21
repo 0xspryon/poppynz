@@ -14,6 +14,30 @@ const strip = (dir: string) => {
     readFileSync(join(dir, "pages/home.en.json"), "utf8") + readFileSync(join(dir, "templates/header.fr.json"), "utf8");
 };
 
+// Recursively finds an element by widgetType anywhere under `elements`.
+function findByWidgetType(elements: any[], widgetType: string): any {
+  for (const el of elements) {
+    if (el.widgetType === widgetType) return el;
+    const found = findByWidgetType(el.elements ?? [], widgetType);
+    if (found) return found;
+  }
+  return undefined;
+}
+
+// Finds the card whose editor_settings.title is `cardTitle`, then returns the alt
+// text of the "Illustration" e-image widget nested inside it.
+function findCardImageAlt(elements: any[], cardTitle: string): string | undefined {
+  for (const el of elements) {
+    if (el.editor_settings?.title === cardTitle) {
+      const img = findByWidgetType(el.elements ?? [], "e-image");
+      return img?.settings.image.value.src.value.alt.value;
+    }
+    const found = findCardImageAlt(el.elements ?? [], cardTitle);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
 describe("artefact", () => {
   test("writes every entry and is deterministic", async () => {
     const a = mkdtempSync(join(tmpdir(), "art-a-")), b = mkdtempSync(join(tmpdir(), "art-b-"));
@@ -33,5 +57,13 @@ describe("artefact", () => {
     const styleIds = [...s.matchAll(/"e-[0-9a-f]{7}-[0-9a-f]{7}"/g)].map((x) => x[0].replace(/"/g, ""));
     for (const id of new Set(styleIds)) expect(page._css[id]).toBeDefined();
     expect(readdirSync(join(dir, "media")).length).toBeGreaterThan(10);
+  });
+  test("service card images carry per-language alt text, not the manifest's clobbered alt", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "art-"));
+    await buildArtefact({ outDir: dir, recipes: [homeRecipe] });
+    const fr = JSON.parse(readFileSync(join(dir, "pages/home.fr.json"), "utf8"));
+    const en = JSON.parse(readFileSync(join(dir, "pages/home.en.json"), "utf8"));
+    expect(findCardImageAlt(fr.elements, "Garde d’enfants")).toBe("Garde d’enfants");
+    expect(findCardImageAlt(en.elements, "Childcare")).toBe("Childcare");
   });
 });

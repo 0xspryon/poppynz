@@ -4408,7 +4408,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Garde d’enfants"
                                 }
                               }
                             },
@@ -4557,7 +4557,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Tutorat"
                                 }
                               }
                             },
@@ -4705,7 +4705,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Visites aux aînés"
                                 }
                               }
                             },
@@ -4854,7 +4854,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Garde d’animaux"
                                 }
                               }
                             },
@@ -5003,7 +5003,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Préparation des repas"
                                 }
                               }
                             },
@@ -5151,7 +5151,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Entretien ménager léger"
                                 }
                               }
                             },
@@ -5300,7 +5300,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Aide au jardin"
                                 }
                               }
                             },
@@ -5448,7 +5448,7 @@
                                 "url": null,
                                 "alt": {
                                   "$$type": "string",
-                                  "value": ""
+                                  "value": "Petites courses"
                                 }
                               }
                             },

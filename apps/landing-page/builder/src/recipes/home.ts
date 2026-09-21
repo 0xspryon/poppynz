@@ -1,5 +1,5 @@
 import { HOME } from "../content/home";
-import { block, button, flex, grid, heading, image, svg, text, video, type El, type Recipe } from "../dsl";
+import { block, button, flex, grid, heading, image, svg, text, video, type Recipe } from "../dsl";
 import { APP } from "../pages";
 
 const eyebrow = (path: string, label: string, light = false) =>
@@ -120,7 +120,7 @@ export const homeRecipe: Recipe = {
           c.services.map((s, i) => flex(`home/services/${s.file}`, { title: s.name, tag: "a", classes: ["svc", ...((i + Math.floor(i / 4)) % 2 ? ["svc-pink"] : [])], link: APP.signUp }, [
             text(`home/services/${s.file}/t`, { title: s.name, tag: "span", classes: ["svc-title"], text: s.name }),
             text(`home/services/${s.file}/d`, { title: "Text", tag: "span", classes: ["svc-text"], text: s.text }),
-            image(`home/services/${s.file}/art`, { title: "Illustration", classes: ["svc-art"], media: `svc:${s.file}`, alt: "" }),
+            image(`home/services/${s.file}/art`, { title: "Illustration", classes: ["svc-art"], media: `svc:${s.file}`, alt: s.name }),
           ]))),
       ]),
     ]);

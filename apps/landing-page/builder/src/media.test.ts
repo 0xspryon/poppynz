@@ -10,6 +10,18 @@ describe("media", () => {
     expect(f.ext).toBe("svg");
     expect(reg.get("logo-mark")).toBe(f);
   });
+  test("add() is idempotent for the same key and source path, keeping the first alt", () => {
+    const reg = new MediaRegistry();
+    const first = reg.add("logo-mark", "../../design/assets/logo-mark.svg", "Poppynz");
+    const second = reg.add("logo-mark", "../../design/assets/logo-mark.svg", "Something else");
+    expect(second).toBe(first);
+    expect(second.alt).toBe("Poppynz");
+  });
+  test("add() throws when the same key is registered with a different file", () => {
+    const reg = new MediaRegistry();
+    reg.add("logo-mark", "../../design/assets/logo-mark.svg", "Poppynz");
+    expect(() => reg.add("logo-mark", "../../design/assets/logo.svg", "Poppynz")).toThrow(/already registered with a different file/);
+  });
   test("icons come from line-awesome solid set", () => {
     const reg = new MediaRegistry();
     const f = reg.icon("check");

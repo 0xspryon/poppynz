@@ -1,7 +1,7 @@
 {
   "builderVersion": "1",
   "elementorVersion": "4.2.4",
-  "builtAt": "2026-09-21T10:19:45.477Z",
+  "builtAt": "2026-09-21T10:27:23.788Z",
   "entries": [
     "pages/home.en.json",
     "pages/home.fr.json",
@@ -23,7 +23,7 @@
     },
     "17f4a33ec469": {
       "ext": "webp",
-      "alt": "Petites courses",
+      "alt": "Small errands",
       "key": "svc:packages"
     },
     "208de3b99c1c": {
@@ -43,7 +43,7 @@
     },
     "3c13e25f4886": {
       "ext": "webp",
-      "alt": "Tutorat",
+      "alt": "Tutoring",
       "key": "svc:tutoring"
     },
     "4b503b342852": {
@@ -53,7 +53,7 @@
     },
     "54e1b74c3758": {
       "ext": "webp",
-      "alt": "Visites aux aînés",
+      "alt": "Elderly check-in",
       "key": "svc:elderly-check-in"
     },
     "5b36b8d13979": {
@@ -78,7 +78,7 @@
     },
     "708a78b4e587": {
       "ext": "webp",
-      "alt": "Aide au jardin",
+      "alt": "Yard help",
       "key": "svc:yard-help"
     },
     "728940238b53": {
@@ -88,7 +88,7 @@
     },
     "750f9d5f1508": {
       "ext": "webp",
-      "alt": "Garde d’enfants",
+      "alt": "Childcare",
       "key": "svc:childcare"
     },
     "862199bab8b2": {
@@ -98,7 +98,7 @@
     },
     "88598564d508": {
       "ext": "webp",
-      "alt": "Garde d’animaux",
+      "alt": "Pet minding",
       "key": "svc:pet-minding"
     },
     "8ac0f28bedb9": {
@@ -128,7 +128,7 @@
     },
     "dd689c79cd4a": {
       "ext": "webp",
-      "alt": "Entretien ménager léger",
+      "alt": "Light housekeeping",
       "key": "svc:light-housekeeping"
     },
     "e9dff1d24699": {
@@ -143,7 +143,7 @@
     },
     "eb85c116f6e6": {
       "ext": "webp",
-      "alt": "Préparation des repas",
+      "alt": "Meal preparation",
       "key": "svc:meal-preparation"
     },
     "ffd611c5a7f5": {

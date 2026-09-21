@@ -17,7 +17,7 @@ export const footerRecipe: Recipe = {
       flex("footer/grid", { title: "Columns", classes: ["ftr-grid"], css: { desktop: "display:grid" } }, [
         flex("footer/brand", { title: "Brand", classes: ["stack-16"] }, [
           flex("footer/brand/link", { title: "Brand", tag: "a", classes: ["brand"], link: "page:home" }, [
-            image("footer/brand/mark", { title: "Logo mark", classes: ["brand-mark"], media: "logo-mark", alt: "" }),
+            image("footer/brand/mark", { title: "Logo mark", classes: ["brand-mark"], media: "logo-mark", alt: "Poppynz" }),
             text("footer/brand/name", { title: "Brand name", tag: "span", text: HEADER[lang].brand }),
           ]),
           text("footer/tagline", { title: "Tagline", classes: ["muted-14"], css: { desktop: "max-width:320px" }, text: c.tagline }),

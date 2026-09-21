@@ -1,6 +1,6 @@
 import { HEADER } from "../content/header";
 import type { Lang } from "../content/types";
-import { block, flex, image, text, type El, type Recipe } from "../dsl";
+import { flex, image, text, type El, type Recipe } from "../dsl";
 import type { MediaRegistry } from "../media";
 import { APP } from "../pages";
 
@@ -21,7 +21,7 @@ export const headerRecipe: Recipe = {
     ]));
     return [flex("header", { title: `Header (${lang})`, tag: "header", classes: ["hdr"] }, [
       flex("header/brand", { title: "Brand", tag: "a", classes: ["brand"], link: "page:home" }, [
-        image("header/brand/mark", { title: "Logo mark", classes: ["brand-mark"], media: "logo-mark", alt: "" }),
+        image("header/brand/mark", { title: "Logo mark", classes: ["brand-mark"], media: "logo-mark", alt: "Poppynz" }),
         text("header/brand/name", { title: "Brand name", tag: "span", text: c.brand }),
       ]),
       flex("header/nav", { title: "Nav", classes: ["hdr-nav"] }, nav),

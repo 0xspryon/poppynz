@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertUniqueIds, button, collectCss, flex, heading, svg, text } from "./dsl";
+import { assertUniqueIds, block, button, collectCss, flex, grid, heading, svg, text, withDefaults } from "./dsl";
 
 describe("dsl", () => {
   const h1 = heading("home/hero/h1", { title: "H1", tag: "h1", classes: ["h1"], text: "Your Family's <em>Perfect Helper</em>", interaction: { trigger: "load", effect: "slide", direction: "bottom" } });
@@ -58,5 +58,37 @@ describe("dsl", () => {
     const a = text("dup", { title: "Dup A", text: "a" });
     const b = text("dup", { title: "Dup B", text: "b" });
     expect(() => assertUniqueIds([a, b])).toThrow(/duplicate element id/);
+  });
+});
+
+describe("withDefaults (native base-style overrides)", () => {
+  test("flex with no padding anywhere gets padding:0 prepended", () => {
+    expect(withDefaults("flex", undefined, undefined)).toEqual({ desktop: "padding:0" });
+  });
+  test("flex with a class that sets padding (card) is left alone", () => {
+    expect(withDefaults("flex", ["card"], undefined)).toBeUndefined();
+  });
+  test("block with no min-width anywhere gets min-width:0 and padding:0 prepended", () => {
+    expect(withDefaults("block", undefined, undefined)).toEqual({ desktop: "min-width:0;padding:0" });
+  });
+  test("grid with no grid-template-rows anywhere gets grid-template-rows:auto and padding:0 prepended", () => {
+    expect(withDefaults("grid", undefined, undefined)).toEqual({ desktop: "grid-template-rows:auto;padding:0" });
+  });
+  test("element whose own css already sets padding is left alone (other defaults still prepended)", () => {
+    expect(withDefaults("flex", undefined, { desktop: "padding:24px" })).toEqual({ desktop: "padding:24px" });
+    expect(withDefaults("grid", undefined, { desktop: "padding:24px;grid-template-columns:1fr 1fr" })).toEqual({
+      desktop: "grid-template-rows:auto;padding:24px;grid-template-columns:1fr 1fr",
+    });
+  });
+  test("block() and grid() constructors apply the defaults through local css", () => {
+    const b = block("wd/block", { title: "Block" }, []);
+    expect(b._css[(b.settings.classes as any).value[0]]).toEqual({ desktop: "min-width:0;padding:0" });
+    const g = grid("wd/grid", { title: "Grid" }, []);
+    expect(g._css[(g.settings.classes as any).value[0]]).toEqual({ desktop: "grid-template-rows:auto;padding:0" });
+  });
+  test("flex() with an explicit padding-bearing class (card) creates no local style at all", () => {
+    const f = flex("wd/flex-card", { title: "Card", classes: ["card"] }, []);
+    expect(Object.keys(f._css)).toHaveLength(0);
+    expect((f.settings.classes as any).value).toEqual(["card"]);
   });
 });

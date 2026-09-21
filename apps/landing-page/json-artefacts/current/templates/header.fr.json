@@ -27,6 +27,7 @@
             "classes": {
               "$$type": "classes",
               "value": [
+                "e-118909c-69d4513",
                 "brand"
               ]
             },
@@ -52,7 +53,22 @@
               "value": "a"
             }
           },
-          "styles": {},
+          "styles": {
+            "e-118909c-69d4513": {
+              "id": "e-118909c-69d4513",
+              "type": "class",
+              "label": "local",
+              "variants": [
+                {
+                  "meta": {
+                    "breakpoint": "desktop",
+                    "state": null
+                  },
+                  "props": {}
+                }
+              ]
+            }
+          },
           "elements": [
             {
               "id": "5b63287",
@@ -140,6 +156,7 @@
             "classes": {
               "$$type": "classes",
               "value": [
+                "e-c8f9af2-f1292ee",
                 "hdr-nav"
               ]
             },
@@ -148,7 +165,22 @@
               "value": "div"
             }
           },
-          "styles": {},
+          "styles": {
+            "e-c8f9af2-f1292ee": {
+              "id": "e-c8f9af2-f1292ee",
+              "type": "class",
+              "label": "local",
+              "variants": [
+                {
+                  "meta": {
+                    "breakpoint": "desktop",
+                    "state": null
+                  },
+                  "props": {}
+                }
+              ]
+            }
+          },
           "elements": [
             {
               "id": "c3a2e00",
@@ -552,6 +584,7 @@
             "classes": {
               "$$type": "classes",
               "value": [
+                "e-7a1e94a-31f5d79",
                 "hdr-actions"
               ]
             },
@@ -560,7 +593,22 @@
               "value": "div"
             }
           },
-          "styles": {},
+          "styles": {
+            "e-7a1e94a-31f5d79": {
+              "id": "e-7a1e94a-31f5d79",
+              "type": "class",
+              "label": "local",
+              "variants": [
+                {
+                  "meta": {
+                    "breakpoint": "desktop",
+                    "state": null
+                  },
+                  "props": {}
+                }
+              ]
+            }
+          },
           "elements": [
             {
               "id": "19c600a",
@@ -799,5 +847,15 @@
       "version": "0.0"
     }
   ],
-  "_css": {}
+  "_css": {
+    "e-118909c-69d4513": {
+      "desktop": "padding:0"
+    },
+    "e-c8f9af2-f1292ee": {
+      "desktop": "padding:0"
+    },
+    "e-7a1e94a-31f5d79": {
+      "desktop": "padding:0"
+    }
+  }
 }

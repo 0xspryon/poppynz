@@ -1,4 +1,4 @@
-import { cls } from "./classes";
+import { CLASSES, cls } from "./classes";
 import type { Lang } from "./content/types";
 import { lintCssMap, normalizeCss, parseCssKey, type CssMap } from "./css";
 import { elementId, localStyleId } from "./ids";
@@ -60,17 +60,70 @@ function base(path: string, c: Common, elType: string, widgetType?: string): El 
   return el;
 }
 
-function container(elType: string) {
+// Elementor's V4 base styles (`.elementor .e-flexbox-base`, `.e-div-block-base`, `.e-grid-base`)
+// give every container padding:10px, every div-block min-width:30px, and every grid two equal
+// rows + three equal columns, regardless of any class or local css we declare — see pitfalls.md.
+// withDefaults prepends the neutralising declarations to an element's own local css (never a
+// global class) so they always take effect without relying on the theme to not apply.
+type ContainerKind = "flex" | "block" | "grid";
+
+function declaresProp(css: string | undefined, prop: RegExp): boolean {
+  if (!css) return false;
+  return css.split(";").some((raw) => {
+    const decl = raw.trim();
+    if (!decl) return false;
+    const colon = decl.indexOf(":");
+    if (colon < 0) return false;
+    return prop.test(decl.slice(0, colon).trim().toLowerCase());
+  });
+}
+
+function classesDeclareProp(classes: string[] | undefined, prop: RegExp): boolean {
+  for (const label of classes ?? []) {
+    const gc = CLASSES[label];
+    if (!gc) continue;
+    for (const css of Object.values(gc.css)) if (declaresProp(css, prop)) return true;
+  }
+  return false;
+}
+
+function ownCssDeclaresProp(css: CssMap | undefined, prop: RegExp): boolean {
+  for (const v of Object.values(css ?? {})) if (declaresProp(v, prop)) return true;
+  return false;
+}
+
+const PADDING_RE = /^padding(-.+)?$/;
+const MIN_WIDTH_RE = /^min-width$/;
+const GRID_ROWS_RE = /^grid-template-rows$/;
+
+export function withDefaults(kind: ContainerKind, classes: string[] | undefined, css: CssMap | undefined): CssMap | undefined {
+  const hasPadding = classesDeclareProp(classes, PADDING_RE) || ownCssDeclaresProp(css, PADDING_RE);
+  const hasMinWidth = classesDeclareProp(classes, MIN_WIDTH_RE) || ownCssDeclaresProp(css, MIN_WIDTH_RE);
+  const hasGridRows = classesDeclareProp(classes, GRID_ROWS_RE) || ownCssDeclaresProp(css, GRID_ROWS_RE);
+
+  const prepend: string[] = [];
+  if (kind === "grid" && !hasGridRows) prepend.push("grid-template-rows:auto");
+  if (kind === "block" && !hasMinWidth) prepend.push("min-width:0");
+  if (!hasPadding) prepend.push("padding:0");
+
+  if (!prepend.length) return css;
+
+  const desktop = css?.desktop ? `${prepend.join(";")};${css.desktop}` : prepend.join(";");
+  return { ...(css ?? {}), desktop };
+}
+
+function container(kind: ContainerKind, elType: string) {
   return (path: string, c: Common & { tag?: ContainerTag }, children: El[]): El => {
-    const el = base(path, c, elType);
+    const css = withDefaults(kind, c.classes, c.css);
+    const el = base(path, { ...c, css }, elType);
     el.settings.tag = str(c.tag ?? "div");
     el.elements = children;
     return el;
   };
 }
-export const flex = container("e-flexbox");
-export const block = container("e-div-block");
-export const grid = container("e-grid");
+export const flex = container("flex", "e-flexbox");
+export const block = container("block", "e-div-block");
+export const grid = container("grid", "e-grid");
 
 export function heading(path: string, c: Common & { tag: "h1" | "h2" | "h3" | "h4" | "h5" | "h6"; text: string }): El {
   const el = base(path, c, "widget", "e-heading");

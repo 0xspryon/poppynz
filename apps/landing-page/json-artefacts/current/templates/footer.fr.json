@@ -76,6 +76,7 @@
                 "classes": {
                   "$$type": "classes",
                   "value": [
+                    "e-aee9c2b-0e4483e",
                     "stack-16"
                   ]
                 },
@@ -84,7 +85,22 @@
                   "value": "div"
                 }
               },
-              "styles": {},
+              "styles": {
+                "e-aee9c2b-0e4483e": {
+                  "id": "e-aee9c2b-0e4483e",
+                  "type": "class",
+                  "label": "local",
+                  "variants": [
+                    {
+                      "meta": {
+                        "breakpoint": "desktop",
+                        "state": null
+                      },
+                      "props": {}
+                    }
+                  ]
+                }
+              },
               "elements": [
                 {
                   "id": "b2143cf",
@@ -93,6 +109,7 @@
                     "classes": {
                       "$$type": "classes",
                       "value": [
+                        "e-b2143cf-fb79eff",
                         "brand"
                       ]
                     },
@@ -118,7 +135,22 @@
                       "value": "a"
                     }
                   },
-                  "styles": {},
+                  "styles": {
+                    "e-b2143cf-fb79eff": {
+                      "id": "e-b2143cf-fb79eff",
+                      "type": "class",
+                      "label": "local",
+                      "variants": [
+                        {
+                          "meta": {
+                            "breakpoint": "desktop",
+                            "state": null
+                          },
+                          "props": {}
+                        }
+                      ]
+                    }
+                  },
                   "elements": [
                     {
                       "id": "87c5569",
@@ -255,6 +287,7 @@
                     "classes": {
                       "$$type": "classes",
                       "value": [
+                        "e-b015984-f39dad9",
                         "trust"
                       ]
                     },
@@ -263,7 +296,22 @@
                       "value": "div"
                     }
                   },
-                  "styles": {},
+                  "styles": {
+                    "e-b015984-f39dad9": {
+                      "id": "e-b015984-f39dad9",
+                      "type": "class",
+                      "label": "local",
+                      "variants": [
+                        {
+                          "meta": {
+                            "breakpoint": "desktop",
+                            "state": null
+                          },
+                          "props": {}
+                        }
+                      ]
+                    }
+                  },
                   "elements": [
                     {
                       "id": "f3bbb17",
@@ -397,6 +445,7 @@
                 "classes": {
                   "$$type": "classes",
                   "value": [
+                    "e-c296ac5-6c41701",
                     "ftr-col"
                   ]
                 },
@@ -405,7 +454,22 @@
                   "value": "div"
                 }
               },
-              "styles": {},
+              "styles": {
+                "e-c296ac5-6c41701": {
+                  "id": "e-c296ac5-6c41701",
+                  "type": "class",
+                  "label": "local",
+                  "variants": [
+                    {
+                      "meta": {
+                        "breakpoint": "desktop",
+                        "state": null
+                      },
+                      "props": {}
+                    }
+                  ]
+                }
+              },
               "elements": [
                 {
                   "id": "e1a2c09",
@@ -703,6 +767,7 @@
                 "classes": {
                   "$$type": "classes",
                   "value": [
+                    "e-37307eb-6341bb9",
                     "ftr-col"
                   ]
                 },
@@ -711,7 +776,22 @@
                   "value": "div"
                 }
               },
-              "styles": {},
+              "styles": {
+                "e-37307eb-6341bb9": {
+                  "id": "e-37307eb-6341bb9",
+                  "type": "class",
+                  "label": "local",
+                  "variants": [
+                    {
+                      "meta": {
+                        "breakpoint": "desktop",
+                        "state": null
+                      },
+                      "props": {}
+                    }
+                  ]
+                }
+              },
               "elements": [
                 {
                   "id": "0c4f012",
@@ -859,6 +939,7 @@
                 "classes": {
                   "$$type": "classes",
                   "value": [
+                    "e-58d95db-6ed27bb",
                     "ftr-col"
                   ]
                 },
@@ -867,7 +948,22 @@
                   "value": "div"
                 }
               },
-              "styles": {},
+              "styles": {
+                "e-58d95db-6ed27bb": {
+                  "id": "e-58d95db-6ed27bb",
+                  "type": "class",
+                  "label": "local",
+                  "variants": [
+                    {
+                      "meta": {
+                        "breakpoint": "desktop",
+                        "state": null
+                      },
+                      "props": {}
+                    }
+                  ]
+                }
+              },
               "elements": [
                 {
                   "id": "7e235f6",
@@ -1358,13 +1454,31 @@
       "desktop": "flex-direction:column;gap:0"
     },
     "e-7e66375-3b480ef": {
-      "desktop": "display:grid"
+      "desktop": "padding:0;display:grid"
+    },
+    "e-aee9c2b-0e4483e": {
+      "desktop": "padding:0"
+    },
+    "e-b2143cf-fb79eff": {
+      "desktop": "padding:0"
     },
     "e-853a9df-669e0ec": {
       "desktop": "max-width:320px"
     },
+    "e-b015984-f39dad9": {
+      "desktop": "padding:0"
+    },
+    "e-c296ac5-6c41701": {
+      "desktop": "padding:0"
+    },
+    "e-37307eb-6341bb9": {
+      "desktop": "padding:0"
+    },
+    "e-58d95db-6ed27bb": {
+      "desktop": "padding:0"
+    },
     "e-6583e69-af7b284": {
-      "desktop": "align-items:center;gap:6px;flex-wrap:wrap"
+      "desktop": "padding:0;align-items:center;gap:6px;flex-wrap:wrap"
     }
   }
 }

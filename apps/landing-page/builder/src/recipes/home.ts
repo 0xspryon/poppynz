@@ -8,7 +8,7 @@ const eyebrow = (path: string, label: string, light = false) =>
     text(`${path}/label`, { title: label, tag: "span", text: label }),
   ]);
 
-const icon = (path: string, name: string, cls: string[]) => svg(path, { title: name, classes: cls, icon: `icon:${name}` });
+const icon = (path: string, name: string, cls: string[], desktopCss?: string) => svg(path, { title: name, classes: cls, icon: `icon:${name}`, ...(desktopCss ? { css: { desktop: desktopCss } } : {}) });
 
 export const homeRecipe: Recipe = {
   kind: "page", key: "home",
@@ -112,7 +112,15 @@ export const homeRecipe: Recipe = {
         flex("home/services/head", { title: "Heading row", css: { desktop: "flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;column-gap:40px" } }, [
           flex("home/services/intro", { title: "Intro", classes: ["stack-16"], css: { desktop: "max-width:620px" } }, [
             text("home/services/eyebrow", { title: "Eyebrow", classes: ["eyebrow"], text: c.servicesHeader.eyebrow }),
-            flex("home/services/h2row", { title: "Title row", css: { desktop: "align-items:center;gap:12px;flex-wrap:wrap" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], text: c.servicesHeader.title }), icon("home/services/wink", "smile-wink", ["icon-24", "icon-sky", "anim-wiggle"])]),
+            // The heading is a block-level e-heading widget that otherwise takes the row's full
+            // width, pushing the wink icon onto its own line below. `width:auto` / `flex:0 1 auto`
+            // alone do not help: with flex-wrap on the row, the wrap decision uses the heading's
+            // unshrunk (hypothetical) size, so it still claims the whole line by itself. What works
+            // is `flex:1 1 0%;min-width:0` (grow to fill the row minus the icon, but allow shrinking
+            // below content width so it wraps its own text instead of pushing the icon down) paired
+            // with `align-self:flex-start` on the icon so it sits at the top of the heading instead
+            // of centered against its full (possibly two-line) height. Confirmed live on staging.
+            flex("home/services/h2row", { title: "Title row", css: { desktop: "align-items:center;gap:12px;flex-wrap:wrap" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], css: { desktop: "flex:1 1 0%;min-width:0" }, text: c.servicesHeader.title }), icon("home/services/wink", "smile-wink", ["icon-24", "icon-sky", "anim-wiggle"], "align-self:flex-start")]),
           ]),
           text("home/services/lead", { title: "Lead", classes: ["body-16"], css: { desktop: "max-width:380px" }, text: c.servicesHeader.lead }),
         ]),

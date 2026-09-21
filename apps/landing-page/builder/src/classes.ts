@@ -39,8 +39,8 @@ const defs: Record<string, CssMap> = {
   h3: { desktop: `${DISPLAY};font-weight:700;font-size:21px;letter-spacing:-.01em;color:${v("navy")}` },
   "h3-lg": { desktop: `${DISPLAY};font-weight:700;font-size:24px;letter-spacing:-.01em;color:${v("navy")}` },
   "h3-light": { desktop: `${DISPLAY};font-weight:700;font-size:24px;letter-spacing:-.01em;color:${v("white")}` },
-  "hl-wavy": { desktop: "" },
-  "em-accent": { desktop: "" },
+  "hl-wavy": { desktop: "" }, // no props: the inner <em> is styled by theme anim.css (.hl-wavy em)
+  "em-accent": { desktop: "" }, // no props: the inner <em> is styled by theme anim.css (.em-accent em)
   accent: { desktop: `color:${v("sky")}` },
   lead: { desktop: `${BODY};font-size:17px;line-height:1.6;color:${v("muted")}` },
   "lead-light": { desktop: `${BODY};font-size:17px;line-height:1.6;color:${v("navy-text")}` },
@@ -89,7 +89,7 @@ const defs: Record<string, CssMap> = {
   },
   "badge-new": { desktop: `display:inline-flex;align-items:center;padding:2px 6px;border-radius:999px;background-color:${v("pink")};color:${v("magenta-ink")};${BODY};font-weight:700;font-size:10px;letter-spacing:.06em;text-transform:uppercase` },
   lang: { desktop: `display:flex;border-width:1.5px;border-style:solid;border-color:${v("line-2")};border-radius:8px;padding:2px;gap:0` },
-  // lang-on before lang-item: see the svc-pink/svc note above (Elementor prints global classes
+  // lang-on before lang-item: see the svc-pink/svc note below (Elementor prints global classes
   // in reversed declaration order) — lang-on's `color` must win over lang-item's.
   "lang-on": { desktop: `background-color:${v("navy")};color:${v("white")}` },
   "lang-item": { desktop: `padding:5px 9px;border-radius:6px;color:${v("muted")};${BODY};font-weight:600;font-size:12px;letter-spacing:.04em;text-decoration:none` },
@@ -105,7 +105,7 @@ const defs: Record<string, CssMap> = {
   "icon-magenta": { desktop: `color:${v("magenta")}` },
   "icon-white": { desktop: `color:${v("white")}` },
   // bubbles, avatars, chips
-  // bubble-40/48 before bubble: see the svc-pink/svc note above — their width/height must win
+  // bubble-40/48 before bubble: see the svc-pink/svc note below — their width/height must win
   // over bubble's own 44px default.
   "bubble-40": { desktop: "width:40px;height:40px" },
   "bubble-48": { desktop: "width:48px;height:48px" },

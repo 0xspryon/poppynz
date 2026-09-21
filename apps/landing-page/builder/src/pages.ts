@@ -11,7 +11,7 @@ export const PAGES: Record<PageKey, { slug: Localized<string>; title: Localized<
   daycare: { slug: { en: "daycare-matching", fr: "jumelage-garderie" }, title: { en: "Daycare matching", fr: "Jumelage garderie" } },
   blog: { slug: { en: "blog", fr: "blogue" }, title: { en: "Blog", fr: "Blogue" } },
   privacy: { slug: { en: "privacy-policy", fr: "politique-de-confidentialite" }, title: { en: "Privacy Policy", fr: "Politique de confidentialité" } },
-  terms: { slug: { en: "terms-of-service", fr: "conditions-d-utilisation" }, title: { en: "Terms of Service", fr: "Conditions d'utilisation" } },
+  terms: { slug: { en: "terms-of-service", fr: "conditions-d-utilisation" }, title: { en: "Terms of Service", fr: "Conditions d’utilisation" } },
   agreement: { slug: { en: "service-agreement", fr: "entente-de-service" }, title: { en: "Service Agreement", fr: "Entente de service" } },
 };
 

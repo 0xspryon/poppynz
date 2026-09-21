@@ -2,7 +2,6 @@ export const ALLOWED_INLINE_TAGS = ["strong", "em", "b", "i", "u", "s", "span", 
 
 export const str = (value: string) => ({ $$type: "string" as const, value });
 export const bool = (value: boolean) => ({ $$type: "boolean" as const, value });
-export const num = (value: number) => ({ $$type: "number" as const, value });
 
 export function html(value: string) {
   for (const m of value.matchAll(/<\/?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>/g)) {

@@ -7,7 +7,7 @@ import { homeRecipe } from "./recipes/home";
 
 export const RECIPES = [headerRecipe, footerRecipe, homeRecipe];
 
-export async function runCli(argv: string[]): Promise<number> {
+export async function runCli(argv: string[], outDirOverride?: string): Promise<number> {
   const [cmd, name = "current"] = argv;
   if (cmd !== "build" && cmd !== "check") {
     console.error(`usage: bun run src/cli.ts build|check [build-name] (got "${cmd ?? ""}")`);
@@ -15,10 +15,13 @@ export async function runCli(argv: string[]): Promise<number> {
   }
   const problems = lintClasses();
   if (problems.length) { console.error(problems.join("\n")); return 1; }
-  const outDir = resolve(import.meta.dir, "../../json-artefacts", name);
+  const base = outDirOverride ?? process.env.POPPYNZ_OUT_DIR ?? resolve(import.meta.dir, "../../json-artefacts");
+  const outDir = resolve(base, name);
   if (cmd === "check") {
-    const { mkdtempSync } = await import("node:fs"); const { tmpdir } = await import("node:os");
-    await buildArtefact({ outDir: mkdtempSync(resolve(tmpdir(), "poppynz-check-")), recipes: RECIPES });
+    const { mkdtempSync, rmSync } = await import("node:fs"); const { tmpdir } = await import("node:os");
+    const dir = mkdtempSync(resolve(tmpdir(), "poppynz-check-"));
+    await buildArtefact({ outDir: dir, recipes: RECIPES });
+    rmSync(dir, { recursive: true, force: true });
     console.log("check: ok");
     return 0;
   }

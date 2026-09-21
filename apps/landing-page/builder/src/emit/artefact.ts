@@ -7,7 +7,7 @@ import { MediaRegistry, resolveMedia } from "../media";
 import { PAGES, resolveLinks, type PageKey } from "../pages";
 import { VARIABLES } from "../tokens";
 
-export type ArtefactManifest = { builderVersion: string; elementorVersion: string; builtAt: string; entries: string[]; media: Record<string, { ext: string; alt: string; key: string }> };
+export type ArtefactManifest = { builderVersion: string; elementorVersion: string; entries: string[]; media: Record<string, { ext: string; alt: string; key: string }> };
 
 const stable = (v: unknown) => JSON.stringify(v, null, 2) + "\n";
 
@@ -49,7 +49,7 @@ export async function buildArtefact(opts: { outDir: string; recipes: Recipe[] })
   }
   writeFileSync(join(outDir, "variables.json"), stable(VARIABLES));
   writeFileSync(join(outDir, "classes.json"), stable(Object.values(CLASSES).map((c) => ({ id: c.id, label: c.label, css: c.css }))));
-  const manifest: ArtefactManifest = { builderVersion: "1", elementorVersion: "4.2.4", builtAt: new Date().toISOString(), entries: entries.sort(), media: mediaIndex };
+  const manifest: ArtefactManifest = { builderVersion: "1", elementorVersion: "4.2.4", entries: entries.sort(), media: mediaIndex };
   writeFileSync(join(outDir, "manifest.json"), stable(manifest));
   return manifest;
 }

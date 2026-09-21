@@ -7,12 +7,9 @@ import { headerRecipe } from "../recipes/header";
 import { homeRecipe } from "../recipes/home";
 import { buildArtefact } from "./artefact";
 
-const strip = (dir: string) => {
-  const m = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf8"));
-  delete m.builtAt;
-  return JSON.stringify(m) + readdirSync(dir, { recursive: true }).sort().join("\n") +
+const strip = (dir: string) =>
+  readFileSync(join(dir, "manifest.json"), "utf8") + readdirSync(dir, { recursive: true }).sort().join("\n") +
     readFileSync(join(dir, "pages/home.en.json"), "utf8") + readFileSync(join(dir, "templates/header.fr.json"), "utf8");
-};
 
 // Recursively finds an element by widgetType anywhere under `elements`.
 function findByWidgetType(elements: any[], widgetType: string): any {

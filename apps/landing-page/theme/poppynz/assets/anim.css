@@ -21,6 +21,10 @@
 .elementor .anim-drift-slow{animation:drift 13s ease-in-out infinite}
 .elementor .anim-ring{animation:ring 6s ease-in-out infinite}
 
+/* Heading line balance: the design relies on text-wrap:balance, which the Elementor 4.2.4 converter cannot express.
+   Applied to the heading classes only; no other layout rule belongs here. */
+.elementor .h1,.elementor .h2,.elementor .h2-light,.elementor .h2-sm,.elementor .h2-cta{text-wrap:balance}
+
 /* The only descendant rules in the project: inline emphasis inside V4 headings (see pitfalls.md). */
 .elementor .hl-wavy em{font-style:normal;text-decoration:underline wavy var(--sky);text-decoration-thickness:.06em;text-underline-offset:.14em}
 .elementor .em-accent em{font-style:normal;color:var(--sky)}

@@ -71,6 +71,7 @@ function pz_fill_styles( array &$elements, array $css_map, array $media_ids ): v
 		$el['settings'] = pz_swap_media( $el['settings'], $media_ids );
 		if ( ! empty( $el['elements'] ) ) { pz_fill_styles( $el['elements'], $css_map, $media_ids ); }
 	}
+	unset( $el );
 }
 function pz_swap_media( $node, array $media_ids ) {
 	if ( is_array( $node ) ) {
@@ -96,15 +97,18 @@ $hf_ids = [ 'header' => [], 'footer' => [] ];
 foreach ( $manifest['entries'] as $entry ) {
 	if ( ! str_starts_with( $entry, 'templates/' ) ) { continue; }
 	$t = pz_json( $entry ); $kind = str_contains( $entry, 'header' ) ? 'header' : 'footer';
-	$ex = get_posts( [ 'post_type' => 'elementor-hf', 'title' => $t['title'], 'post_status' => 'any', 'numberposts' => 1 ] );
-	$pid = $ex ? $ex[0]->ID : wp_insert_post( [ 'post_title' => $t['title'], 'post_type' => 'elementor-hf', 'post_status' => 'publish' ] );
+	$found = null;
+	foreach ( get_posts( [ 'post_type' => 'elementor-hf', 'title' => $t['title'], 'post_status' => 'any', 'numberposts' => -1, 'lang' => '' ] ) as $cand ) {
+		if ( ! function_exists( 'pll_get_post_language' ) || pll_get_post_language( $cand->ID ) === $t['lang'] ) { $found = $cand->ID; break; }
+	}
+	$pid = $found ?: wp_insert_post( [ 'post_title' => $t['title'], 'post_type' => 'elementor-hf', 'post_status' => 'publish' ] );
 	update_post_meta( $pid, 'ehf_template_type', $t['type'] );
 	update_post_meta( $pid, 'ehf_target_include_locations', [ 'rule' => [ 'basic-global' ], 'specific' => [] ] );
 	update_post_meta( $pid, 'ehf_target_exclude_locations', [ 'rule' => [], 'specific' => [] ] );
 	update_post_meta( $pid, 'ehf_target_user_roles', [] );
 	$elements = $t['elements']; pz_fill_styles( $elements, $t['_css'], $media_ids );
 	$changed = pz_save_document( $pid, $elements, [] );
-	pz_note( 'templates', $entry, $ex ? ( $changed ? 'updated' : 'unchanged' ) : 'created' );
+	pz_note( 'templates', $entry, $found ? ( $changed ? 'updated' : 'unchanged' ) : 'created' );
 	$hf_ids[ $kind ][ $t['lang'] ] = $pid;
 }
 // ---- 5. pages per key and language

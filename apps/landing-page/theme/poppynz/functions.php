@@ -24,12 +24,19 @@ add_filter( 'hfe_render_template_id', function ( $id ) {
 	return $id;
 } );
 
+// Only administrators may upload SVG (the importer runs as an administrator).
 // SVG uploads for icons and the logo (used by the importer and by the media library).
 add_filter( 'upload_mimes', function ( $mimes ) {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return $mimes;
+	}
 	$mimes['svg'] = 'image/svg+xml';
 	return $mimes;
 } );
 add_filter( 'wp_check_filetype_and_ext', function ( $data, $file, $filename ) {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return $data;
+	}
 	if ( str_ends_with( strtolower( $filename ), '.svg' ) ) {
 		$data['ext']  = 'svg';
 		$data['type'] = 'image/svg+xml';

@@ -1444,8 +1444,8 @@ export type HomeContent = {
     reviewed: { title: string; p1: string; p2: string; note: string };
     families: { title: string; text: string; link: string };
   };
-  services: { eyebrow: string; title: string; lead: string };
-  serviceItems: { file: string; name: string; text: string }[];
+  servicesHeader: { eyebrow: string; title: string; lead: string };
+  services: { file: string; name: string; text: string }[];
   quotes: { initial: string; text: string; who: string }[];
   neighbourhood: { eyebrow: string; title: string; lead: string; next: string; note: string; alt: string };
   cities: string[];
@@ -1482,8 +1482,8 @@ const en: HomeContent = {
     reviewed: { title: "Reviewed by Real People", p1: "Before a helper appears in search, a member of the Poppynz team personally reviews their documents. Automated checks help us along, but a real person makes the call.", p2: "Know someone who’d make a great Mom Helper? Members can refer them, and referrals go through the very same review.", note: "PIPEDA-compliant · End-to-end encrypted messaging" },
     families: { title: "Verified Families", text: "Before a helper can see your profile, you’ll complete a short safety check. That way, helpers only ever hear from verified families.", link: "Learn about our safety checks" },
   },
-  services: { eyebrow: "What We Offer", title: "Support for Every Part of Family Life", lead: "Mom Helpers list the services they offer along with their hourly rate. Need something a little different? Helpers can offer custom services too." },
-  serviceItems: [
+  servicesHeader: { eyebrow: "What We Offer", title: "Support for Every Part of Family Life", lead: "Mom Helpers list the services they offer along with their hourly rate. Need something a little different? Helpers can offer custom services too." },
+  services: [
     { file: "childcare", name: "Childcare", text: "Quality care for your children in your home, tailored to their age and interests." },
     { file: "tutoring", name: "Tutoring", text: "Academic support and homework help for students of all ages." },
     { file: "elderly-check-in", name: "Elderly check-in", text: "Compassionate check-ins for elderly family members, for peace of mind." },
@@ -1533,8 +1533,8 @@ const fr: HomeContent = {
     reviewed: { title: "Révisé par de vraies personnes", p1: "Avant qu’une aide apparaisse dans la recherche, un membre de l’équipe Poppynz examine personnellement ses documents. Les vérifications automatisées nous aident, mais c’est une personne qui décide.", p2: "Vous connaissez quelqu’un qui ferait une excellente aide familiale? Les membres peuvent le recommander, et les recommandations passent par la même révision.", note: "Conforme à la LPRPDE · Messagerie chiffrée de bout en bout" },
     families: { title: "Familles vérifiées", text: "Avant qu’une aide puisse voir votre profil, vous effectuez une courte vérification de sécurité. Ainsi, les aides n’entendent parler que de familles vérifiées.", link: "En savoir plus sur nos vérifications" },
   },
-  services: { eyebrow: "Ce que nous offrons", title: "Un soutien pour chaque facette de la vie de famille", lead: "Les aides familiales indiquent les services qu’elles offrent ainsi que leur tarif horaire. Besoin de quelque chose d’un peu différent? Elles peuvent aussi proposer des services sur mesure." },
-  serviceItems: [
+  servicesHeader: { eyebrow: "Ce que nous offrons", title: "Un soutien pour chaque facette de la vie de famille", lead: "Les aides familiales indiquent les services qu’elles offrent ainsi que leur tarif horaire. Besoin de quelque chose d’un peu différent? Elles peuvent aussi proposer des services sur mesure." },
+  services: [
     { file: "childcare", name: "Garde d’enfants", text: "Des soins de qualité pour vos enfants, à la maison, adaptés à leur âge et à leurs intérêts." },
     { file: "tutoring", name: "Tutorat", text: "Soutien scolaire et aide aux devoirs pour les élèves de tous âges." },
     { file: "elderly-check-in", name: "Visites aux aînés", text: "Des visites bienveillantes auprès des membres âgés de la famille, pour votre tranquillité d’esprit." },
@@ -1767,7 +1767,7 @@ export const homeRecipe: Recipe = {
   build(lang, media) {
     const c = HOME[lang];
     for (const n of ["search", "hand-holding-heart", "arrow-right", "shield-alt", "check-circle", "clipboard-list", "map-marked-alt", "file-signature", "stopwatch", "id-card", "check", "plus", "user-shield", "lock", "home", "smile-wink", "map-marker", "star", "heart"]) media.icon(n);
-    for (const s of c.serviceItems) media.add(`svc:${s.file}`, `../../design/assets/services/${s.file}.webp`, s.name);
+    for (const s of c.services) media.add(`svc:${s.file}`, `../../design/assets/services/${s.file}.webp`, s.name);
 
     const heroCard = (path: string, side: "l" | "r", card: { title: string; text: string; cta: string }, iconName: string) =>
       flex(path, { title: card.title, tag: "a", classes: ["hero-card", side === "l" ? "hero-card-l" : "hero-card-r"], link: APP.signUp }, [
@@ -1863,13 +1863,13 @@ export const homeRecipe: Recipe = {
       flex("home/services/wrap", { title: "Wrap", classes: ["sec", "wrap"], css: { desktop: "flex-direction:column;gap:40px" } }, [
         flex("home/services/head", { title: "Heading row", css: { desktop: "flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px 40px" } }, [
           flex("home/services/intro", { title: "Intro", classes: ["stack-16"], css: { desktop: "max-width:620px" } }, [
-            text("home/services/eyebrow", { title: "Eyebrow", classes: ["eyebrow"], text: c.services.eyebrow }),
-            flex("home/services/h2row", { title: "Title row", css: { desktop: "align-items:center;gap:12px;flex-wrap:wrap" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], text: c.services.title }), icon("home/services/wink", "smile-wink", ["icon-24", "icon-sky", "anim-wiggle"])]),
+            text("home/services/eyebrow", { title: "Eyebrow", classes: ["eyebrow"], text: c.servicesHeader.eyebrow }),
+            flex("home/services/h2row", { title: "Title row", css: { desktop: "align-items:center;gap:12px;flex-wrap:wrap" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], text: c.servicesHeader.title }), icon("home/services/wink", "smile-wink", ["icon-24", "icon-sky", "anim-wiggle"])]),
           ]),
-          text("home/services/lead", { title: "Lead", classes: ["body-16"], css: { desktop: "max-width:380px" }, text: c.services.lead }),
+          text("home/services/lead", { title: "Lead", classes: ["body-16"], css: { desktop: "max-width:380px" }, text: c.servicesHeader.lead }),
         ]),
         grid("home/services/grid", { title: "Service cards", css: { desktop: "grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px" } },
-          c.serviceItems.map((s, i) => flex(`home/services/${s.file}`, { title: s.name, tag: "a", classes: ["svc", ...((i + Math.floor(i / 4)) % 2 ? ["svc-pink"] : [])], link: APP.signUp }, [
+          c.services.map((s, i) => flex(`home/services/${s.file}`, { title: s.name, tag: "a", classes: ["svc", ...((i + Math.floor(i / 4)) % 2 ? ["svc-pink"] : [])], link: APP.signUp }, [
             text(`home/services/${s.file}/t`, { title: s.name, tag: "span", classes: ["svc-title"], text: s.name }),
             text(`home/services/${s.file}/d`, { title: "Text", tag: "span", classes: ["svc-text"], text: s.text }),
             image(`home/services/${s.file}/art`, { title: "Illustration", classes: ["svc-art"], media: `svc:${s.file}`, alt: "" }),

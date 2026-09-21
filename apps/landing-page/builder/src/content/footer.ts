@@ -39,7 +39,7 @@ export const FOOTER: Localized<FooterContent> = {
       { heading: "Soutien", links: [
         { label: "Connexion", url: "https://app.poppynz.com/auth/sign-in" }, { label: "Nous joindre", url: "mailto:support@poppynz.com" } ] },
       { heading: "Mentions légales", links: [
-        { label: "Politique de confidentialité", page: "privacy" }, { label: "Conditions d'utilisation", page: "terms" }, { label: "Entente de service", page: "agreement" } ] },
+        { label: "Politique de confidentialité", page: "privacy" }, { label: "Conditions d’utilisation", page: "terms" }, { label: "Entente de service", page: "agreement" } ] },
     ],
     copyright: "© 2026 Poppynz Inc. · Conçu avec soin à Toronto (Ontario)",
     prices: "Prix en CAD",

@@ -1,10 +1,21 @@
-name: poppynz-staging
+# One compose file for every dokploy deployment (staging, production). The
+# deployment-specific values come from the dokploy env, never from here:
+#   DEPLOY_NAME           project + Traefik router prefix, e.g. poppynz-staging.
+#                         Must be unique per dokploy host or routers collide.
+#   APP_HOST              public host of web + api, e.g. app.staging.poppynz.com
+#   DRIZZLE_GATEWAY_HOST  public host of drizzle-gate, e.g. db.staging.poppynz.com
+#   ENVIRONMENT           dev | staging | production; gates outbound mail
+#                         (@repo/mail) and defaults to "dev" when unset, which
+#                         only mails @poppynz.com addresses and the admin accounts
+#   ORIGIN, TRUSTED_ORIGINS, BETTER_AUTH_URL
+#                         https://$APP_HOST — adapter-node CSRF / absolute URLs
+#                         and better-auth magic-link callback origins
+# The `:?` interpolation makes a missing host fail the deploy instead of
+# silently routing nothing.
+name: ${DEPLOY_NAME:?DEPLOY_NAME is required}
 
 x-app-env: &app-env
   NODE_ENV: production
-  # Mail gating (@repo/mail): staging only mails @poppynz.com addresses and
-  # the admin accounts. Pinned here so a dokploy .env can't override it.
-  ENVIRONMENT: staging
 
 services:
   migrations:
@@ -53,10 +64,10 @@ services:
     labels:
       - traefik.enable=true
       # More specific rule than the web router, so /api/* wins by priority.
-      - traefik.http.routers.poppynz-staging-api.rule=Host(`staging.poppynz.com`) && (PathPrefix(`/api`) || PathPrefix(`/webhooks`))
-      - traefik.http.routers.poppynz-staging-api.entrypoints=websecure
-      - traefik.http.routers.poppynz-staging-api.tls.certresolver=letsencrypt
-      - traefik.http.services.poppynz-staging-api.loadbalancer.server.port=3000
+      - traefik.http.routers.${DEPLOY_NAME}-api.rule=Host(`${APP_HOST:?APP_HOST is required}`) && (PathPrefix(`/api`) || PathPrefix(`/webhooks`))
+      - traefik.http.routers.${DEPLOY_NAME}-api.entrypoints=websecure
+      - traefik.http.routers.${DEPLOY_NAME}-api.tls.certresolver=letsencrypt
+      - traefik.http.services.${DEPLOY_NAME}-api.loadbalancer.server.port=3000
     depends_on:
       migrations:
         condition: service_completed_successfully
@@ -92,8 +103,6 @@ services:
       <<: *app-env
       HOST: 0.0.0.0
       PORT: 3000
-      # adapter-node needs the public origin for CSRF checks and absolute URLs.
-      ORIGIN: ${ORIGIN:-https://staging.poppynz.com}
     expose:
       - "3000"
     networks:
@@ -106,10 +115,10 @@ services:
       start_period: 20s
     labels:
       - traefik.enable=true
-      - traefik.http.routers.poppynz-staging-web.rule=Host(`staging.poppynz.com`)
-      - traefik.http.routers.poppynz-staging-web.entrypoints=websecure
-      - traefik.http.routers.poppynz-staging-web.tls.certresolver=letsencrypt
-      - traefik.http.services.poppynz-staging-web.loadbalancer.server.port=3000
+      - traefik.http.routers.${DEPLOY_NAME}-web.rule=Host(`${APP_HOST:?APP_HOST is required}`)
+      - traefik.http.routers.${DEPLOY_NAME}-web.entrypoints=websecure
+      - traefik.http.routers.${DEPLOY_NAME}-web.tls.certresolver=letsencrypt
+      - traefik.http.services.${DEPLOY_NAME}-web.loadbalancer.server.port=3000
     depends_on:
       api:
         condition: service_healthy
@@ -131,10 +140,10 @@ services:
       - drizzle-gateway:${DRIZZLE_GATEWAY_STORE_PATH}
     labels:
       - traefik.enable=true
-      - traefik.http.routers.poppynz-staging-db.rule=Host(`db.staging.poppynz.com`)
-      - traefik.http.routers.poppynz-staging-db.entrypoints=websecure
-      - traefik.http.routers.poppynz-staging-db.tls.certresolver=letsencrypt
-      - traefik.http.services.poppynz-staging-db.loadbalancer.server.port=3000
+      - traefik.http.routers.${DEPLOY_NAME}-db.rule=Host(`${DRIZZLE_GATEWAY_HOST:?DRIZZLE_GATEWAY_HOST is required}`)
+      - traefik.http.routers.${DEPLOY_NAME}-db.entrypoints=websecure
+      - traefik.http.routers.${DEPLOY_NAME}-db.tls.certresolver=letsencrypt
+      - traefik.http.services.${DEPLOY_NAME}-db.loadbalancer.server.port=3000
 
 volumes:
   drizzle-gateway:

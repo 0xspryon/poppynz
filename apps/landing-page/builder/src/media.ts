@@ -30,10 +30,18 @@ export class MediaRegistry {
     throw new Error(`icon "${name}" not found in line-awesome (tried ${name}-solid.svg, ${name}.svg)`);
   }
 
+  has(key: string): boolean {
+    return this.files.has(key);
+  }
+
   get(key: string): MediaFile {
     const f = this.files.get(key);
     if (!f) throw new Error(`media key "${key}" is not registered`);
     return f;
+  }
+
+  hasHash(hash: string): boolean {
+    return [...this.files.values()].some((f) => f.hash === hash);
   }
 
   all(): MediaFile[] { return [...this.files.values()]; }
@@ -45,7 +53,13 @@ export function resolveMedia(el: El, reg: MediaRegistry): El {
     if (Array.isArray(node)) { node.forEach(walk); return; }
     if (node && typeof node === "object") {
       const o = node as Record<string, unknown>;
-      if (o.$$type === "media-hash" && typeof o.value === "string" && !/^[0-9a-f]{12}$/.test(o.value)) o.value = reg.get(o.value).hash;
+      if (o.$$type === "media-hash" && typeof o.value === "string") {
+        if (reg.has(o.value)) {
+          o.value = reg.get(o.value).hash;
+        } else if (!reg.hasHash(o.value)) {
+          throw new Error(`media key "${o.value}" is not registered`);
+        }
+      }
       Object.values(o).forEach(walk);
     }
   };

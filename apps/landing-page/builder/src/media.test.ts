@@ -23,4 +23,17 @@ describe("media", () => {
     expect((el.settings.svg as any).value.id.value).toBe(reg.get("icon:check").hash);
     expect(() => resolveMedia(svg("t", { title: "t", icon: "icon:missing" }), reg)).toThrow(/icon:missing/);
   });
+  test("resolveMedia is idempotent", () => {
+    const reg = new MediaRegistry(); reg.icon("check");
+    const el = svg("s", { title: "s", icon: "icon:check" });
+    const resolved1 = resolveMedia(el, reg);
+    const resolved2 = resolveMedia(resolved1, reg);
+    expect((resolved2.settings.svg as any).value.id.value).toBe((resolved1.settings.svg as any).value.id.value);
+  });
+  test("rejects values that are 12 hex chars but neither keys nor registered hashes", () => {
+    const reg = new MediaRegistry(); reg.icon("check");
+    const fakeHash = "abcdef123456"; // 12 hex chars but not a registered hash or key
+    const el = svg("s", { title: "s", icon: fakeHash });
+    expect(() => resolveMedia(el, reg)).toThrow(/not registered/);
+  });
 });

@@ -11,8 +11,8 @@ Read `references/poppynz.md` (site profile: MCP servers, versions, page map, wha
 ## Loop for a page
 
 1. Render the design: `bash .claude/skills/elementor-v4-port/scripts/dump_design.sh "<page>.html" <key>`; Read the slices.
-2. Content in `apps/landing-page/builder/src/content/<key>.ts` (en + fr), recipe in `recipes/<key>.ts`, register it in `cli.ts` `RECIPES`. Reuse classes from `classes.ts`; add a class only when two elements share it. `bun test && bun run build`.
-3. Pack and push: `pack.sh current`, ability `novamira/create-upload-link` (`wp-content/novamira-sandbox/poppynz-artefact.zip`, overwrite), `push.sh`, then `server/unpack.php` and `server/import.php` through `novamira/execute-php` (first `<?php` line removed). The import aborts with the exact CSS declaration when something would be dropped: fix the CSS, rebuild, push again.
+2. Content in `apps/landing-page/builder/src/content/<key>.ts` (en + fr), recipe in `recipes/<key>.ts`, register it in `cli.ts` `RECIPES`. Reuse classes from `classes.ts`; add a class only when two elements share it. `bun test && bun run typecheck && bun run build`.
+3. Pack and push: `pack.sh current`, ability `novamira/create-upload-link` (`wp-content/novamira-sandbox/poppynz-artefact.zip`, overwrite), `push.sh` (export `NOVAMIRA_UPLOAD_TOKEN` and omit the token argument so it doesn't land in shell history), then `server/unpack.php` and `server/import.php` through `novamira/execute-php` (first `<?php` line removed). The import aborts with the exact CSS declaration when something would be dropped: fix the CSS, rebuild, push again.
 4. Verify: `server/verify.php`; `render.sh <url> wp-<key>`; compare slices with the design section by section, reading both as images. Then the editor check (`references/poppynz.md` § Editor check). Never press Update or Publish.
 5. Commit builder changes and `json-artefacts/current` together. Record new IDs or decisions in `references/poppynz.md`.
 

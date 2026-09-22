@@ -7,7 +7,7 @@
 | Production | https://poppynz.com | (to be added) | not deployed |
 
 ## Versions (pinned in server/bootstrap.php)
-Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.4).
+Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.5).
 
 ## Page map
 See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families (en, fr).
@@ -90,13 +90,21 @@ three-value `padding` shorthands, `width:min(100%,420px)`, `grid-column:span 2`,
 One `faq-item` flexbox per question holding a `faq-question` (an `e-flexbox` with `tag:"button"`, so it
 stays keyboard-operable) and a `faq-answer` paragraph; the child theme's `assets/faq.js` toggles
 `is-open` on the item. `is-open` is declared as an empty global class only so the first question can
-start open, matching the design. Verified live with real clicks at 1280 and on both languages: the first
-item starts open, clicking another opens it and closes the first, clicking the open one closes it, and
-clicking the inner text span still resolves through `closest('.faq-question')`.
+start open, matching the design.
+
+The `+`/`−` glyph swap is CSS, not script: BOTH icons are rendered into every question (classes
+`faq-icon-plus` / `faq-icon-minus`), and anim.css shows one and hides the other off the item's
+`is-open` state. That keeps `faq.js` a pure class toggle - it never has to know about icon markup, so
+the same three rules work for every page that reuses the pattern - and it keeps `display` owned in one
+place, exactly as `faq-answer` is. Neither icon class declares `display`. Measured live: both glyphs
+are 20x20 at the same 21px inset, so swapping them shifts nothing.
+
+Verified live with real clicks at 1280 and on both languages: the first item starts open showing `−`
+and the rest show `+`; clicking another opens it (`−`) and closes the first (back to `+`); clicking the
+open one closes it; and clicking the inner text span still resolves through `closest('.faq-question')`.
+The FAQ lead's "Ask support" / "Écrivez au soutien" link points at `mailto:support@poppynz.com`.
 
 ### Named deviations (this page)
-- The open FAQ item keeps the `+` glyph where the design shows `−`: `faq.js` does not swap the icon, and
-  a static `−` would be wrong the moment the user closes that item.
 - The hero's "See how it works" button is inert (`#`). The design anchors it to `#how`; a V4 atomic
   element renders no `id` attribute (only `data-id` and its class list), so there is nothing to anchor to.
 - The helper-profile photo's Unsplash credit is in the element's editor title rather than the DOM. The
@@ -160,6 +168,9 @@ instead; and the load-triggered `scale` interaction on `.vetted` is caught mid-f
   all: `.em-navy strong{color:var(--navy)}` (html-v3 strips attributes, so an inline `<strong>` is
   styled through a class on its parent, exactly like `hl-wavy em`/`em-accent em`) and
   `.faq-question{white-space:normal}` (see pitfalls.md). Theme `Version` bumped to 1.0.4.
+- 2026-09-22: the FAQ `+`/`−` glyph swap is done with three more anim.css rules over both icons'
+  `faq-icon-plus`/`faq-icon-minus` classes rather than by teaching `faq.js` to rewrite SVG markup, so
+  the script stays a pure class toggle. Theme `Version` bumped to 1.0.5.
 - 2026-09-21 (Task 14): `import.php` fixed in six places found only by deploying for real — see pitfalls.md for each: (1) `pll_set_post_language()` missing for `elementor-hf` templates, duplicating the fr header/footer on every run; (2) `foreach ($el['styles'] ?? [] as &$style)` silently never applied local per-element CSS anywhere on the site; (3) elements referenced global classes by label, not id, so no class's CSS was ever bundled for any document (the whole site rendered unstyled); (4) global-class print order is reversed by Elementor, so a same-element modifier class (`svc-pink`, `lang-on`, `bubble-40`/`bubble-48`) needs to sort *before* its base class in `classes.ts`; (5) the order-merge logic only ever appended new ids, so re-ordering an existing class in `classes.ts` had no effect until fixed to treat `classes.json` as authoritative; (6) `Global_Classes_Repository::put()` only wrote the frontend context, leaving the editor's own preview context empty forever, so opening the editor on any imported page showed every class as "missing" and rendered the canvas unstyled — fixed by also calling `put()` with `set_preview(true)`. Also fixed six CSS-conversion rejections in `classes.ts` (two-value `gap`, `pointer-events`, decimal `opacity`, `flex-grow`/`flex-shrink` longhands, unitless `rotate(0)`, per-side `border-*-style`) and one systemic layout bug (Elementor's `.e-con{width:100%}` breaks any flex-row with unsized children) fixed once in the theme's `anim.css`.
 
 ## Production blockers

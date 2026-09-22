@@ -187,6 +187,11 @@ const defs: Record<string, CssMap> = {
     desktop: `display:flex;width:100%;justify-content:space-between;align-items:center;gap:16px;padding:18px 20px;border-width:0;background-color:transparent;text-align:start;cursor:pointer;${DISPLAY};font-weight:700;font-size:17px;line-height:22px;letter-spacing:-.01em;color:${v("navy")}`,
     "desktop:hover": `background-color:${v("tint-2")}`,
   },
+  // Both glyphs sit in the markup; anim.css shows one and hides the other off the item's `is-open`
+  // state, so faq.js stays a pure class toggle and never has to touch icon markup. Like faq-answer,
+  // these declare no `display` - the theme owns that property.
+  "faq-icon-plus": { desktop: "flex:0 0 auto" },
+  "faq-icon-minus": { desktop: "flex:0 0 auto" },
   "faq-answer": { desktop: `padding:0 20px 18px;${BODY};font-weight:400;font-size:15px;line-height:1.6;color:${v("muted")}` },
   quote: { desktop: `display:flex;flex-direction:column;gap:20px;padding:32px;border-radius:8px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};${SHADOW_CARD};transition:transform .3s`, "desktop:hover": "transform:rotate(0deg) translateY(-4px)" },
   "quote-text": { desktop: `${DISPLAY};font-weight:500;font-style:italic;font-size:22px;line-height:1.45;color:${v("navy")}` },

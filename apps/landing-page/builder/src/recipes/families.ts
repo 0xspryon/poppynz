@@ -17,7 +17,7 @@ export const familiesRecipe: Recipe = {
   kind: "page", key: "families",
   build(lang, media) {
     const c = FAMILIES[lang];
-    for (const n of ["shield-alt", "check", "check-circle", "map-marker", "hand-peace", "lock", "arrow-right", "plus", "star", "heart"]) media.icon(n);
+    for (const n of ["shield-alt", "check", "check-circle", "map-marker", "hand-peace", "lock", "arrow-right", "plus", "minus", "star", "heart"]) media.icon(n);
     for (const card of c.benefits.cards) media.add(`ill:${card.file}`, `../../design/assets/illustrations/${card.file}`, card.title);
 
     // ---------------------------------------------------------------- Hero
@@ -200,8 +200,9 @@ export const familiesRecipe: Recipe = {
               // row, so at mobile widths it overflows the button and faq-item's overflow:hidden clips both
               // the tail of the question and the +/- icon (measured at 390: 408px of content in a 340px box).
               text(`families/faq/list/${i}/q/t`, { title: item.q, tag: "span", css: { desktop: "flex:1 1 auto;min-width:0" }, text: item.q }),
-              // faq.js does not swap the glyph, so every item keeps the plus (see poppynz.md).
-              icon(`families/faq/list/${i}/q/i`, "plus", ["icon-20", "icon-teal"], "flex:0 0 auto"),
+              // Both glyphs are rendered; anim.css swaps which one is visible off `is-open`.
+              icon(`families/faq/list/${i}/q/plus`, "plus", ["icon-20", "icon-teal", "faq-icon-plus"]),
+              icon(`families/faq/list/${i}/q/minus`, "minus", ["icon-20", "icon-teal", "faq-icon-minus"]),
             ]),
             text(`families/faq/list/${i}/a`, { title: "Answer", classes: ["faq-answer"], text: item.a }),
           ]))),

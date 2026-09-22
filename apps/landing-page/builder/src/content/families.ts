@@ -106,7 +106,7 @@ const en: FamiliesContent = {
   faq: {
     eyebrow: "Frequently Asked Questions",
     title: "Got Questions? We’ve Got Answers.",
-    lead: `Something missing? <a href="#"><strong>Ask support</strong></a>, a person replies.`,
+    lead: `Something missing? <a href="mailto:support@poppynz.com"><strong>Ask support</strong></a>, a person replies.`,
     items: [
       { q: "Who are Mom Helpers?", a: "Local people, often parents, students, retired educators or care workers, who offer everyday help in their own neighbourhood. Every one has passed identity and background checks and been approved by a Poppynz admin before appearing in search." },
       { q: "Why do I have to complete a safety check too?", a: "Helpers walk into your home. A short family verification means they only ever hear from real, verified households, it’s what makes trust run both ways." },
@@ -199,7 +199,7 @@ const fr: FamiliesContent = {
   faq: {
     eyebrow: "Foire aux questions",
     title: "Des questions? Nous avons les réponses.",
-    lead: `Il manque quelque chose? <a href="#"><strong>Écrivez au soutien</strong></a>, une personne vous répond.`,
+    lead: `Il manque quelque chose? <a href="mailto:support@poppynz.com"><strong>Écrivez au soutien</strong></a>, une personne vous répond.`,
     items: [
       { q: "Qui sont les aides familiales?", a: "Des gens de votre quartier : souvent des parents, des étudiants, des enseignants à la retraite ou des travailleurs de la santé, qui offrent un coup de main au quotidien près de chez eux. Chacun a passé les vérifications d’identité et d’antécédents et a été approuvé par un membre de l’équipe Poppynz avant d’apparaître dans la recherche." },
       { q: "Pourquoi dois-je faire une vérification de sécurité, moi aussi?", a: "Les aides entrent chez vous. Une courte vérification des familles fait qu’elles n’entendent parler que de foyers réels et vérifiés : c’est ce qui rend la confiance réciproque." },

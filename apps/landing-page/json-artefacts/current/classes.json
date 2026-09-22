@@ -745,6 +745,20 @@
     }
   },
   {
+    "id": "g-b2ca5ff",
+    "label": "faq-icon-plus",
+    "css": {
+      "desktop": "flex:0 0 auto"
+    }
+  },
+  {
+    "id": "g-071b6ae",
+    "label": "faq-icon-minus",
+    "css": {
+      "desktop": "flex:0 0 auto"
+    }
+  },
+  {
     "id": "g-8091d9e",
     "label": "faq-answer",
     "css": {

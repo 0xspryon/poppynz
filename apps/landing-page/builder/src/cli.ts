@@ -4,9 +4,10 @@ import { buildArtefact } from "./emit/artefact";
 import { familiesRecipe } from "./recipes/families";
 import { footerRecipe } from "./recipes/footer";
 import { headerRecipe } from "./recipes/header";
+import { helpersRecipe } from "./recipes/helpers";
 import { homeRecipe } from "./recipes/home";
 
-export const RECIPES = [headerRecipe, footerRecipe, homeRecipe, familiesRecipe];
+export const RECIPES = [headerRecipe, footerRecipe, homeRecipe, familiesRecipe, helpersRecipe];
 
 export async function runCli(argv: string[], outDirOverride?: string): Promise<number> {
   const [cmd, name = "current"] = argv;

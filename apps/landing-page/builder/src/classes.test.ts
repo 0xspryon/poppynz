@@ -30,5 +30,8 @@ describe("classes", () => {
     expect(idx("lang-on")).toBeLessThan(idx("lang-item"));
     expect(idx("bubble-40")).toBeLessThan(idx("bubble"));
     expect(idx("bubble-48")).toBeLessThan(idx("bubble"));
+    expect(idx("bubble-tint")).toBeLessThan(idx("bubble"));
+    expect(idx("tint-blue")).toBeLessThan(idx("art-card"));
+    expect(idx("tint-pink")).toBeLessThan(idx("art-card"));
   });
 });

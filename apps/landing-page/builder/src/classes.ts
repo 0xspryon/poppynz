@@ -22,6 +22,7 @@ const defs: Record<string, CssMap> = {
   "stack-16": { desktop: "display:flex;flex-direction:column;gap:16px" },
   "stack-20": { desktop: "display:flex;flex-direction:column;gap:20px" },
   "stack-24": { desktop: "display:flex;flex-direction:column;gap:24px" },
+  "stack-40": { desktop: "display:flex;flex-direction:column;gap:40px" },
   "grid-2": { desktop: "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,380px),1fr));gap:clamp(32px,5vw,64px);align-items:center" },
   "grid-cards": { desktop: "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,300px),1fr));gap:20px" },
   "btn-row": { desktop: "display:flex;flex-wrap:wrap;gap:14px;align-items:center" },
@@ -38,6 +39,10 @@ const defs: Record<string, CssMap> = {
   "h2-cta": { desktop: `${DISPLAY};font-weight:800;font-size:clamp(32px,4.2vw,52px);line-height:1.05;letter-spacing:-.02em;color:${v("navy")}` },
   h3: { desktop: `${DISPLAY};font-weight:700;font-size:21px;letter-spacing:-.01em;color:${v("navy")}` },
   "h3-lg": { desktop: `${DISPLAY};font-weight:700;font-size:24px;letter-spacing:-.01em;color:${v("navy")}` },
+  // The design's inline `font:700 22px 'Hanken Grotesk'` heading beside a chip, on both for-helpers
+  // documents panels. 29px is that font/size's own line box, measured in the design (see the kit
+  // line-height note above).
+  "h3-22": { desktop: `${DISPLAY};font-weight:700;font-size:22px;line-height:29px;letter-spacing:-.01em;color:${v("navy")}` },
   "h3-light": { desktop: `${DISPLAY};font-weight:700;font-size:24px;letter-spacing:-.01em;color:${v("white")}` },
   "h3-light-20": { desktop: `${DISPLAY};font-weight:700;font-size:20px;letter-spacing:-.01em;color:${v("white")}` },
   "hl-wavy": { desktop: "" }, // no props: the inner <em> is styled by theme anim.css (.hl-wavy em)
@@ -121,6 +126,10 @@ const defs: Record<string, CssMap> = {
   // over bubble's own 44px default.
   "bubble-40": { desktop: "width:40px;height:40px" },
   "bubble-48": { desktop: "width:48px;height:48px" },
+  // Hover-only modifier over `bubble` (the design's `.bubble-tint:hover`), used on the four
+  // for-helpers onboarding cards. Declared before `bubble` by the same convention as the pair
+  // above, although it touches no property `bubble` sets at the same state key.
+  "bubble-tint": { "desktop:hover": `background-color:${v("tint-line")}` },
   bubble: { desktop: `display:flex;width:44px;height:44px;align-items:center;justify-content:center;border-radius:999px;background-color:${v("tint")};transition:transform .3s`, "desktop:hover": "transform:rotate(-8deg) scale(1.1)" },
   "bubble-light": { desktop: "display:flex;width:48px;height:48px;align-items:center;justify-content:center;border-radius:999px;background-color:rgba(255,255,255,.1)" },
   avatar: { desktop: `display:flex;width:36px;height:36px;align-items:center;justify-content:center;border-radius:999px;background-color:${v("sky")};color:${v("white")};${BODY};font-weight:700;font-size:14px` },
@@ -130,6 +139,10 @@ const defs: Record<string, CssMap> = {
   // its own font-size, so anything larger or smaller than 16px gets the wrong line box. The values
   // here are the design's own computed line-box heights, measured at 1280 (see poppynz.md).
   "chip-info": { desktop: `padding:4px 8px;border-radius:4px;background-color:${v("chip-bg")};color:${v("teal")};${BODY};font-weight:600;font-size:12px;line-height:15px` },
+  // Same pill as chip-info in a second colourway (the design's `.chip.chip-req`), on the "Poppynz
+  // admin" onboarding step and the "Required" documents panel. Declared standalone rather than as a
+  // `chip-info` modifier so it can never lose a print-order race on background-color/color.
+  "chip-req": { desktop: `padding:4px 8px;border-radius:4px;background-color:${v("pink")};color:${v("magenta-ink")};${BODY};font-weight:600;font-size:12px;line-height:15px` },
   city: { desktop: `display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;background-color:${v("tint")};${BODY};font-weight:500;font-size:14px;color:${v("navy")};transition:transform .25s`, "desktop:hover": "transform:translateY(-3px) rotate(-2deg)" },
   "city-next": { desktop: `display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;border-width:1.5px;border-style:dashed;border-color:${v("line-2")};${BODY};font-weight:500;font-size:14px;color:${v("muted")};transform:rotate(-2deg)` },
   // cards
@@ -147,8 +160,19 @@ const defs: Record<string, CssMap> = {
   card: { desktop: `display:flex;flex-direction:column;gap:14px;padding:28px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:${v("line")};background-color:${v("page")};transition:transform .25s` },
   "card-lift": { "desktop:hover": `border-color:${v("sky-light")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(-0.6deg)` },
   "card-lift-r": { "desktop:hover": `border-color:${v("sky-light")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(0.6deg)` },
-  "card-dark": { desktop: "display:flex;flex-direction:column;gap:12px;padding:24px;border-radius:8px;background-color:rgba(255,255,255,.06);border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.12)" },
+  // The design's `.card-white`: same card as `card`, on white instead of the page tint, and without
+  // `card`'s hover transition (nothing on this page lifts it). Used by the four for-helpers
+  // onboarding steps.
+  "card-white": { desktop: `display:flex;flex-direction:column;gap:14px;padding:28px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:${v("line")};background-color:${v("white")}` },
+  // The two for-helpers documents panels ("Every helper" / "Shown on your profile"). Only the box
+  // itself: the panels also carry `stack-16` (display/direction/gap) and `card-shadow`, neither of
+  // which shares a property with this one, so print order between the three is irrelevant.
+  "doc-panel": { desktop: `padding:28px;border-radius:14px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")}` },
+  "card-dark":{ desktop: "display:flex;flex-direction:column;gap:12px;padding:24px;border-radius:8px;background-color:rgba(255,255,255,.06);border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.12)" },
   "num-light": { desktop: `${BODY};font-weight:700;font-size:13px;line-height:16px;letter-spacing:.08em;color:${v("sky-light")}` },
+  // A numbered row on a navy panel (the design's `.row-dark`), used by the four Major-domo criteria.
+  "row-dark": { desktop: "display:flex;gap:16px;align-items:center;padding:18px 20px;border-radius:8px;background-color:rgba(255,255,255,.06);border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.12)" },
+  "row-dark-t": { desktop: `${BODY};font-weight:400;font-size:16px;line-height:20px;color:${v("white")}` },
   "hero-card": { desktop: `display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};${SHADOW_CARD};text-decoration:none;transition:transform .25s` },
   "hero-card-l": { "desktop:hover": `border-color:${v("sky")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(-0.8deg)` },
   "hero-card-r": { "desktop:hover": `border-color:${v("navy")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(0.8deg)` },
@@ -171,6 +195,16 @@ const defs: Record<string, CssMap> = {
   // for-families.html; same shape as its `.row-item`).
   "svc-row": { desktop: `display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:8px;background-color:${v("page")};border-width:1.5px;border-style:solid;border-color:${v("line")};${BODY};font-weight:500;font-size:15px` },
   "svc-rate": { desktop: `${DISPLAY};font-weight:700;font-size:15px;line-height:20px;color:${v("navy")}` },
+  // The editable "your services" list on for-helpers (the design's `.row-item` / `.lbl` / `.rate`
+  // / `.thumb`). Taller and on white where `svc-row` above is compact and on the page tint, so it
+  // is its own class rather than a modifier. Every line-height here is the design's own measured
+  // line box, for the reason given in the kit line-height note above.
+  "row-item": { desktop: `display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border-radius:8px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")}` },
+  "row-lbl": { desktop: `display:flex;align-items:center;gap:10px;${BODY};font-weight:500;font-size:15px;line-height:19px` },
+  rate: { desktop: `display:flex;align-items:center;padding:6px 10px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:${v("line-2")};background-color:${v("white")};${DISPLAY};font-weight:700;font-size:15px;line-height:20px;color:${v("navy")}` },
+  thumb: { desktop: `flex:0 0 auto;display:flex;width:36px;height:36px;align-items:flex-end;justify-content:center;border-radius:999px;background-color:${v("tint")};overflow:hidden` },
+  // object-position keywords (`bottom`) are not convertible in 4.2.4; the percentage form is.
+  "thumb-img": { desktop: "display:block;width:30px;height:30px;margin-bottom:-2px;object-fit:contain;object-position:50% 100%" },
   // pricing example (design's .price-row / .price-total). Only the bottom border is real, so the
   // other three sides need an explicit 0 or the converter leaves them at the browser default.
   "price-row": { desktop: `display:flex;justify-content:space-between;padding-top:12px;padding-bottom:12px;padding-left:0;padding-right:0;border-bottom-width:1.5px;border-top-width:0;border-left-width:0;border-right-width:0;border-style:solid;border-color:${v("line")};${BODY};font-weight:400;font-size:15px` },

@@ -4,6 +4,8 @@
   "entries": [
     "pages/families.en.json",
     "pages/families.fr.json",
+    "pages/helpers.en.json",
+    "pages/helpers.fr.json",
     "pages/home.en.json",
     "pages/home.fr.json",
     "templates/footer.en.json",
@@ -12,6 +14,11 @@
     "templates/header.fr.json"
   ],
   "media": {
+    "0bcb2f675e30": {
+      "ext": "svg",
+      "alt": "Work Close to Home",
+      "key": "ill:calendar.svg"
+    },
     "0e6f53b6917e": {
       "ext": "svg",
       "alt": "",
@@ -31,6 +38,11 @@
       "ext": "svg",
       "alt": "",
       "key": "icon:lock"
+    },
+    "24f75931042e": {
+      "ext": "svg",
+      "alt": "Verified Families Only",
+      "key": "ill:verified-profile.svg"
     },
     "304c7724fedf": {
       "ext": "svg",
@@ -61,6 +73,11 @@
       "ext": "webp",
       "alt": "Elderly check-in",
       "key": "svc:elderly-check-in"
+    },
+    "55f4d285aa79": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:file-upload"
     },
     "5b36b8d13979": {
       "ext": "svg",
@@ -142,6 +159,16 @@
       "alt": "Right in Your Neighbourhood",
       "key": "ill:search.webp"
     },
+    "c9a9db88b128": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:pen"
+    },
+    "ca87e3f6be8a": {
+      "ext": "svg",
+      "alt": "Major-domo",
+      "key": "ill:work-anywhere.svg"
+    },
     "d2f6fab7166f": {
       "ext": "svg",
       "alt": "",
@@ -166,6 +193,11 @@
       "ext": "svg",
       "alt": "",
       "key": "icon:hand-holding-heart"
+    },
+    "ea63fa04721a": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:user-edit"
     },
     "eb85c116f6e6": {
       "ext": "webp",

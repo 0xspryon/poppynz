@@ -2,15 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { FAMILIES } from "./families";
 import { FOOTER } from "./footer";
 import { HEADER } from "./header";
+import { HELPERS } from "./helpers";
 import { HOME } from "./home";
 import { assertLocalizedKeys } from "./types";
 
 describe("content", () => {
-  test("header, footer, home, families have identical key sets in en and fr", () => {
+  test("header, footer, home, families, helpers have identical key sets in en and fr", () => {
     expect(() => assertLocalizedKeys(HEADER as any, "header")).not.toThrow();
     expect(() => assertLocalizedKeys(FOOTER as any, "footer")).not.toThrow();
     expect(() => assertLocalizedKeys(HOME as any, "home")).not.toThrow();
     expect(() => assertLocalizedKeys(FAMILIES as any, "families")).not.toThrow();
+    expect(() => assertLocalizedKeys(HELPERS as any, "helpers")).not.toThrow();
   });
   test("home has 4 steps, 8 services, 3 quotes, 5 cities in both languages", () => {
     for (const l of ["en", "fr"] as const) {
@@ -29,6 +31,18 @@ describe("content", () => {
       expect(FAMILIES[l].safety.steps).toHaveLength(4);
       expect(FAMILIES[l].fee.example.rows).toHaveLength(2);
       expect(FAMILIES[l].faq.items).toHaveLength(6);
+    }
+  });
+  test("helpers has 4 why-join cards, 3 service rows, 4 onboarding steps, 3+3 documents, 4 Major-domo rows, 6 FAQ items in both languages", () => {
+    for (const l of ["en", "fr"] as const) {
+      expect(HELPERS[l].why.cards).toHaveLength(4);
+      expect(HELPERS[l].rates.panel.rows).toHaveLength(3);
+      expect(HELPERS[l].onboarding.steps).toHaveLength(4);
+      expect(HELPERS[l].onboarding.required.items).toHaveLength(3);
+      expect(HELPERS[l].onboarding.optional.items).toHaveLength(3);
+      expect(HELPERS[l].earnings.example.rows).toHaveLength(2);
+      expect(HELPERS[l].major.rows).toHaveLength(4);
+      expect(HELPERS[l].faq.items).toHaveLength(6);
     }
   });
   test("nav links use page keys", () => {

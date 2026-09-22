@@ -63,6 +63,13 @@
     }
   },
   {
+    "id": "g-a349e30",
+    "label": "stack-40",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:40px"
+    }
+  },
+  {
     "id": "g-3598e6c",
     "label": "grid-2",
     "css": {
@@ -165,6 +172,13 @@
     "label": "h3-lg",
     "css": {
       "desktop": "font-family:var(--font-display);font-weight:700;font-size:24px;letter-spacing:-.01em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-0ce9695",
+    "label": "h3-22",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:22px;line-height:29px;letter-spacing:-.01em;color:var(--navy)"
     }
   },
   {
@@ -479,6 +493,13 @@
     }
   },
   {
+    "id": "g-4a7a9f7",
+    "label": "bubble-tint",
+    "css": {
+      "desktop:hover": "background-color:var(--tint-line)"
+    }
+  },
+  {
     "id": "g-a3fa9e0",
     "label": "bubble",
     "css": {
@@ -512,6 +533,13 @@
     "label": "chip-info",
     "css": {
       "desktop": "padding:4px 8px;border-radius:4px;background-color:var(--chip-bg);color:var(--teal);font-family:var(--font-body);font-weight:600;font-size:12px;line-height:15px"
+    }
+  },
+  {
+    "id": "g-ec5b1c1",
+    "label": "chip-req",
+    "css": {
+      "desktop": "padding:4px 8px;border-radius:4px;background-color:var(--pink);color:var(--magenta-ink);font-family:var(--font-body);font-weight:600;font-size:12px;line-height:15px"
     }
   },
   {
@@ -581,6 +609,20 @@
     }
   },
   {
+    "id": "g-5ea28b0",
+    "label": "card-white",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:14px;padding:28px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:var(--line);background-color:var(--white)"
+    }
+  },
+  {
+    "id": "g-a515196",
+    "label": "doc-panel",
+    "css": {
+      "desktop": "padding:28px;border-radius:14px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line)"
+    }
+  },
+  {
     "id": "g-09928a4",
     "label": "card-dark",
     "css": {
@@ -592,6 +634,20 @@
     "label": "num-light",
     "css": {
       "desktop": "font-family:var(--font-body);font-weight:700;font-size:13px;line-height:16px;letter-spacing:.08em;color:var(--sky-light)"
+    }
+  },
+  {
+    "id": "g-f4ddab3",
+    "label": "row-dark",
+    "css": {
+      "desktop": "display:flex;gap:16px;align-items:center;padding:18px 20px;border-radius:8px;background-color:rgba(255,255,255,.06);border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.12)"
+    }
+  },
+  {
+    "id": "g-1b93f0d",
+    "label": "row-dark-t",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:400;font-size:16px;line-height:20px;color:var(--white)"
     }
   },
   {
@@ -706,6 +762,41 @@
     "label": "svc-rate",
     "css": {
       "desktop": "font-family:var(--font-display);font-weight:700;font-size:15px;line-height:20px;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-8325b57",
+    "label": "row-item",
+    "css": {
+      "desktop": "display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border-radius:8px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line)"
+    }
+  },
+  {
+    "id": "g-b800e82",
+    "label": "row-lbl",
+    "css": {
+      "desktop": "display:flex;align-items:center;gap:10px;font-family:var(--font-body);font-weight:500;font-size:15px;line-height:19px"
+    }
+  },
+  {
+    "id": "g-6794250",
+    "label": "rate",
+    "css": {
+      "desktop": "display:flex;align-items:center;padding:6px 10px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:var(--line-2);background-color:var(--white);font-family:var(--font-display);font-weight:700;font-size:15px;line-height:20px;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-f121051",
+    "label": "thumb",
+    "css": {
+      "desktop": "flex:0 0 auto;display:flex;width:36px;height:36px;align-items:flex-end;justify-content:center;border-radius:999px;background-color:var(--tint);overflow:hidden"
+    }
+  },
+  {
+    "id": "g-b7ec841",
+    "label": "thumb-img",
+    "css": {
+      "desktop": "display:block;width:30px;height:30px;margin-bottom:-2px;object-fit:contain;object-position:50% 100%"
     }
   },
   {

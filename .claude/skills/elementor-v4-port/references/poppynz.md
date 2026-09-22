@@ -3,14 +3,14 @@
 ## Sites
 | Site | URL | Novamira MCP server | Status |
 |---|---|---|---|
-| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home and For families (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
+| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families and For helpers (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
 | Production | https://poppynz.com | (to be added) | not deployed |
 
 ## Versions (pinned in server/bootstrap.php)
 Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.5).
 
 ## Page map
-See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families (en, fr).
+See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families, helpers (en, fr).
 
 ## Live on staging (2026-09-21)
 | What | EN | FR |
@@ -19,6 +19,7 @@ See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home
 | Footer template (`elementor-hf`) | 177 — "Site footer (en)" | 205 — "Site footer (fr)" |
 | Home page | 185 — `/` (slug `home`) | 188 — `/fr/accueil/`, reachable at `/fr/` (slug `accueil`, Polylang front-page translation) |
 | For families | 440 — `/for-families/` | 443 — `/fr/pour-les-familles/` |
+| For helpers | 564 — `/for-helpers/` | 567 — `/fr/pour-les-aides/` |
 
 Attachments imported: 28 (content-hash-deduped via `_poppynz_hash`; 19 icons, 8 service illustrations, 1 logo mark). Untouched pre-existing content: WordPress's default Sample Page (id 2) and draft Privacy Policy (id 3).
 
@@ -150,6 +151,93 @@ Two measurement traps worth knowing: Chrome headless clamps `--window-size` to a
 instead; and the load-triggered `scale` interaction on `.vetted` is caught mid-flight under
 `--virtual-time-budget`, reporting anything from 0x0 to 71x23 (live, in real time, it is 77x27 with
 `transform:none`).
+
+
+## 2026-09-22 — For helpers (Plan 2, second page)
+
+Live: EN 564 `/for-helpers/`, FR 567 `/fr/pour-les-aides/`, both 200, `has_header:true`, `lang`
+`en-CA` / `fr-CA`. Second `import.php` run after the final deploy: all 244 entries `unchanged`.
+Home's and For families' `pages/*.json` and every `templates/*.json` are byte-identical to before this
+page existed (`git diff --stat` lists none of them); the only artefact churn is 13 new labels in
+`classes.json`, 6 new media files and the two new page files. No existing class was edited and no new
+variable was needed, so Home and For families render exactly as before.
+
+New global classes: `stack-40`, `h3-22`, `chip-req`, `bubble-tint`, `card-white`, `doc-panel`,
+`row-dark`, `row-dark-t`, `row-item`, `row-lbl`, `rate`, `thumb`, `thumb-img`. Reused from For
+families: the whole FAQ pattern (`faq-item`/`is-open`/`faq-question`/`faq-icon-plus`/`faq-icon-minus`/
+`faq-answer` plus the theme's `faq.js` and its three anim.css rules), `art-card`/`art`/`tint-blue`/
+`tint-pink`, `chip-info`, `em-navy`, `price-row`/`price-amount`, `btn-primary-15`. No theme change was
+needed at all, so `bootstrap.php`'s theme-copy step did not have to be re-run.
+
+### Two flex traps this page hit (both invisible in a screenshot)
+1. **`e-grid` ships `gap:20px`.** The hero is a full-bleed two-column grid with no gap in the design;
+   without an explicit `gap:0` Elementor's `.e-grid-base` gap applied and both columns came out 630px
+   instead of 640px. A grid whose design has no gap must say `gap:0`, exactly like the `padding:0` and
+   `grid-template-rows:auto` that `dsl.ts` already prepends.
+2. **An `e-svg` wrapper shrinks; a font glyph does not.** The design's icons are Line Awesome `<i>`
+   elements whose `min-width:auto` resolves to the glyph itself, so they never shrink. Our e-svg
+   wrapper's min-content size is 0, so as an ordinary flex item beside a text span whose max-content
+   width overflows the row it shrinks: the 18px checklist ticks measured 14.5px at 1280 and the 20px
+   pen icon 16.34px at 390. Every icon that shares a flex row with text needs `flex:0 0 auto` (the FAQ
+   `+`/`−` classes already had it). Caught only by comparing `getBoundingClientRect().width` against
+   the declared width.
+
+### The kit line-height, worked around per element (not per class)
+The kit's `1.2em` body line-height is still open (see the For families section above). This page keeps
+the same policy — shared classes are left alone so Home and For families do not move — and gives every
+element it owns the design's own measured line box locally: the 7 eyebrows and 2 `label` spans
+(`line-height:15px`), the 8 `h3` card headings (27px; Elementor's atomic heading base sets 1.2, giving
+25.2px instead of the design's 27px), the three `btn-primary*` buttons (20px), the price rows and the
+earnings link (19px), and the avatar (17px). New classes declare their own line-height inline.
+Fixing this properly is still one kit setting plus a re-verify of Home, For families and now this page.
+
+### French copy
+Written from the terminology already in `content/home.ts` / `content/footer.ts`: "aide familiale",
+"Devenir aide familiale", "séance", "entente écrite", "tarif horaire", "frais de service",
+"vérification du secteur vulnérable", "ÉPE" / "PSSP", "LPRPDE", badge "Vérifiée", "Major-domo" kept
+untranslated. **French needs no-break spaces and the headless render is how you find out**: with an
+ordinary space the rate pill broke between "30" and "$/h" onto two lines, and the closing `»` of the
+hero pull-quote dropped onto a line of its own. `content/helpers.ts`'s French block therefore uses
+U+00A0 before `$` and `%` and inside the guillemets (16 of them); the English block has none. The fix
+is content-only — the next import reported `helpers.fr` `updated` and `helpers.en` `unchanged`.
+
+### Named deviations (this page)
+- The hero's "See what's required" button and the earnings "Full pricing for both sides" link are
+  inert (`#`): the design anchors the first at `#documents`, and a V4 atomic element renders no `id`.
+- The hero video has no poster (`video()` takes a media-library key; the design's poster is a
+  hotlinked Pexels still). Same as Home.
+- `$71.40` and `CAD` are sibling spans rather than the design's nested `<span class="cur">`, so `CAD`
+  does not inherit the big number's `-.02em` letter-spacing and they align on `flex-end` rather than
+  `baseline`. Same as For families.
+- The shared `btn-primary` class carries `mobile:"padding:14px 24px"`, which the design has no
+  equivalent for (it keeps 16px 30px at every width). This is the ONLY measured difference left at
+  390 and it is identical on Home; left alone rather than overridden on one page.
+- The hero `deco` dots are effectively invisible here, exactly as in the design: the navy copy panel
+  covers the left half and the video covers the right. (`deco`'s `z-index:0` also reads back as `auto`
+  live — pre-existing on every page, and with no effect since the real content is later in DOM order.)
+- Icons are `<svg>` where the design uses Line Awesome `<i>` glyphs, so `font-family`/`font-size`/
+  `font-weight`/`line-height` on those elements differ by construction; width, height and colour match.
+
+### Verification (skill step 4)
+119 matched selector pairs, computed styles plus bounding rects, design-vs-live at 1280, 1440, 1920 and
+390. **Zero unexplained differences at 1280, 1440 and 1920**; at 390 only the `btn-primary` mobile
+padding above. `documentElement.scrollWidth > clientWidth` is false at all four widths in BOTH
+languages, and no element is wider than the viewport. `render.sh` slices (desktop and mobile, en and fr)
+match the design's slices section by section. FAQ driven with real clicks in both languages: the first
+item starts open showing `−`, clicking another question's inner text span opens it and closes the first,
+clicking the open one closes it, and every question is a real `<button>`. Editor check: the canvas
+renders fully styled, no "classes are missing" warning, the selected element's `classes` setting holds
+the global class **id** (`g-8325b57` → `row-item`), and all 13 new classes are present in both the
+frontend and the preview contexts (166 each). Update/Publish never pressed.
+
+### Found while measuring, NOT fixed (shared, needs its own re-verify)
+- The `hdr` class declares `gap:12px;column-gap:24px` but the live header computes `gap: 12px` — the
+  `column-gap` override is not reaching the element. Pre-existing, affects every page's header.
+- `h3` (and its siblings `h3-lg`, `h3-light`, `svc-title`, `hero-card-title`) declare no line-height,
+  so Elementor's atomic heading base (1.2) applies instead of the design's `normal`. Worked around
+  locally here; Home and For families still render their own h3s ~1.8px short.
+- The shared `media-credit` and `checks` classes still need the per-page local overrides this page and
+  For families both apply (line-height, and `color:var(--ink)` respectively).
 
 ## Deploy
 1. `cd apps/landing-page/builder && bun test && bun run build`; commit `json-artefacts/current`.

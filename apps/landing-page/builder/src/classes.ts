@@ -39,8 +39,13 @@ const defs: Record<string, CssMap> = {
   h3: { desktop: `${DISPLAY};font-weight:700;font-size:21px;letter-spacing:-.01em;color:${v("navy")}` },
   "h3-lg": { desktop: `${DISPLAY};font-weight:700;font-size:24px;letter-spacing:-.01em;color:${v("navy")}` },
   "h3-light": { desktop: `${DISPLAY};font-weight:700;font-size:24px;letter-spacing:-.01em;color:${v("white")}` },
+  "h3-light-20": { desktop: `${DISPLAY};font-weight:700;font-size:20px;letter-spacing:-.01em;color:${v("white")}` },
   "hl-wavy": { desktop: "" }, // no props: the inner <em> is styled by theme anim.css (.hl-wavy em)
   "em-accent": { desktop: "" }, // no props: the inner <em> is styled by theme anim.css (.em-accent em)
+  // Same mechanism as hl-wavy/em-accent: the design's `.checks strong{color:#1A3375}` is a
+  // descendant rule, impossible in a V4 class, so the <strong> inside is styled by theme anim.css
+  // (.em-navy strong). The parent keeps its own muted colour.
+  "em-navy": { desktop: "" },
   accent: { desktop: `color:${v("sky")}` },
   lead: { desktop: `${BODY};font-size:17px;line-height:1.6;color:${v("muted")}` },
   "lead-light": { desktop: `${BODY};font-size:17px;line-height:1.6;color:${v("navy-text")}` },
@@ -61,6 +66,10 @@ const defs: Record<string, CssMap> = {
   },
   "btn-primary-14": {
     desktop: `display:inline-block;padding:14px 26px;border-radius:999px;background-color:${v("sky")};color:${v("white")};${BODY};font-weight:600;font-size:15px;text-decoration:none;${SHADOW_SKY};transition:transform .25s`,
+    "desktop:hover": `background-color:${v("sky-hover")};color:${v("white")};${LIFT}`,
+  },
+  "btn-primary-15": {
+    desktop: `display:inline-block;padding:15px 28px;border-radius:999px;background-color:${v("sky")};color:${v("white")};${BODY};font-weight:600;font-size:16px;text-decoration:none;${SHADOW_SKY};transition:transform .25s`,
     "desktop:hover": `background-color:${v("sky-hover")};color:${v("white")};${LIFT}`,
   },
   // Elementor's e-button base style ships its own blue background (rgb(55,94,251)); an outline/ghost
@@ -116,12 +125,30 @@ const defs: Record<string, CssMap> = {
   "bubble-light": { desktop: "display:flex;width:48px;height:48px;align-items:center;justify-content:center;border-radius:999px;background-color:rgba(255,255,255,.1)" },
   avatar: { desktop: `display:flex;width:36px;height:36px;align-items:center;justify-content:center;border-radius:999px;background-color:${v("sky")};color:${v("white")};${BODY};font-weight:700;font-size:14px` },
   vetted: { desktop: `display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:4px;background-color:${v("ok-bg")};color:${v("ok")};${BODY};font-weight:600;font-size:12px` },
+  // Every new class below states an explicit line-height. The kit sets the body line-height in `em`,
+  // which every descendant inherits as a FIXED pixel value (19.2px) instead of re-resolving against
+  // its own font-size, so anything larger or smaller than 16px gets the wrong line box. The values
+  // here are the design's own computed line-box heights, measured at 1280 (see poppynz.md).
+  "chip-info": { desktop: `padding:4px 8px;border-radius:4px;background-color:${v("chip-bg")};color:${v("teal")};${BODY};font-weight:600;font-size:12px;line-height:15px` },
   city: { desktop: `display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;background-color:${v("tint")};${BODY};font-weight:500;font-size:14px;color:${v("navy")};transition:transform .25s`, "desktop:hover": "transform:translateY(-3px) rotate(-2deg)" },
   "city-next": { desktop: `display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;border-width:1.5px;border-style:dashed;border-color:${v("line-2")};${BODY};font-weight:500;font-size:14px;color:${v("muted")};transform:rotate(-2deg)` },
   // cards
+  // tint-blue/tint-pink before art-card: Elementor prints global classes in REVERSED declaration
+  // order, so a modifier that must beat its base class on the same property (here
+  // background-color and border-color) has to be declared EARLIER. Same reason as svc-pink/svc.
+  "tint-blue": { desktop: `background-color:${v("tint")};border-color:${v("tint-line")}`, "desktop:hover": `border-color:${v("sky-light")}` },
+  "tint-pink": { desktop: `background-color:${v("pink")};border-color:${v("pink-line")}`, "desktop:hover": `border-color:${v("magenta")}` },
+  // The design's `.card.art-card`: a card whose bottom padding is dropped so the illustration can
+  // bleed into the corner. Declared standalone (not `card` + a modifier) so the padding override
+  // can never lose a print-order race against `card`'s own `padding` shorthand.
+  "art-card": { desktop: `display:flex;flex-direction:column;gap:14px;padding:28px 28px 0;border-radius:8px;border-width:1.5px;border-style:solid;border-color:${v("line")};background-color:${v("page")};position:relative;overflow:hidden;min-height:300px` },
+  // object-position keywords (`right bottom`) are not convertible in 4.2.4; the percentage form is.
+  art: { desktop: "display:block;align-self:flex-end;margin-top:auto;margin-right:-4px;margin-bottom:-6px;margin-left:0;height:150px;width:auto;max-width:75%;object-fit:contain;object-position:100% 100%;filter:drop-shadow(0 6px 10px rgba(0,29,90,.12))" },
   card: { desktop: `display:flex;flex-direction:column;gap:14px;padding:28px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:${v("line")};background-color:${v("page")};transition:transform .25s` },
   "card-lift": { "desktop:hover": `border-color:${v("sky-light")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(-0.6deg)` },
   "card-lift-r": { "desktop:hover": `border-color:${v("sky-light")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(0.6deg)` },
+  "card-dark": { desktop: "display:flex;flex-direction:column;gap:12px;padding:24px;border-radius:8px;background-color:rgba(255,255,255,.06);border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.12)" },
+  "num-light": { desktop: `${BODY};font-weight:700;font-size:13px;line-height:16px;letter-spacing:.08em;color:${v("sky-light")}` },
   "hero-card": { desktop: `display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};${SHADOW_CARD};text-decoration:none;transition:transform .25s` },
   "hero-card-l": { "desktop:hover": `border-color:${v("sky")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(-0.8deg)` },
   "hero-card-r": { "desktop:hover": `border-color:${v("navy")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(0.8deg)` },
@@ -140,6 +167,27 @@ const defs: Record<string, CssMap> = {
   "svc-title": { desktop: `${DISPLAY};font-weight:700;font-size:21px;letter-spacing:-.01em;color:${v("navy")}` },
   "svc-text": { desktop: `${BODY};font-size:14px;line-height:1.5;color:${v("muted")};max-width:30ch` },
   "svc-art": { desktop: "display:block;align-self:flex-end;margin-top:auto;margin-right:-4px;margin-bottom:-6px;height:160px;width:auto;object-fit:contain;filter:drop-shadow(0 6px 10px rgba(0,29,90,.12))" },
+  // A "service · hourly rate" line inside a helper profile card (the design's inline row in
+  // for-families.html; same shape as its `.row-item`).
+  "svc-row": { desktop: `display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:8px;background-color:${v("page")};border-width:1.5px;border-style:solid;border-color:${v("line")};${BODY};font-weight:500;font-size:15px` },
+  "svc-rate": { desktop: `${DISPLAY};font-weight:700;font-size:15px;line-height:20px;color:${v("navy")}` },
+  // pricing example (design's .price-row / .price-total). Only the bottom border is real, so the
+  // other three sides need an explicit 0 or the converter leaves them at the browser default.
+  "price-row": { desktop: `display:flex;justify-content:space-between;padding-top:12px;padding-bottom:12px;padding-left:0;padding-right:0;border-bottom-width:1.5px;border-top-width:0;border-left-width:0;border-right-width:0;border-style:solid;border-color:${v("line")};${BODY};font-weight:400;font-size:15px` },
+  "price-amount": { desktop: `${BODY};font-weight:600;font-size:15px` },
+  // FAQ (no accordion in Free 4.2.4): one faq-item per question, toggled by the child theme's
+  // assets/faq.js, which adds/removes `is-open` on the item. faq-answer deliberately declares NO
+  // `display`: anim.css is enqueued after both the global- and local-style sheets, so its
+  // `.faq-answer{display:none}` / `.faq-item.is-open .faq-answer{display:block}` pair owns that
+  // property outright. `is-open` carries no CSS of its own; it is declared only so an item can
+  // start open (the design's first question) and so the label survives into the DOM.
+  "faq-item": { desktop: `display:flex;flex-direction:column;border-width:1.5px;border-style:solid;border-color:${v("line")};border-radius:8px;background-color:${v("page")};overflow:hidden` },
+  "is-open": { desktop: "" },
+  "faq-question": {
+    desktop: `display:flex;width:100%;justify-content:space-between;align-items:center;gap:16px;padding:18px 20px;border-width:0;background-color:transparent;text-align:start;cursor:pointer;${DISPLAY};font-weight:700;font-size:17px;line-height:22px;letter-spacing:-.01em;color:${v("navy")}`,
+    "desktop:hover": `background-color:${v("tint-2")}`,
+  },
+  "faq-answer": { desktop: `padding:0 20px 18px;${BODY};font-weight:400;font-size:15px;line-height:1.6;color:${v("muted")}` },
   quote: { desktop: `display:flex;flex-direction:column;gap:20px;padding:32px;border-radius:8px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};${SHADOW_CARD};transition:transform .3s`, "desktop:hover": "transform:rotate(0deg) translateY(-4px)" },
   "quote-text": { desktop: `${DISPLAY};font-weight:500;font-style:italic;font-size:22px;line-height:1.45;color:${v("navy")}` },
   "quote-who": { desktop: "display:flex;align-items:center;gap:12px;margin-top:auto" },

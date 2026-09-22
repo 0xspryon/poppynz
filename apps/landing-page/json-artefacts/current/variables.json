@@ -75,6 +75,11 @@
     "value": "#CBE6FF"
   },
   {
+    "label": "chip-bg",
+    "type": "global-color-variable",
+    "value": "#D6EBFF"
+  },
+  {
     "label": "pink",
     "type": "global-color-variable",
     "value": "#FCE3F4"

@@ -25,9 +25,13 @@
    Applied to the heading classes only; no other layout rule belongs here. */
 .elementor .h1,.elementor .h2,.elementor .h2-light,.elementor .h2-sm,.elementor .h2-cta{text-wrap:balance}
 
-/* The only descendant rules in the project: inline emphasis inside V4 headings (see pitfalls.md). */
+/* The only descendant rules in the project: inline emphasis inside V4 text (see pitfalls.md).
+   html-v3 strips every attribute, so an inline <em>/<strong> cannot carry a class of its own; it is
+   styled through a class on its parent instead. em-navy is the for-families checklist, whose design
+   rule is `.checks strong{color:#1A3375}`. */
 .elementor .hl-wavy em{font-style:normal;text-decoration:underline wavy var(--sky);text-decoration-thickness:.06em;text-underline-offset:.14em}
 .elementor .em-accent em{font-style:normal;color:var(--sky)}
+.elementor .em-navy strong{color:var(--navy)}
 
 /* Elementor's own base rule is `.e-con{width:var(--width)}` with `--width:100%` by default
  * (elementor-frontend.min.css), which stretches every atomic container to the full width of its
@@ -51,5 +55,12 @@
 /* FAQ items (Plan 2): the toggle script adds/removes .is-open on the item container. */
 .elementor .faq-answer{display:none}
 .elementor .faq-item.is-open .faq-answer{display:block}
+/* The question row is a real <button> (keyboard-operable, unlike a div), and the UA stylesheet gives
+   every button `white-space:nowrap`, which the question text inherits: a long question then overflows
+   the row instead of wrapping, and faq-item's overflow:hidden clips it along with the +/- icon
+   (measured at 390px: 352px of text in a 264px box). `white-space` is not in the 4.2.4 atomic
+   converter's supported property list at all - same bucket as pointer-events, vertical-align and
+   text-wrap - so it cannot be set from a global class or an element's local css. */
+.elementor .faq-question{white-space:normal}
 
 @media (prefers-reduced-motion:reduce){.elementor [class*="anim-"]{animation:none!important}}

@@ -3,14 +3,14 @@
 ## Sites
 | Site | URL | Novamira MCP server | Status |
 |---|---|---|---|
-| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer and Home (en, fr) live 2026-09-21 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
+| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home and For families (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
 | Production | https://poppynz.com | (to be added) | not deployed |
 
 ## Versions (pinned in server/bootstrap.php)
-Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz`.
+Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.4).
 
 ## Page map
-See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home (en, fr).
+See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families (en, fr).
 
 ## Live on staging (2026-09-21)
 | What | EN | FR |
@@ -18,6 +18,7 @@ See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home
 | Header template (`elementor-hf`) | 181 — "Site header (en)" | 208 — "Site header (fr)" |
 | Footer template (`elementor-hf`) | 177 — "Site footer (en)" | 205 — "Site footer (fr)" |
 | Home page | 185 — `/` (slug `home`) | 188 — `/fr/accueil/`, reachable at `/fr/` (slug `accueil`, Polylang front-page translation) |
+| For families | 440 — `/for-families/` | 443 — `/fr/pour-les-familles/` |
 
 Attachments imported: 28 (content-hash-deduped via `_poppynz_hash`; 19 icons, 8 service illustrations, 1 logo mark). Untouched pre-existing content: WordPress's default Sample Page (id 2) and draft Privacy Policy (id 3).
 
@@ -53,6 +54,95 @@ The controller measured staging against the design at 1280×900 and found eight 
 
 Remaining named deviations after this wave: the wink icon sits at inline-block's default baseline rather than exact `vertical-align:middle` (unsupported by the 4.2.4 Free converter) — a few px lower than perfect cap-height centering, not visually wrong. Everything else listed above under "Named deviations" still applies unchanged. The Browser pane was hidden for part of this wave's verification (screenshots came back blank while hidden); DOM measurements (`getBoundingClientRect`/`getComputedStyle`) were used instead and are recorded above — a few section-by-section screenshots were captured before/after the pane was hidden and matched the design.
 
+## 2026-09-22 — For families (Plan 2, first page after Home)
+
+Live: EN 440 `/for-families/`, FR 443 `/fr/pour-les-familles/`, both 200, `has_header:true`, `lang`
+`en-CA` / `fr-CA`. `import.php` re-run after the final deploy: every media, variable, class, template
+and page entry `unchanged`. Home's `pages/home.en.json` and `pages/home.fr.json` are byte-identical to
+before this page existed (`git diff --stat` lists no page or template file); the only artefact churn is
+18 new labels appended to `classes.json` and one new `chip-bg` variable — no existing class was edited,
+so Home's rendering is untouched.
+
+New global classes: `h3-light-20`, `em-navy`, `btn-primary-15`, `chip-info`, `tint-blue`, `tint-pink`,
+`art-card`, `art`, `card-dark`, `num-light`, `svc-row`, `svc-rate`, `price-row`, `price-amount`,
+`faq-item`, `is-open`, `faq-question`, `faq-answer`. New variable: `chip-bg` `#D6EBFF`.
+
+### Local styles beat global classes (settled by inspection, not assumption)
+Elementor writes global classes to `global-<post>-frontend-<bp>.css` as `.elementor .<label>{...}` and
+per-element local styles to `local-<post>-frontend-<bp>.css` as `.elementor .e-<id>-<hex>{...}` — the
+SAME specificity (0,2,0), with the local sheet enqueued AFTER the global one. So an element's own `css:`
+map always wins over a class it also carries, and a page can reuse a shared class and override one
+property locally (`h1` + `font-size:clamp(38px,4.6vw,60px)` on this hero) without touching the class.
+The child theme's `anim.css` is enqueued after BOTH, which is why `.faq-answer{display:none}` there
+owns `display` outright and the `faq-answer` class must not declare it.
+
+### Converter findings (checked with `pz_converter()->convert()` before writing any of it)
+Not convertible, would abort the import: `text-align:left` (but `start`/`end`/`center`/`justify` are
+fine), `align-items:baseline` (`flex-start`/`center`/`flex-end`/`start`/`end`/`stretch` are fine),
+`justify-self` (any value — centre a grid item with `margin-left:auto;margin-right:auto` instead),
+`place-self`, `object-position` in keyword form (`right bottom`, `center`) although the percentage form
+(`100% 100%`) converts, and `background-size`/`background-position` **on their own** although both
+convert when they accompany a `background-image` in the same declaration block. Convertible despite not
+being listed in css-cheatsheet.md: `cursor`, `min-height`, `align-items:start`, `max-width:<%>`,
+three-value `padding` shorthands, `width:min(100%,420px)`, `grid-column:span 2`, `font-style`.
+
+### FAQ (no accordion in Free 4.2.4)
+One `faq-item` flexbox per question holding a `faq-question` (an `e-flexbox` with `tag:"button"`, so it
+stays keyboard-operable) and a `faq-answer` paragraph; the child theme's `assets/faq.js` toggles
+`is-open` on the item. `is-open` is declared as an empty global class only so the first question can
+start open, matching the design. Verified live with real clicks at 1280 and on both languages: the first
+item starts open, clicking another opens it and closes the first, clicking the open one closes it, and
+clicking the inner text span still resolves through `closest('.faq-question')`.
+
+### Named deviations (this page)
+- The open FAQ item keeps the `+` glyph where the design shows `−`: `faq.js` does not swap the icon, and
+  a static `−` would be wrong the moment the user closes that item.
+- The hero's "See how it works" button is inert (`#`). The design anchors it to `#how`; a V4 atomic
+  element renders no `id` attribute (only `data-id` and its class list), so there is nothing to anchor to.
+- The helper-profile photo's Unsplash credit is in the element's editor title rather than the DOM. The
+  design hides it with `.sr-only`, which needs `clip` — not convertible.
+- The safety CTA's arrow is an 18px SVG against the design's 15px webfont glyph, making that button 3px
+  wider (321 -> 324).
+- The design's own FAQ grid overflows at 390px (`grid-column:span 2` in a grid that has collapsed to one
+  column); ours carries `mobile:"grid-column:span 1"` and does not. Deliberate, and the reason the page
+  has no horizontal overflow at 390.
+- `$88.20` and `CAD` are sibling spans rather than the design's nested `<span class="cur">`, so `CAD`
+  does not inherit the big number's `-.02em` letter-spacing, and they align on `flex-end` rather than
+  `baseline` (not convertible).
+
+### Open, NOT introduced by this page: the kit's body line-height
+`_elementor_page_settings` on the kit sets the body line-height in **em** (`1.2em`), which computes to a
+fixed `19.2px` on `body` and is then inherited as that fixed pixel value by every descendant instead of
+re-resolving against the descendant's own font-size. The design's `body` sets no line-height at all, so
+each element resolves `normal` against its own size. Measured consequences, which cut both ways:
+12px text (eyebrows, `label`, `vetted`) gets a 19.2px line box instead of ~15px (+4px each), while a
+22px name gets 19.2px instead of 29px and a 24px total gets 19.2px instead of 31px (-10 and -12px).
+This affects Home identically and is the single largest remaining source of measured difference
+(61 diff lines per width). It is NOT fixed here: the fix is one kit setting (a unitless line-height
+around 1.25, or removing it), and it changes every page, so it needs the owner's call plus a re-verify
+of Home. Worked around on this page only, for the elements this page owns: `chip-info`, `num-light`,
+`svc-rate` and `faq-question` declare explicit line-heights, and the profile name, location, total and
+currency carry local ones — all set to the design's own measured line-box heights. The shared `eyebrow`,
+`label` and `vetted` classes were left alone on purpose, so Home does not move.
+
+### Also found, shared-class, left alone
+The `checks` class sets `color:var(--muted)`, but the design's `.checks` sets no colour and inherits the
+body ink (`#001E30`). Overridden locally here (`color:var(--ink)` on the checks list); Home still renders
+its own check lists in muted grey, which does not match its design either. One-line fix in `classes.ts`
+whenever someone is ready to re-verify Home.
+
+### Verification (skill step 4)
+Computed styles and bounding rects for 84 matched selector pairs, diffed design-vs-live at 1280, 1440,
+1920 and 390. **Zero unexplained differences at 1280, 1440 and 1920**; four residual section-height
+deltas of 7-9px at 390, all traceable to the kit line-height above. `document.documentElement.scrollWidth
+> clientWidth` is false at every width on both sides. Every other difference is bucketed with a reason in
+the harness (structural V4 facts, by-construction markup differences, or the interaction artefact below).
+Two measurement traps worth knowing: Chrome headless clamps `--window-size` to a ~500px floor, so a
+"390px" run actually lays out at 500 — measure narrow widths inside a fixed-width same-origin iframe
+instead; and the load-triggered `scale` interaction on `.vetted` is caught mid-flight under
+`--virtual-time-budget`, reporting anything from 0x0 to 71x23 (live, in real time, it is 77x27 with
+`transform:none`).
+
 ## Deploy
 1. `cd apps/landing-page/builder && bun test && bun run build`; commit `json-artefacts/current`.
 2. `bash .claude/skills/elementor-v4-port/scripts/pack.sh current`
@@ -66,6 +156,10 @@ Remaining named deviations after this wave: the wink icon sits at inline-block's
 ## Decisions log
 - 2026-09-21: Connect Polylang for Elementor dropped; `hfe_render_template_id` filter in the child theme instead.
 - 2026-09-21: FAQ = flexbox items + theme `faq.js` (no accordion in Free 4.2.4).
+- 2026-09-22: two new theme CSS exceptions, both for properties the 4.2.4 converter cannot express at
+  all: `.em-navy strong{color:var(--navy)}` (html-v3 strips attributes, so an inline `<strong>` is
+  styled through a class on its parent, exactly like `hl-wavy em`/`em-accent em`) and
+  `.faq-question{white-space:normal}` (see pitfalls.md). Theme `Version` bumped to 1.0.4.
 - 2026-09-21 (Task 14): `import.php` fixed in six places found only by deploying for real — see pitfalls.md for each: (1) `pll_set_post_language()` missing for `elementor-hf` templates, duplicating the fr header/footer on every run; (2) `foreach ($el['styles'] ?? [] as &$style)` silently never applied local per-element CSS anywhere on the site; (3) elements referenced global classes by label, not id, so no class's CSS was ever bundled for any document (the whole site rendered unstyled); (4) global-class print order is reversed by Elementor, so a same-element modifier class (`svc-pink`, `lang-on`, `bubble-40`/`bubble-48`) needs to sort *before* its base class in `classes.ts`; (5) the order-merge logic only ever appended new ids, so re-ordering an existing class in `classes.ts` had no effect until fixed to treat `classes.json` as authoritative; (6) `Global_Classes_Repository::put()` only wrote the frontend context, leaving the editor's own preview context empty forever, so opening the editor on any imported page showed every class as "missing" and rendered the canvas unstyled — fixed by also calling `put()` with `set_preview(true)`. Also fixed six CSS-conversion rejections in `classes.ts` (two-value `gap`, `pointer-events`, decimal `opacity`, `flex-grow`/`flex-shrink` longhands, unitless `rotate(0)`, per-side `border-*-style`) and one systemic layout bug (Elementor's `.e-con{width:100%}` breaks any flex-row with unsized children) fixed once in the theme's `anim.css`.
 
 ## Production blockers

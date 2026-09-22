@@ -20,6 +20,7 @@ export const VARIABLES: Variable[] = [
   color("tint", "#E1F0FF"),
   color("tint-2", "#ECF4FF"),
   color("tint-line", "#CBE6FF"),
+  color("chip-bg", "#D6EBFF"),
   color("pink", "#FCE3F4"),
   color("pink-line", "#F5C9E4"),
   color("magenta", "#EA42B9"),

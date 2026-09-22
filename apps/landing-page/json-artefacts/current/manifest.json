@@ -2,6 +2,8 @@
   "builderVersion": "1",
   "elementorVersion": "4.2.4",
   "entries": [
+    "pages/families.en.json",
+    "pages/families.fr.json",
     "pages/home.en.json",
     "pages/home.fr.json",
     "templates/footer.en.json",
@@ -49,6 +51,11 @@
       "ext": "svg",
       "alt": "",
       "key": "icon:user-shield"
+    },
+    "4b511a729f87": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:hand-peace"
     },
     "54e1b74c3758": {
       "ext": "webp",
@@ -100,6 +107,11 @@
       "alt": "Pet minding",
       "key": "svc:pet-minding"
     },
+    "88cc274cbdc0": {
+      "ext": "webp",
+      "alt": "Verified Before You Meet",
+      "key": "ill:shield-family.webp"
+    },
     "8ac0f28bedb9": {
       "ext": "svg",
       "alt": "",
@@ -120,10 +132,20 @@
       "alt": "",
       "key": "icon:id-card"
     },
+    "c1c8e1491f57": {
+      "ext": "webp",
+      "alt": "Right in Your Neighbourhood",
+      "key": "ill:search.webp"
+    },
     "d2f6fab7166f": {
       "ext": "svg",
       "alt": "",
       "key": "icon:map-marker"
+    },
+    "dd0cb25783b5": {
+      "ext": "svg",
+      "alt": "Clear Agreements",
+      "key": "ill:certificate.svg"
     },
     "dd689c79cd4a": {
       "ext": "webp",
@@ -144,6 +166,11 @@
       "ext": "webp",
       "alt": "Meal preparation",
       "key": "svc:meal-preparation"
+    },
+    "f832813f4e74": {
+      "ext": "svg",
+      "alt": "Transparent Rates",
+      "key": "ill:earnings.svg"
     },
     "ffd611c5a7f5": {
       "ext": "svg",

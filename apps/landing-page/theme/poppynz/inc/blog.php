@@ -99,6 +99,28 @@ function poppynz_blog_figure( array $hero, string $which = 'thumb', bool $linked
 		. ( $credit ? '<span class="credit">' . $credit . '</span>' : '' ) . '</figure>';
 }
 
+/**
+ * The blog search box: a real GET form, not the design's decorative placeholder.
+ *
+ * It submits to the language's own home URL (Polylang returns /fr/ for French, so a French search
+ * stays French) with `post_type=post`, which functions.php enforces for every front-end search
+ * anyway. The markup keeps the design's shape exactly — the icon and the text sit in the same flex
+ * row at the same sizes — so only the elements change, not the layout: the `<span>` becomes the
+ * `<input>` and the icon becomes the submit button.
+ */
+function poppynz_blog_search_form( string $value = '' ): string {
+	$label = poppynz_s( 'index.search', 'Search articles' );
+	ob_start(); ?>
+	<form class="search" role="search" method="get" action="<?php echo esc_url( home_url( '/' ) ); ?>">
+		<button type="submit" class="search-go" aria-label="<?php echo esc_attr( $label ); ?>"><i class="las la-search"></i></button>
+		<label class="sr-only" for="pz-search"><?php echo esc_html( $label ); ?></label>
+		<input type="search" id="pz-search" name="s" value="<?php echo esc_attr( $value ); ?>" placeholder="<?php echo esc_attr( $label ); ?>">
+		<input type="hidden" name="post_type" value="post">
+	</form>
+	<?php
+	return (string) ob_get_clean();
+}
+
 /** The chip + read-time pair the design prints on every card and at the top of every article. */
 function poppynz_blog_meta_row( int $post_id, string $extra_class = '' ): string {
 	$category = (string) get_post_meta( $post_id, '_pz_category', true );

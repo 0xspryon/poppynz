@@ -130,7 +130,17 @@
 .pz-blog .blog-lead { font: 400 18px/1.6 var(--font-body); color: var(--muted); max-width: 600px }
 .pz-blog .search { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 48px; width: min(100%, 320px); border-radius: 8px; border: 1.5px solid var(--line-2); background: var(--white) }
 .pz-blog .search i { font-size: 20px; color: var(--muted-2) }
-.pz-blog .search span { font: 400 15px var(--font-body); color: var(--muted-2) }
+/* The design draws the search box as an icon and a grey `<span>`. These make it a real field
+   without moving anything: the submit button and the input are stripped back to the span's own
+   box so the row still measures 320x48 with a 20px icon, and the placeholder keeps the design's
+   grey while typed text takes the darker body ink. */
+.pz-blog .search-go { display: flex; align-items: center; flex: none; padding: 0; border: 0; background: transparent; color: var(--muted-2); cursor: pointer; line-height: 0 }
+.pz-blog .search input { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; font: 400 15px var(--font-body); color: var(--ink); appearance: none; outline: none }
+.pz-blog .search input::placeholder { color: var(--muted-2); opacity: 1 }
+.pz-blog .search input::-webkit-search-cancel-button { appearance: none }
+/* The site's own focus ring (header nav, Sign in), since the input's default outline is removed. */
+.pz-blog .search:focus-within { border-color: var(--sky-light); box-shadow: 0 0 0 3px rgba(55, 181, 255, .15) }
+.pz-blog .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0 }
 .pz-blog .tag-row { display: flex; gap: 8px; flex-wrap: wrap }
 /* Scoped to the filter row on purpose. The articles reuse the name for a very different thing
    (`.level .tag`, a bare icon + label inside a levels card, with no pill around it), and the

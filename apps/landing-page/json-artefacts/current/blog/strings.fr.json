@@ -23,6 +23,12 @@
     ],
     "loadMore": "Charger plus d’articles"
   },
+  "search": {
+    "title": "Résultats de recherche",
+    "lead": "Articles correspondant à « %s »",
+    "empty": "Aucun article ne correspond à « %s ». Essayez un autre mot.",
+    "back": "Retour à tous les articles"
+  },
   "article": {
     "breadcrumb": "Blogue",
     "toc": "Dans cet article",

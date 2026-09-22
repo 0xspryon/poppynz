@@ -23,6 +23,12 @@
     ],
     "loadMore": "Load more articles"
   },
+  "search": {
+    "title": "Search results",
+    "lead": "Articles matching “%s”",
+    "empty": "No articles matched “%s”. Try another word.",
+    "back": "Back to all articles"
+  },
   "article": {
     "breadcrumb": "Blog",
     "toc": "In this article",

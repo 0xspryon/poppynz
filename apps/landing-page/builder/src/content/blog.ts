@@ -72,6 +72,14 @@ export type BlogStrings = {
     filters: string[];
     loadMore: string;
   };
+  /** The search results page (search.php), which reuses the index layout. */
+  search: {
+    title: string;
+    /** Both take the query as their one %s. */
+    lead: string;
+    empty: string;
+    back: string;
+  };
   article: {
     breadcrumb: string;
     toc: string;
@@ -378,6 +386,12 @@ export const BLOG_STRINGS: Localized<BlogStrings> = {
       filters: ["All", "Safety", "For families", "For helpers", "Rates & fees", "Agreements", "Elder care", "Daycare", "Our story"],
       loadMore: "Load more articles",
     },
+    search: {
+      title: "Search results",
+      lead: "Articles matching “%s”",
+      empty: "No articles matched “%s”. Try another word.",
+      back: "Back to all articles",
+    },
     article: {
       breadcrumb: "Blog",
       toc: "In this article",
@@ -420,6 +434,12 @@ export const BLOG_STRINGS: Localized<BlogStrings> = {
       search: "Rechercher des articles",
       filters: ["Tous", "Sécurité", "Pour les familles", "Pour les aides", "Tarifs et frais", "Ententes", "Soins aux aînés", "Garderie", "Notre histoire"],
       loadMore: "Charger plus d’articles",
+    },
+    search: {
+      title: "Résultats de recherche",
+      lead: "Articles correspondant à « %s »",
+      empty: "Aucun article ne correspond à « %s ». Essayez un autre mot.",
+      back: "Retour à tous les articles",
     },
     article: {
       breadcrumb: "Blogue",

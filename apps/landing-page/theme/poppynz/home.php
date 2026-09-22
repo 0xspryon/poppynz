@@ -23,8 +23,7 @@ $pz_filters  = poppynz_blog_strings()['index']['filters'] ?? [];
 				<h1 class="blog-h1"><?php echo esc_html( poppynz_s( 'index.h1' ) ); ?></h1>
 				<p class="blog-lead"><?php echo esc_html( poppynz_s( 'index.lead' ) ); ?></p>
 			</div>
-			<?php // As in the design: the search box is a styled placeholder, not a live search yet. ?>
-			<form class="search" onsubmit="return false"><i class="las la-search"></i><span><?php echo esc_html( poppynz_s( 'index.search' ) ); ?></span></form>
+			<?php echo poppynz_blog_search_form(); // phpcs:ignore WordPress.Security.EscapeOutput ?>
 		</div>
 		<div class="tag-row">
 			<?php foreach ( $pz_filters as $pz_filter ) : ?>

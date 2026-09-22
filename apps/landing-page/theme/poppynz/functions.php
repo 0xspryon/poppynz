@@ -6,10 +6,20 @@ defined( 'ABSPATH' ) || exit;
 
 require_once get_stylesheet_directory() . '/inc/blog.php';
 
-/** The blog index (home.php) and an article (single.php) are the only non-Elementor templates. */
+/** The blog index (home.php), an article (single.php) and search results (search.php) are the
+ *  only non-Elementor templates. */
 function poppynz_is_blog_template(): bool {
-	return is_home() || is_singular( 'post' );
+	return is_home() || is_singular( 'post' ) || is_search();
 }
+
+// The site's only search box says "Search articles" and lives on the blog, and search.php renders
+// results as article cards built from post meta. Restrict front-end searches to posts so a hand-typed
+// /?s= can never return a page (or an attachment) that has none of that meta and would draw an empty card.
+add_action( 'pre_get_posts', function ( $query ) {
+	if ( ! is_admin() && $query->is_main_query() && $query->is_search() ) {
+		$query->set( 'post_type', 'post' );
+	}
+} );
 
 add_action( 'wp_enqueue_scripts', function () {
 	wp_enqueue_style( 'poppynz-fonts', 'https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=Inter:wght@400..700&display=swap', [], null );

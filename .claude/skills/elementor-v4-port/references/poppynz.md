@@ -73,3 +73,13 @@ Remaining named deviations after this wave: the wink icon sits at inline-block's
 2. Run `bootstrap.php` twice on the bare site.
 3. `snapshot.php` before `import.php`.
 4. `verify.php` on both sites and compare hashes.
+
+### 2026-09-22 — owner review of the live Home page
+The owner compared staging against the design and rejected the previous "matches section by section" report: the defects were colour, alignment and wrapping, which the screenshot-only check had skipped. Fixed, deployed and re-verified by measurement (see SKILL.md § Loop step 4 for the method now expected):
+- Safety intro lost its 800px cap; the heading spans the content width (3 lines at 1440, 2 at 1920).
+- Services title block flexes to fill the row, so the heading runs on one line from 1280 up; the wink icon is 40px (cap height is 32px) and nudged onto the baseline with `position:relative;inset-block-start:6px`.
+- Services lead paragraph then moved BELOW the title and full width (owner's follow-up); the heading row is now a column with `gap:16px`, and the lead carries no width cap.
+- Headings use `text-wrap:balance` (theme `anim.css`, heading classes only) because the converter has no `text-wrap` and the design relies on balanced breaks.
+- Polylang `redirect_lang` turned on (and added to `bootstrap.php`): the French home page is `/fr/`, with `/fr/accueil/` redirecting to it.
+
+Expected, not a bug: every nav and footer link except Home 404s — For families, For helpers, Safety & trust, Daycare, Blog and the three legal pages are Plan 2. A 404 with the Poppynz header on it means the link works and the page does not exist yet.

@@ -229,15 +229,165 @@ foreach ( $manifest['entries'] as $entry ) {
 	pz_note( 'pages', $entry, $found ? ( $changed ? 'updated' : 'unchanged' ) : 'created' );
 	$page_ids[ $p['key'] ][ $p['lang'] ] = $pid;
 }
+// ---- 5b. blog (spec § 8). The blog is NOT an Elementor document: the index and the article
+// layout are the child theme's home.php and single.php, and the articles are native WordPress
+// posts. So this step writes three kinds of thing — the Blog page in each language (which becomes
+// page_for_posts, so /blog and /fr/blogue serve the index), the per-language chrome as an option
+// the templates read, and one post per article — and touches no Elementor API at all.
+// Matching is by slug and language exactly as the pages step above does, plus a `_poppynz_post`
+// marker that survives a slug WordPress had to uniquify.
+$blog_strings = [];
+$blog_post_ids = [];   // key => lang => post id
+$blog_payload  = [];   // entry => decoded json, so pass 2 does not re-read the artefact
+
+// WordPress's own "Hello world!" sample post is published and newer than every article, so it
+// would take the featured slot on the index. Demote it to draft rather than deleting it, and only
+// when it is recognisably the untouched sample and not something the site's own authors wrote.
+foreach ( get_posts( [ 'post_type' => 'post', 'name' => 'hello-world', 'post_status' => 'publish', 'numberposts' => -1, 'lang' => '' ] ) as $cand ) {
+	if ( get_post_meta( $cand->ID, '_poppynz_post', true ) || 'Hello world!' !== $cand->post_title ) { continue; }
+	wp_update_post( [ 'ID' => $cand->ID, 'post_status' => 'draft' ] );
+	pz_note( 'posts', 'hello-world (WordPress sample)', "set #{$cand->ID} to draft so it stays off the blog index" );
+}
+
+/** Our own post for this key and language, by marker first and then by slug. */
+$pz_find_post = function ( string $key, string $slug, string $lang ): ?int {
+	foreach ( [ [ 'meta_key' => '_poppynz_post', 'meta_value' => $key ], [ 'name' => $slug ] ] as $query ) {
+		foreach ( get_posts( $query + [ 'post_type' => 'post', 'post_status' => 'any', 'numberposts' => -1, 'lang' => '' ] ) as $cand ) {
+			if ( ! function_exists( 'pll_get_post_language' ) || pll_get_post_language( $cand->ID ) === $lang ) { return (int) $cand->ID; }
+		}
+	}
+	return null;
+};
+
+/** get_permalink() hands back `?p=<id>` for a draft; the French articles are drafts, so ask for
+ *  the sample permalink instead, which is what the URL will be the day they are published. */
+$pz_post_url = function ( int $id ): string {
+	$status = (string) get_post_status( $id );
+	if ( ! in_array( $status, [ 'draft', 'pending', 'auto-draft' ], true ) ) { return (string) get_permalink( $id ); }
+	require_once ABSPATH . 'wp-admin/includes/post.php';
+	[ $template, $name ] = get_sample_permalink( $id );
+	return str_replace( [ '%postname%', '%pagename%' ], $name, $template );
+};
+
+// The Blog page and the chrome option, one entry per language.
+foreach ( $manifest['entries'] as $entry ) {
+	if ( ! preg_match( '#^blog/strings\.[a-z]{2}\.json$#', $entry ) ) { continue; }
+	$s = pz_json( $entry ); $lang = $s['lang']; $slug = $s['page']['slug'];
+	$found = null;
+	foreach ( [ [ 'meta_key' => '_poppynz_page', 'meta_value' => 'blog' ], [ 'name' => $slug ] ] as $query ) {
+		foreach ( get_posts( $query + [ 'post_type' => 'page', 'post_status' => 'any', 'numberposts' => -1, 'lang' => '' ] ) as $cand ) {
+			if ( ! function_exists( 'pll_get_post_language' ) || pll_get_post_language( $cand->ID ) === $lang ) { $found = (int) $cand->ID; break 2; }
+		}
+	}
+	// The page carries no Elementor data and no page template on purpose: WordPress renders
+	// page_for_posts through home.php, and its own content is never shown.
+	$pid = $found ?: wp_insert_post( [ 'post_title' => $s['page']['title'], 'post_name' => $slug, 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => '' ] );
+	$fix = [];
+	if ( get_post_field( 'post_name', $pid ) !== $slug ) { $fix['post_name'] = $slug; }
+	if ( get_post_field( 'post_title', $pid ) !== $s['page']['title'] ) { $fix['post_title'] = $s['page']['title']; }
+	if ( 'publish' !== get_post_status( $pid ) ) { $fix['post_status'] = 'publish'; }
+	if ( $fix ) { wp_update_post( [ 'ID' => $pid ] + $fix ); }
+	update_post_meta( $pid, '_poppynz_page', 'blog' );
+	if ( function_exists( 'pll_set_post_language' ) ) { pll_set_post_language( $pid, $lang ); }
+	pz_note( 'pages', $entry, $found ? ( $fix ? 'updated' : 'unchanged' ) : 'created' );
+	$page_ids['blog'][ $lang ] = $pid;
+	$blog_strings[ $lang ] = array_diff_key( $s, array_flip( [ 'lang', 'page', 'order' ] ) );
+}
+
+// Pass 1: make sure every post row exists, so pass 2 can resolve {{post:<key>}} cross-links to
+// real permalinks. English articles are published; French is imported as a draft for review.
+foreach ( $manifest['entries'] as $entry ) {
+	if ( ! str_starts_with( $entry, 'blog/posts/' ) ) { continue; }
+	$p = pz_json( $entry );
+	$blog_payload[ $entry ] = $p;
+	$status = 'en' === $p['lang'] ? 'publish' : 'draft';
+	$pid = $pz_find_post( $p['key'], $p['slug'], $p['lang'] );
+	if ( ! $pid ) {
+		// `edit_date` and an explicit `post_date_gmt` are both required, and only for the French
+		// articles, which are drafts: WordPress leaves a draft's post_date_gmt at 0000-00-00 and
+		// then treats the date as "not chosen yet", refreshing post_date to the current time on
+		// every save. Without this the eight French posts reported `updated` on every import.
+		$pid = wp_insert_post( [ 'post_title' => $p['title'], 'post_name' => $p['slug'], 'post_type' => 'post', 'post_status' => $status, 'post_date' => $p['published'] . ' 09:00:00', 'post_date_gmt' => get_gmt_from_date( $p['published'] . ' 09:00:00' ), 'edit_date' => true, 'post_content' => '' ], true );
+		if ( is_wp_error( $pid ) ) { throw new Exception( "insert $entry: " . $pid->get_error_message() ); }
+		$blog_payload[ $entry ]['_created'] = true;
+	}
+	if ( function_exists( 'pll_set_post_language' ) ) { pll_set_post_language( (int) $pid, $p['lang'] ); }
+	update_post_meta( (int) $pid, '_poppynz_post', $p['key'] );
+	$blog_post_ids[ $p['key'] ][ $p['lang'] ] = (int) $pid;
+}
+
+// Pass 2: content, fields and meta. Everything is compared before it is written, so a second run
+// reports `unchanged` and never bumps post_modified.
+foreach ( $blog_payload as $entry => $p ) {
+	$pid    = $blog_post_ids[ $p['key'] ][ $p['lang'] ];
+	$status = 'en' === $p['lang'] ? 'publish' : 'draft';
+	$content = preg_replace_callback( '#\{\{post:([a-z0-9-]+)\}\}#', function ( $m ) use ( $p, $blog_post_ids, $pz_post_url ) {
+		if ( ! isset( $blog_post_ids[ $m[1] ][ $p['lang'] ] ) ) { throw new Exception( "unknown post link {$m[1]} in {$p['key']}.{$p['lang']}" ); }
+		// Relative, like the `{{page:...}}` links the builder already resolved and like APP's
+		// paths: post_content is written per site, so an absolute URL would be correct too, but
+		// a mixture of both forms inside one article is just a wart waiting to be copied.
+		return esc_url( wp_make_link_relative( $pz_post_url( $blog_post_ids[ $m[1] ][ $p['lang'] ] ) ) );
+	}, $p['body'] );
+
+	$fields = [
+		'post_title'   => $p['title'],
+		'post_name'    => $p['slug'],
+		'post_status'  => $status,
+		'post_excerpt' => $p['lead'],
+		'post_content' => $content,
+		'post_date'    => $p['published'] . ' 09:00:00',
+		'post_date_gmt' => get_gmt_from_date( $p['published'] . ' 09:00:00' ),
+	];
+	$diff = [];
+	foreach ( $fields as $field => $want ) { if ( (string) get_post_field( $field, $pid ) !== (string) $want ) { $diff[ $field ] = $want; } }
+	if ( $diff ) { wp_update_post( [ 'ID' => $pid, 'edit_date' => true ] + $diff ); }
+
+	$meta = [
+		'_pz_category'     => $p['category'],
+		'_pz_read_time'    => $p['readTime'],
+		'_pz_author_name'  => $p['author']['name'],
+		'_pz_author_role'  => $p['author']['role'] ?? '',
+		'_pz_updated'      => $p['updated'] ?? '',
+		'_pz_hero'         => $p['hero'],
+		'_pz_tags'         => $p['tags'],
+		'_pz_side'         => $p['side'],
+		'_pz_keep_reading' => $p['keepReading'],
+		'_pz_related'      => array_values( array_map( fn( $k ) => $blog_post_ids[ $k ][ $p['lang'] ] ?? 0, $p['related'] ) ),
+	];
+	$meta_changed = false;
+	foreach ( $meta as $key => $want ) {
+		if ( wp_json_encode( get_post_meta( $pid, $key, true ) ) !== wp_json_encode( $want ) ) { update_post_meta( $pid, $key, $want ); $meta_changed = true; }
+	}
+	pz_note( 'posts', $entry, ! empty( $p['_created'] ) ? 'created' : ( ( $diff || $meta_changed ) ? 'updated' : 'unchanged' ) );
+}
+
+// The chrome the templates read (index headings, article labels, newsletter card, side cards).
+if ( wp_json_encode( get_option( 'poppynz_blog_strings' ) ) !== wp_json_encode( $blog_strings ) ) {
+	update_option( 'poppynz_blog_strings', $blog_strings );
+	pz_note( 'options', 'blog_strings', 'updated' );
+} else { pz_note( 'options', 'blog_strings', 'unchanged' ); }
+
+// /blog and, through Polylang's translation of the same page, /fr/blogue serve the index.
+if ( isset( $page_ids['blog']['en'] ) && (int) get_option( 'page_for_posts' ) !== (int) $page_ids['blog']['en'] ) {
+	update_option( 'page_for_posts', $page_ids['blog']['en'] );
+	pz_note( 'options', 'page_for_posts', 'blog.en' );
+}
+
 // ---- 6. Polylang links
 if ( function_exists( 'pll_save_post_translations' ) ) {
-	foreach ( array_merge( array_values( $page_ids ), array_values( $hf_ids ) ) as $group ) { if ( count( $group ) > 1 ) { pll_save_post_translations( $group ); } }
-	pz_note( 'polylang', 'links', count( $page_ids ) . ' page groups, ' . count( array_filter( $hf_ids ) ) . ' template kinds' );
+	foreach ( array_merge( array_values( $page_ids ), array_values( $hf_ids ), array_values( $blog_post_ids ) ) as $group ) { if ( count( $group ) > 1 ) { pll_save_post_translations( $group ); } }
+	pz_note( 'polylang', 'links', count( $page_ids ) . ' page groups, ' . count( array_filter( $hf_ids ) ) . ' template kinds, ' . count( $blog_post_ids ) . ' article groups' );
 }
 // ---- 7. front page
 if ( isset( $page_ids['home']['en'] ) ) {
-	update_option( 'show_on_front', 'page' ); update_option( 'page_on_front', $page_ids['home']['en'] );
-	pz_note( 'options', 'front_page', 'home.en' );
+	// Report it the way every other entry is reported: `unchanged` when it already points at the
+	// right page, so a second import really is all `unchanged` and not "all unchanged except one
+	// line that always says the same thing".
+	$front_ok = 'page' === get_option( 'show_on_front' ) && (int) get_option( 'page_on_front' ) === (int) $page_ids['home']['en'];
+	if ( ! $front_ok ) {
+		update_option( 'show_on_front', 'page' ); update_option( 'page_on_front', $page_ids['home']['en'] );
+	}
+	pz_note( 'options', 'front_page', $front_ok ? 'unchanged' : 'home.en' );
 }
 // WordPress's own privacy-policy setting still points at the draft it auto-created (the same one
 // whose slug is freed above). Point it at the real policy so wp-admin stops offering the draft.
@@ -249,4 +399,7 @@ if ( isset( $page_ids['privacy']['en'] ) && (int) get_option( 'wp_page_for_priva
 $report = pz_report();
 $report['urls'] = [];
 foreach ( $page_ids as $key => $langs ) { foreach ( $langs as $lang => $pid ) { $u = get_permalink( $pid ); $report['urls'][ "$key.$lang" ] = [ 'url' => $u, 'status' => pz_front( $u ) ]; } }
+// Only the published (English) articles are fetched: the French ones are drafts by design and
+// would 404 for an anonymous request.
+foreach ( $blog_post_ids as $key => $langs ) { foreach ( $langs as $lang => $pid ) { $u = $pz_post_url( $pid ); $report['urls'][ "post:$key.$lang" ] = [ 'url' => $u, 'status' => 'publish' === get_post_status( $pid ) ? pz_front( $u ) : 'draft' ]; } }
 return $report;

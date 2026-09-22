@@ -19,6 +19,15 @@ Read `references/poppynz.md` (site profile: MCP servers, versions, page map, wha
    Then `server/verify.php` and the editor check (`references/poppynz.md` § Editor check). Never press Update or Publish.
 5. Commit builder changes and `json-artefacts/current` together. Record new IDs or decisions in `references/poppynz.md`.
 
+## The blog is the one exception
+
+`/blog` and the articles are NOT Elementor documents (spec § 8): the index and the article layout are
+the child theme's `home.php` and `single.php`, the articles are native WordPress posts, and the
+styling is `theme/poppynz/assets/blog.css`, so none of the V4 rules below apply to it. Content still
+comes from the artefact (`blog/strings.<lang>.json`, `blog/posts/<key>.<lang>.json`) through
+`import.php`. Steps 1, 4 and 5 of the loop are the same; there is no recipe and no editor check.
+See `references/poppynz.md` § Blog.
+
 ## Rules
 
 - No Pro features. Only V4 elements: `e-flexbox`, `e-div-block`, `e-grid`, `e-heading`, `e-paragraph`, `e-button`, `e-image`, `e-svg`, `e-self-hosted-video`.

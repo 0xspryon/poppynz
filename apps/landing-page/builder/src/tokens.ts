@@ -11,6 +11,8 @@ export const VARIABLES: Variable[] = [
   color("sky-light", "#8FCDFF"),
   color("teal", "#005782"),
   color("ink", "#001E30"),
+  // Long-form article body text (the blog's `.prose`), a touch softer than `ink`.
+  color("ink-2", "#1D2A3A"),
   color("muted", "#444650"),
   color("muted-2", "#757681"),
   color("page", "#F7F9FF"),
@@ -30,6 +32,8 @@ export const VARIABLES: Variable[] = [
   color("navy-text", "#B9C6E8"),
   color("navy-note", "#8B9BC9"),
   color("danger", "#BA1A1A"),
+  // The blog articles' "not enough" / "not included" red, on white cards.
+  color("danger-2", "#B3261E"),
   color("orange", "#F26E21"),
   color("orange-bg", "#FDEBE0"),
   color("orange-line", "#F5C9A8"),

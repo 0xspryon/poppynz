@@ -30,6 +30,11 @@
     "value": "#001E30"
   },
   {
+    "label": "ink-2",
+    "type": "global-color-variable",
+    "value": "#1D2A3A"
+  },
+  {
     "label": "muted",
     "type": "global-color-variable",
     "value": "#444650"
@@ -123,6 +128,11 @@
     "label": "danger",
     "type": "global-color-variable",
     "value": "#BA1A1A"
+  },
+  {
+    "label": "danger-2",
+    "type": "global-color-variable",
+    "value": "#B3261E"
   },
   {
     "label": "orange",

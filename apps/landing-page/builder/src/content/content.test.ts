@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { BLOG, BLOG_POSTS, BLOG_STRINGS, blogBody } from "./blog";
 import { DAYCARE } from "./daycare";
 import { FAMILIES } from "./families";
 import { FOOTER } from "./footer";
@@ -19,6 +20,8 @@ describe("content", () => {
     expect(() => assertLocalizedKeys(SAFETY as any, "safety")).not.toThrow();
     expect(() => assertLocalizedKeys(DAYCARE as any, "daycare")).not.toThrow();
     expect(() => assertLocalizedKeys(LEGAL_COMMON as any, "legal common")).not.toThrow();
+    expect(() => assertLocalizedKeys(BLOG_STRINGS as any, "blog strings")).not.toThrow();
+    expect(() => assertLocalizedKeys(BLOG as any, "blog posts")).not.toThrow();
     for (const doc of LEGAL_DOCS) expect(() => assertLocalizedKeys(LEGAL[doc] as any, `legal ${doc}`)).not.toThrow();
   });
   test("the three legal documents have the design's section counts and numbering in both languages", () => {
@@ -91,5 +94,28 @@ describe("content", () => {
   });
   test("nav links use page keys", () => {
     for (const item of HEADER.en.nav) expect(item.page).toMatch(/^(families|helpers|safety|daycare|blog)$/);
+  });
+
+  test("the blog has eight posts, newest first, each with a body and a resolvable related list", () => {
+    expect(BLOG_POSTS).toHaveLength(8);
+    for (const l of ["en", "fr"] as const) {
+      const dates = BLOG_POSTS.map((k) => BLOG[l][k].published);
+      expect([...dates].sort().reverse()).toEqual(dates); // the design's index order is date-descending
+      expect(new Set(BLOG_POSTS.map((k) => BLOG[l][k].slug)).size).toBe(8);
+      for (const key of BLOG_POSTS) {
+        const p = BLOG[l][key];
+        expect(p.published).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect(p.related).toHaveLength(3);
+        expect(p.related).not.toContain(key);
+        expect(p.tags[0]).toBe(p.category);
+        // Every category the posts use is offered by the index filter row.
+        expect(BLOG_STRINGS[l].index.filters).toContain(p.category);
+        expect(blogBody(key, l).length).toBeGreaterThan(500);
+      }
+    }
+    // Only the Vulnerable Sector Check article carries an updated date, as the design shows.
+    for (const l of ["en", "fr"] as const) {
+      expect(BLOG_POSTS.filter((k) => BLOG[l][k].updated)).toEqual(["vulnerable-sector-check"]);
+    }
   });
 });

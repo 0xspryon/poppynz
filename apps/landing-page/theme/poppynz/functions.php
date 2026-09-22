@@ -4,11 +4,35 @@
  */
 defined( 'ABSPATH' ) || exit;
 
+require_once get_stylesheet_directory() . '/inc/blog.php';
+
+/** The blog index (home.php) and an article (single.php) are the only non-Elementor templates. */
+function poppynz_is_blog_template(): bool {
+	return is_home() || is_singular( 'post' );
+}
+
 add_action( 'wp_enqueue_scripts', function () {
 	wp_enqueue_style( 'poppynz-fonts', 'https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..800&family=Inter:wght@400..700&display=swap', [], null );
 	wp_enqueue_style( 'poppynz-anim', get_stylesheet_directory_uri() . '/assets/anim.css', [], wp_get_theme()->get( 'Version' ) );
 	wp_enqueue_script( 'poppynz-faq', get_stylesheet_directory_uri() . '/assets/faq.js', [], wp_get_theme()->get( 'Version' ), true );
+
+	// Blog templates only (spec § 8). Elementor pages draw their icons as e-svg widgets from the
+	// line-awesome package at build time; the blog's icons are the design's own `<i class="las">`
+	// elements inside post content, so those two templates need the icon font itself.
+	if ( poppynz_is_blog_template() ) {
+		wp_enqueue_style( 'line-awesome', 'https://cdn.jsdelivr.net/npm/line-awesome@1.3.0/dist/line-awesome/css/line-awesome.min.css', [], null );
+		wp_enqueue_style( 'poppynz-blog', get_stylesheet_directory_uri() . '/assets/blog.css', [ 'poppynz-anim' ], wp_get_theme()->get( 'Version' ) );
+	}
 }, 20 );
+
+// Article bodies are complete HTML from the artefact (lists, comparison grids, callouts, pull
+// quotes), not typed paragraphs, so wpautop has nothing useful to add and does add stray <br>s
+// and <p>s inside them. Scoped to the posts this importer owns; any other post is untouched.
+add_action( 'wp', function () {
+	if ( is_singular( 'post' ) && get_post_meta( (int) get_queried_object_id(), '_poppynz_post', true ) ) {
+		remove_filter( 'the_content', 'wpautop' );
+	}
+} );
 
 // Hello's own header/footer stay off: the Header & Footer Builder templates render instead.
 add_filter( 'hello_elementor_header_footer', '__return_false' );

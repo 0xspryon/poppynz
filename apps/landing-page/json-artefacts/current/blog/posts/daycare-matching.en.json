@@ -1,0 +1,33 @@
+{
+  "key": "daycare-matching",
+  "lang": "en",
+  "slug": "daycare-matching",
+  "title": "Daycare matching, without the waitlist fee",
+  "lead": "How registering interest works, what a daycare sees, and what we can and can’t promise.",
+  "category": "Daycare",
+  "readTime": "3 min read",
+  "author": {
+    "name": "Poppynz team"
+  },
+  "published": "2026-07-31",
+  "hero": {
+    "src": "https://images.unsplash.com/photo-1532789339108-2ebc484efbf1?auto=format&fit=crop&w=1800&q=80",
+    "thumb": "https://images.unsplash.com/photo-1532789339108-2ebc484efbf1?auto=format&fit=crop&w=900&q=80",
+    "alt": "Two children reading on a sofa",
+    "credit": "Photo by <a href=\"https://unsplash.com/@benmullins?utm_source=poppynz&utm_medium=referral\" target=\"_blank\" rel=\"noopener noreferrer\">Ben Mullins</a> on <a href=\"https://unsplash.com/?utm_source=poppynz&utm_medium=referral\" target=\"_blank\" rel=\"noopener noreferrer\">Unsplash</a>",
+    "creditText": "Photo by Ben Mullins on Unsplash",
+    "caption": "You tell us where and when. We tell daycares nearby. Nobody pays to be on a list."
+  },
+  "tags": [
+    "Daycare",
+    "For families"
+  ],
+  "side": "families",
+  "keepReading": "More from the blog",
+  "related": [
+    "born-from-a-need",
+    "why-families-get-verified",
+    "reading-a-helper-profile"
+  ],
+  "body": "<p class=\"intro\">If you have looked for a daycare spot in a Canadian city recently you already know the routine: a form for every centre, a deposit to hold a place on a list that may never move, and no way to know whether anyone has read your name. Daycare matching on Poppynz is our attempt at something simpler.</p>\n<h2 id=\"how-registering-works\">How registering interest works</h2>\n<p>You register interest once. We ask for four things and nothing else.</p>\n<ol>\n  <li><strong>Your postal code.</strong> So we know which area to watch. We match by distance, not by city name.</li>\n  <li><strong>How many children, and their ages.</strong> Daycares accept specific age ranges, so this decides which openings apply to you.</li>\n  <li><strong>When you need a spot.</strong> Your desired start date. Flexible is fine; say so.</li>\n  <li><strong>How to reach you.</strong> Name, email and phone. We only pass these to a daycare with a matching opening.</li>\n</ol>\n<p>That’s it. No deposit, no per-centre form, no fee to be on the list.</p>\n\n<h2 id=\"what-a-daycare-sees\">What a daycare sees</h2>\n<p>Daycares list themselves on Poppynz with their name and address, the number of spots and the ages they accept, a short description, and their contact details. When a daycare near you has an opening that fits your children’s ages and your start date, we send them your contact details and let you know we’ve done so. The daycare gets in touch with you directly; we don’t sit in the middle of that conversation.</p>\n<div class=\"callout\"><i class=\"las la-info-circle\"></i><p>Your details go to a daycare only when there is a matching opening. Registering interest doesn’t put your name in front of every centre in the city.</p></div>\n\n<h2 id=\"what-we-cant-promise\">What we can and can’t promise</h2>\n<div class=\"cmp-grid\">\n  <div class=\"cmp card-shadow\"><h3><i class=\"las la-check-circle\" style=\"color:#0B7A52\"></i>What we can promise</h3><ul>\n    <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span>No fee to register or to be matched</span></li>\n    <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span>Your details shared only with a matching daycare</span></li>\n    <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span>A notification whenever we pass your details on</span></li>\n    <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span>You can withdraw at any time from your account</span></li>\n  </ul></div>\n  <div class=\"cmp card-shadow\"><h3><i class=\"las la-times-circle\" style=\"color:#B3261E\"></i>What we can’t promise</h3><ul>\n    <li><i class=\"las la-minus\" style=\"color:#757681\"></i><span>A spot. Openings depend on daycares near you</span></li>\n    <li><i class=\"las la-minus\" style=\"color:#757681\"></i><span>A timeline. Some areas move in weeks, others in months</span></li>\n    <li><i class=\"las la-minus\" style=\"color:#757681\"></i><span>That a daycare is licensed or right for you: please check that yourself</span></li>\n    <li><i class=\"las la-minus\" style=\"color:#757681\"></i><span>To hold a place. The daycare decides who it enrols</span></li>\n  </ul></div>\n</div>\n\n<h2 id=\"getting-started\">Getting started</h2>\n<p>Register interest from the <a href=\"/daycare-matching\" class=\"inline\">Daycare matching</a> page. If you run a daycare and have spots to fill, the same page has a short form to list them, and a real person on our team helps you get set up. While you wait for a spot, many families use a Poppynz helper for the hours a daycare would have covered; helpers are matched by distance from your home in the same way.</p>"
+}

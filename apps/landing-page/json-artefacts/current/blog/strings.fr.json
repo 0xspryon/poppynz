@@ -1,0 +1,88 @@
+{
+  "lang": "fr",
+  "page": {
+    "key": "blog",
+    "slug": "blogue",
+    "title": "Blogue"
+  },
+  "index": {
+    "eyebrow": "Le blogue Poppynz",
+    "h1": "Conseils et récits pour les familles occupées",
+    "lead": "Des guides pratiques sur la sécurité, les tarifs, les ententes et le quotidien des soins, pour les familles et les aides familiales qui les épaulent.",
+    "search": "Rechercher des articles",
+    "filters": [
+      "Tous",
+      "Sécurité",
+      "Pour les familles",
+      "Pour les aides",
+      "Tarifs et frais",
+      "Ententes",
+      "Soins aux aînés",
+      "Garderie",
+      "Notre histoire"
+    ],
+    "loadMore": "Charger plus d’articles"
+  },
+  "article": {
+    "breadcrumb": "Blogue",
+    "toc": "Dans cet article",
+    "share": "Partager",
+    "published": "Publié le",
+    "updated": "Mis à jour le",
+    "keepReadingEyebrow": "À lire ensuite",
+    "allArticles": "Tous les articles",
+    "shareOn": [
+      "Partager sur Facebook",
+      "Partager sur LinkedIn",
+      "Partager sur WhatsApp"
+    ]
+  },
+  "newsletter": {
+    "eyebrow": "Une fois par mois",
+    "h2": "Restez dans la boucle avec ",
+    "h2Accent": "Poppynz",
+    "lead": "Un courriel par mois avec les nouveaux guides et quartiers. Désabonnement en tout temps, nous ne partageons jamais votre adresse.",
+    "email": "vous@exemple.ca",
+    "button": "S’abonner"
+  },
+  "sideCards": {
+    "families": {
+      "icon": "shield-alt",
+      "title": "Chaque aide familiale est vérifiée avant que vous puissiez la trouver",
+      "text": "Pièce d’identité, vérification approfondie des antécédents et VSV, examinées par une vraie personne.",
+      "cta": "Trouver une aide",
+      "href": "/app/auth/sign-up"
+    },
+    "helpers": {
+      "icon": "hand-holding-heart",
+      "title": "Choisissez vos services, votre tarif et vos heures",
+      "text": "Gardez 85 % de ce que vous gagnez. Aucuns frais d’inscription, aucuns frais mensuels.",
+      "cta": "Devenir aide familiale",
+      "href": "/app/auth/sign-up"
+    }
+  },
+  "months": [
+    "janv.",
+    "févr.",
+    "mars",
+    "avr.",
+    "mai",
+    "juin",
+    "juill.",
+    "août",
+    "sept.",
+    "oct.",
+    "nov.",
+    "déc."
+  ],
+  "order": [
+    "vulnerable-sector-check",
+    "hourly-rate",
+    "tuesday-check-in",
+    "put-it-in-writing",
+    "reading-a-helper-profile",
+    "why-families-get-verified",
+    "daycare-matching",
+    "born-from-a-need"
+  ]
+}

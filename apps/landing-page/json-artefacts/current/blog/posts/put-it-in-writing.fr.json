@@ -1,0 +1,34 @@
+{
+  "key": "put-it-in-writing",
+  "lang": "fr",
+  "slug": "le-mettre-par-ecrit",
+  "title": "Pourquoi nous vous demandons de le mettre par écrit",
+  "lead": "L’entente écrite n’a rien de juridique. Ce sont les heures, le tarif, et ce qui arrive quand une séance se prolonge.",
+  "category": "Ententes",
+  "readTime": "4 min de lecture",
+  "author": {
+    "name": "Équipe Poppynz"
+  },
+  "published": "2026-08-21",
+  "hero": {
+    "src": "https://images.unsplash.com/photo-1583468982228-19f19164aee2?auto=format&fit=crop&w=1800&q=80",
+    "thumb": "https://images.unsplash.com/photo-1583468982228-19f19164aee2?auto=format&fit=crop&w=900&q=80",
+    "alt": "Un parent et un enfant à une table de bibliothèque",
+    "credit": "Photo de <a href=\"https://unsplash.com/@awcreativeut?utm_source=poppynz&utm_medium=referral\" target=\"_blank\" rel=\"noopener noreferrer\">Adam Winger</a> sur <a href=\"https://unsplash.com/?utm_source=poppynz&utm_medium=referral\" target=\"_blank\" rel=\"noopener noreferrer\">Unsplash</a>",
+    "creditText": "Photo de Adam Winger sur Unsplash",
+    "caption": "Remplir une entente prend environ cinq minutes. La plupart des disputes qu’elle évite prennent plus de temps."
+  },
+  "tags": [
+    "Ententes",
+    "Pour les familles",
+    "Pour les aides"
+  ],
+  "side": "families",
+  "keepReading": "Plus d’articles du blogue",
+  "related": [
+    "hourly-rate",
+    "reading-a-helper-profile",
+    "vulnerable-sector-check"
+  ],
+  "body": "<p class=\"intro\">Chaque réservation sur Poppynz commence par une entente écrite entre la famille et l’aide familiale. On entend parfois «&nbsp;entente&nbsp;» et on imagine un contrat rempli de clauses. C’est plus près d’une note commune&nbsp;: quoi, quand, combien, et ce qui arrive si ça déborde.</p>\n<h2 id=\"whats-in-it\">Ce que contient l’entente</h2>\n<p>Le formulaire est court à dessein. Il demande les choses qui causent des malentendus quand on les laisse à la mémoire.</p>\n<ul class=\"checks\">\n  <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span><strong>Le service.</strong> Garde d’enfants, tutorat, préparation des repas, visite de vérification, ou un service personnalisé que vous avez décrit toutes les deux.</span></li>\n  <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span><strong>L’horaire.</strong> Ponctuel ou régulier, avec les jours et une plage horaire.</span></li>\n  <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span><strong>Le tarif.</strong> Le tarif horaire de l’aide familiale en dollars canadiens, repris de son profil au moment de la signature.</span></li>\n  <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span><strong>Les dépassements.</strong> Ce qui arrive quand une séance se prolonge, et à partir de combien c’est facturé.</span></li>\n  <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span><strong>Les annulations.</strong> Le préavis que chaque partie donne, et si une annulation tardive est payée.</span></li>\n  <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span><strong>Les consignes de la maison.</strong> Allergies, animaux, la voisine qui a le double des clés. Tout ce qu’une aide devrait savoir avant la première séance.</span></li>\n</ul>\n<p>Vous la confirmez toutes les deux dans l’application. À partir de là, c’est la référence pour chaque séance réservée en vertu de cette entente.</p>\n\n<h2 id=\"when-a-session-runs-long\">Ce qui arrive quand une séance se prolonge</h2>\n<p>C’est la ligne qui justifie à elle seule l’entente. Les séances sur Poppynz sont suivies dans l’application&nbsp;: le temps n’est donc jamais en litige. Ce que l’entente règle, c’est ce que ce temps coûte. Un arrangement courant veut que les quinze premières minutes de dépassement soient gratuites et que le reste soit facturé au tarif convenu, par blocs de quinze minutes. Certaines familles préfèrent une règle simple&nbsp;: «&nbsp;demandez d’abord&nbsp;». L’une ou l’autre convient, tant que c’est écrit avant que ça arrive.</p>\n<div class=\"callout\"><i class=\"las la-info-circle\"></i><p>Le paiement se fait automatiquement après chaque séance suivie, au tarif inscrit dans l’entente, plus les frais de service famille de 5&nbsp;%. Comme la règle sur les dépassements est déjà écrite, personne n’a à négocier sur le pas de la porte à 21&nbsp;h.</p></div>\n\n<h2 id=\"changing-it\">La modifier plus tard</h2>\n<p>Les tarifs montent, les écoles changent d’horaire, un deuxième enfant arrive. Chaque partie peut proposer une modification depuis l’entente, et l’autre la confirme. L’ancienne version reste au dossier&nbsp;: si une question se pose un jour sur ce qui s’appliquait en mars, la réponse est là. Le nouveau tarif du profil d’une aide familiale ne vaut que pour les nouvelles ententes&nbsp;; celles en cours conservent le tarif signé jusqu’à ce que vous les mettiez à jour toutes les deux.</p>\n\n<h2 id=\"both-sides\">Pourquoi elle protège les deux parties</h2>\n<p>Les familles supposent parfois que l’entente est là pour protéger l’aide familiale, et les aides supposent qu’elle est là pour protéger la famille. Elle est là pour celle qui se souvient autrement de la conversation, ce qui arrive à tout le monde un jour ou l’autre. Les attentes écrites sont aussi ce sur quoi notre équipe de soutien s’appuie si quelque chose tourne mal, et le registre des ententes réalisées par une aide fait partie de ce qui mène au titre de Major-domo.</p>\n<blockquote class=\"quote shadow-deep\"><i class=\"las la-quote-right\" aria-hidden=\"true\"></i><p>Personne n’a jamais regretté d’avoir écrit le tarif. Bien des gens ont regretté de ne pas l’avoir fait.</p><footer>Équipe Poppynz</footer></blockquote>"
+}

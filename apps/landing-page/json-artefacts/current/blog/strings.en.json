@@ -1,0 +1,88 @@
+{
+  "lang": "en",
+  "page": {
+    "key": "blog",
+    "slug": "blog",
+    "title": "Blog"
+  },
+  "index": {
+    "eyebrow": "The Poppynz blog",
+    "h1": "Tips & Stories for Busy Families",
+    "lead": "Helpful guides on safety, rates, agreements and everyday care, for families and the Mom Helpers who support them.",
+    "search": "Search articles",
+    "filters": [
+      "All",
+      "Safety",
+      "For families",
+      "For helpers",
+      "Rates & fees",
+      "Agreements",
+      "Elder care",
+      "Daycare",
+      "Our story"
+    ],
+    "loadMore": "Load more articles"
+  },
+  "article": {
+    "breadcrumb": "Blog",
+    "toc": "In this article",
+    "share": "Share",
+    "published": "Published",
+    "updated": "Updated",
+    "keepReadingEyebrow": "Keep Reading",
+    "allArticles": "All articles",
+    "shareOn": [
+      "Share on Facebook",
+      "Share on LinkedIn",
+      "Share on WhatsApp"
+    ]
+  },
+  "newsletter": {
+    "eyebrow": "Once a month",
+    "h2": "Stay in the Loop With ",
+    "h2Accent": "Poppynz",
+    "lead": "One email a month with new guides and neighbourhoods. Unsubscribe any time, we never share your address.",
+    "email": "you@example.ca",
+    "button": "Subscribe"
+  },
+  "sideCards": {
+    "families": {
+      "icon": "shield-alt",
+      "title": "Every helper is Vetted before you can find them",
+      "text": "ID, enhanced record check and VSC, reviewed by a real person.",
+      "cta": "Find a helper",
+      "href": "/app/auth/sign-up"
+    },
+    "helpers": {
+      "icon": "hand-holding-heart",
+      "title": "Set your services, your rate and your hours",
+      "text": "Keep 85% of what you earn. No sign-up fee, no monthly fee.",
+      "cta": "Become a helper",
+      "href": "/app/auth/sign-up"
+    }
+  },
+  "months": [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sept",
+    "Oct",
+    "Nov",
+    "Dec"
+  ],
+  "order": [
+    "vulnerable-sector-check",
+    "hourly-rate",
+    "tuesday-check-in",
+    "put-it-in-writing",
+    "reading-a-helper-profile",
+    "why-families-get-verified",
+    "daycare-matching",
+    "born-from-a-need"
+  ]
+}

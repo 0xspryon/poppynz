@@ -1,0 +1,253 @@
+/* Poppynz blog: the index (home.php) and the article layout (single.php).
+ *
+ * The blog is the one part of the site that is NOT an Elementor document (spec § 8), so its
+ * styling cannot come from the V4 global classes — it lives here instead. Every declaration is
+ * transcribed from apps/landing-page/design/blog.html, design/blog/<slug>.html and the shared
+ * design/css/site.css; every colour and font is a token from builder/src/tokens.ts, redeclared
+ * below so the templates do not depend on Elementor having printed the kit's own :root block.
+ * builder/src/theme.test.ts fails if a token here ever drifts from tokens.ts.
+ *
+ * Everything is scoped to .pz-blog (the wrapper both templates print) so these rules can never
+ * reach an Elementor page, and so they outrank Hello Elementor's own base styles.
+ *
+ * The `wiggle` and `ring` keyframes come from assets/anim.css, which functions.php enqueues on
+ * every page; only `rise`, which no Elementor page uses, is defined here.
+ */
+
+.pz-blog {
+  --navy: #1A3375;
+  --sky: #37B5FF;
+  --sky-hover: #1FA6F3;
+  --sky-light: #8FCDFF;
+  --teal: #005782;
+  --ink: #001E30;
+  --ink-2: #1D2A3A;
+  --muted: #444650;
+  --muted-2: #757681;
+  --page: #F7F9FF;
+  --white: #FFFFFF;
+  --line: #D6E2F2;
+  --line-2: #C5C6D2;
+  --tint: #E1F0FF;
+  --tint-2: #ECF4FF;
+  --tint-line: #CBE6FF;
+  --chip-bg: #D6EBFF;
+  --pink: #FCE3F4;
+  --pink-line: #F5C9E4;
+  --magenta: #EA42B9;
+  --magenta-ink: #A5106F;
+  --ok: #0B7A52;
+  --ok-bg: #E3F4EC;
+  --navy-text: #B9C6E8;
+  --navy-note: #8B9BC9;
+  --danger: #BA1A1A;
+  --danger-2: #B3261E;
+  --orange: #F26E21;
+  --orange-bg: #FDEBE0;
+  --orange-line: #F5C9A8;
+  --font-display: Hanken Grotesk;
+  --font-body: Inter;
+
+  /* The design's body: no line-height at all, so every element resolves `normal` against its own
+     font-size. The Elementor kit sets a fixed 1.2em on <body>, which descendants inherit as a
+     frozen 19.2px; reset it here so the blog matches the design (see references/poppynz.md). */
+  line-height: normal;
+  background: var(--page);
+  color: var(--ink);
+  font-family: var(--font-body), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(14px) } to { opacity: 1; transform: none } }
+
+/* ---- base (design/css/site.css, scoped) */
+.pz-blog, .pz-blog *, .pz-blog *::before, .pz-blog *::after { box-sizing: border-box }
+.pz-blog h1, .pz-blog h2, .pz-blog h3, .pz-blog h4, .pz-blog p { margin: 0 }
+.pz-blog ul, .pz-blog ol { list-style: none; margin: 0; padding: 0 }
+.pz-blog figure, .pz-blog blockquote { margin: 0 }
+.pz-blog img { max-width: 100% }
+.pz-blog a { color: var(--navy); text-decoration: none }
+.pz-blog a:hover { color: var(--teal) }
+.pz-blog a, .pz-blog button, .pz-blog li { transition: transform .25s cubic-bezier(.34, 1.56, .64, 1), background .2s, border-color .2s, color .2s }
+.pz-blog button { font-family: inherit }
+
+/* ---- shared type and layout */
+.pz-blog .wrap { max-width: 1920px; margin: 0 auto }
+.pz-blog .sec { padding: clamp(56px, 8vw, 96px) clamp(24px, 5vw, 96px) }
+.pz-blog .band { background: var(--white); border-top: 1.5px solid var(--line); border-bottom: 1.5px solid var(--line) }
+.pz-blog .navy { background: var(--navy); color: var(--white) }
+.pz-blog .stack-16 { display: flex; flex-direction: column; gap: 16px }
+.pz-blog .eyebrow { font: 600 12px var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--teal) }
+.pz-blog .eyebrow-light { font: 600 12px var(--font-body); letter-spacing: .12em; text-transform: uppercase; color: var(--sky-light) }
+.pz-blog .dash { display: inline-block; width: 22px; height: 2px; border-radius: 2px; background: currentColor; vertical-align: middle; margin-right: 10px; animation: wiggle 3s ease-in-out infinite; transform-origin: left center }
+.pz-blog .h2-sm { font: 800 clamp(28px, 3.4vw, 40px)/1.1 var(--font-display); letter-spacing: -.02em; color: var(--navy) }
+.pz-blog .accent { color: var(--sky) }
+.pz-blog .body-15 { font: 400 15px/1.55 var(--font-body); color: var(--muted) }
+.pz-blog .body-16 { font: 400 16px/1.6 var(--font-body); color: var(--muted) }
+.pz-blog .card-shadow { box-shadow: 0 1px 3px rgba(0, 29, 90, .06), 0 8px 24px -12px rgba(0, 29, 90, .12) }
+.pz-blog .shadow-deep { box-shadow: 0 28px 60px -30px rgba(0, 29, 90, .4) }
+.pz-blog .chip { padding: 4px 8px; border-radius: 4px; font: 600 12px var(--font-body) }
+.pz-blog .chip-info { background: var(--chip-bg); color: var(--teal) }
+.pz-blog .avatar { display: flex; width: 36px; height: 36px; align-items: center; justify-content: center; border-radius: 999px; background: var(--sky); color: var(--white); font: 700 14px var(--font-body); flex: none }
+.pz-blog .bubble { display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 999px; background: var(--tint); transition: transform .3s cubic-bezier(.34, 1.56, .64, 1) }
+.pz-blog .bubble:hover { transform: rotate(-8deg) scale(1.1) }
+.pz-blog .bubble i { font-size: 22px; color: var(--teal) }
+.pz-blog .meta { display: flex; gap: 10px; align-items: center }
+.pz-blog .meta .rd { font: 400 13px var(--font-body); color: var(--muted) }
+.pz-blog .link-arrow { display: inline-flex; align-items: center; gap: 8px; font: 600 15px var(--font-body); color: var(--navy) }
+.pz-blog .link-arrow:hover { color: var(--teal) }
+.pz-blog .btn-primary-14 { display: inline-block; padding: 14px 26px; border-radius: 999px; background: var(--sky); color: var(--white); font: 600 15px var(--font-body); box-shadow: 0 10px 24px -10px rgba(55, 181, 255, .65) }
+.pz-blog .btn-primary-14:hover { background: var(--sky-hover); color: var(--white); transform: translateY(-2px) scale(1.02) }
+.pz-blog .btn-outline-sm { display: inline-block; padding: 14px 26px; border-radius: 8px; border: 1.5px solid var(--navy); color: var(--navy); font: 600 15px var(--font-body) }
+.pz-blog .btn-outline-sm:hover { background: var(--tint-2) }
+.pz-blog .checks { display: flex; flex-direction: column; gap: 12px; font: 400 15px/1.5 var(--font-body) }
+.pz-blog .checks li { display: flex; gap: 10px }
+.pz-blog .checks i { font-size: 18px; color: var(--ok); flex: none }
+.pz-blog .checks strong { color: var(--navy) }
+
+/* ---- images */
+.pz-blog .img-slot { display: block; position: relative; width: 100%; height: 100%; overflow: hidden; background: rgba(127, 127, 127, .08) }
+.pz-blog .img-slot img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block }
+.pz-blog .img-slot .credit { position: absolute; left: 6px; bottom: 6px; max-width: calc(100% - 12px); display: block; padding: 3px 7px; border-radius: 5px; background: rgba(0, 0, 0, .55); color: var(--white); font: 10px/1.2 system-ui, -apple-system, sans-serif; text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; backdrop-filter: blur(6px) }
+.pz-blog .img-slot .credit a { color: inherit; text-decoration: none }
+.pz-blog .img-slot .credit a:hover { text-decoration: underline }
+
+/* ---- newsletter card (both templates) */
+.pz-blog .newsletter { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr)); gap: 64px; align-items: center; padding: clamp(32px, 5vw, 56px) clamp(24px, 5vw, 96px); position: relative; overflow: hidden; border-radius: 14px }
+.pz-blog .newsletter > * { position: relative }
+.pz-blog .newsletter .bell { position: absolute; right: clamp(16px, 4vw, 64px); top: 50%; transform: translateY(-50%); transform-origin: 0 0; animation: ring 6s ease-in-out infinite; width: clamp(120px, 14vw, 200px); height: auto; opacity: .14; pointer-events: none; user-select: none }
+.pz-blog .newsletter form { display: flex; flex-wrap: wrap; gap: 10px }
+.pz-blog .newsletter .email { flex: 1; display: flex; align-items: center; padding: 0 16px; height: 52px; border-radius: 8px; background: var(--white); border: 1.5px solid var(--line-2); font: 400 15px var(--font-body); color: var(--muted-2) }
+.pz-blog .nl-h2 { font: 700 clamp(28px, 3.2vw, 38px)/1.1 var(--font-display); letter-spacing: -.02em; color: var(--white) }
+.pz-blog .nl-lead { font: 400 16px/1.6 var(--font-body); color: var(--navy-text) }
+.pz-blog .nl-btn { display: flex; align-items: center; padding: 0 24px; height: 52px }
+
+/* ==== index (home.php) ==================================================================== */
+.pz-blog .blog-head { padding: clamp(48px, 7vw, 72px) clamp(24px, 5vw, 96px) 40px; display: flex; flex-direction: column; gap: 28px }
+.pz-blog .blog-head-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 24px 40px }
+.pz-blog .blog-head-copy { display: flex; flex-direction: column; gap: 14px }
+.pz-blog .blog-h1 { font: 800 clamp(36px, 4.4vw, 56px)/1.05 var(--font-display); letter-spacing: -.02em; color: var(--navy) }
+.pz-blog .blog-lead { font: 400 18px/1.6 var(--font-body); color: var(--muted); max-width: 600px }
+.pz-blog .search { display: flex; align-items: center; gap: 10px; padding: 0 14px; height: 48px; width: min(100%, 320px); border-radius: 8px; border: 1.5px solid var(--line-2); background: var(--white) }
+.pz-blog .search i { font-size: 20px; color: var(--muted-2) }
+.pz-blog .search span { font: 400 15px var(--font-body); color: var(--muted-2) }
+.pz-blog .tag-row { display: flex; gap: 8px; flex-wrap: wrap }
+/* Scoped to the filter row on purpose. The articles reuse the name for a very different thing
+   (`.level .tag`, a bare icon + label inside a levels card, with no pill around it), and the
+   design keeps them apart by defining this one only on the index page. */
+.pz-blog .tag-row .tag { padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--white); font: 500 14px var(--font-body); color: var(--navy) }
+.pz-blog .tag-row .tag:hover { background: var(--tint-2); border-color: var(--sky-light); transform: translateY(-4px) rotate(0.6deg) }
+
+.pz-blog .featured-sec { padding: 0 clamp(24px, 5vw, 96px) 48px }
+.pz-blog .featured { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); border-radius: 14px; overflow: hidden; background: var(--white); border: 1.5px solid var(--line) }
+.pz-blog .featured:hover { border-color: var(--sky-light) }
+.pz-blog .featured-pic { min-height: 440px }
+.pz-blog .featured-body { display: flex; flex-direction: column; gap: 18px; padding: 48px }
+.pz-blog .featured-h2 { font: 800 clamp(26px, 3vw, 36px)/1.12 var(--font-display); letter-spacing: -.02em; color: var(--navy) }
+.pz-blog .featured-by { display: flex; align-items: center; gap: 12px; margin-top: auto }
+.pz-blog .featured-by span:last-child { font: 400 14px var(--font-body); color: var(--muted) }
+
+.pz-blog .grid-sec { padding: 0 clamp(24px, 5vw, 96px) clamp(56px, 8vw, 96px) }
+.pz-blog .post-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 24px }
+.pz-blog .post { display: flex; flex-direction: column; border-radius: 8px; overflow: hidden; background: var(--white); border: 1.5px solid var(--line) }
+.pz-blog .post:hover { border-color: var(--sky-light) }
+.pz-blog .post .pic { height: 220px; overflow: hidden; transition: transform .4s }
+.pz-blog .post .pic:hover { transform: scale(1.03) }
+.pz-blog .post .body { display: flex; flex-direction: column; gap: 12px; padding: 24px; flex: 1 }
+.pz-blog .post h3 { font: 700 22px/1.2 var(--font-display); letter-spacing: -.01em; color: var(--navy) }
+.pz-blog .post-date { margin-top: auto; font: 400 13px var(--font-body); color: var(--muted) }
+.pz-blog .load-more { display: flex; justify-content: center; margin-top: 48px }
+.pz-blog .nl-sec { padding: 0 clamp(24px, 5vw, 96px) clamp(56px, 8vw, 96px); max-width: 1920px; margin: 0 auto }
+
+/* ==== article (single.php) ================================================================ */
+.pz-blog .art-head { padding: clamp(40px, 6vw, 64px) clamp(24px, 5vw, 96px) 40px; max-width: 1920px; margin: 0 auto; display: flex; flex-direction: column; gap: 24px; animation: rise .7s cubic-bezier(.2, .8, .2, 1) both }
+.pz-blog .art-head-top { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px 24px }
+.pz-blog .art-head-top .meta { margin-left: auto }
+.pz-blog .crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font: 500 14px var(--font-body); color: var(--muted) }
+.pz-blog .crumb a { display: inline-flex; align-items: center; gap: 6px }
+.pz-blog .crumb a:hover { transform: translateX(-2px) }
+.pz-blog .crumb .sep { color: var(--line-2) }
+.pz-blog .art-title { display: flex; flex-direction: column; gap: 20px }
+.pz-blog .art-h1 { font: 800 clamp(34px, 4.4vw, 58px)/1.05 var(--font-display); letter-spacing: -.02em; color: var(--navy); text-wrap: balance }
+.pz-blog .art-lead { font: 400 clamp(17px, 1.4vw, 20px)/1.6 var(--font-body); color: var(--muted); max-width: 70ch }
+.pz-blog .art-head-foot { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 16px 32px; padding-top: 24px; border-top: 1.5px solid var(--line) }
+.pz-blog .byline { display: flex; align-items: center; gap: 12px }
+.pz-blog .byline .avatar { width: 44px; height: 44px; font-size: 15px }
+.pz-blog .byline-text { display: flex; flex-direction: column; gap: 2px }
+.pz-blog .byline-name { font: 700 15px var(--font-display); color: var(--ink) }
+.pz-blog .byline-role, .pz-blog .byline-dates { font: 400 13px var(--font-body); color: var(--muted) }
+.pz-blog .share-row { display: flex; align-items: center; gap: 8px }
+.pz-blog .share-label { font: 500 13px var(--font-body); color: var(--muted); margin-right: 4px }
+.pz-blog .share { display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 999px; border: 1.5px solid var(--line); background: var(--white); font-size: 18px; color: var(--navy) }
+.pz-blog .share:hover { background: var(--tint-2); border-color: var(--sky-light); transform: translateY(-3px) rotate(-4deg) }
+
+.pz-blog .hero-sec { padding: 0 clamp(24px, 5vw, 96px) clamp(40px, 5vw, 64px); max-width: 1920px; margin: 0 auto }
+.pz-blog .hero-figure { display: flex; flex-direction: column; gap: 12px }
+.pz-blog .hero-frame { height: clamp(260px, 42vw, 560px); border-radius: 14px; overflow: hidden }
+.pz-blog .hero-cap { font: 400 13px/1.5 var(--font-body); color: var(--muted) }
+
+.pz-blog .body-sec { padding: 0 clamp(24px, 5vw, 96px) clamp(56px, 8vw, 96px); max-width: 1920px; margin: 0 auto }
+.pz-blog .article-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 720px) minmax(0, 1fr); gap: clamp(24px, 4vw, 64px); align-items: start }
+.pz-blog .article-grid > aside { position: sticky; top: 96px; display: flex; flex-direction: column; gap: 14px; min-width: 0 }
+@media (max-width: 1100px) {
+  .pz-blog .article-grid { grid-template-columns: minmax(0, 1fr); max-width: 760px; margin: 0 auto }
+  .pz-blog .article-grid > aside { position: static }
+}
+.pz-blog .toc { display: flex; flex-direction: column; gap: 2px; border-left: 1.5px solid var(--line) }
+.pz-blog .toc li { margin-left: -1.5px }
+.pz-blog .toc a { display: block; padding: 8px 14px; border-left: 2px solid transparent; font: 500 14px/1.4 var(--font-body); color: var(--muted) }
+.pz-blog .toc a:hover { color: var(--navy); border-left-color: var(--sky); background: var(--tint-2) }
+
+.pz-blog .prose { display: flex; flex-direction: column; gap: 26px; min-width: 0; font: 400 18px/1.7 var(--font-body); color: var(--ink-2) }
+.pz-blog .prose .intro { font: 500 21px/1.6 var(--font-body); color: var(--ink) }
+.pz-blog .prose h2 { font: 800 clamp(26px, 2.6vw, 34px)/1.15 var(--font-display); letter-spacing: -.02em; color: var(--navy); padding-top: 16px; scroll-margin-top: 96px }
+.pz-blog .prose ol { list-style: decimal; padding-left: 22px; display: flex; flex-direction: column; gap: 10px }
+.pz-blog .prose ol li { display: list-item }
+.pz-blog .prose ul.checks li { display: flex }
+.pz-blog .prose .levels + p, .pz-blog .prose .cmp-grid + p { margin-top: 0 }
+.pz-blog .prose a.inline { font-weight: 600; text-decoration: underline; text-underline-offset: .15em }
+.pz-blog .levels { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr)); gap: 14px }
+.pz-blog .level { display: flex; flex-direction: column; gap: 12px; padding: 22px; border-radius: 8px; border: 1.5px solid var(--line); background: var(--page) }
+.pz-blog .level.hi { border-color: var(--sky-light); background: var(--tint-2) }
+.pz-blog .level .n { font: 700 13px var(--font-body); letter-spacing: .08em; color: var(--teal) }
+.pz-blog .level h3 { font: 700 20px/1.2 var(--font-display); letter-spacing: -.01em; color: var(--navy) }
+.pz-blog .level p { font: 400 14px/1.55 var(--font-body); color: var(--muted) }
+.pz-blog .level .tag { margin-top: auto; display: inline-flex; align-items: center; gap: 6px; font: 600 12px var(--font-body) }
+.pz-blog .level .tag i { font-size: 16px }
+.pz-blog .cmp-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 16px }
+.pz-blog .cmp { display: flex; flex-direction: column; gap: 14px; padding: 26px; border-radius: 12px; background: var(--white); border: 1.5px solid var(--line) }
+.pz-blog .cmp h3 { display: flex; align-items: center; gap: 10px; font: 700 19px var(--font-display); color: var(--navy) }
+.pz-blog .cmp h3 i { font-size: 22px }
+.pz-blog .cmp ul { display: flex; flex-direction: column; gap: 10px; font: 400 15px/1.5 var(--font-body); color: var(--muted) }
+.pz-blog .cmp li { display: flex; gap: 10px }
+.pz-blog .cmp li i { font-size: 18px; flex: none }
+.pz-blog .quote { display: flex; flex-direction: column; gap: 14px; padding: 32px; border-radius: 12px; background: var(--navy); color: var(--white) }
+.pz-blog .quote > i { font-size: 34px; color: var(--sky) }
+.pz-blog .quote p { font: 500 italic clamp(20px, 2vw, 26px)/1.4 var(--font-display) }
+.pz-blog .quote footer { font: 400 14px var(--font-body); color: var(--navy-text) }
+.pz-blog .callout { display: flex; gap: 14px; padding: 20px 22px; border-radius: 8px; background: var(--orange-bg); border: 1.5px solid var(--orange-line) }
+.pz-blog .callout i { flex: none; font-size: 22px; color: var(--orange) }
+.pz-blog .callout p { font: 400 15px/1.55 var(--font-body); color: var(--ink) }
+.pz-blog .pill-row { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 12px }
+.pz-blog .pill { padding: 8px 14px; border-radius: 999px; border: 1.5px solid var(--line); background: var(--white); font: 500 14px var(--font-body); color: var(--navy) }
+.pz-blog .pill:hover { background: var(--tint-2); border-color: var(--sky-light); transform: translateY(-3px) rotate(-1deg) }
+.pz-blog .side-card { display: flex; flex-direction: column; gap: 16px; padding: 26px; border-radius: 12px; background: var(--white); border: 1.5px solid var(--line) }
+.pz-blog .side-card h3 { font: 700 20px/1.2 var(--font-display); letter-spacing: -.01em; color: var(--navy) }
+.pz-blog .side-card p { font: 400 14px/1.55 var(--font-body); color: var(--muted) }
+.pz-blog .side-card .btn-primary-14 { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px; font-size: 14px }
+
+.pz-blog .kr-inner { display: flex; flex-direction: column; gap: 32px }
+.pz-blog .kr-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: end; gap: 16px 40px }
+.pz-blog .kr-head-copy { display: flex; flex-direction: column; gap: 12px }
+.pz-blog .kr-head .h2-sm { text-wrap: initial }
+.pz-blog .kr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 24px }
+.pz-blog .related { display: flex; flex-direction: column; border-radius: 8px; overflow: hidden; background: var(--page); border: 1.5px solid var(--line) }
+.pz-blog .related:hover { border-color: var(--sky-light); transform: translateY(-4px) }
+.pz-blog .related .pic { height: 200px; overflow: hidden }
+.pz-blog .related .body { display: flex; flex-direction: column; gap: 12px; padding: 22px; flex: 1 }
+.pz-blog .related h3 { font: 700 21px/1.2 var(--font-display); letter-spacing: -.01em; color: var(--navy) }
+.pz-blog .art-nl-sec { padding: clamp(56px, 8vw, 96px) clamp(24px, 5vw, 96px); max-width: 1920px; margin: 0 auto }
+
+@media (prefers-reduced-motion: reduce) {
+  .pz-blog * { animation: none !important; transition: none !important }
+}

@@ -57,14 +57,21 @@ if ( is_dir( $src ) ) {
 if ( wp_get_theme()->get_stylesheet() !== 'poppynz' ) { switch_theme( 'poppynz' ); pz_note( 'theme', 'active', 'switched to poppynz' ); }
 
 // 3. WordPress and Elementor options.
-update_option( 'permalink_structure', '/%postname%/' );
+// Articles live under /blog/ (spec § 8 and the design's own links). A bare `/%postname%/` is not
+// usable here: WordPress resolves a bare post slug against pages first (verbose page rules), so
+// the `daycare-matching` article would be permanently shadowed by the Daycare matching page.
+// Pages are unaffected by this setting; they keep their own hierarchical paths.
+// Set it through WP_Rewrite, not update_option: update_option leaves $wp_rewrite holding the old
+// structure for the rest of the request, so the flush_rewrite_rules() below would regenerate the
+// PREVIOUS structure's rules and every article URL would 404 until the next flush.
+$GLOBALS['wp_rewrite']->set_permalink_structure( '/blog/%postname%/' );
 update_option( 'elementor_onboarded', true );
 update_option( 'elementor_unfiltered_files_upload', '1' );
 update_option( 'hello_elementor_settings_header_footer', 'true' );
 update_option( 'hello_elementor_settings_skip_link', 'true' );
 update_option( 'elementor_disable_color_schemes', 'yes' );
 update_option( 'elementor_disable_typography_schemes', 'yes' );
-flush_rewrite_rules();
+flush_rewrite_rules( true );
 
 // 4. Elementor kit defaults (V3 container width and padding so any legacy element behaves).
 if ( $pz_elementor_ready() ) {

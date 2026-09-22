@@ -1,0 +1,35 @@
+{
+  "key": "why-families-get-verified",
+  "lang": "en",
+  "slug": "why-families-get-verified",
+  "title": "Why families get verified too",
+  "lead": "Helpers walk into strangers’ homes. The family safety check is how we make that a fair exchange.",
+  "category": "Safety",
+  "readTime": "5 min read",
+  "author": {
+    "name": "Poppynz team"
+  },
+  "published": "2026-08-07",
+  "hero": {
+    "src": "https://images.unsplash.com/photo-1504151932400-72d4384f04b3?auto=format&fit=crop&w=1800&q=80",
+    "thumb": "https://images.unsplash.com/photo-1504151932400-72d4384f04b3?auto=format&fit=crop&w=900&q=80",
+    "alt": "Parent holding a baby, reading",
+    "credit": "Photo by <a href=\"https://unsplash.com/@picsea?utm_source=poppynz&utm_medium=referral\" target=\"_blank\" rel=\"noopener noreferrer\">Picsea</a> on <a href=\"https://unsplash.com/?utm_source=poppynz&utm_medium=referral\" target=\"_blank\" rel=\"noopener noreferrer\">Unsplash</a>",
+    "creditText": "Photo by Picsea on Unsplash",
+    "caption": "Trust runs both ways. A helper needs to know who is on the other side of the door as much as you do."
+  },
+  "tags": [
+    "Safety",
+    "For families",
+    "For helpers",
+    "PIPEDA"
+  ],
+  "side": "families",
+  "keepReading": "More on Safety",
+  "related": [
+    "vulnerable-sector-check",
+    "reading-a-helper-profile",
+    "born-from-a-need"
+  ],
+  "body": "<p class=\"intro\">Most of what we write about safety is about helpers: the ID, the record checks, the Vulnerable Sector Check read by a person on our team. Families sometimes ask why, when they sign up, we ask them to complete a short safety check as well. The honest answer is that a helper walking into your home is trusting you at least as much as you are trusting them.</p>\n<h2 id=\"the-other-side-of-the-door\">The other side of the front door</h2>\n<p>Think about the first booking from the helper’s side. She’s arriving alone, often in the evening, at an address she’s never been to, to spend hours with people she’s met once in a message thread. On most platforms she has nothing to go on but a first name. Helpers told us, plainly, that this is why they turn down bookings. So we did something about it.</p>\n\n<h2 id=\"what-the-check-is\">What the family safety check is</h2>\n<p>It’s short, and it happens once, when you create your family account. You sign in with a magic link by email, so there’s no password to reuse or leak. Then we ask you to confirm who you are and tell us about your household: who lives there, how many children and their ages, and the address where care will take place. A member of our team looks at it before your profile becomes visible to helpers.</p>\n<div class=\"cmp-grid\">\n  <div class=\"cmp card-shadow\"><h3><i class=\"las la-check-circle\" style=\"color:#0B7A52\"></i>What we ask for</h3><ul>\n    <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span>Confirmation of your identity</span></li>\n    <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span>Your address and postal code, for distance matching</span></li>\n    <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span>Who is in the household, including children’s ages</span></li>\n    <li><i class=\"las la-check\" style=\"color:#0B7A52\"></i><span>A contact phone number</span></li>\n  </ul></div>\n  <div class=\"cmp card-shadow\"><h3><i class=\"las la-times-circle\" style=\"color:#B3261E\"></i>What we don’t ask for</h3><ul>\n    <li><i class=\"las la-minus\" style=\"color:#757681\"></i><span>A criminal record check on families</span></li>\n    <li><i class=\"las la-minus\" style=\"color:#757681\"></i><span>Income, employment or credit information</span></li>\n    <li><i class=\"las la-minus\" style=\"color:#757681\"></i><span>Access to your social media</span></li>\n    <li><i class=\"las la-minus\" style=\"color:#757681\"></i><span>Anything about your children beyond their ages</span></li>\n  </ul></div>\n</div>\n\n<h2 id=\"what-helpers-see\">What helpers see, and what they don’t</h2>\n<p>Helpers never see what you submitted. They see that your family is verified, your first name, your neighbourhood and the distance to you, the ages of the children, and the services you’re looking for. Your full address is shared only once an agreement is in place. Everything you send us is handled under PIPEDA and our own <a href=\"/privacy-policy\" class=\"inline\">privacy policy</a>.</p>\n<div class=\"callout\"><i class=\"las la-info-circle\"></i><p>Before a helper can see your profile at all, the safety check has to be complete. That’s why the search results you see are helpers who already know that every family who messages them has been through it.</p></div>\n\n<h2 id=\"a-fair-exchange\">A fair exchange</h2>\n<p>We ask a lot of helpers before their profile goes live, and we think that’s right. It would be strange to ask nothing of the people whose homes they walk into. The family safety check takes a few minutes, it happens once, and it means the helper who arrives on Tuesday at 3:30 already knows you’re who you say you are. That is what lets her say yes.</p>\n<blockquote class=\"quote shadow-deep\"><i class=\"las la-quote-right\" aria-hidden=\"true\"></i><p>Trust runs both ways. We built Poppynz so that it has to.</p><footer>Poppynz team</footer></blockquote>"
+}

@@ -3,14 +3,15 @@
 ## Sites
 | Site | URL | Novamira MCP server | Status |
 |---|---|---|---|
-| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families, For helpers, Safety & trust, Daycare matching, Privacy Policy, Terms of Service and Service Agreement (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
+| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families, For helpers, Safety & trust, Daycare matching, Privacy Policy, Terms of Service, Service Agreement and the Blog (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
 | Production | https://poppynz.com | (to be added) | not deployed |
 
 ## Versions (pinned in server/bootstrap.php)
-Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.7).
+Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.9).
 
 ## Page map
 See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families, helpers, safety, daycare, privacy, terms, agreement (en, fr).
+The `blog` key is the one page with no recipe: it is a child-theme template, not an Elementor document (see the Blog section below).
 
 ## Live on staging (2026-09-21)
 | What | EN | FR |
@@ -25,6 +26,8 @@ See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home
 | Privacy Policy | 821 — `/privacy-policy/` | 824 — `/fr/politique-de-confidentialite/` |
 | Terms of Service | 831 — `/terms-of-service/` | 834 — `/fr/conditions-d-utilisation/` |
 | Service Agreement | 799 — `/service-agreement/` | 802 — `/fr/entente-de-service/` |
+| Blog index (`page_for_posts`) | 1020 — `/blog/` | 1021 — `/fr/blogue/` |
+| Articles (native posts, not Elementor) | 1022–1036 even — `/blog/<slug>/` | 1023–1037 odd — drafts |
 
 Attachments imported: 28 (content-hash-deduped via `_poppynz_hash`; 19 icons, 8 service illustrations, 1 logo mark). Untouched pre-existing content: WordPress's default Sample Page (id 2) and draft Privacy Policy (id 3).
 
@@ -491,7 +494,7 @@ The owner compared staging against the design and rejected the previous "matches
 - Headings use `text-wrap:balance` (theme `anim.css`, heading classes only) because the converter has no `text-wrap` and the design relies on balanced breaks.
 - Polylang `redirect_lang` turned on (and added to `bootstrap.php`): the French home page is `/fr/`, with `/fr/accueil/` redirecting to it.
 
-Expected, not a bug (as of 2026-09-21): every nav and footer link except Home 404s — For families, For helpers, Safety & trust, Daycare, Blog and the three legal pages are Plan 2. All of those except Blog are live now. A 404 with the Poppynz header on it means the link works and the page does not exist yet.
+Expected, not a bug (as of 2026-09-21): every nav and footer link except Home 404s — For families, For helpers, Safety & trust, Daycare, Blog and the three legal pages are Plan 2. All of them, Blog included, are live now. A 404 with the Poppynz header on it means the link works and the page does not exist yet.
 
 ### 2026-09-22 — `/app` -> app-subdomain redirect
 The web app (`app.<host>`, a separate SvelteKit deployment) is reached from the marketing site through a
@@ -659,3 +662,106 @@ Daycare matching page with the shared `band` and `navy` classes, the stored prop
 identical in both contexts, and the frontend is correct by measurement, so it is pre-existing and
 most likely an artefact of driving the editor at zero width. Worth a look by someone with the pane
 open.
+
+## 2026-09-22 — Blog (spec § 8: NOT an Elementor page)
+
+Live: index EN `/blog/` (page 1020, `page_for_posts`), FR `/fr/blogue/` (page 1021); eight articles published in English
+under `/blog/<slug>/`, eight French translations imported as **drafts** and linked to their English
+originals through Polylang. Two consecutive `import.php` runs report all **327** entries `unchanged`;
+`verify.php` returns 200 with `has_header`, `has_footer` and the right `lang` for all 27 public URLs.
+No `pages/*.json` or `templates/*.json` changed (`git diff --stat` lists only `manifest.json` and
+`variables.json`), so every Elementor page renders exactly as before.
+
+### Why this one is different
+The index and the article layout are child-theme templates — `theme/poppynz/home.php` and
+`single.php`, sharing `theme/poppynz/inc/blog.php` — and the articles are native WordPress posts.
+There is no recipe, no element tree and no global class involved, so none of the V4 converter rules
+apply to it. What still comes from the artefact is the content: `blog/strings.<lang>.json` (index
+headings, article labels, newsletter card, the two side cards) and `blog/posts/<key>.<lang>.json`
+(one post each, body included). `import.php` writes the chrome to the `poppynz_blog_strings` option
+and everything else to post meta, so the templates hard-code no copy. There is no editor check for
+this page: nothing about it opens in the Elementor editor.
+
+### Styling: `assets/blog.css`, scoped to `.pz-blog`
+Elementor's global classes are printed per Elementor document, so they do not exist on these
+templates; `assets/blog.css` carries the design's own CSS instead. It declares the `tokens.ts`
+values itself on `.pz-blog` (so the blog does not depend on the kit having printed its `:root`
+block) and `builder/src/theme.test.ts` fails if any token drifts, if the file introduces a colour
+that is not a token, or if any selector is left unscoped. Two new tokens were needed for colours the
+design uses and `tokens.ts` did not have: `ink-2` `#1D2A3A` (the long-form prose ink) and `danger-2`
+`#B3261E` (the "not enough" / "not included" red).
+
+`.pz-blog { line-height: normal }` is what keeps the kit's `1.2em` body line-height (still open, see
+the For families section above) out of the blog: every element inside resolves `normal` against its
+own font-size, exactly as the design does. Measured: identical line boxes on both sides everywhere.
+
+### Article URLs need `/blog/%postname%/`
+`bootstrap.php` used to set `permalink_structure` to `/%postname%/`. That cannot work here: with a
+bare post permastruct WordPress uses verbose page rules and resolves a single-segment request
+against pages first, so the `daycare-matching` **article** would be shadowed forever by the Daycare
+matching **page** of the same slug. It is now `/blog/%postname%/`, which also matches the design's
+own links. Pages are unaffected (they keep their hierarchical paths).
+
+**Set it through `$wp_rewrite->set_permalink_structure()`, not `update_option()`.** `update_option`
+leaves `$wp_rewrite` holding the previous structure for the rest of the request, so the
+`flush_rewrite_rules()` that follows regenerates the OLD rules — seven of the eight article URLs
+404'd after the first deploy, and the eighth (`/blog/daycare-matching/`) returned a misleading 200
+because the page+attachment rule matched `pagename=blog`.
+
+### A card is one big `<a>`, so nothing inside it may be a link
+The index and "Keep reading" cards wrap the picture and the body in a single `<a>`. The photo credit
+overlay contains Unsplash attribution links, and an `<a>` inside an `<a>` is not parseable: the
+browser closes the card link at the credit and lifts the picture and body out of it, which flattened
+every card into loose grid items (each card rendered as an empty box + image + text across three
+columns). The design writes the card credits as plain text for exactly this reason, so `hero` now
+carries both `credit` (linked, for the article hero, which is not inside a link) and `creditText`
+(plain, for cards); `poppynz_blog_figure()` takes a `$linked` flag and defaults to the plain one.
+
+### A draft keeps its date only with `edit_date`
+The French articles are drafts. WordPress leaves a draft's `post_date_gmt` at `0000-00-00 00:00:00`
+and then treats the date as "not chosen yet", resetting `post_date` to the current time on every
+save — so all eight French posts reported `updated` on every import. Fixed by passing an explicit
+`post_date_gmt` and `edit_date => true` on both insert and update.
+
+### Other things worth knowing
+- `.tag` means two different things in the two designs (the index's filter pill, and a bare
+  icon + label inside an article's levels card). One stylesheet serves both pages, so the index's
+  pill is scoped to `.tag-row .tag`; without that it leaked into `.level .tag` and drew a border
+  around the "Required by Poppynz" labels.
+- Article bodies are complete HTML from the artefact, so `functions.php` removes `wpautop` for posts
+  carrying the `_poppynz_post` marker. No other post is affected.
+- `{{page:<key>}}` and `{{app:<key>}}` in blog copy resolve at build time (`resolveBlogLinks()`);
+  `{{post:<key>}}` resolves in `import.php`, after the posts exist, via `get_sample_permalink()` so
+  that a draft gets its real future URL instead of `?p=<id>`.
+- WordPress's own "Hello world!" sample post was published and dated later than every article, so it
+  would have taken the featured slot. `import.php` demotes it to draft (never deletes it) and only
+  when it is recognisably the untouched sample.
+- Line Awesome is enqueued from the jsDelivr CDN on blog templates only — the design's own link.
+  Elementor pages keep drawing their icons as `e-svg` widgets built from the `line-awesome` package.
+
+### Named deviations (the blog)
+- **"Load more articles" is not drawn.** The design always shows it; here it renders only when there
+  is a next page of posts, and with eight articles and ten per page there is none. This is the only
+  measured difference on the index: the body is 87px shorter at 1280 and 72px at 390.
+- **The index filter row and the article tag pills are inert** (`href="#"` and a link back to the
+  index), and the search box is a styled placeholder, exactly as in the design. Making them live
+  would need category-archive and search templates, which are not in this scope.
+- **The French index lists no articles**, because every French article is a draft by request. The
+  chrome, filters and newsletter card are all French and correct; cards appear when the drafts are
+  published.
+- **The byline avatar stays a 44px circle at 390** where the design squashes it to 43.1×44 (the
+  design's `.avatar` has no `flex:none` and shrinks as a flex item). Ours keeps the circle; 0.9px.
+- The article's `<img>` elements carry `max-width:100%` from the blog stylesheet's reset, which the
+  design does not set. Measured identical on both sides at every width, including the bell.
+
+### Verification (skill step 4)
+Computed styles and bounding rects, design-vs-live, at 1280 and 390, through two browser tabs at the
+same viewport: **41 selectors on the index and 53 on the article.** Index at 1280: every selector
+identical bar the load-more difference above; the kit's `Inter, sans-serif` and `19.2px` line-height
+appear on `<body>` only and never reach anything inside `.pz-blog`. Index at 390: every selector
+identical. Article at 1280: all 53 identical, and the 10px body-height difference is entirely the
+pre-existing HFE footer (441px design vs 451px live; the header is 70px and the first section starts
+at y=84 on both). Article at 390: 52 of 53 identical, the exception being the avatar noted above.
+`document.documentElement.scrollWidth > clientWidth` is false on both sides at both widths.
+`render.sh` slices of `/blog/`, `/fr/blogue/` and `/blog/vulnerable-sector-check/` were read beside
+the `dump_design.sh` slices and match section by section.

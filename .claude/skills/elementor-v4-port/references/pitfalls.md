@@ -87,3 +87,29 @@
   media query does (`max-width:none`). Use a real value with the same effect: `max-width:100%` for a
   stacked flex item, and a very large length (`max-height:100000px`) for "no cap". `width:auto` and
   `height:auto` are fine — they are not in this set. `css.ts` lints this now.
+
+## Blog (the non-Elementor templates)
+- **An `<a>` inside an `<a>` silently destroys a card.** The index and "Keep reading" cards are one
+  big link; the photo-credit overlay inside them must be plain text, never the linked Unsplash
+  attribution. The HTML parser closes the card link at the nested `<a>` and re-parents everything
+  after it, so the card's picture and body become loose grid items and the layout collapses — with
+  the page HTML still looking perfectly correct in `curl`. Caught only by `getComputedStyle`
+  reporting `.post .pic` as MISSING. `poppynz_blog_figure()` takes a `$linked` flag for this.
+- **`update_option('permalink_structure', ...)` does not tell `$wp_rewrite`.** The object keeps the
+  previous structure for the rest of the request, so a `flush_rewrite_rules()` in the same request
+  writes the OLD rules. Use `$wp_rewrite->set_permalink_structure()`, then flush. Symptom: every
+  post 404s until some later, unrelated flush.
+- **A bare `/%postname%/` permastruct lets a page shadow a post of the same slug.** WordPress uses
+  verbose page rules and matches pages first, so the `daycare-matching` article was unreachable
+  behind the Daycare matching page. The blog permastruct is `/blog/%postname%/`.
+- **A draft will not keep the date you give it.** WordPress leaves `post_date_gmt` at
+  `0000-00-00 00:00:00` on a draft and then refreshes `post_date` to "now" on every save. Pass an
+  explicit `post_date_gmt` and `edit_date => true` or the import is never idempotent.
+- **`get_permalink()` on a draft returns `?p=<id>`.** Use `get_sample_permalink()` (wp-admin/
+  includes/post.php) when you need the URL a draft will have once published.
+- One stylesheet serving two designs inherits both designs' class names. `.tag` is the index's
+  filter pill in one and a bare icon+label inside an article's levels card in the other; the pill
+  has to be scoped (`.tag-row .tag`) or it draws a border around the other one.
+- `require`-ing two server scripts in one `execute-php` call shares variable scope: `unpack.php`
+  reassigns `$dir`, which broke a following `require $dir . 'server/bootstrap.php'`. One script per
+  request, as SKILL.md says.

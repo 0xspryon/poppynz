@@ -44,8 +44,70 @@ add_action( 'wp', function () {
 	}
 } );
 
+/** Where a newsletter sign-up goes: the app's own endpoint, on the matching environment. */
+function poppynz_newsletter_endpoint(): string {
+	$host = poppynz_app_host();
+	return $host ? 'https://' . $host . '/api/v1/newsletter' : '';
+}
+
+/**
+ * Newsletter sign-up. The form posts here (same origin), we hand the address to the app and send
+ * the visitor straight back to the page they were on.
+ *
+ * The POST to the app is made server side on purpose. From the browser it would be a cross-origin
+ * request with a JSON content type, so it would need a CORS preflight and matching headers on the
+ * app; from here there is no origin to check and the endpoint needs no CORS configuration at all.
+ *
+ * Fire and forget, as asked: `blocking => false` sends the request and returns without waiting for
+ * or reading a response. The consequence is worth knowing — if the endpoint is down or rejects the
+ * body, nothing here can tell, and the visitor is still thanked. Nothing is stored on this site.
+ */
+add_action( 'admin_post_nopriv_poppynz_newsletter', 'poppynz_handle_newsletter' );
+add_action( 'admin_post_poppynz_newsletter', 'poppynz_handle_newsletter' );
+function poppynz_handle_newsletter(): void {
+	$back = wp_get_referer() ?: home_url( '/' );
+
+	// A bot that fills every field it finds trips the honeypot. Real submissions leave it empty.
+	if ( ! empty( $_POST['pz_hp'] ) || ! isset( $_POST['_pz_nonce'] ) || ! wp_verify_nonce( sanitize_key( wp_unslash( $_POST['_pz_nonce'] ) ), 'poppynz_newsletter' ) ) {
+		wp_safe_redirect( add_query_arg( 'newsletter', 'error', $back ) . '#newsletter' );
+		exit;
+	}
+
+	$email = sanitize_email( wp_unslash( $_POST['email'] ?? '' ) );
+	if ( ! is_email( $email ) ) {
+		wp_safe_redirect( add_query_arg( 'newsletter', 'invalid', $back ) . '#newsletter' );
+		exit;
+	}
+
+	$endpoint = poppynz_newsletter_endpoint();
+	if ( $endpoint ) {
+		wp_remote_post( $endpoint, [
+			'blocking' => false,
+			'timeout'  => 1,
+			'headers'  => [ 'Content-Type' => 'application/json' ],
+			'body'     => wp_json_encode( [ 'email' => $email ] ),
+		] );
+	}
+
+	wp_safe_redirect( add_query_arg( 'newsletter', 'ok', $back ) . '#newsletter' );
+	exit;
+}
+
 // Hello's own header/footer stay off: the Header & Footer Builder templates render instead.
 add_filter( 'hello_elementor_header_footer', '__return_false' );
+
+/**
+ * The app subdomain for whatever site this is, derived from home_url() and never hard-coded:
+ * staging.poppynz.com -> app.staging.poppynz.com, poppynz.com -> app.poppynz.com. Returns '' when
+ * we are already on the app host, so nothing ever points at itself.
+ */
+function poppynz_app_host(): string {
+	$host = wp_parse_url( home_url(), PHP_URL_HOST );
+	if ( ! $host || 0 === stripos( (string) $host, 'app.' ) ) {
+		return '';
+	}
+	return 'app.' . $host;
+}
 
 // /app -> the app subdomain. Runs before WordPress's own redirect_canonical (priority 10) and
 // before Polylang's language redirect, so it wins first. The target host is always derived from
@@ -68,14 +130,14 @@ add_action( 'template_redirect', function () {
 		return;
 	}
 
-	$host = wp_parse_url( home_url(), PHP_URL_HOST );
-	if ( ! $host || 0 === stripos( $host, 'app.' ) ) {
+	$host = poppynz_app_host();
+	if ( ! $host ) {
 		return; // Already on the app host: never redirect to ourselves.
 	}
 
 	$rest  = isset( $m['rest'] ) ? trim( $m['rest'], '/' ) : '';
 	$query = $_SERVER['QUERY_STRING'] ?? '';
-	$url   = 'https://app.' . $host . '/' . $rest . ( '' !== $query ? '?' . $query : '' );
+	$url   = 'https://' . $host . '/' . $rest . ( '' !== $query ? '?' . $query : '' );
 
 	// 302, not 301: the app-subdomain setup is still being finalised, so a browser must not
 	// permanently cache this redirect while it can still change.

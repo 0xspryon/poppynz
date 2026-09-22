@@ -121,6 +121,18 @@
 .pz-blog .nl-h2 { font: 700 clamp(28px, 3.2vw, 38px)/1.1 var(--font-display); letter-spacing: -.02em; color: var(--white) }
 .pz-blog .nl-lead { font: 400 16px/1.6 var(--font-body); color: var(--navy-text) }
 .pz-blog .nl-btn { display: flex; align-items: center; padding: 0 24px; height: 52px }
+/* The design draws the field as a grey `<span>` and the button as an `<a>`. These turn them into a
+   real input and a real submit button without moving the row: same 52px height, same box, same
+   grey for the placeholder, with typed text in the darker body ink. */
+.pz-blog .nl-col { display: flex; flex-direction: column; gap: 10px }
+.pz-blog .newsletter input.email { color: var(--ink); appearance: none; outline: none }
+.pz-blog .newsletter input.email::placeholder { color: var(--muted-2); opacity: 1 }
+.pz-blog .newsletter input.email:focus { border-color: var(--sky); box-shadow: 0 0 0 3px rgba(55, 181, 255, .15) }
+.pz-blog button.nl-btn { border: 0; cursor: pointer; font-family: var(--font-body), system-ui, sans-serif }
+/* The result line, rendered only when there is a result (see inc/blog.php). */
+.pz-blog .nl-note { font: 500 14px/1.5 var(--font-body); color: var(--navy-text) }
+.pz-blog .nl-note.is-ok { color: var(--sky-light) }
+.pz-blog .nl-note.is-invalid, .pz-blog .nl-note.is-error { color: var(--pink-line) }
 
 /* ==== index (home.php) ==================================================================== */
 .pz-blog .blog-head { padding: clamp(48px, 7vw, 72px) clamp(24px, 5vw, 96px) 40px; display: flex; flex-direction: column; gap: 28px }

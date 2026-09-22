@@ -49,7 +49,11 @@
     "h2Accent": "Poppynz",
     "lead": "One email a month with new guides and neighbourhoods. Unsubscribe any time, we never share your address.",
     "email": "you@example.ca",
-    "button": "Subscribe"
+    "button": "Subscribe",
+    "label": "Email address",
+    "success": "Thanks — you’re on the list. One email a month, no more.",
+    "invalid": "That doesn’t look like an email address. Try again?",
+    "error": "Something went wrong. Please try again."
   },
   "sideCards": {
     "families": {

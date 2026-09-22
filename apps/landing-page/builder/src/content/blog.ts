@@ -99,6 +99,12 @@ export type BlogStrings = {
     lead: string;
     email: string;
     button: string;
+    /** Screen-reader label for the field, which shows only a placeholder in the design. */
+    label: string;
+    /** Shown under the form after a submission, as ?newsletter=ok|invalid|error. */
+    success: string;
+    invalid: string;
+    error: string;
   };
   sideCards: Record<SideCardKey, { icon: string; title: string; text: string; cta: string }>;
   /** Month abbreviations for the design's "12 Sept 2026" date format, January first. */
@@ -409,6 +415,10 @@ export const BLOG_STRINGS: Localized<BlogStrings> = {
       lead: "One email a month with new guides and neighbourhoods. Unsubscribe any time, we never share your address.",
       email: "you@example.ca",
       button: "Subscribe",
+      label: "Email address",
+      success: "Thanks — you’re on the list. One email a month, no more.",
+      invalid: "That doesn’t look like an email address. Try again?",
+      error: "Something went wrong. Please try again.",
     },
     sideCards: {
       families: {
@@ -458,6 +468,10 @@ export const BLOG_STRINGS: Localized<BlogStrings> = {
       lead: "Un courriel par mois avec les nouveaux guides et quartiers. Désabonnement en tout temps, nous ne partageons jamais votre adresse.",
       email: "vous@exemple.ca",
       button: "S’abonner",
+      label: "Adresse courriel",
+      success: "Merci ! Vous êtes inscrite. Un courriel par mois, pas plus.",
+      invalid: "Cette adresse courriel semble incorrecte. Réessayer ?",
+      error: "Un problème est survenu. Veuillez réessayer.",
     },
     sideCards: {
       families: {

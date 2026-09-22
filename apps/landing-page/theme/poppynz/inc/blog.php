@@ -130,22 +130,47 @@ function poppynz_blog_meta_row( int $post_id, string $extra_class = '' ): string
 		. '<span class="rd">' . esc_html( $read ) . '</span></div>';
 }
 
-/** The newsletter card, which the design repeats on the index and on every article. */
+/**
+ * The newsletter card, which the design repeats on the index, on search results and on every
+ * article. The design draws the field as a grey `<span>`; here it is a real email input posting to
+ * admin-post.php, which hands the address to the app (see poppynz_handle_newsletter()).
+ *
+ * The result comes back as ?newsletter=ok|invalid|error on the same page, so a refresh cannot
+ * resubmit, and is announced in a live region under the form.
+ */
 function poppynz_blog_newsletter(): string {
-	$bell = get_stylesheet_directory_uri() . '/assets/bell.svg';
+	$bell   = get_stylesheet_directory_uri() . '/assets/bell.svg';
+	$state  = isset( $_GET['newsletter'] ) ? sanitize_key( wp_unslash( $_GET['newsletter'] ) ) : '';
+	$notes  = [
+		'ok'      => [ 'newsletter.success', 'Thanks — check your inbox once a month.' ],
+		'invalid' => [ 'newsletter.invalid', 'That does not look like an email address.' ],
+		'error'   => [ 'newsletter.error', 'Something went wrong. Please try again.' ],
+	];
 	ob_start(); ?>
-	<div class="newsletter navy shadow-deep">
+	<div class="newsletter navy shadow-deep" id="newsletter">
 		<img class="bell" src="<?php echo esc_url( $bell ); ?>" width="200" height="220" alt="" aria-hidden="true">
 		<div class="stack-16">
 			<p class="eyebrow-light"><span class="dash"></span><?php echo esc_html( poppynz_s( 'newsletter.eyebrow' ) ); ?></p>
 			<h2 class="nl-h2"><?php echo esc_html( poppynz_s( 'newsletter.h2' ) ); ?><span class="accent"><?php echo esc_html( poppynz_s( 'newsletter.h2Accent' ) ); ?></span></h2>
 			<p class="nl-lead"><?php echo esc_html( poppynz_s( 'newsletter.lead' ) ); ?></p>
 		</div>
-		<?php // Matches the design: the card is a visual placeholder until a mailing list is wired up. ?>
-		<form onsubmit="return false">
-			<span class="email"><?php echo esc_html( poppynz_s( 'newsletter.email' ) ); ?></span>
-			<a href="#" class="btn-primary-14 nl-btn"><?php echo esc_html( poppynz_s( 'newsletter.button' ) ); ?></a>
-		</form>
+		<div class="nl-col">
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>">
+				<input type="hidden" name="action" value="poppynz_newsletter">
+				<?php wp_nonce_field( 'poppynz_newsletter', '_pz_nonce' ); ?>
+				<label class="sr-only" for="pz-newsletter"><?php echo esc_html( poppynz_s( 'newsletter.label', 'Email address' ) ); ?></label>
+				<input class="email" type="email" id="pz-newsletter" name="email" required autocomplete="email" placeholder="<?php echo esc_attr( poppynz_s( 'newsletter.email' ) ); ?>">
+				<?php // Honeypot: hidden from people, irresistible to bots. ?>
+				<input type="text" name="pz_hp" class="sr-only" tabindex="-1" autocomplete="off" aria-hidden="true">
+				<button type="submit" class="btn-primary-14 nl-btn"><?php echo esc_html( poppynz_s( 'newsletter.button' ) ); ?></button>
+			</form>
+			<?php // Only rendered when there is something to say: an empty <p> would still take a line
+				// box and make the card taller than the design. The page reloads on submit, so the live
+				// region arrives with its message rather than being updated in place. ?>
+			<?php if ( isset( $notes[ $state ] ) ) : ?>
+				<p class="nl-note is-<?php echo esc_attr( $state ); ?>" role="status" aria-live="polite"><?php echo esc_html( poppynz_s( $notes[ $state ][0], $notes[ $state ][1] ) ); ?></p>
+			<?php endif; ?>
+		</div>
 	</div>
 	<?php
 	return (string) ob_get_clean();

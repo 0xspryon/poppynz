@@ -49,7 +49,11 @@
     "h2Accent": "Poppynz",
     "lead": "Un courriel par mois avec les nouveaux guides et quartiers. Désabonnement en tout temps, nous ne partageons jamais votre adresse.",
     "email": "vous@exemple.ca",
-    "button": "S’abonner"
+    "button": "S’abonner",
+    "label": "Adresse courriel",
+    "success": "Merci ! Vous êtes inscrite. Un courriel par mois, pas plus.",
+    "invalid": "Cette adresse courriel semble incorrecte. Réessayer ?",
+    "error": "Un problème est survenu. Veuillez réessayer."
   },
   "sideCards": {
     "families": {

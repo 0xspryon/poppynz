@@ -4751,7 +4751,6 @@
                     "classes": {
                       "$$type": "classes",
                       "value": [
-                        "e-fc2d4bd-1c01c8f",
                         "body-16"
                       ]
                     },
@@ -4770,22 +4769,7 @@
                       }
                     }
                   },
-                  "styles": {
-                    "e-fc2d4bd-1c01c8f": {
-                      "id": "e-fc2d4bd-1c01c8f",
-                      "type": "class",
-                      "label": "local",
-                      "variants": [
-                        {
-                          "meta": {
-                            "breakpoint": "desktop",
-                            "state": null
-                          },
-                          "props": {}
-                        }
-                      ]
-                    }
-                  },
+                  "styles": {},
                   "elements": [],
                   "editor_settings": {
                     "title": "Lead"
@@ -8378,19 +8362,16 @@
       "desktop": "flex-direction:column;gap:40px"
     },
     "e-4a3d426-f510720": {
-      "desktop": "padding:0;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;column-gap:40px"
+      "desktop": "padding:0;flex-direction:column;gap:16px"
     },
     "e-cee7434-1c2830e": {
-      "desktop": "padding:0;flex:1 1 0%"
+      "desktop": "padding:0"
     },
     "e-e4bdec8-875eb71": {
       "desktop": "padding:0;display:block"
     },
     "e-baf4749-97132b0": {
       "desktop": "display:inline"
-    },
-    "e-fc2d4bd-1c01c8f": {
-      "desktop": "flex:0 1 auto;max-width:380px"
     },
     "e-e0b4c4c-04c2b04": {
       "desktop": "grid-template-rows:auto;padding:0;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px"

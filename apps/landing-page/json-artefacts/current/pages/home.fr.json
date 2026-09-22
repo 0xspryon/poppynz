@@ -4707,7 +4707,7 @@
                             "classes": {
                               "$$type": "classes",
                               "value": [
-                                "icon-24",
+                                "icon-40",
                                 "icon-sky",
                                 "anim-wiggle",
                                 "icon-inline"
@@ -8333,7 +8333,7 @@
       "desktop": "flex-direction:column;gap:48px"
     },
     "e-ccdc486-6fe830e": {
-      "desktop": "padding:0;max-width:800px"
+      "desktop": "padding:0"
     },
     "e-d48fd49-2e7d497": {
       "desktop": "grid-template-rows:auto;padding:0"
@@ -8381,7 +8381,7 @@
       "desktop": "padding:0;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;column-gap:40px"
     },
     "e-cee7434-1c2830e": {
-      "desktop": "padding:0;max-width:620px"
+      "desktop": "padding:0;flex:1 1 0%"
     },
     "e-e4bdec8-875eb71": {
       "desktop": "padding:0;display:block"
@@ -8390,7 +8390,7 @@
       "desktop": "display:inline"
     },
     "e-fc2d4bd-1c01c8f": {
-      "desktop": "max-width:380px"
+      "desktop": "flex:0 1 auto;max-width:380px"
     },
     "e-e0b4c4c-04c2b04": {
       "desktop": "grid-template-rows:auto;padding:0;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px"

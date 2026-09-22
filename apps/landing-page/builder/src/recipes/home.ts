@@ -81,7 +81,7 @@ export const homeRecipe: Recipe = {
 
     const check = (path: string, label: string, plus = false) => flex(path, { title: label, classes: ["check-row"] }, [icon(`${path}/i`, plus ? "plus" : "check", ["icon-18", plus ? "icon-teal" : "icon-ok"]), text(`${path}/t`, { title: label, tag: "span", text: label })]);
     const safety = flex("home/safety", { title: "Two-way safety", tag: "section", classes: ["sec", "wrap"], css: { desktop: "flex-direction:column;gap:48px" } }, [
-      flex("home/safety/intro", { title: "Intro", classes: ["stack-16"], css: { desktop: "max-width:800px" } }, [
+      flex("home/safety/intro", { title: "Intro", classes: ["stack-16"] }, [
         text("home/safety/eyebrow", { title: "Eyebrow", classes: ["eyebrow"], text: c.safety.eyebrow }),
         heading("home/safety/h2", { title: "H2", tag: "h2", classes: ["h2"], text: c.safety.title }),
       ]),
@@ -111,7 +111,11 @@ export const homeRecipe: Recipe = {
     const services = flex("home/services", { title: "Services", tag: "section", classes: ["band"] }, [
       flex("home/services/wrap", { title: "Wrap", classes: ["sec", "wrap"], css: { desktop: "flex-direction:column;gap:40px" } }, [
         flex("home/services/head", { title: "Heading row", css: { desktop: "flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:24px;column-gap:40px" } }, [
-          flex("home/services/intro", { title: "Intro", classes: ["stack-16"], css: { desktop: "max-width:620px" } }, [
+          // The title block takes all the width the lead paragraph does not need, so the heading
+          // runs on one line on wide screens; `flex:1 1 0%` keeps it on the same row as the lead
+          // (a wrap container breaks lines on hypothetical sizes, so an auto-width title would
+          // push the lead onto its own line at 1280).
+          flex("home/services/intro", { title: "Intro", classes: ["stack-16"], css: { desktop: "flex:1 1 0%" } }, [
             text("home/services/eyebrow", { title: "Eyebrow", classes: ["eyebrow"], text: c.servicesHeader.eyebrow }),
             // The design puts the wink icon inline right after "Family Life" inside the H2 itself
             // (`<h2>…Family Life <i class="las la-smile-wink"></i></h2>`). html-v3 only allows
@@ -121,9 +125,9 @@ export const homeRecipe: Recipe = {
             // `display:inline-block` (class `icon-inline`) so it sits on the same line right after
             // the heading's last word. Confirmed by DOM-patching staging live before committing to
             // this: the icon lands inline immediately after "Family Life", matching the design.
-            flex("home/services/h2row", { title: "Title row", css: { desktop: "display:block" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], css: { desktop: "display:inline" }, text: c.servicesHeader.title }), icon("home/services/wink", "smile-wink", ["icon-24", "icon-sky", "anim-wiggle", "icon-inline"])]),
+            flex("home/services/h2row", { title: "Title row", css: { desktop: "display:block" } }, [heading("home/services/h2", { title: "H2", tag: "h2", classes: ["h2"], css: { desktop: "display:inline" }, text: c.servicesHeader.title }), icon("home/services/wink", "smile-wink", ["icon-40", "icon-sky", "anim-wiggle", "icon-inline"])]),
           ]),
-          text("home/services/lead", { title: "Lead", classes: ["body-16"], css: { desktop: "max-width:380px" }, text: c.servicesHeader.lead }),
+          text("home/services/lead", { title: "Lead", classes: ["body-16"], css: { desktop: "flex:0 1 auto;max-width:380px" }, text: c.servicesHeader.lead }),
         ]),
         grid("home/services/grid", { title: "Service cards", css: { desktop: "grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:16px" } },
           c.services.map((s, i) => flex(`home/services/${s.file}`, { title: s.name, tag: "a", classes: ["svc", ...((i + Math.floor(i / 4)) % 2 ? ["svc-pink"] : [])], link: APP.signUp }, [

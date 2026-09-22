@@ -100,6 +100,7 @@ const defs: Record<string, CssMap> = {
   "icon-20": { desktop: "width:20px;height:20px" },
   "icon-22": { desktop: "width:22px;height:22px" },
   "icon-24": { desktop: "width:24px;height:24px" },
+  "icon-40": { desktop: "width:40px;height:40px" },
   "icon-teal": { desktop: `color:${v("teal")}` },
   "icon-ok": { desktop: `color:${v("ok")}` },
   "icon-sky": { desktop: `color:${v("sky")}` },
@@ -168,7 +169,13 @@ const defs: Record<string, CssMap> = {
   // confirmed acceptable live on staging (icon sits right after the last word, very slightly lower
   // than exact cap-height centering — not the same pixel-for-pixel position as the design's <i>
   // inline in the text flow, but reads correctly at a glance).
-  "icon-inline": { desktop: "display:inline-block;margin-left:12px" },
+  // An inline-block sits its bottom edge on the text baseline, so a tall icon pokes above the
+  // capitals; the converter has no `vertical-align`, so nudge it down with relative positioning.
+  // The negative right margin cancels the icon's own advance (12 - 52 + 40 = 0): line breaking
+  // then treats it as zero-width, so it can never be pushed onto a line of its own when the
+  // heading happens to fill the row, and it always renders right after the last word. There is
+  // no `white-space:nowrap` in the V4 schema to glue it to that word any other way.
+  "icon-inline": { desktop: "display:inline-block;margin-left:12px;margin-right:-52px;position:relative;inset-block-start:6px" },
   // footer
   ftr: { desktop: `padding:clamp(48px,6vw,64px) clamp(24px,5vw,96px) 40px;background-color:${v("page")};border-top-width:1.5px;border-right-width:0;border-bottom-width:0;border-left-width:0;border-style:solid;border-color:${v("line")}` },
   "ftr-grid": { desktop: "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:40px" },

@@ -394,6 +394,13 @@
     }
   },
   {
+    "id": "g-83f6d40",
+    "label": "icon-40",
+    "css": {
+      "desktop": "width:40px;height:40px"
+    }
+  },
+  {
     "id": "g-d659c26",
     "label": "icon-teal",
     "css": {
@@ -731,7 +738,7 @@
     "id": "g-27f39df",
     "label": "icon-inline",
     "css": {
-      "desktop": "display:inline-block;margin-left:12px"
+      "desktop": "display:inline-block;margin-left:12px;margin-right:-52px;position:relative;inset-block-start:6px"
     }
   },
   {

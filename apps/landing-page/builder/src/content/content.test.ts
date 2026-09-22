@@ -4,15 +4,17 @@ import { FOOTER } from "./footer";
 import { HEADER } from "./header";
 import { HELPERS } from "./helpers";
 import { HOME } from "./home";
+import { SAFETY } from "./safety";
 import { assertLocalizedKeys } from "./types";
 
 describe("content", () => {
-  test("header, footer, home, families, helpers have identical key sets in en and fr", () => {
+  test("header, footer, home, families, helpers, safety have identical key sets in en and fr", () => {
     expect(() => assertLocalizedKeys(HEADER as any, "header")).not.toThrow();
     expect(() => assertLocalizedKeys(FOOTER as any, "footer")).not.toThrow();
     expect(() => assertLocalizedKeys(HOME as any, "home")).not.toThrow();
     expect(() => assertLocalizedKeys(FAMILIES as any, "families")).not.toThrow();
     expect(() => assertLocalizedKeys(HELPERS as any, "helpers")).not.toThrow();
+    expect(() => assertLocalizedKeys(SAFETY as any, "safety")).not.toThrow();
   });
   test("home has 4 steps, 8 services, 3 quotes, 5 cities in both languages", () => {
     for (const l of ["en", "fr"] as const) {
@@ -43,6 +45,18 @@ describe("content", () => {
       expect(HELPERS[l].earnings.example.rows).toHaveLength(2);
       expect(HELPERS[l].major.rows).toHaveLength(4);
       expect(HELPERS[l].faq.items).toHaveLength(6);
+    }
+  });
+  test("safety has 5 hero pills, 5 status rows, 6 check cards, 4 Credibled points, 4 review steps, 4 family checks, 4 privacy cards, 6 promises in both languages", () => {
+    for (const l of ["en", "fr"] as const) {
+      expect(SAFETY[l].hero.nav).toHaveLength(5);
+      expect(SAFETY[l].hero.card.rows).toHaveLength(5);
+      expect(SAFETY[l].checks.cards).toHaveLength(6);
+      expect(SAFETY[l].credibled.points).toHaveLength(4);
+      expect(SAFETY[l].review.steps).toHaveLength(4);
+      expect(SAFETY[l].families.checks).toHaveLength(4);
+      expect(SAFETY[l].data.cards).toHaveLength(4);
+      expect(SAFETY[l].never.items).toHaveLength(6);
     }
   });
   test("nav links use page keys", () => {

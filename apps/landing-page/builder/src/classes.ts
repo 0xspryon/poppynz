@@ -19,6 +19,7 @@ const defs: Record<string, CssMap> = {
   band: { desktop: `background-color:${v("white")};border-top-width:1.5px;border-bottom-width:1.5px;border-left-width:0;border-right-width:0;border-style:solid;border-color:${v("line")}` },
   "band-top": { desktop: `background-color:${v("white")};border-top-width:1.5px;border-right-width:0;border-bottom-width:0;border-left-width:0;border-style:solid;border-color:${v("line")}` },
   navy: { desktop: `background-color:${v("navy")};color:${v("white")}` },
+  "stack-4": { desktop: "display:flex;flex-direction:column;gap:4px" },
   "stack-16": { desktop: "display:flex;flex-direction:column;gap:16px" },
   "stack-20": { desktop: "display:flex;flex-direction:column;gap:20px" },
   "stack-24": { desktop: "display:flex;flex-direction:column;gap:24px" },
@@ -51,6 +52,10 @@ const defs: Record<string, CssMap> = {
   // descendant rule, impossible in a V4 class, so the <strong> inside is styled by theme anim.css
   // (.em-navy strong). The parent keeps its own muted colour.
   "em-navy": { desktop: "" },
+  // Same mechanism again, for the safety page's "What it is." / "Why we ask." lead-ins, whose
+  // design rule is an inline `<strong style="color:#001E30">` — the body ink, not em-navy's #1A3375.
+  // Styled by theme anim.css (.em-ink strong).
+  "em-ink": { desktop: "" },
   accent: { desktop: `color:${v("sky")}` },
   lead: { desktop: `${BODY};font-size:17px;line-height:1.6;color:${v("muted")}` },
   "lead-light": { desktop: `${BODY};font-size:17px;line-height:1.6;color:${v("navy-text")}` },
@@ -87,6 +92,13 @@ const defs: Record<string, CssMap> = {
     desktop: `display:inline-flex;align-items:center;gap:8px;padding:13px 22px;border-radius:8px;border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.35);color:${v("white")};background-color:transparent;${BODY};font-weight:600;font-size:15px;text-decoration:none`,
     "desktop:hover": `background-color:rgba(255,255,255,.08);color:${v("white")}`,
   },
+  // The safety hero's section-jump pills. background-color is explicit for the same reason the
+  // outline buttons need it — an unset background on a pill-shaped control is never transparent
+  // for free in this stack. 17px is the design's own line box for 14px Inter.
+  "pill-nav": {
+    desktop: `display:inline-block;padding:8px 14px;border-radius:999px;border-width:1.5px;border-style:solid;border-color:${v("line")};background-color:${v("white")};${BODY};font-weight:500;font-size:14px;line-height:17px;color:${v("navy")};text-decoration:none`,
+    "desktop:hover": `background-color:${v("tint-2")};color:${v("navy")}`,
+  },
   "link-arrow": {
     desktop: `display:inline-flex;align-items:center;gap:8px;${BODY};font-weight:600;font-size:15px;color:${v("navy")};text-decoration:none`,
     "desktop:hover": `color:${v("teal")}`,
@@ -116,6 +128,8 @@ const defs: Record<string, CssMap> = {
   "icon-24": { desktop: "width:24px;height:24px" },
   "icon-40": { desktop: "width:40px;height:40px" },
   "icon-teal": { desktop: `color:${v("teal")}` },
+  "icon-orange": { desktop: `color:${v("orange")}` },
+  "icon-danger": { desktop: `color:${v("danger")}` },
   "icon-ok": { desktop: `color:${v("ok")}` },
   "icon-sky": { desktop: `color:${v("sky")}` },
   "icon-sky-light": { desktop: `color:${v("sky-light")}` },
@@ -143,6 +157,9 @@ const defs: Record<string, CssMap> = {
   // admin" onboarding step and the "Required" documents panel. Declared standalone rather than as a
   // `chip-info` modifier so it can never lose a print-order race on background-color/color.
   "chip-req": { desktop: `padding:4px 8px;border-radius:4px;background-color:${v("pink")};color:${v("magenta-ink")};${BODY};font-weight:600;font-size:12px;line-height:15px` },
+  // The third colourway of the same pill (the design's `.chip.chip-ok`), on the safety page's
+  // verification-status card. Same green as `vetted`, without that badge's icon row and pop.
+  "chip-ok": { desktop: `padding:4px 8px;border-radius:4px;background-color:${v("ok-bg")};color:${v("ok")};${BODY};font-weight:600;font-size:12px;line-height:15px` },
   city: { desktop: `display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;background-color:${v("tint")};${BODY};font-weight:500;font-size:14px;color:${v("navy")};transition:transform .25s`, "desktop:hover": "transform:translateY(-3px) rotate(-2deg)" },
   "city-next": { desktop: `display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:999px;border-width:1.5px;border-style:dashed;border-color:${v("line-2")};${BODY};font-weight:500;font-size:14px;color:${v("muted")};transform:rotate(-2deg)` },
   // cards
@@ -173,6 +190,11 @@ const defs: Record<string, CssMap> = {
   // A numbered row on a navy panel (the design's `.row-dark`), used by the four Major-domo criteria.
   "row-dark": { desktop: "display:flex;gap:16px;align-items:center;padding:18px 20px;border-radius:8px;background-color:rgba(255,255,255,.06);border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.12)" },
   "row-dark-t": { desktop: `${BODY};font-weight:400;font-size:16px;line-height:20px;color:${v("white")}` },
+  // The two-line variant of the same navy row, on the safety page's admin-review steps: a Hanken
+  // title over an Inter description, where `row-dark-t` is the one-line Inter label Major-domo uses.
+  // Both line-heights are the design's own measured line boxes (22px / 22.5px at 1280).
+  "row-dark-title": { desktop: `${DISPLAY};font-weight:700;font-size:17px;line-height:22px;color:${v("white")}` },
+  "row-dark-desc": { desktop: `${BODY};font-weight:400;font-size:15px;line-height:1.5;color:${v("navy-text")}` },
   "hero-card": { desktop: `display:flex;flex-direction:column;gap:14px;padding:22px;border-radius:12px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};${SHADOW_CARD};text-decoration:none;transition:transform .25s` },
   "hero-card-l": { "desktop:hover": `border-color:${v("sky")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(-0.8deg)` },
   "hero-card-r": { "desktop:hover": `border-color:${v("navy")};background-color:${v("tint-2")};transform:translateY(-4px) rotate(0.8deg)` },
@@ -236,6 +258,12 @@ const defs: Record<string, CssMap> = {
   "shadow-deep": { desktop: SHADOW_DEEP },
   checks: { desktop: `display:flex;flex-direction:column;gap:12px;${BODY};font-size:15px;line-height:1.5;color:${v("muted")}` },
   "check-row": { desktop: "display:flex;gap:10px;align-items:flex-start" },
+  // The safety page's two icon lists. Both are bordered white cards rather than the bare rows
+  // `check-row` draws, so neither can reuse it; they differ from each other in padding, border
+  // colour and font size, and each is used often enough (4 and 6 rows) to be its own class. The
+  // font here is inherited by the row's text span, exactly as `checks` feeds its own rows.
+  "credibled-row": { desktop: `display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:8px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("orange-line")};${BODY};font-weight:400;font-size:15px;line-height:1.5;color:${v("ink")}` },
+  "never-row": { desktop: `display:flex;gap:14px;align-items:flex-start;padding:18px 20px;border-radius:8px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};${BODY};font-weight:400;font-size:16px;line-height:1.5;color:${v("ink")}` },
   credibled: { desktop: `display:flex;align-items:center;gap:10px;margin-top:auto;padding:12px 14px;border-radius:8px;background-color:${v("orange-bg")};border-width:1.5px;border-style:solid;border-color:${v("orange-line")};${BODY};font-weight:500;font-size:13px;line-height:1.4;color:${v("ink")}` },
   dot: { desktop: `flex:0 0 auto;width:10px;height:10px;border-radius:999px;background-color:${v("orange")}` },
   "float-card": { desktop: `position:absolute;inset-inline-end:16px;inset-block-start:24px;display:flex;align-items:center;gap:12px;padding:12px 14px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};border-radius:8px;${SHADOW_CARD}` },

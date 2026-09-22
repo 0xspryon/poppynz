@@ -120,6 +120,11 @@
     "value": "#8B9BC9"
   },
   {
+    "label": "danger",
+    "type": "global-color-variable",
+    "value": "#BA1A1A"
+  },
+  {
     "label": "orange",
     "type": "global-color-variable",
     "value": "#F26E21"

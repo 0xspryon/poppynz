@@ -8,6 +8,8 @@
     "pages/helpers.fr.json",
     "pages/home.en.json",
     "pages/home.fr.json",
+    "pages/safety.en.json",
+    "pages/safety.fr.json",
     "templates/footer.en.json",
     "templates/footer.fr.json",
     "templates/header.en.json",
@@ -54,10 +56,20 @@
       "alt": "",
       "key": "icon:check-circle"
     },
+    "378e3ec22f26": {
+      "ext": "svg",
+      "alt": "Early Childhood Educator (ECE)",
+      "key": "ill:ece.svg"
+    },
     "3c13e25f4886": {
       "ext": "webp",
       "alt": "Tutoring",
       "key": "svc:tutoring"
+    },
+    "480003bb99ec": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:balance-scale"
     },
     "4b503b342852": {
       "ext": "svg",
@@ -69,6 +81,11 @@
       "alt": "",
       "key": "icon:hand-peace"
     },
+    "4c5b7f4b492e": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:envelope-open-text"
+    },
     "54e1b74c3758": {
       "ext": "webp",
       "alt": "Elderly check-in",
@@ -78,6 +95,11 @@
       "ext": "svg",
       "alt": "",
       "key": "icon:file-upload"
+    },
+    "5b13556b1452": {
+      "ext": "svg",
+      "alt": "Personal Support Worker (PSW)",
+      "key": "ill:psw.svg"
     },
     "5b36b8d13979": {
       "ext": "svg",
@@ -114,6 +136,11 @@
       "alt": "Childcare",
       "key": "svc:childcare"
     },
+    "79cfc532d923": {
+      "ext": "svg",
+      "alt": "Vulnerable Sector Check",
+      "key": "ill:approved.svg"
+    },
     "862199bab8b2": {
       "ext": "svg",
       "alt": "",
@@ -134,6 +161,11 @@
       "alt": "",
       "key": "icon:heart"
     },
+    "8b0fd4a0c151": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:file-alt"
+    },
     "aa834f2dc467": {
       "ext": "svg",
       "alt": "Poppynz",
@@ -148,6 +180,11 @@
       "ext": "svg",
       "alt": "",
       "key": "icon:minus"
+    },
+    "b435d650ccea": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:graduation-cap"
     },
     "baa1fb0663f5": {
       "ext": "svg",
@@ -169,6 +206,11 @@
       "alt": "Major-domo",
       "key": "ill:work-anywhere.svg"
     },
+    "cf2af399bebd": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:first-aid"
+    },
     "d2f6fab7166f": {
       "ext": "svg",
       "alt": "",
@@ -183,6 +225,21 @@
       "ext": "webp",
       "alt": "Light housekeeping",
       "key": "svc:light-housekeeping"
+    },
+    "ddc33b4c5bda": {
+      "ext": "svg",
+      "alt": "First Aid / CPR",
+      "key": "ill:first-aid.svg"
+    },
+    "df6be0eb65e1": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:eye-slash"
+    },
+    "e75a8d8069df": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:times-circle"
     },
     "e9dff1d24699": {
       "ext": "svg",

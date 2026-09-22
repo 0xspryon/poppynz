@@ -3,14 +3,14 @@
 ## Sites
 | Site | URL | Novamira MCP server | Status |
 |---|---|---|---|
-| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families and For helpers (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
+| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families, For helpers and Safety & trust (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
 | Production | https://poppynz.com | (to be added) | not deployed |
 
 ## Versions (pinned in server/bootstrap.php)
-Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.5).
+Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.6).
 
 ## Page map
-See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families, helpers (en, fr).
+See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families, helpers, safety (en, fr).
 
 ## Live on staging (2026-09-21)
 | What | EN | FR |
@@ -20,6 +20,7 @@ See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home
 | Home page | 185 — `/` (slug `home`) | 188 — `/fr/accueil/`, reachable at `/fr/` (slug `accueil`, Polylang front-page translation) |
 | For families | 440 — `/for-families/` | 443 — `/fr/pour-les-familles/` |
 | For helpers | 564 — `/for-helpers/` | 567 — `/fr/pour-les-aides/` |
+| Safety & trust | 691 — `/safety-and-trust/` | 694 — `/fr/securite-et-confiance/` |
 
 Attachments imported: 28 (content-hash-deduped via `_poppynz_hash`; 19 icons, 8 service illustrations, 1 logo mark). Untouched pre-existing content: WordPress's default Sample Page (id 2) and draft Privacy Policy (id 3).
 
@@ -239,6 +240,106 @@ frontend and the preview contexts (166 each). Update/Publish never pressed.
 - The shared `media-credit` and `checks` classes still need the per-page local overrides this page and
   For families both apply (line-height, and `color:var(--ink)` respectively).
 
+## 2026-09-22 — Safety & trust (Plan 2, third page)
+
+Live: EN 691 `/safety-and-trust/`, FR 694 `/fr/securite-et-confiance/`, both 200, `has_header:true`,
+`lang` `en-CA` / `fr-CA`. Second `import.php` run after the deploy: all 269 entries `unchanged`
+(51 media, 30 variables, 176 classes, 4 templates, 8 pages). Home's, For families' and For helpers'
+`pages/*.json` and every `templates/*.json` are byte-identical to before this page existed
+(`git diff --stat` lists none of them); the only artefact churn is 10 new labels in `classes.json`,
+one new variable, 11 new media files and the two new page files. No existing class was edited.
+
+New global classes: `stack-4`, `em-ink`, `pill-nav`, `icon-orange`, `icon-danger`, `chip-ok`,
+`row-dark-title`, `row-dark-desc`, `credibled-row`, `never-row`. New variable: `danger` `#BA1A1A`.
+Reused as-is: `hero`/`hero-copy`/`deco-*`, `row-item`/`row-lbl`, `checks`/`check-row`, `credibled`'s
+`dot`, `art-card`/`art`/`tint-blue`/`tint-pink`, `chip-info`/`chip-req`, `vetted`, `label`, `step-top`,
+`bubble`/`bubble-tint`, `card`, `row-dark`/`num-light`, `grid-2`/`grid-cards`/`stack-*`, `card-shadow`/
+`shadow-deep`/`photo-credit`, `btn-primary`/`btn-outline`/`btn-row-center`, `h2-sm`/`h2-light`/`h2-cta`.
+
+### The two check-lists do NOT reuse `checks`/`check-row` (asked, and answered by measuring)
+The Credibled strip's four points and the "What we never do" six promises look like the existing
+check lists, but the design draws each row as a bordered white card (`padding:16px 18px` / `18px 20px`,
+`border-radius:8px`, its own border colour and font size) where `check-row` is a bare `display:flex;
+gap:10px` row with no box at all. Reusing `checks` with a different icon colour would have dropped the
+card entirely, so each list got its own class — `credibled-row` (4 uses, orange border, 15px) and
+`never-row` (6 uses, line border, 16px). The shared `checks`/`check-row` pair IS reused, unchanged, for
+the Two-way verification list, which really is the bare-row shape. `icon-orange` and `icon-danger` are
+the only new pieces the icons needed.
+
+### Converter finding: `font-family` only converts as `var(--label)`
+Chasing a 3px-wide difference on the photo credit turned up the quietest failure in the 4.2.4
+converter: a literal `font-family` value — one family, a generic, or a whole stack — produces neither a
+prop nor any `customCss`, so the import happily reports success and the element inherits the kit font.
+Full detail and the one class it affects (`photo-credit`, on Home and For families too) in pitfalls.md.
+NOT fixed here: the fix is a new `system-ui` font variable in `tokens.ts`, which moves two live pages
+and needs their own re-verify.
+
+### French copy
+Written from the terminology already in `content/home.ts` / `content/footer.ts`: "aide familiale",
+badge "Vérifiée", "vérification du secteur vulnérable", "vérification approfondie du casier judiciaire",
+"pièce d'identité gouvernementale avec photo", "entente écrite", "séance", "LPRPDE", "ÉPE" / "PSSP",
+"lien magique", "Commencer". "Clear" on a record-check pill is "Aucun dossier". Unlike For helpers this
+page needs no U+00A0: it has no `$`, no `%` and no guillemets, and the repo's existing French uses an
+ordinary space before a colon and none before `?`/`!`. Checked in the headless render at 390 and 1280 —
+nothing wraps badly and the longest pill ("Aucun dossier · Credibled", 166px) still sits on one line
+beside its label with the row's own 12px gap.
+
+### Named deviations (this page)
+- The hero's five section pills are inert (`#`). The design anchors them at `#helpers`, `#families`,
+  `#admin`, `#data` and `#never`; a V4 atomic element renders no `id`, so there is nothing to anchor to.
+  Same as the For families and For helpers hero secondary CTAs.
+- The verification-status chips carry `flex:0 0 auto` instead of the design's `white-space:nowrap`,
+  which is not in the converter's property list. It is the better guard anyway: measured at 390 in
+  French, the widest chip keeps its full 166px and the label shrinks beside it, `scrollWidth ==
+  clientWidth` on every row.
+- The "Verified Families" photo is a CSS background with an Unsplash URL, so it carries no alt text
+  (the design's alt is in the editor title) and its placeholder tint is `--tint` rather than the
+  design's neutral grey — invisible once the photo loads. Same as Home's two photos.
+- `photo-credit` renders in Inter, not the design's system font, and lacks its `max-width`/ellipsis:
+  152px wide against the design's 149px. Shared class, pre-existing — see the converter finding above.
+- At 390 the "never" list carries `grid-column:span 1` where the design keeps `span 2`, so our list is
+  342px against the design's 352px and its heading fits on one line instead of two (section 798px vs
+  831px). Deliberate, and the reason this page has no horizontal overflow at 390 — the design's own
+  list spills 10px into the page gutter. Same choice as the For families FAQ.
+- The shared `btn-primary` carries `mobile:"padding:14px 24px"`, which the design has no equivalent for
+  (it keeps 16px 30px at every width). Identical on Home and For helpers; left alone rather than
+  overridden on one page. This is the ONLY measured difference left at 390 outside the two above.
+- Icons are `<svg>` where the design uses Line Awesome `<i>` glyphs, so `font-*` on them differs by
+  construction; width, height and colour match. The one visible consequence: the Two-way check ticks
+  are 18x18 against the design's 18x20.5 inline line box (same drawn tick).
+
+### Verification (skill step 4)
+88 matched selector pairs, computed styles plus bounding rects, design-vs-live at 1280, 1440, 1920 and
+390, measured inside a fixed-width same-origin iframe (Chrome headless clamps `--window-size` to ~500px;
+the live page is measured from a `curl`ed copy served beside the design, which works because WordPress
+emits absolute asset URLs). **Zero unexplained differences at 1280, 1440 and 1920**; at 390 only the
+`grid-column:span 1` choice and the shared `btn-primary` mobile padding. Every other difference is
+bucketed with a stated reason (structural V4 facts, by-construction markup, or the kit line-height).
+`documentElement.scrollWidth > clientWidth` is false at all four widths in BOTH languages and no element
+is wider than the viewport. French was additionally diffed live-EN against live-FR: the only
+non-text-metric difference at any width is `art`'s `margin-top:auto` resolving to 0 because the French
+card copy is longer — every colour, border, padding, gap and grid definition is identical.
+`render.sh` slices (desktop and mobile, en and fr) match the design's slices section by section.
+
+Editor check: canvas renders fully styled, no "classes are missing" warning, the selected H1's Style tab
+shows the `local` + `h1` chips, and all 176 classes are present in BOTH the frontend and preview
+contexts. Every new class is referenced in the saved `_elementor_data` by its global-class **id** with
+exactly the expected count (`em-ink` 12, `never-row` 6, `pill-nav` 5, `stack-4`/`chip-ok`/`icon-orange`/
+`row-dark-title`/`row-dark-desc`/`credibled-row` 4, `icon-danger` 6), identical in EN and FR, with zero
+raw label references leaked. Update/Publish never pressed.
+
+### Measurement trap worth knowing (cost two false alarms)
+A load-triggered `slide` interaction leaves a real `transform: translateY(~92px)` on `.hero-copy` if the
+page is scrolled or repainted WHILE it is playing — `scrollIntoView` during the animation is enough. In
+that state the hero's two grid items genuinely overlap by 60px when measured, and a headless capture
+under `--virtual-time-budget` paints them overlapping too, which looks exactly like a layout bug. It is
+not: on a clean load the transform settles to `none` and the grid computes two rows
+(490.344 + 32 gap + 470.5) that sum exactly to the hero's content height, in both languages at 390.
+Same bucket as the `.vetted` badge, which reads anything from 0x0 to its true 71x23 under a headless
+capture and is 71x23 with `transform:none` in a real browser. Confirm any suspected overlap by reading
+`getComputedStyle(el).transform` before believing the rect.
+
+
 ## Deploy
 1. `cd apps/landing-page/builder && bun test && bun run build`; commit `json-artefacts/current`.
 2. `bash .claude/skills/elementor-v4-port/scripts/pack.sh current`
@@ -256,6 +357,10 @@ frontend and the preview contexts (166 each). Update/Publish never pressed.
   all: `.em-navy strong{color:var(--navy)}` (html-v3 strips attributes, so an inline `<strong>` is
   styled through a class on its parent, exactly like `hl-wavy em`/`em-accent em`) and
   `.faq-question{white-space:normal}` (see pitfalls.md). Theme `Version` bumped to 1.0.4.
+- 2026-09-22: one more theme CSS exception, same mechanism as `em-navy`: `.em-ink strong{color:var(--ink)}`,
+  for the safety page's "What it is." / "Why we ask." lead-ins, whose design rule is an inline
+  `<strong style="color:#001E30">` (the body ink, not em-navy's #1A3375). Theme `Version` bumped to 1.0.6,
+  so that deploy had to re-run bootstrap's theme-copy step.
 - 2026-09-22: the FAQ `+`/`−` glyph swap is done with three more anim.css rules over both icons'
   `faq-icon-plus`/`faq-icon-minus` classes rather than by teaching `faq.js` to rewrite SVG markup, so
   the script stays a pure class toggle. Theme `Version` bumped to 1.0.5.

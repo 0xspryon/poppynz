@@ -6,8 +6,9 @@ import { footerRecipe } from "./recipes/footer";
 import { headerRecipe } from "./recipes/header";
 import { helpersRecipe } from "./recipes/helpers";
 import { homeRecipe } from "./recipes/home";
+import { safetyRecipe } from "./recipes/safety";
 
-export const RECIPES = [headerRecipe, footerRecipe, homeRecipe, familiesRecipe, helpersRecipe];
+export const RECIPES = [headerRecipe, footerRecipe, homeRecipe, familiesRecipe, helpersRecipe, safetyRecipe];
 
 export async function runCli(argv: string[], outDirOverride?: string): Promise<number> {
   const [cmd, name = "current"] = argv;

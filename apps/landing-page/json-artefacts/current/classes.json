@@ -42,6 +42,13 @@
     }
   },
   {
+    "id": "g-da977e1",
+    "label": "stack-4",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:4px"
+    }
+  },
+  {
     "id": "g-30bda51",
     "label": "stack-16",
     "css": {
@@ -217,6 +224,13 @@
     }
   },
   {
+    "id": "g-8f48824",
+    "label": "em-ink",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
     "id": "g-727b79a",
     "label": "accent",
     "css": {
@@ -342,6 +356,14 @@
     }
   },
   {
+    "id": "g-12b2eeb",
+    "label": "pill-nav",
+    "css": {
+      "desktop": "display:inline-block;padding:8px 14px;border-radius:999px;border-width:1.5px;border-style:solid;border-color:var(--line);background-color:var(--white);font-family:var(--font-body);font-weight:500;font-size:14px;line-height:17px;color:var(--navy);text-decoration:none",
+      "desktop:hover": "background-color:var(--tint-2);color:var(--navy)"
+    }
+  },
+  {
     "id": "g-9d61ec4",
     "label": "link-arrow",
     "css": {
@@ -444,6 +466,20 @@
     }
   },
   {
+    "id": "g-c97a5e3",
+    "label": "icon-orange",
+    "css": {
+      "desktop": "color:var(--orange)"
+    }
+  },
+  {
+    "id": "g-594ccc8",
+    "label": "icon-danger",
+    "css": {
+      "desktop": "color:var(--danger)"
+    }
+  },
+  {
     "id": "g-43c79de",
     "label": "icon-ok",
     "css": {
@@ -540,6 +576,13 @@
     "label": "chip-req",
     "css": {
       "desktop": "padding:4px 8px;border-radius:4px;background-color:var(--pink);color:var(--magenta-ink);font-family:var(--font-body);font-weight:600;font-size:12px;line-height:15px"
+    }
+  },
+  {
+    "id": "g-3a51b2b",
+    "label": "chip-ok",
+    "css": {
+      "desktop": "padding:4px 8px;border-radius:4px;background-color:var(--ok-bg);color:var(--ok);font-family:var(--font-body);font-weight:600;font-size:12px;line-height:15px"
     }
   },
   {
@@ -648,6 +691,20 @@
     "label": "row-dark-t",
     "css": {
       "desktop": "font-family:var(--font-body);font-weight:400;font-size:16px;line-height:20px;color:var(--white)"
+    }
+  },
+  {
+    "id": "g-ac84802",
+    "label": "row-dark-title",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:17px;line-height:22px;color:var(--white)"
+    }
+  },
+  {
+    "id": "g-0a877cb",
+    "label": "row-dark-desc",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:400;font-size:15px;line-height:1.5;color:var(--navy-text)"
     }
   },
   {
@@ -918,6 +975,20 @@
     "label": "check-row",
     "css": {
       "desktop": "display:flex;gap:10px;align-items:flex-start"
+    }
+  },
+  {
+    "id": "g-eb21bc4",
+    "label": "credibled-row",
+    "css": {
+      "desktop": "display:flex;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:8px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--orange-line);font-family:var(--font-body);font-weight:400;font-size:15px;line-height:1.5;color:var(--ink)"
+    }
+  },
+  {
+    "id": "g-1c860a3",
+    "label": "never-row",
+    "css": {
+      "desktop": "display:flex;gap:14px;align-items:flex-start;padding:18px 20px;border-radius:8px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line);font-family:var(--font-body);font-weight:400;font-size:16px;line-height:1.5;color:var(--ink)"
     }
   },
   {

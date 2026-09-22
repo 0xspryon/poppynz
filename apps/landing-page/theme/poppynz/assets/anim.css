@@ -28,10 +28,12 @@
 /* The only descendant rules in the project: inline emphasis inside V4 text (see pitfalls.md).
    html-v3 strips every attribute, so an inline <em>/<strong> cannot carry a class of its own; it is
    styled through a class on its parent instead. em-navy is the for-families checklist, whose design
-   rule is `.checks strong{color:#1A3375}`. */
+   rule is `.checks strong{color:#1A3375}`; em-ink is the safety page's card paragraphs, whose
+   design rule is an inline `<strong style="color:#001E30">`. */
 .elementor .hl-wavy em{font-style:normal;text-decoration:underline wavy var(--sky);text-decoration-thickness:.06em;text-underline-offset:.14em}
 .elementor .em-accent em{font-style:normal;color:var(--sky)}
 .elementor .em-navy strong{color:var(--navy)}
+.elementor .em-ink strong{color:var(--ink)}
 
 /* Elementor's own base rule is `.e-con{width:var(--width)}` with `--width:100%` by default
  * (elementor-frontend.min.css), which stretches every atomic container to the full width of its

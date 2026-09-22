@@ -29,6 +29,7 @@ export const VARIABLES: Variable[] = [
   color("ok-bg", "#E3F4EC"),
   color("navy-text", "#B9C6E8"),
   color("navy-note", "#8B9BC9"),
+  color("danger", "#BA1A1A"),
   color("orange", "#F26E21"),
   color("orange-bg", "#FDEBE0"),
   color("orange-line", "#F5C9A8"),

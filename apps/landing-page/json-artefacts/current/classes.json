@@ -1062,6 +1062,157 @@
     }
   },
   {
+    "id": "g-107b688",
+    "label": "legal-tab-on",
+    "css": {
+      "desktop": "background-color:rgba(255,255,255,.18)"
+    }
+  },
+  {
+    "id": "g-2f47f22",
+    "label": "legal-tab",
+    "css": {
+      "desktop": "display:inline-block;padding:7px 12px;border-radius:999px;border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.25);background-color:transparent;font-family:var(--font-body);font-weight:600;font-size:13px;line-height:16px;color:var(--white);text-decoration:none",
+      "desktop:hover": "background-color:rgba(255,255,255,.12);color:var(--white)"
+    }
+  },
+  {
+    "id": "g-cb220c6",
+    "label": "legal-tabs",
+    "css": {
+      "desktop": "display:flex;flex-wrap:wrap;gap:8px"
+    }
+  },
+  {
+    "id": "g-e028caf",
+    "label": "legal-body",
+    "css": {
+      "desktop": "display:flex;flex-wrap:wrap;gap:clamp(32px,5vw,64px);align-items:flex-start;padding:clamp(40px,5vw,64px) clamp(24px,5vw,96px) clamp(56px,8vw,96px);max-width:1920px;margin-left:auto;margin-right:auto"
+    }
+  },
+  {
+    "id": "g-80d8f77",
+    "label": "legal-toc",
+    "css": {
+      "desktop": "flex:1 1 240px;max-width:300px;position:sticky;inset-block-start:96px;max-height:calc(100vh - 120px);overflow:auto;display:flex;flex-direction:column;gap:6px;padding:20px;border-radius:14px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line)",
+      "tablet": "position:static;max-width:100%;max-height:100000px"
+    }
+  },
+  {
+    "id": "g-11d452d",
+    "label": "toc-link",
+    "css": {
+      "desktop": "display:flex;gap:10px;padding:8px 10px;border-radius:8px;font-family:var(--font-body);font-weight:500;font-size:14px;line-height:19.6px;color:var(--navy);text-decoration:none",
+      "desktop:hover": "background-color:var(--tint-2);color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-ba114a0",
+    "label": "toc-num",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:700;font-size:12px;line-height:15px;color:var(--teal);min-width:18px;margin-top:2px"
+    }
+  },
+  {
+    "id": "g-d6b02ea",
+    "label": "legal-article",
+    "css": {
+      "desktop": "flex:999 1 min(100%,520px);display:flex;flex-direction:column;gap:12px;min-width:0"
+    }
+  },
+  {
+    "id": "g-2d845da",
+    "label": "legal-sec",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:14px;padding:clamp(22px,3vw,32px);border-radius:8px;background-color:var(--white);border-width:1.5px;border-style:solid;border-color:var(--line);scroll-margin-top:100px"
+    }
+  },
+  {
+    "id": "g-b7c71fa",
+    "label": "legal-head",
+    "css": {
+      "desktop": "display:flex;align-items:center;gap:14px"
+    }
+  },
+  {
+    "id": "g-a0346f7",
+    "label": "legal-num",
+    "css": {
+      "desktop": "display:flex;align-items:center;justify-content:center;min-width:40px;height:40px;padding:0 10px;border-radius:999px;background-color:var(--tint);font-family:var(--font-display);font-weight:800;font-size:16px;line-height:21px;color:var(--teal);transform:rotate(-4deg)"
+    }
+  },
+  {
+    "id": "g-e142d94",
+    "label": "legal-h2",
+    "css": {
+      "desktop": "font-family:var(--font-display);font-weight:700;font-size:clamp(20px,2vw,24px);line-height:1.2;letter-spacing:-.01em;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-e9c6880",
+    "label": "legal-h3",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:700;font-size:16px;line-height:20px;color:var(--navy)"
+    }
+  },
+  {
+    "id": "g-8ac4c39",
+    "label": "legal-p",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:400;font-size:16px;line-height:1.7;color:var(--muted);max-width:78ch"
+    }
+  },
+  {
+    "id": "g-c1a1a32",
+    "label": "legal-tail",
+    "css": {
+      "desktop": "font-family:var(--font-body);font-weight:500;font-size:16px;line-height:1.7;color:var(--navy);max-width:78ch"
+    }
+  },
+  {
+    "id": "g-db44b7a",
+    "label": "legal-sub",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:10px"
+    }
+  },
+  {
+    "id": "g-b42a9af",
+    "label": "legal-list",
+    "css": {
+      "desktop": "display:flex;flex-direction:column;gap:8px"
+    }
+  },
+  {
+    "id": "g-7cc8ea5",
+    "label": "legal-li",
+    "css": {
+      "desktop": "display:flex;gap:10px;font-family:var(--font-body);font-weight:400;font-size:16px;line-height:1.65;color:var(--muted);max-width:78ch"
+    }
+  },
+  {
+    "id": "g-c2ef6fe",
+    "label": "legal-tick",
+    "css": {
+      "desktop": "flex:0 0 auto;width:18px;height:18px;margin-top:4px;color:var(--ok)"
+    }
+  },
+  {
+    "id": "g-e302983",
+    "label": "legal-contact",
+    "css": {
+      "desktop": "display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px;padding:24px 28px;border-radius:14px;background-color:var(--tint-2);border-width:1.5px;border-style:solid;border-color:var(--line);margin-top:12px"
+    }
+  },
+  {
+    "id": "g-218a891",
+    "label": "legal-contact-btn",
+    "css": {
+      "desktop": "display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:999px;background-color:var(--sky);color:var(--white);font-family:var(--font-body);font-weight:600;font-size:14px;line-height:17px;text-decoration:none;box-shadow:0 10px 24px -10px rgba(55,181,255,.65);transition:transform .25s",
+      "desktop:hover": "background-color:var(--sky-hover);color:var(--white);transform:translateY(-2px) scale(1.02)"
+    }
+  },
+  {
     "id": "g-17fa668",
     "label": "ftr",
     "css": {

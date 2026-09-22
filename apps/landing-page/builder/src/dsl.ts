@@ -7,7 +7,7 @@ import { bool, classes as classesProp, html, imageRef, link as linkProp, str, sv
 
 export type ContainerTag = "div" | "header" | "section" | "article" | "aside" | "footer" | "a" | "button";
 export type Interaction = { trigger: "load" | "scrollIn"; effect: "fade" | "slide" | "scale"; direction?: "left" | "right" | "top" | "bottom"; durationMs?: number; delayMs?: number };
-export type Common = { title: string; classes?: string[]; css?: CssMap; link?: string; blank?: boolean; interaction?: Interaction };
+export type Common = { title: string; classes?: string[]; css?: CssMap; link?: string; blank?: boolean; interaction?: Interaction; cssId?: string };
 export type El = {
   id: string; elType: string; widgetType?: string; settings: Record<string, unknown>; styles: Record<string, unknown>;
   elements: El[]; editor_settings: { title: string }; version: "0.0"; interactions?: unknown; _css: Record<string, CssMap>;
@@ -54,6 +54,16 @@ function base(path: string, c: Common, elType: string, widgetType?: string): El 
   }
   const settings: Record<string, unknown> = { classes: classesProp(classList) };
   if (c.link) settings.link = linkProp(c.link, { blank: c.blank });
+  // `_cssid` is the atomic elements' own "ID" setting (a Text_Control in the editor's Settings
+  // tab). Every V4 element type renders it as a real `id` attribute — verified on staging 4.2.4
+  // against e-flexbox, e-div-block, e-grid and e-heading — which is what makes in-page anchors
+  // (`href="#s1"` plus `scroll-margin-top`) work at all. Earlier pages recorded "a V4 atomic
+  // element renders no id" as a named deviation; that was only ever true of the class list, not
+  // of this setting. See references/poppynz.md.
+  if (c.cssId) {
+    if (!/^[A-Za-z][A-Za-z0-9_-]*$/.test(c.cssId)) throw new Error(`cssId(): invalid element id "${c.cssId}" on ${c.title}`);
+    settings._cssid = str(c.cssId);
+  }
   const el: El = { id, elType, settings, styles, elements: [], editor_settings: { title: c.title }, version: "0.0", _css };
   if (widgetType) el.widgetType = widgetType;
   if (c.interaction) el.interactions = interactions(id, c.interaction);

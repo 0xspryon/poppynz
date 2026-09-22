@@ -300,6 +300,65 @@ const defs: Record<string, CssMap> = {
   // heading happens to fill the row, and it always renders right after the last word. There is
   // no `white-space:nowrap` in the V4 schema to glue it to that word any other way.
   "icon-inline": { desktop: "display:inline-block;margin-left:12px;margin-right:-52px;position:relative;inset-block-start:6px" },
+  // legal documents (privacy / terms / service agreement — one recipe, three documents)
+  // legal-tab-on before legal-tab: Elementor prints global classes in REVERSED declaration order,
+  // so the modifier that must beat its base class on `background-color` has to sort earlier here.
+  // Same reason as svc-pink/svc and tint-blue/art-card.
+  "legal-tab-on": { desktop: "background-color:rgba(255,255,255,.18)" },
+  // The e-button base style ships its own blue background, so a ghost pill has to zero it
+  // explicitly (same as btn-outline / btn-ghost-light-15). 16px is the design's own line box for
+  // 13px Inter — the kit's body line-height is in `em` and would otherwise inherit as 19.2px.
+  "legal-tab": {
+    desktop: `display:inline-block;padding:7px 12px;border-radius:999px;border-width:1.5px;border-style:solid;border-color:rgba(255,255,255,.25);background-color:transparent;${BODY};font-weight:600;font-size:13px;line-height:16px;color:${v("white")};text-decoration:none`,
+    "desktop:hover": `background-color:rgba(255,255,255,.12);color:${v("white")}`,
+  },
+  "legal-tabs": { desktop: "display:flex;flex-wrap:wrap;gap:8px" },
+  "legal-body": { desktop: "display:flex;flex-wrap:wrap;gap:clamp(32px,5vw,64px);align-items:flex-start;padding:clamp(40px,5vw,64px) clamp(24px,5vw,96px) clamp(56px,8vw,96px);max-width:1920px;margin-left:auto;margin-right:auto" },
+  // The sticky table of contents. The design drops it back to static at <=860px, which is not one
+  // of Elementor's breakpoints (desktop / tablet <=1024 / mobile <=767); `tablet` is the closest
+  // one that never leaves it sticky while it is stacked above the article, which is the state that
+  // actually misbehaves (a sticky flex item's containing block is the whole flex container, so a
+  // stacked-and-sticky TOC travels down over the article — the design itself does this between
+  // 861px and ~912px). See references/poppynz.md § Named deviations.
+  "legal-toc": {
+    desktop: `flex:1 1 240px;max-width:300px;position:sticky;inset-block-start:96px;max-height:calc(100vh - 120px);overflow:auto;display:flex;flex-direction:column;gap:6px;padding:20px;border-radius:14px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")}`,
+    // The design's reset is `max-width:none;max-height:none`, but the 4.2.4 converter only takes
+    // real lengths and percentages for the size properties — every keyword (`none`, `initial`,
+    // `unset`) is left in customCss and aborts the import. `max-width:100%` is exactly equivalent
+    // for a stacked flex item, and `max-height:100000px` is "no cap" for any real table of
+    // contents (the longest, Terms of Service, is ~700px).
+    tablet: "position:static;max-width:100%;max-height:100000px",
+  },
+  "toc-link": {
+    desktop: `display:flex;gap:10px;padding:8px 10px;border-radius:8px;${BODY};font-weight:500;font-size:14px;line-height:19.6px;color:${v("navy")};text-decoration:none`,
+    "desktop:hover": `background-color:${v("tint-2")};color:${v("navy")}`,
+  },
+  "toc-num": { desktop: `${BODY};font-weight:700;font-size:12px;line-height:15px;color:${v("teal")};min-width:18px;margin-top:2px` },
+  "legal-article": { desktop: "flex:999 1 min(100%,520px);display:flex;flex-direction:column;gap:12px;min-width:0" },
+  // scroll-margin-top is what keeps a jumped-to section clear of the sticky site header. It is the
+  // PHYSICAL property: `scroll-margin-block-start` is not convertible in 4.2.4 (checked live).
+  "legal-sec": { desktop: `display:flex;flex-direction:column;gap:14px;padding:clamp(22px,3vw,32px);border-radius:8px;background-color:${v("white")};border-width:1.5px;border-style:solid;border-color:${v("line")};scroll-margin-top:100px` },
+  "legal-head": { desktop: "display:flex;align-items:center;gap:14px" },
+  // 21px is the design's own line box for 16px Hanken Grotesk, measured at 1280.
+  "legal-num": { desktop: `display:flex;align-items:center;justify-content:center;min-width:40px;height:40px;padding:0 10px;border-radius:999px;background-color:${v("tint")};${DISPLAY};font-weight:800;font-size:16px;line-height:21px;color:${v("teal")};transform:rotate(-4deg)` },
+  "legal-h2": { desktop: `${DISPLAY};font-weight:700;font-size:clamp(20px,2vw,24px);line-height:1.2;letter-spacing:-.01em;color:${v("navy")}` },
+  "legal-h3": { desktop: `${BODY};font-weight:700;font-size:16px;line-height:20px;color:${v("navy")}` },
+  "legal-p": { desktop: `${BODY};font-weight:400;font-size:16px;line-height:1.7;color:${v("muted")};max-width:78ch` },
+  // The design's `p.tail` is still a `.legal-sec p`, so it keeps that rule's 78ch cap and only
+  // overrides weight and colour. Measured: 805.59px at 1280 (78ch of 16px Inter at weight 500).
+  "legal-tail": { desktop: `${BODY};font-weight:500;font-size:16px;line-height:1.7;color:${v("navy")};max-width:78ch` },
+  "legal-sub": { desktop: "display:flex;flex-direction:column;gap:10px" },
+  "legal-list": { desktop: "display:flex;flex-direction:column;gap:8px" },
+  "legal-li": { desktop: `display:flex;gap:10px;${BODY};font-weight:400;font-size:16px;line-height:1.65;color:${v("muted")};max-width:78ch` },
+  // The design's `.legal-sec li i`. flex:0 0 auto because an e-svg wrapper's min-content size is 0
+  // and it would otherwise shrink beside text that overflows the row (see references/poppynz.md).
+  "legal-tick": { desktop: `flex:0 0 auto;width:18px;height:18px;margin-top:4px;color:${v("ok")}` },
+  "legal-contact": { desktop: `display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:16px;padding:24px 28px;border-radius:14px;background-color:${v("tint-2")};border-width:1.5px;border-style:solid;border-color:${v("line")};margin-top:12px` },
+  // 17px is the design's own line box for 14px Inter.
+  "legal-contact-btn": {
+    desktop: `display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:999px;background-color:${v("sky")};color:${v("white")};${BODY};font-weight:600;font-size:14px;line-height:17px;text-decoration:none;${SHADOW_SKY};transition:transform .25s`,
+    "desktop:hover": `background-color:${v("sky-hover")};color:${v("white")};${LIFT}`,
+  },
   // footer
   ftr: { desktop: `padding:clamp(48px,6vw,64px) clamp(24px,5vw,96px) 40px;background-color:${v("page")};border-top-width:1.5px;border-right-width:0;border-bottom-width:0;border-left-width:0;border-style:solid;border-color:${v("line")}` },
   "ftr-grid": { desktop: "display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr));gap:40px" },

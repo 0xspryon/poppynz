@@ -7,9 +7,12 @@ import { footerRecipe } from "./recipes/footer";
 import { headerRecipe } from "./recipes/header";
 import { helpersRecipe } from "./recipes/helpers";
 import { homeRecipe } from "./recipes/home";
+import { legalRecipe } from "./recipes/legal";
 import { safetyRecipe } from "./recipes/safety";
 
-export const RECIPES = [headerRecipe, footerRecipe, homeRecipe, familiesRecipe, helpersRecipe, safetyRecipe, daycareRecipe];
+// The three legal documents share one recipe; see recipes/legal.ts.
+export const RECIPES = [headerRecipe, footerRecipe, homeRecipe, familiesRecipe, helpersRecipe, safetyRecipe, daycareRecipe,
+  legalRecipe("privacy"), legalRecipe("terms"), legalRecipe("agreement")];
 
 export async function runCli(argv: string[], outDirOverride?: string): Promise<number> {
   const [cmd, name = "current"] = argv;

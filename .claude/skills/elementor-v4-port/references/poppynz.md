@@ -3,14 +3,14 @@
 ## Sites
 | Site | URL | Novamira MCP server | Status |
 |---|---|---|---|
-| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families, For helpers, Safety & trust and Daycare matching (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
+| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families, For helpers, Safety & trust, Daycare matching, Privacy Policy, Terms of Service and Service Agreement (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
 | Production | https://poppynz.com | (to be added) | not deployed |
 
 ## Versions (pinned in server/bootstrap.php)
 Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.7).
 
 ## Page map
-See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families, helpers, safety, daycare (en, fr).
+See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families, helpers, safety, daycare, privacy, terms, agreement (en, fr).
 
 ## Live on staging (2026-09-21)
 | What | EN | FR |
@@ -22,6 +22,9 @@ See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home
 | For helpers | 564 — `/for-helpers/` | 567 — `/fr/pour-les-aides/` |
 | Safety & trust | 691 — `/safety-and-trust/` | 694 — `/fr/securite-et-confiance/` |
 | Daycare matching | 727 — `/daycare-matching/` | 730 — `/fr/jumelage-garderie/` |
+| Privacy Policy | 821 — `/privacy-policy/` | 824 — `/fr/politique-de-confidentialite/` |
+| Terms of Service | 831 — `/terms-of-service/` | 834 — `/fr/conditions-d-utilisation/` |
+| Service Agreement | 799 — `/service-agreement/` | 802 — `/fr/entente-de-service/` |
 
 Attachments imported: 28 (content-hash-deduped via `_poppynz_hash`; 19 icons, 8 service illustrations, 1 logo mark). Untouched pre-existing content: WordPress's default Sample Page (id 2) and draft Privacy Policy (id 3).
 
@@ -488,7 +491,7 @@ The owner compared staging against the design and rejected the previous "matches
 - Headings use `text-wrap:balance` (theme `anim.css`, heading classes only) because the converter has no `text-wrap` and the design relies on balanced breaks.
 - Polylang `redirect_lang` turned on (and added to `bootstrap.php`): the French home page is `/fr/`, with `/fr/accueil/` redirecting to it.
 
-Expected, not a bug: every nav and footer link except Home 404s — For families, For helpers, Safety & trust, Daycare, Blog and the three legal pages are Plan 2. A 404 with the Poppynz header on it means the link works and the page does not exist yet.
+Expected, not a bug (as of 2026-09-21): every nav and footer link except Home 404s — For families, For helpers, Safety & trust, Daycare, Blog and the three legal pages are Plan 2. All of those except Blog are live now. A 404 with the Poppynz header on it means the link works and the page does not exist yet.
 
 ### 2026-09-22 — `/app` -> app-subdomain redirect
 The web app (`app.<host>`, a separate SvelteKit deployment) is reached from the marketing site through a
@@ -530,3 +533,129 @@ these requests) was not an option here.
   (`bootstrap.php`'s step 2, or bootstrap.php in full — it's idempotent) must be re-run after `unpack.php`
   on every deploy that touches theme files — `import.php` never copies theme files, only `unpack.php`'s zip
   extraction and that copy step do.
+
+## 2026-09-22 — Privacy Policy, Terms of Service, Service Agreement (Plan 2, fifth/sixth/seventh pages)
+
+Live: EN 821 `/privacy-policy/`, 831 `/terms-of-service/`, 799 `/service-agreement/`; FR
+`/fr/politique-de-confidentialite/`, `/fr/conditions-d-utilisation/`, `/fr/entente-de-service/`.
+All six 200, `has_header:true`, `lang` `en-CA` / `fr-CA`. Second `import.php` run after the deploy:
+56 media, 30 variables, 199 classes, 4 templates, 16 pages — every entry `unchanged`, no slug work.
+Every earlier page's `pages/*.json` and every `templates/*.json` is byte-identical to before these
+pages existed (`git diff --stat` lists none of them); the artefact churn is 21 new labels in
+`classes.json` (151 added lines, 0 removed), 1 new media file (`check-solid.svg`) and the six new
+page files. No existing class was edited and no new variable was needed.
+
+### One recipe, three documents
+`recipes/legal.ts` exports `legalRecipe(doc: LegalDocKey)`, and `cli.ts` registers
+`legalRecipe("privacy")`, `legalRecipe("terms")`, `legalRecipe("agreement")`. All three designs are
+the same page with different copy — navy hero with the three-way tab switcher, sticky `legal-toc`,
+a column of numbered `legal-sec` blocks, closing contact card — so the recipe takes the document as
+data and `content/legal.ts` holds it: `{ title, intro, note, sections[] }` per document per
+language, where a section is `{ n, title, lead?, subs?, items?, tail? }`. The TOC, the tab labels
+and the anchor ids are all derived from that, so nothing is stated twice. `n` is `null` for a
+section the design leaves unnumbered.
+
+### Anchors work: `_cssid`, not the class list
+The four earlier pages each recorded "a V4 atomic element renders no `id`, so the hero's secondary
+CTA is inert" as a named deviation. That is wrong. Elementor's atomic elements have a `_cssid`
+setting (the editor's "ID" control) which every element type renders as a real `id` attribute —
+confirmed on 4.2.4 for `e-flexbox`, `e-div-block`, `e-grid` and `e-heading`. `dsl.ts` now takes
+`cssId` on any element. Each `legal-sec` carries `s1`..`sN` by position, `scroll-margin-top:100px`
+converts, and the jump was measured on all six pages: every TOC link lands its section at exactly
+`top: 100px`, clear of the 70px sticky header, in both languages — identical to the design (100,
+100, 99.5, 100.1). **The four inert hero buttons on For families / For helpers / Safety & trust /
+Daycare matching can be fixed the same way whenever someone re-verifies those pages.**
+
+The design's own Privacy Policy gives its last two sections the SAME `id="s10"` and points both TOC
+links at `#s10`, so "Key Considerations for Canadian Privacy" jumps to "Contact Us". Ours numbers
+anchors by position, so that section is `s11` and its link reaches it. Deliberate fix of a design
+bug; no visible numbering changed (the section stays unnumbered).
+
+### The WordPress draft Privacy Policy squats `/privacy-policy/`
+WordPress auto-creates a **draft** page titled "Privacy Policy" with slug `privacy-policy` on every
+install (here post 3, also `wp_page_for_privacy_policy`). `import.php` looked pages up by slug AND
+language; the draft has no Polylang language, so the lookup missed it, `wp_insert_post()` silently
+fell back to `privacy-policy-2`, and every link built from `PAGES.privacy.slug` pointed at a page
+that did not exist. This would have hit production identically. Fixed in `import.php` step 5:
+- pages are found by a new `_poppynz_page` marker meta first (it survives a slug WordPress had to
+  uniquify), falling back to the slug lookup for pages imported before the marker;
+- the wanted slug is freed from a page that is not ours — but only an **unpublished** page with no
+  `_elementor_data`, and only by renaming it to `<slug>-wp-default`, never deleting. A published
+  page keeps its slug and the report shows the uniquified URL, which is the visible, safe failure;
+- a found page whose `post_name` has drifted is corrected back to the artefact's slug;
+- step 7 points `wp_page_for_privacy_policy` at the real policy.
+On staging post 3 is now `privacy-policy-wp-default` (still a draft, still present) and 821 is
+`/privacy-policy/`. Post 2 "Sample Page" was not touched.
+
+### The sticky TOC's responsive reset
+The design drops `.legal-toc` back to `position:static` at `<=860px`, which is not one of Elementor's
+breakpoints (desktop / tablet `<=1024` / mobile `<=767`). `tablet` is used. The band 912–1024px is
+therefore a named deviation (two-column, but static where the design is sticky); `tablet` is the
+right choice rather than `mobile` because a stacked-and-sticky TOC travels down over the article —
+a sticky flex item's containing block is the whole flex container — and the design itself does that
+between 861px and ~912px, where ours does not. Also: the design's reset is `max-width:none;
+max-height:none`, and no size property converts a keyword, so the class uses `max-width:100%` and
+`max-height:100000px` (identical in effect; no measured rect difference at 390).
+
+### New global classes (21)
+`legal-tab-on`, `legal-tab`, `legal-tabs`, `legal-body`, `legal-toc`, `toc-link`, `toc-num`,
+`legal-article`, `legal-sec`, `legal-head`, `legal-num`, `legal-h2`, `legal-h3`, `legal-p`,
+`legal-tail`, `legal-sub`, `legal-list`, `legal-li`, `legal-tick`, `legal-contact`,
+`legal-contact-btn`. `legal-tab-on` is declared before `legal-tab` (reversed print order). Reused
+unchanged: `navy`, `wrap`, `eyebrow-light`, `dash`, `lead-light`, `note-light`, `label`, `body-15`.
+The two one-off icon sizes (16px calendar, 14px envelope) are local css, not classes.
+
+### Line boxes measured in the design at 1280 (the kit's `1.2em` is still open)
+Hanken Grotesk: 16px->21, 17->22, 20->26, 21->27, 22->29, 24->31, 36->47, 56->73.
+Inter: 11->14, 12->15, 13->16, 14->17, 15->19, 16->20, 17->20, 18->21.
+These extend the table in the daycare section; 16px Hanken (`legal-num`) and 16px/700 Inter
+(`legal-h3`) are new.
+
+### French copy
+Terminology from `content/home.ts` / `content/footer.ts`: "aide familiale", "garderie", "séance",
+"code postal", "courriel", "LPRPDE" for PIPEDA, "renseignements personnels", "Plateforme". Defined
+legal terms use guillemets with U+00A0 inside (`« la Plateforme »`), and `15 %` / `5 %` take a
+U+00A0 before the sign — same rule as `content/helpers.ts`. Checked in the headless render at 390
+and 1280: nothing wraps badly and no guillemet or percent sign is orphaned.
+
+### Named deviations (these pages)
+- The TOC is static rather than sticky between ~912px and 1024px (breakpoint, above).
+- `max-width:100%` / `max-height:100000px` stand in for the design's `none` (no keyword converts).
+- In-page jumps are animated, not instant: Elementor's `frontend.min.css` sets
+  `html{scroll-behavior:smooth}` site-wide and the design sets none. Pre-existing, every page.
+- Icons are `<svg>` where the design uses Line Awesome `<i>` glyphs, so `font-*` differs by
+  construction; the 18px check tick is 18x18 against the design's 18x22.4 inline line box.
+- The eyebrow is a flex row with `gap:10px` where the design is a block `<p>` with an inline-block
+  dash carrying `margin-right:10px`. Same 15px line box, same 22x2 dash. Identical on every page.
+- `e-button` base `text-align:center` on the three tab pills, where the design inherits `start`.
+  Both shrink-wrap, so no measured difference.
+
+### Verification (skill step 4)
+26–34 matched selector pairs per document, computed styles plus bounding rects, design-vs-live at
+1280, 1440, 1920 and 390 for the Privacy Policy and at 1280 and 390 for all six pages, measured
+from a `curl`ed copy of each live page served beside the design. **Zero unexplained differences on
+all six pages at every width**; every remaining difference is bucketed with a stated reason (the
+kit font stack and em line-height, Elementor's `.e-con` base `position`/`min-width`, and the
+by-construction items listed above). `documentElement.scrollWidth > clientWidth` is false at every
+width on the design and on both languages, and no element is wider than the viewport. Measuring
+caught one real miss: `legal-tail` had dropped the `max-width:78ch` that the design's `p.tail`
+inherits from `.legal-sec p` (805.59px at 1280) — fixed and re-imported. `render.sh` slices were
+captured for all six pages at desktop and mobile; the ones read against the design's own slices
+were privacy-en d0 and m1, agreement-en d1, agreement-fr d0 and terms-fr m0 — a sample covering
+all three documents, both languages and both widths, and each matched section by section. The
+numeric pass above is what covers the rest.
+
+Editor check: all 199 classes present in BOTH the frontend and preview contexts, with identical
+stored props; the saved `_elementor_data` references classes by global-class **id** with zero raw
+label leaks (173/205/123 id references) and carries exactly 11/17/8 `_cssid` values; the compiled
+`global-821-frontend-desktop.css` contains real `.legal-sec{…}` / `.legal-toc{…}` rules including
+`sticky` and `scroll-margin-top`, and the tablet bundle contains the `static` reset; the canvas
+renders the sections with the right ids and no "classes are missing" warning. Update/Publish never
+pressed. **Not fully checked visually**: the Browser pane was hidden for this pass (it reports
+`clientWidth: 0`, which suppresses scrolling and returns blank screenshots), so the canvas was read
+through the DOM rather than looked at. While doing so, container classes in the canvas showed no
+`background-color` and no `border-width`/`border-color` — but this reproduces on the already-live
+Daycare matching page with the shared `band` and `navy` classes, the stored props are correct and
+identical in both contexts, and the frontend is correct by measurement, so it is pre-existing and
+most likely an artefact of driving the editor at zero width. Worth a look by someone with the pane
+open.

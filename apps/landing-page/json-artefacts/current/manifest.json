@@ -2,6 +2,8 @@
   "builderVersion": "1",
   "elementorVersion": "4.2.4",
   "entries": [
+    "pages/agreement.en.json",
+    "pages/agreement.fr.json",
     "pages/daycare.en.json",
     "pages/daycare.fr.json",
     "pages/families.en.json",
@@ -10,8 +12,12 @@
     "pages/helpers.fr.json",
     "pages/home.en.json",
     "pages/home.fr.json",
+    "pages/privacy.en.json",
+    "pages/privacy.fr.json",
     "pages/safety.en.json",
     "pages/safety.fr.json",
+    "pages/terms.en.json",
+    "pages/terms.fr.json",
     "templates/footer.en.json",
     "templates/footer.fr.json",
     "templates/header.en.json",
@@ -177,6 +183,11 @@
       "ext": "svg",
       "alt": "",
       "key": "icon:child"
+    },
+    "9da886abd2cd": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:envelope"
     },
     "aa834f2dc467": {
       "ext": "svg",

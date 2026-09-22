@@ -56,3 +56,34 @@
 - The 4.2.4 converter rejects several values whose siblings convert fine, so guess-by-analogy is unsafe — ask the site (`require .../lib.php; return pz_converter()->convert('<css>');`, many declarations in one call) before writing any of them. Confirmed rejections and their working substitutes: `text-align:left` fails while `start`/`end`/`center`/`justify` pass (use `start`); `align-items:baseline` fails while `flex-start`/`center`/`flex-end`/`start`/`end`/`stretch` pass; `justify-self` and `place-self` fail at any value (centre a grid item with `margin-left:auto;margin-right:auto`); `object-position` fails in keyword form (`right bottom`, `center`) but passes as percentages (`100% 100%`); `background-size`/`background-position` fail ON THEIR OWN but pass when declared alongside a `background-image` in the same block (they merge into one `background` prop), which is why the existing home photo blocks convert and an isolated `background-size:cover` would not. Convertible despite being absent from css-cheatsheet.md: `cursor`, `min-height`, `max-width:<%>`, three-value `padding` shorthands, `width:min(...)`, `grid-column:span N`, `font-style`.
 - Chrome headless clamps `--window-size` to a floor of about 500px, so a `--window-size=390,9000` run silently lays the page out at 500px and any mobile measurement taken from it is wrong (it reported `documentElement.clientWidth` 500 while claiming to be 390). To measure a real narrow viewport without the browser pane, load the page inside a fixed-width same-origin iframe in a harness page and run the probe against `iframe.contentDocument` — the iframe's own width is the inner document's layout viewport. Serving a `curl`ed copy of a live WordPress page from a local static server works for this because WordPress emits absolute URLs for every stylesheet, script and image; only nav links are relative, and those are not needed for measurement.
 - A load-triggered V4 interaction (e.g. `effect:"scale"` on the `vetted` badge) is frequently caught MID-ANIMATION by a headless capture, because `--virtual-time-budget` fast-forwards timers unevenly: the same element measured 71x23, 50x?, 19x7 and 0x0 across runs at different widths. Do not chase it as a layout bug — re-read it in the real browser (`transform:none`, full size) before spending a deploy cycle on it. The same caveat already applies to `.dash` under `anim-wiggle`.
+
+## Anchors and in-page navigation
+- **A V4 atomic element DOES render an `id`** — through the `_cssid` setting, not the class list.
+  Every element type has it (`Flexbox`, `Div_Block`, `Grid` and the widgets all read
+  `$settings['_cssid']` in `add_render_attributes()` and emit `id="…"`), and the editor exposes it
+  as the "ID" text control in the Settings tab. Verified live on 4.2.4 by rendering each type with
+  `create_element_instance()->print_element()`. Earlier pages recorded "a V4 atomic element renders
+  no `id`, so there is nothing to anchor to" as a named deviation on four pages' hero buttons — that
+  was wrong, and those four inert buttons can be made to work whenever someone re-verifies those
+  pages. The builder exposes it as `cssId` on any element (`dsl.ts`).
+- `scroll-margin-top` converts; the logical `scroll-margin-block-start` does NOT (customCss, aborts).
+- Elementor's `frontend.min.css` sets `html{scroll-behavior:smooth}` site-wide, so every in-page
+  jump on a WordPress page is animated where the design's own page jumps instantly. **Headless
+  Chrome never runs that animation under `--virtual-time-budget`**: `window.scrollTo()`,
+  `scrollIntoView()`, setting `location.hash` and clicking an anchor all leave `scrollY` at 0, on
+  every page of the site, which reads exactly like "the page cannot scroll" or "the anchors are
+  broken". It cost a long bisect here. To measure a jump, inject `<style>html{scroll-behavior:auto}
+  </style>` into the copy under test and nothing else; the design page (which has no such rule)
+  scrolls normally and is the control that tells the two apart.
+- Measure a scroll/anchor jump on a TOP-LEVEL document, never inside the harness iframe: an iframe
+  at a fixed height reports the right `scrollHeight` but will not scroll the inner document, so
+  every jump reads as 0. Serve a `curl`ed copy of the live page and append the probe before
+  `</body>`, then `--dump-dom` it.
+
+## Size properties
+- The size properties (`min-width`, `max-width`, `min-height`, `max-height`) convert only a length
+  or a percentage. Every CSS-wide keyword — `none`, `initial`, `unset`, `inherit`, `auto` — lands in
+  customCss and aborts the import, so a responsive breakpoint cannot *reset* a cap the way a design's
+  media query does (`max-width:none`). Use a real value with the same effect: `max-width:100%` for a
+  stacked flex item, and a very large length (`max-height:100000px`) for "no cap". `width:auto` and
+  `height:auto` are fine — they are not in this set. `css.ts` lints this now.

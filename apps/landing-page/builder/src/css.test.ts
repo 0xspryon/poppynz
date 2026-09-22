@@ -71,4 +71,13 @@ describe("normalizeCss", () => {
   test("trims and drops trailing semicolon", () => {
     expect(normalizeCss("  display : flex ;\n gap:16px; ")).toBe("display:flex;gap:16px");
   });
+  test("a keyword reset on a size property is rejected (never converts; aborts the import)", () => {
+    expect(lintCss("max-width:none")).toHaveLength(1);
+    expect(lintCss("max-height:none")).toHaveLength(1);
+    expect(lintCss("min-width:auto")).toHaveLength(1);
+    expect(lintCss("max-width:100%")).toHaveLength(0);
+    expect(lintCss("max-height:100000px")).toHaveLength(0);
+    // width/height are not in the set: `width:auto` does convert and several classes use it.
+    expect(lintCss("width:auto")).toHaveLength(0);
+  });
 });

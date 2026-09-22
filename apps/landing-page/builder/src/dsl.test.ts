@@ -104,4 +104,17 @@ describe("withDefaults (native base-style overrides)", () => {
       desktop: "padding-top:0;padding-bottom:0;padding-inline:12px",
     });
   });
+  // `_cssid` is what makes the legal pages' in-page anchors work: it is the only V4 setting that
+  // renders a real `id` attribute (verified live on Elementor 4.2.4 for every element type).
+  test("cssId is emitted as the _cssid setting", () => {
+    const f = flex("wd/anchor", { title: "Section", tag: "section", cssId: "s3" }, []);
+    expect(f.settings._cssid).toEqual({ $$type: "string", value: "s3" });
+  });
+  test("an element without cssId sets no _cssid", () => {
+    expect(flex("wd/plain", { title: "Plain" }, []).settings._cssid).toBeUndefined();
+  });
+  test("cssId rejects a value that is not a valid HTML id", () => {
+    expect(() => flex("wd/bad", { title: "Bad", cssId: "1s" }, [])).toThrow(/invalid element id/);
+    expect(() => flex("wd/bad2", { title: "Bad", cssId: "a b" }, [])).toThrow(/invalid element id/);
+  });
 });

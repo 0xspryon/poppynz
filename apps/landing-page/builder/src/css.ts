@@ -28,6 +28,14 @@ const BANNED: Record<string, string> = {
   "flex-basis": "`flex-basis` longhand is never converted; use the `flex` shorthand (`flex:<grow> <shrink> <basis>`)",
 };
 
+// `min-*`/`max-*` are the size properties whose CSS-wide keyword resets the 4.2.4 converter cannot
+// express: it emits a prop only for a length or a percentage, and silently leaves anything else in
+// customCss, which Free strips and the importer aborts on. Confirmed live with
+// pz_converter()->convert() for each keyword below. `width`/`height` are deliberately NOT in this
+// set: `width:auto` does convert and several classes rely on it.
+const SIZE_PROPS = new Set(["min-width", "max-width", "min-height", "max-height"]);
+const SIZE_KEYWORDS = new Set(["none", "initial", "unset", "inherit", "revert", "auto"]);
+
 export function lintCss(css: string): string[] {
   const out: string[] = [];
   for (const raw of css.split(";")) {
@@ -43,6 +51,7 @@ export function lintCss(css: string): string[] {
     else if (prop === "gap" && value.split(/\s+/).filter(Boolean).length > 1) out.push("two-value `gap:<row> <col>` is never converted; use `gap:<row>;column-gap:<col>`");
     else if (prop === "opacity" && /^-?\d*\.?\d+$/.test(value)) out.push("unitless decimal `opacity` is never converted; use a percentage, e.g. `opacity:50%`");
     else if (prop === "transform" && /rotate[xyz]?\(\s*0\s*\)/i.test(value)) out.push("a unitless zero angle in `transform` (e.g. `rotate(0)`) is never converted; use an explicit unit, e.g. `rotate(0deg)`");
+    else if (SIZE_PROPS.has(prop) && SIZE_KEYWORDS.has(value.toLowerCase())) out.push(`\`${prop}:${value}\` is never converted — the size properties take only lengths and percentages, so a keyword reset lands in customCss and aborts the import; override with a real value instead (e.g. \`max-width:100%\`)`);
   }
   return out;
 }

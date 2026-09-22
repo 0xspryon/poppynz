@@ -193,11 +193,35 @@ foreach ( $manifest['entries'] as $entry ) {
 	if ( ! str_starts_with( $entry, 'pages/' ) ) { continue; }
 	$p = pz_json( $entry );
 	$slug = $p['slug'] !== '' ? $p['slug'] : ( $p['lang'] === 'en' ? 'home' : 'accueil' );
+	// Find our own page by the marker meta first: it survives a slug WordPress had to uniquify,
+	// which a by-slug lookup cannot. Fall back to the slug for pages imported before the marker.
 	$found = null;
-	foreach ( get_posts( [ 'post_type' => 'page', 'name' => $slug, 'post_status' => 'any', 'numberposts' => -1, 'lang' => '' ] ) as $cand ) {
+	foreach ( get_posts( [ 'post_type' => 'page', 'post_status' => 'any', 'numberposts' => -1, 'lang' => '', 'meta_key' => '_poppynz_page', 'meta_value' => $p['key'] ] ) as $cand ) {
 		if ( ! function_exists( 'pll_get_post_language' ) || pll_get_post_language( $cand->ID ) === $p['lang'] ) { $found = $cand->ID; break; }
 	}
+	if ( ! $found ) {
+		foreach ( get_posts( [ 'post_type' => 'page', 'name' => $slug, 'post_status' => 'any', 'numberposts' => -1, 'lang' => '' ] ) as $cand ) {
+			if ( ! function_exists( 'pll_get_post_language' ) || pll_get_post_language( $cand->ID ) === $p['lang'] ) { $found = $cand->ID; break; }
+		}
+	}
+	// Free the slug from a page that is not ours. WordPress auto-creates a DRAFT "Privacy Policy"
+	// page on every install, which squats `privacy-policy`; wp_insert_post then silently falls
+	// back to `privacy-policy-2` and every link built from PAGES[].slug points at a 404. Only an
+	// unpublished page with no Elementor data is touched, and it is renamed, never deleted — so a
+	// real page of the site's own is always left alone (it keeps the slug and the report shows the
+	// uniquified URL, which is the visible, safe failure).
+	foreach ( get_posts( [ 'post_type' => 'page', 'name' => $slug, 'post_status' => 'any', 'numberposts' => -1, 'lang' => '' ] ) as $cand ) {
+		if ( $found && (int) $cand->ID === (int) $found ) { continue; }
+		if ( 'publish' === $cand->post_status || get_post_meta( $cand->ID, '_elementor_data', true ) ) { continue; }
+		wp_update_post( [ 'ID' => $cand->ID, 'post_name' => $slug . '-wp-default' ] );
+		pz_note( 'slugs', "$slug (freed)", "renamed #{$cand->ID} ({$cand->post_status}) to {$slug}-wp-default" );
+	}
 	$pid = $found ?: wp_insert_post( [ 'post_title' => $p['title'], 'post_name' => $slug, 'post_type' => 'page', 'post_status' => 'publish', 'post_content' => '' ] );
+	if ( $found && get_post_field( 'post_name', $pid ) !== $slug ) {
+		wp_update_post( [ 'ID' => $pid, 'post_name' => $slug ] );
+		pz_note( 'slugs', "$slug (corrected)", "renamed #$pid to $slug" );
+	}
+	update_post_meta( $pid, '_poppynz_page', $p['key'] );
 	if ( function_exists( 'pll_set_post_language' ) ) { pll_set_post_language( $pid, $p['lang'] ); }
 	$elements = $p['elements']; pz_fill_styles( $elements, $p['_css'], $media_ids, $label_to_id );
 	$changed = pz_save_document( $pid, $elements, [ 'hide_title' => 'yes', 'template' => 'elementor_header_footer' ] );
@@ -214,6 +238,12 @@ if ( function_exists( 'pll_save_post_translations' ) ) {
 if ( isset( $page_ids['home']['en'] ) ) {
 	update_option( 'show_on_front', 'page' ); update_option( 'page_on_front', $page_ids['home']['en'] );
 	pz_note( 'options', 'front_page', 'home.en' );
+}
+// WordPress's own privacy-policy setting still points at the draft it auto-created (the same one
+// whose slug is freed above). Point it at the real policy so wp-admin stops offering the draft.
+if ( isset( $page_ids['privacy']['en'] ) && (int) get_option( 'wp_page_for_privacy_policy' ) !== (int) $page_ids['privacy']['en'] ) {
+	update_option( 'wp_page_for_privacy_policy', $page_ids['privacy']['en'] );
+	pz_note( 'options', 'privacy_policy_page', 'privacy.en' );
 }
 \Elementor\Plugin::$instance->files_manager->clear_cache();
 $report = pz_report();

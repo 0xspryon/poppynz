@@ -5,6 +5,7 @@ import { FOOTER } from "./footer";
 import { HEADER } from "./header";
 import { HELPERS } from "./helpers";
 import { HOME } from "./home";
+import { LEGAL, LEGAL_COMMON, LEGAL_DOCS } from "./legal";
 import { SAFETY } from "./safety";
 import { assertLocalizedKeys } from "./types";
 
@@ -17,6 +18,26 @@ describe("content", () => {
     expect(() => assertLocalizedKeys(HELPERS as any, "helpers")).not.toThrow();
     expect(() => assertLocalizedKeys(SAFETY as any, "safety")).not.toThrow();
     expect(() => assertLocalizedKeys(DAYCARE as any, "daycare")).not.toThrow();
+    expect(() => assertLocalizedKeys(LEGAL_COMMON as any, "legal common")).not.toThrow();
+    for (const doc of LEGAL_DOCS) expect(() => assertLocalizedKeys(LEGAL[doc] as any, `legal ${doc}`)).not.toThrow();
+  });
+  test("the three legal documents have the design's section counts and numbering in both languages", () => {
+    const counts = { privacy: 11, terms: 17, agreement: 8 } as const;
+    for (const l of ["en", "fr"] as const) {
+      for (const doc of LEGAL_DOCS) {
+        const d = LEGAL[doc][l];
+        expect(d.sections).toHaveLength(counts[doc]);
+        // The design numbers every section 1..n except the Privacy Policy's closing
+        // "Key Considerations for Canadian Privacy", which it leaves unnumbered.
+        const numbered = d.sections.filter((s) => s.n !== null);
+        expect(numbered.map((s) => s.n)).toEqual(numbered.map((_, i) => String(i + 1)));
+        expect(d.sections.filter((s) => s.n === null)).toHaveLength(doc === "privacy" ? 1 : 0);
+        // Every section carries at least one of the four body slots.
+        for (const s of d.sections) expect(Boolean(s.lead || s.items || s.subs || s.tail)).toBe(true);
+      }
+      expect(LEGAL.privacy[l].sections[1].subs).toHaveLength(2);
+      expect(LEGAL.agreement[l].sections[7].tail).toBeTruthy();
+    }
   });
   test("home has 4 steps, 8 services, 3 quotes, 5 cities in both languages", () => {
     for (const l of ["en", "fr"] as const) {

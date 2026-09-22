@@ -744,8 +744,8 @@ save — so all eight French posts reported `updated` on every import. Fixed by 
   is a next page of posts, and with eight articles and ten per page there is none. This is the only
   measured difference on the index: the body is 87px shorter at 1280 and 72px at 390.
 - **The index filter row and the article tag pills are inert** (`href="#"` and a link back to the
-  index), and the search box is a styled placeholder, exactly as in the design. Making them live
-  would need category-archive and search templates, which are not in this scope.
+  index), exactly as in the design. Making them live would need category archives, which are not in
+  this scope. The search box and the newsletter field are no longer inert — see § Forms below.
 - **The French index lists no articles**, because every French article is a draft by request. The
   chrome, filters and newsletter card are all French and correct; cards appear when the drafts are
   published.
@@ -765,3 +765,47 @@ at y=84 on both). Article at 390: 52 of 53 identical, the exception being the av
 `document.documentElement.scrollWidth > clientWidth` is false on both sides at both widths.
 `render.sh` slices of `/blog/`, `/fr/blogue/` and `/blog/vulnerable-sector-check/` were read beside
 the `dump_design.sh` slices and match section by section.
+
+## 2026-09-22 — the two real forms (search, newsletter)
+
+The design draws both as decorative placeholders — a grey `<span>` inside `<form onsubmit="return
+false">`. Both are now real. They are the only input-looking elements on the whole site: the
+Elementor pages have none, and the two other bordered, field-like things are not fields (`.rate` is
+a helper's hourly rate in the For-helpers profile mock, `.lang` is the working EN/FR switcher).
+
+### Search (`search.php`)
+A real GET form posting `s` and `post_type=post` to the current language's `home_url()`, so a French
+search stays French. `search.php` reuses the index layout — same header block, card grid and
+newsletter — with the query in the heading and kept in the field, a "Back to all articles" link and
+an empty state. `functions.php` forces `post_type=post` on every front-end search through
+`pre_get_posts`, so a hand-typed `/?s=` cannot return a page that lacks the meta the cards need.
+
+Measured against the design at 1280 the box is unchanged: container 320x48 at the same x, icon 20x20
+at the same x, placeholder starting at the same x in the same 15px Inter `#757681`. The only
+difference is the text element's width (260px vs the design's 105.7px) because an input fills the
+row so it can be typed into, where the design's span shrink-wraps its label.
+
+### Newsletter (`poppynz_handle_newsletter()`)
+Posts same-origin to `admin-post.php`, which hands the address to the app as
+`{"email":"..."}` at `https://app.<host>/api/v1/newsletter`. The host comes from the new
+`poppynz_app_host()`, shared with the `/app` redirect, so the same artefact reaches
+`app.staging.poppynz.com` and `app.poppynz.com` with no configuration.
+
+**Server side, not from the browser, on purpose.** A `fetch()` from the page would be cross-origin
+with a JSON content type, so it would need a CORS preflight and matching headers on the app; from
+PHP there is no origin to check and the endpoint needs no CORS configuration at all.
+
+**Fire and forget** (`blocking => false`): nothing is stored on this site and nothing waits for a
+response — so a failing endpoint cannot be detected here and the visitor is thanked regardless. A
+nonce and a honeypot guard the handler. The result returns as `?newsletter=ok|invalid|error` on the
+page the visitor was on (so a refresh cannot resubmit) and is announced in a live region that is
+rendered **only when there is a message** — an empty `<p>` still takes a line box and made the card
+taller than the design until that was fixed.
+
+If a page cache is ever added in front of this site, the nonce is the thing that will break first:
+a cached page serves a stale nonce and every submission lands on `error`. The honeypot alone would
+survive caching.
+
+**Open, on the app's side:** `POST https://app.staging.poppynz.com/api/v1/newsletter` returned 404
+when this was built, so the route was not deployed on staging yet. Everything on the WordPress side
+is verified; the hand-off itself is unproven until that route exists.

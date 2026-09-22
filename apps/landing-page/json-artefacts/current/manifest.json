@@ -2,6 +2,8 @@
   "builderVersion": "1",
   "elementorVersion": "4.2.4",
   "entries": [
+    "pages/daycare.en.json",
+    "pages/daycare.fr.json",
     "pages/families.en.json",
     "pages/families.fr.json",
     "pages/helpers.en.json",
@@ -35,6 +37,11 @@
       "ext": "webp",
       "alt": "Small errands",
       "key": "svc:packages"
+    },
+    "1b5e26de99be": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:bell"
     },
     "208de3b99c1c": {
       "ext": "svg",
@@ -166,6 +173,11 @@
       "alt": "",
       "key": "icon:file-alt"
     },
+    "93cdd7cee5ed": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:child"
+    },
     "aa834f2dc467": {
       "ext": "svg",
       "alt": "Poppynz",
@@ -195,6 +207,11 @@
       "ext": "webp",
       "alt": "Right in Your Neighbourhood",
       "key": "ill:search.webp"
+    },
+    "c466f00d399e": {
+      "ext": "webp",
+      "alt": "Daycare provider waving",
+      "key": "ill:providers.webp"
     },
     "c9a9db88b128": {
       "ext": "svg",
@@ -235,6 +252,11 @@
       "ext": "svg",
       "alt": "",
       "key": "icon:eye-slash"
+    },
+    "e2435aa44c7b": {
+      "ext": "svg",
+      "alt": "",
+      "key": "icon:calendar"
     },
     "e75a8d8069df": {
       "ext": "svg",

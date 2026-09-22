@@ -34,6 +34,10 @@
 .elementor .em-accent em{font-style:normal;color:var(--sky)}
 .elementor .em-navy strong{color:var(--navy)}
 .elementor .em-ink strong{color:var(--ink)}
+/* An inline <a> inside light-on-navy copy (the daycare providers help row). The kit's own link
+   colour is navy, unreadable there, and html-v3 strips every attribute so the <a> cannot carry a
+   class of its own. */
+.elementor .link-light a{color:var(--white);font-weight:600}
 
 /* Elementor's own base rule is `.e-con{width:var(--width)}` with `--width:100%` by default
  * (elementor-frontend.min.css), which stretches every atomic container to the full width of its

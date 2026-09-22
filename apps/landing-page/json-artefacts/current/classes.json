@@ -231,6 +231,13 @@
     }
   },
   {
+    "id": "g-d997b03",
+    "label": "link-light",
+    "css": {
+      "desktop": ""
+    }
+  },
+  {
     "id": "g-727b79a",
     "label": "accent",
     "css": {
@@ -761,6 +768,13 @@
     "label": "step-num",
     "css": {
       "desktop": "font-family:var(--font-body);font-weight:700;font-size:13px;letter-spacing:.08em;color:var(--teal);display:inline-block;transform:rotate(6deg)"
+    }
+  },
+  {
+    "id": "g-0892e8e",
+    "label": "step-pill",
+    "css": {
+      "desktop": "padding:3px 8px;border-radius:999px;background-color:var(--tint);line-height:16px"
     }
   },
   {

@@ -3,14 +3,14 @@
 ## Sites
 | Site | URL | Novamira MCP server | Status |
 |---|---|---|---|
-| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families, For helpers and Safety & trust (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
+| Staging | https://staging.poppynz.com | `novamira-staging-poppynz` | header, footer, Home, For families, For helpers, Safety & trust and Daycare matching (en, fr) live 2026-09-22 (Elementor 4.2.4, Hello 3.5.1, HFE 2.9.4, Polylang 3.8.9, languages en/fr) — see "Live on staging" below |
 | Production | https://poppynz.com | (to be added) | not deployed |
 
 ## Versions (pinned in server/bootstrap.php)
-Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.6).
+Elementor 4.2.4 · Hello Elementor 3.5.1 · Header & Footer Builder 2.9.4 · Polylang 3.8.9 · child theme `poppynz` (style.css `Version` 1.0.7).
 
 ## Page map
-See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families, helpers, safety (en, fr).
+See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home, families, helpers, safety, daycare (en, fr).
 
 ## Live on staging (2026-09-21)
 | What | EN | FR |
@@ -21,6 +21,7 @@ See `apps/landing-page/builder/src/pages.ts`. Built so far: header, footer, home
 | For families | 440 — `/for-families/` | 443 — `/fr/pour-les-familles/` |
 | For helpers | 564 — `/for-helpers/` | 567 — `/fr/pour-les-aides/` |
 | Safety & trust | 691 — `/safety-and-trust/` | 694 — `/fr/securite-et-confiance/` |
+| Daycare matching | 727 — `/daycare-matching/` | 730 — `/fr/jumelage-garderie/` |
 
 Attachments imported: 28 (content-hash-deduped via `_poppynz_hash`; 19 icons, 8 service illustrations, 1 logo mark). Untouched pre-existing content: WordPress's default Sample Page (id 2) and draft Privacy Policy (id 3).
 
@@ -340,6 +341,111 @@ capture and is 71x23 with `transform:none` in a real browser. Confirm any suspec
 `getComputedStyle(el).transform` before believing the rect.
 
 
+## 2026-09-22 — Daycare matching (Plan 2, fourth page)
+
+Live: EN 727 `/daycare-matching/`, FR 730 `/fr/jumelage-garderie/`, both 200, `has_header:true`,
+`lang` `en-CA` / `fr-CA`. Second `import.php` run after the deploy: all 277 entries `unchanged`
+(55 media, 30 variables, 178 classes, 4 templates, 10 pages). Every earlier page's `pages/*.json`
+and every `templates/*.json` is byte-identical to before this page existed (`git diff --stat` lists
+none of them); the only artefact churn is 2 new labels in `classes.json` (14 added lines, 0 removed),
+4 new media files and the two new page files. No existing class was edited and no new variable was
+needed, so Home, For families, For helpers and Safety & trust render exactly as before.
+
+New global classes: `step-pill`, `link-light`. Everything else is reused: `hero`/`hero-copy`/`deco-*`,
+`media-box`/`media-credit`, `band`/`band-top`/`sec`/`sec-x`/`wrap`, `stack-16`/`stack-20`/`stack-24`,
+`card`/`card-lift`, `step-top`/`step-num`, `bubble`/`bubble-tint`, `h1`/`h3`/`h3-22`/`h2-light`,
+`lead`/`lead-lg`/`lead-light`/`body-15`/`body-15-light`/`body-18`/`muted-13`/`trust`,
+`btn-primary`/`btn-primary-14`/`btn-primary-15`/`btn-outline`/`btn-row`/`btn-row-center`,
+`chip-req`, `navy`/`shadow-deep`, `row-dark`/`row-dark-t`/`num-light`, `em-accent`, `icon-*`.
+
+### The design's `.dstep` is `card` + `card-lift`, declaration for declaration
+The four "Getting matched is simple" cards look like a fifth card variant (the page declares its own
+`.dstep` in a `<style>` block), but diffing that rule against site.css's `.card` and `.card-lift:hover`
+shows every declaration identical — same gap, padding, radius, border, background, and the same
+`translateY(-4px) rotate(-0.6deg)` hover. So they reuse both shared classes and add nothing. Its `.n`
+badge IS new: `step-num` drawn as a tinted pill, so `step-pill` carries only the three additive
+properties (`padding`, `border-radius`, `background-color`) plus its line box. The two classes share
+no property, which is why their order in `classes.ts` does not matter.
+
+### `line-height:normal` is a lookup table, not a ratio
+Every element this page owns states the design's own line box locally (the kit's `1.2em` is still
+open — see the For families section). Deriving those from a ratio does not work: Chrome's `normal` for
+both webfonts is neither 1.2 nor 1.25 uniformly. Measured in the design at 1280 — Inter: 11px->14,
+12px->15, 13px->16, 14px->17, 15px->19, 16px->20, 18px->24; Hanken Grotesk: 17px->22, 21px->27,
+22px->29. These agree with every constant the earlier pages measured one at a time (`EYEBROW_LH` 15,
+`H3_LH` 27, `BTN_LH` 20, `h3-22` 29, `row-dark-title` 22, `row-lbl` 19, `num-light` 16, `pill-nav` 17).
+
+**Measurement trap, and it cost two wrong tables**: a probe that measures a page inside an iframe must
+wait for `iframe.contentDocument.fonts.ready`, not just `load` plus a timeout. Without it the page lays
+out in the fallback sans and every derived line box is wrong by 1-3px in an inconsistent direction — it
+reported 21px Hanken as 25px (it is 27) and 16px Inter as 18px (it is 20), which reads exactly like a
+real fidelity bug rather than an unloaded font. Confirm by having the probe report the loaded font list.
+
+### Three headings opt out of balanced wrapping
+The design sets `text-wrap:initial` on the "For families" h2 and the "Notification" h2-sm, and the
+final-CTA h2 carries no class at all (so no balance either); the theme applies `text-wrap:balance` to
+`.h1`/`.h2`/`.h2-light`/`.h2-sm`/`.h2-cta`. Those three headings therefore cannot carry the class and
+state the same declarations in local css instead (`H2_UNBALANCED` / `H2_SM_UNBALANCED` /
+`H2_CTA_UNBALANCED` in the recipe) — the same move as the safety page's "What we never do" heading.
+Only the navy panel's h2 (`h2-light`) and the hero h1 stay balanced, which is what the design does.
+The CTA h2 also needed its own size: `h2-cta` is `clamp(32px,4.2vw,52px)`, this design
+`clamp(32px,4vw,48px)`.
+
+### The section padding sits one level lower than the design
+The design puts the section padding on `<section class="band">` / `<section class="cta band-top">` and
+leaves the inner column unpadded; the recipe puts `sec` (or an explicit padding) on the inner element,
+exactly as Home and the safety page do, because `wrap`'s max-width has to sit on the same box. The
+section's own bounding rect matches the design to within a pixel at every width, and so does every
+element inside it — only the two intermediate boxes report the padding on different rows of the diff.
+
+### French copy
+Written from the terminology already in `content/home.ts` / `content/footer.ts`: "garderie",
+"jumelage garderie" (the footer's own label), "aide familiale", "code postal", "courriel", "séance",
+"LPRPDE", "entente". "Register interest" is "Inscrire mon intérêt", "I run a daycare" is
+"Je gère une garderie", "List an opening" is "Inscrire une place". The time on the notification card
+uses the Canadian French form "9 h 12". Like the safety page and unlike For helpers, this page needs no
+U+00A0: it has no `$`, no `%` and no guillemets, and the repo's existing French puts an ordinary space
+before a colon and none before `?`/`!`. Checked at 390 and 1280 in the headless render — nothing wraps
+badly, and live EN vs live FR differs in no non-text-metric property at any of the four widths.
+
+### Named deviations (this page)
+- The hero's "I run a daycare" button is inert (`#`). The design anchors it at `#daycares`; a V4
+  atomic element renders no `id`, so there is nothing to anchor to. Same as the For families, For
+  helpers and Safety & trust hero secondary CTAs.
+- The notification card's "Contact the daycare" button is inert (`#`), exactly as in the design.
+- The hero video has no poster (`video()` takes a media-library key; the design's poster is a
+  hotlinked Pexels still). Same as Home and For helpers.
+- The notification chip's bell uses the shared `anim-wiggle` (3s, `transform-origin:left center`)
+  where the design animates it at 1.2s from `top center`. `animation-*` is rejected by the converter,
+  so motion can only come from an `anim-*` class; adding a fourth wiggle variant to the theme for one
+  decorative icon was not worth it.
+- The design's `.btn-outline-14` (`.btn-outline` with 14px 24px padding) and the notification card's
+  pill button are each used once, so both are local overrides rather than global classes — the same
+  call the safety page made for `.eyebrow-dark`.
+- The hero's tint backdrop sits on `media-box` (which also carries the radius, overflow and shadow)
+  where the design splits it across an outer wrapper and an inner `.media`. Identical rendering; the
+  video covers it either way.
+- Icons are `<svg>` where the design uses Line Awesome `<i>` glyphs, so `font-*` on them differs by
+  construction. The one measurable consequence: the notification card's three 18px icons are 18x18
+  against the design's 18x19 inline line box (same drawn glyph). Same bucket as the safety page's ticks.
+- The shared `btn-primary` carries `mobile:"padding:14px 24px"`, which the design has no equivalent
+  for (it keeps 16px 30px at every width). Identical on Home, For helpers and Safety & trust; left
+  alone rather than overridden on one page. This is the ONLY measured difference at 390.
+
+### Verification (skill step 4)
+74 matched selector pairs, computed styles plus bounding rects, design-vs-live at 1280, 1440, 1920 and
+390, measured inside a fixed-width same-origin iframe (Chrome headless clamps `--window-size` to ~500px;
+the live page is measured from a `curl`ed copy served beside the design, which works because WordPress
+emits absolute asset URLs). **Zero unexplained differences at 1280, 1440 and 1920**; at 390 only the
+shared `btn-primary` mobile padding. Every other difference is bucketed with a stated reason (kit font
+stack and kit line-height, `.e-con` base `position`/`min-height`, `wrap`'s max-width, the e-button base
+`text-align`, `anim-*`/interaction transforms sampled mid-flight, the eyebrow's flex-row-plus-gap markup
+and the svg-vs-glyph icons). `documentElement.scrollWidth > clientWidth` is false at all four widths on
+the design and on BOTH languages, and no element is wider than the viewport at 390 on any of the three.
+Live EN was additionally diffed against live FR at 1280, 1440, 1920 and 390: zero differences in every
+property outside the text-metric set (widths, heights, transforms). `render.sh` slices (desktop and
+mobile, en and fr) match the design's slices section by section.
+
 ## Deploy
 1. `cd apps/landing-page/builder && bun test && bun run build`; commit `json-artefacts/current`.
 2. `bash .claude/skills/elementor-v4-port/scripts/pack.sh current`
@@ -364,6 +470,7 @@ capture and is 71x23 with `transform:none` in a real browser. Confirm any suspec
 - 2026-09-22: the FAQ `+`/`−` glyph swap is done with three more anim.css rules over both icons'
   `faq-icon-plus`/`faq-icon-minus` classes rather than by teaching `faq.js` to rewrite SVG markup, so
   the script stays a pure class toggle. Theme `Version` bumped to 1.0.5.
+- 2026-09-22: one more theme CSS exception, same mechanism as `em-navy`/`em-ink`: `.link-light a{color:var(--white);font-weight:600}`, for the daycare page's `support@poppynz.com` sitting inline at the end of light-on-navy body copy. html-v3 keeps `a[href]` but strips every attribute, so the link cannot carry a class, and the kit's own link colour (navy) is unreadable there. Theme `Version` bumped to 1.0.7, so that deploy had to re-run bootstrap's theme-copy step.
 - 2026-09-21 (Task 14): `import.php` fixed in six places found only by deploying for real — see pitfalls.md for each: (1) `pll_set_post_language()` missing for `elementor-hf` templates, duplicating the fr header/footer on every run; (2) `foreach ($el['styles'] ?? [] as &$style)` silently never applied local per-element CSS anywhere on the site; (3) elements referenced global classes by label, not id, so no class's CSS was ever bundled for any document (the whole site rendered unstyled); (4) global-class print order is reversed by Elementor, so a same-element modifier class (`svc-pink`, `lang-on`, `bubble-40`/`bubble-48`) needs to sort *before* its base class in `classes.ts`; (5) the order-merge logic only ever appended new ids, so re-ordering an existing class in `classes.ts` had no effect until fixed to treat `classes.json` as authoritative; (6) `Global_Classes_Repository::put()` only wrote the frontend context, leaving the editor's own preview context empty forever, so opening the editor on any imported page showed every class as "missing" and rendered the canvas unstyled — fixed by also calling `put()` with `set_preview(true)`. Also fixed six CSS-conversion rejections in `classes.ts` (two-value `gap`, `pointer-events`, decimal `opacity`, `flex-grow`/`flex-shrink` longhands, unitless `rotate(0)`, per-side `border-*-style`) and one systemic layout bug (Elementor's `.e-con{width:100%}` breaks any flex-row with unsized children) fixed once in the theme's `anim.css`.
 
 ## Production blockers

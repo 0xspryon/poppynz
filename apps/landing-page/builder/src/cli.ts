@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { lintClasses } from "./classes";
 import { buildArtefact } from "./emit/artefact";
+import { daycareRecipe } from "./recipes/daycare";
 import { familiesRecipe } from "./recipes/families";
 import { footerRecipe } from "./recipes/footer";
 import { headerRecipe } from "./recipes/header";
@@ -8,7 +9,7 @@ import { helpersRecipe } from "./recipes/helpers";
 import { homeRecipe } from "./recipes/home";
 import { safetyRecipe } from "./recipes/safety";
 
-export const RECIPES = [headerRecipe, footerRecipe, homeRecipe, familiesRecipe, helpersRecipe, safetyRecipe];
+export const RECIPES = [headerRecipe, footerRecipe, homeRecipe, familiesRecipe, helpersRecipe, safetyRecipe, daycareRecipe];
 
 export async function runCli(argv: string[], outDirOverride?: string): Promise<number> {
   const [cmd, name = "current"] = argv;

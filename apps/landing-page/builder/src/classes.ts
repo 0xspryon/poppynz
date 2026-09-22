@@ -56,6 +56,11 @@ const defs: Record<string, CssMap> = {
   // design rule is an inline `<strong style="color:#001E30">` — the body ink, not em-navy's #1A3375.
   // Styled by theme anim.css (.em-ink strong).
   "em-ink": { desktop: "" },
+  // Same mechanism once more, for an inline <a> inside light-on-navy body copy (the daycare page's
+  // "support@poppynz.com" at the end of the providers help row). html-v3 keeps `a[href]` but strips
+  // every attribute that could carry a class, and the kit's own link colour is navy, so the link is
+  // styled by theme anim.css (.link-light a).
+  "link-light": { desktop: "" },
   accent: { desktop: `color:${v("sky")}` },
   lead: { desktop: `${BODY};font-size:17px;line-height:1.6;color:${v("muted")}` },
   "lead-light": { desktop: `${BODY};font-size:17px;line-height:1.6;color:${v("navy-text")}` },
@@ -203,6 +208,10 @@ const defs: Record<string, CssMap> = {
   "go-sky": { desktop: `display:inline-flex;align-self:flex-start;align-items:center;gap:8px;padding:10px 18px;color:${v("white")};${BODY};font-weight:600;font-size:14px;border-radius:999px;background-color:${v("sky")};${SHADOW_SKY}` },
   "go-navy": { desktop: `display:inline-flex;align-self:flex-start;align-items:center;gap:8px;padding:10px 18px;color:${v("white")};${BODY};font-weight:600;font-size:14px;border-radius:8px;background-color:${v("navy")}` },
   "step-num": { desktop: `${BODY};font-weight:700;font-size:13px;letter-spacing:.08em;color:${v("teal")};display:inline-block;transform:rotate(6deg)` },
+  // The daycare page's `.dstep .n`: `step-num` drawn as a tinted pill. Purely additive — it shares
+  // no property with `step-num`, so the two can be declared in either order. The line-height is the
+  // design's own line box for 13px Inter (see the kit line-height note above).
+  "step-pill": { desktop: `padding:3px 8px;border-radius:999px;background-color:${v("tint")};line-height:16px` },
   "step-top": { desktop: "display:flex;justify-content:space-between;align-items:center;width:100%" },
   // svc-pink must be declared before svc: Elementor prints global classes in REVERSED
   // declaration order (Atomic_Global_Styles::get_document_global_styles() reverses $ordered_class_ids

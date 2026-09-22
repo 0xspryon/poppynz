@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { DAYCARE } from "./daycare";
 import { FAMILIES } from "./families";
 import { FOOTER } from "./footer";
 import { HEADER } from "./header";
@@ -8,13 +9,14 @@ import { SAFETY } from "./safety";
 import { assertLocalizedKeys } from "./types";
 
 describe("content", () => {
-  test("header, footer, home, families, helpers, safety have identical key sets in en and fr", () => {
+  test("header, footer, home, families, helpers, safety, daycare have identical key sets in en and fr", () => {
     expect(() => assertLocalizedKeys(HEADER as any, "header")).not.toThrow();
     expect(() => assertLocalizedKeys(FOOTER as any, "footer")).not.toThrow();
     expect(() => assertLocalizedKeys(HOME as any, "home")).not.toThrow();
     expect(() => assertLocalizedKeys(FAMILIES as any, "families")).not.toThrow();
     expect(() => assertLocalizedKeys(HELPERS as any, "helpers")).not.toThrow();
     expect(() => assertLocalizedKeys(SAFETY as any, "safety")).not.toThrow();
+    expect(() => assertLocalizedKeys(DAYCARE as any, "daycare")).not.toThrow();
   });
   test("home has 4 steps, 8 services, 3 quotes, 5 cities in both languages", () => {
     for (const l of ["en", "fr"] as const) {
@@ -57,6 +59,13 @@ describe("content", () => {
       expect(SAFETY[l].families.checks).toHaveLength(4);
       expect(SAFETY[l].data.cards).toHaveLength(4);
       expect(SAFETY[l].never.items).toHaveLength(6);
+    }
+  });
+  test("daycare has 4 family steps, 3 notification rows, 4 listing rows in both languages", () => {
+    for (const l of ["en", "fr"] as const) {
+      expect(DAYCARE[l].families.steps).toHaveLength(4);
+      expect(DAYCARE[l].notify.card.rows).toHaveLength(3);
+      expect(DAYCARE[l].daycares.rows).toHaveLength(4);
     }
   });
   test("nav links use page keys", () => {

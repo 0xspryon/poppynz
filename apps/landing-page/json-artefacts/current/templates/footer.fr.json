@@ -1041,7 +1041,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-in"
+                          "value": "/app/auth/sign-in"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",

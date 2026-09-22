@@ -15,7 +15,11 @@ export const PAGES: Record<PageKey, { slug: Localized<string>; title: Localized<
   agreement: { slug: { en: "service-agreement", fr: "entente-de-service" }, title: { en: "Service Agreement", fr: "Entente de service" } },
 };
 
-export const APP = { signUp: "https://app.poppynz.com/auth/sign-up", signIn: "https://app.poppynz.com/auth/sign-in" };
+// Relative paths through the `/app` -> app.<host> redirect implemented in the child theme
+// (functions.php). This resolves correctly on every site (staging, production) without a
+// hard-coded host, unlike the previous absolute `https://app.poppynz.com/...` URLs which
+// pointed the staging site at the production app.
+export const APP = { signUp: "/app/auth/sign-up", signIn: "/app/auth/sign-in" };
 
 export function pageUrl(key: PageKey, lang: Lang): string {
   const slug = PAGES[key].slug[lang];

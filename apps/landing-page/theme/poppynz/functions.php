@@ -13,6 +13,42 @@ add_action( 'wp_enqueue_scripts', function () {
 // Hello's own header/footer stay off: the Header & Footer Builder templates render instead.
 add_filter( 'hello_elementor_header_footer', '__return_false' );
 
+// /app -> the app subdomain. Runs before WordPress's own redirect_canonical (priority 10) and
+// before Polylang's language redirect, so it wins first. The target host is always derived from
+// the current site's own home_url() (never hard-coded), so the same artefact redirects
+// staging.poppynz.com -> app.staging.poppynz.com and poppynz.com -> app.poppynz.com without
+// any per-environment configuration.
+add_action( 'template_redirect', function () {
+	if ( is_admin() || wp_doing_ajax() || wp_doing_cron() || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) {
+		return;
+	}
+
+	$path = wp_parse_url( $_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH );
+	if ( ! is_string( $path ) || '' === $path ) {
+		return;
+	}
+
+	// /app, /app/<rest>, and the same with a two-letter Polylang language prefix
+	// (/fr/app, /fr/app/<rest>). Case-insensitive; a trailing slash is tolerated.
+	if ( ! preg_match( '#^/(?:[a-z]{2}/)?app(?:/(?P<rest>.*))?/?$#i', $path, $m ) ) {
+		return;
+	}
+
+	$host = wp_parse_url( home_url(), PHP_URL_HOST );
+	if ( ! $host || 0 === stripos( $host, 'app.' ) ) {
+		return; // Already on the app host: never redirect to ourselves.
+	}
+
+	$rest  = isset( $m['rest'] ) ? trim( $m['rest'], '/' ) : '';
+	$query = $_SERVER['QUERY_STRING'] ?? '';
+	$url   = 'https://app.' . $host . '/' . $rest . ( '' !== $query ? '?' . $query : '' );
+
+	// 302, not 301: the app-subdomain setup is still being finalised, so a browser must not
+	// permanently cache this redirect while it can still change.
+	wp_redirect( $url, 302 );
+	exit;
+}, 0 );
+
 // Header & Footer Builder: serve the template translated into the current Polylang language.
 add_filter( 'hfe_render_template_id', function ( $id ) {
 	if ( $id && function_exists( 'pll_get_post' ) ) {

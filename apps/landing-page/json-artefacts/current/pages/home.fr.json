@@ -510,7 +510,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -772,7 +772,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -4830,7 +4830,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -4979,7 +4979,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -5127,7 +5127,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -5276,7 +5276,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -5425,7 +5425,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -5573,7 +5573,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -5722,7 +5722,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -5870,7 +5870,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -7795,7 +7795,7 @@
                           "value": {
                             "destination": {
                               "$$type": "url",
-                              "value": "https://app.poppynz.com/auth/sign-up"
+                              "value": "/app/auth/sign-up"
                             },
                             "isTargetBlank": {
                               "$$type": "boolean",
@@ -8131,7 +8131,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",
@@ -8177,7 +8177,7 @@
                       "value": {
                         "destination": {
                           "$$type": "url",
-                          "value": "https://app.poppynz.com/auth/sign-up"
+                          "value": "/app/auth/sign-up"
                         },
                         "isTargetBlank": {
                           "$$type": "boolean",

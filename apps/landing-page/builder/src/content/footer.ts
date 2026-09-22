@@ -1,4 +1,4 @@
-import type { PageKey } from "../pages";
+import { APP, type PageKey } from "../pages";
 import type { Localized } from "./types";
 
 export type FooterLink = { label: string; page?: PageKey; url?: string };
@@ -23,7 +23,7 @@ export const FOOTER: Localized<FooterContent> = {
         { label: "Pricing & fees", url: "#" }, { label: "About", url: "#" }, { label: "Blog", page: "blog" } ] },
       { heading: "Support", links: [
         { label: "Help & FAQ", url: "#" }, { label: "Contact", url: "mailto:support@poppynz.com" },
-        { label: "Sign in", url: "https://app.poppynz.com/auth/sign-in" }, { label: "Refer someone", url: "#" } ] },
+        { label: "Sign in", url: APP.signIn }, { label: "Refer someone", url: "#" } ] },
       { heading: "Legal", links: [
         { label: "Privacy Policy", page: "privacy" }, { label: "Terms of Service", page: "terms" }, { label: "Service Agreement", page: "agreement" } ] },
     ],
@@ -41,7 +41,7 @@ export const FOOTER: Localized<FooterContent> = {
         { label: "Tarifs et frais", url: "#" }, { label: "À propos", url: "#" }, { label: "Blogue", page: "blog" } ] },
       { heading: "Soutien", links: [
         { label: "Aide et FAQ", url: "#" }, { label: "Nous joindre", url: "mailto:support@poppynz.com" },
-        { label: "Connexion", url: "https://app.poppynz.com/auth/sign-in" }, { label: "Recommander quelqu’un", url: "#" } ] },
+        { label: "Connexion", url: APP.signIn }, { label: "Recommander quelqu’un", url: "#" } ] },
       { heading: "Mentions légales", links: [
         { label: "Politique de confidentialité", page: "privacy" }, { label: "Conditions d’utilisation", page: "terms" }, { label: "Entente de service", page: "agreement" } ] },
     ],

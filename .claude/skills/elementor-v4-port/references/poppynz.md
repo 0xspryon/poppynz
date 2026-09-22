@@ -83,3 +83,44 @@ The owner compared staging against the design and rejected the previous "matches
 - Polylang `redirect_lang` turned on (and added to `bootstrap.php`): the French home page is `/fr/`, with `/fr/accueil/` redirecting to it.
 
 Expected, not a bug: every nav and footer link except Home 404s — For families, For helpers, Safety & trust, Daycare, Blog and the three legal pages are Plan 2. A 404 with the Poppynz header on it means the link works and the page does not exist yet.
+
+### 2026-09-22 — `/app` -> app-subdomain redirect
+The web app (`app.<host>`, a separate SvelteKit deployment) is reached from the marketing site through a
+front-end redirect in the child theme (`theme/poppynz/functions.php`), not a Dokploy/Traefik rule — this
+repo has no Dokploy access by design, so a Traefik rule (which would avoid booting WordPress at all for
+these requests) was not an option here.
+- Hooked on `template_redirect` at priority 0 (before `redirect_canonical`'s 10 and before Polylang's
+  language redirect), skipped for admin/AJAX/cron/REST requests.
+- Matches `/app`, `/app/<rest>`, and the same with a two-letter language prefix (`/fr/app`,
+  `/fr/app/<rest>`), case-insensitively, trailing slash tolerated — regex-bounded so `/appointments` or
+  `/fr/apply` are never caught.
+- Target host is **derived, never hard-coded**: `wp_parse_url( home_url(), PHP_URL_HOST )` prefixed with
+  `app.`, unless the host already starts with `app.` (bail out, never redirect to self). Same artefact
+  therefore redirects `staging.poppynz.com` -> `app.staging.poppynz.com` and (once deployed) `poppynz.com`
+  -> `app.poppynz.com` with no per-site configuration.
+- Preserves the path after `/app` and the query string, e.g. `/app/auth/sign-up?x=1` ->
+  `https://app.<host>/auth/sign-up?x=1`.
+- **302**, not 301 — the setup is still being finalised and a browser must not cache the redirect while it
+  can change; the code comment in `functions.php` says so.
+- `builder/src/pages.ts`'s `APP` export changed from absolute `https://app.poppynz.com/...` URLs (which on
+  staging wrongly pointed at the *production* app) to relative `/app/auth/sign-up` / `/app/auth/sign-in`
+  paths through this redirect — correct on both sites at once. `content/footer.ts`'s "Sign in" link (the
+  only other place that hard-coded the app URL, bypassing `APP`) now goes through `APP.signIn` too.
+  `resolveLinks()` only rewrites `page:<key>` values, so these relative paths pass through untouched;
+  confirmed in the built artefact (`json-artefacts/current`) — no `app.poppynz.com` string remains anywhere
+  in it.
+- Verified live on staging (`curl -sI`, all 302 with the expected `location`): `/app` ->
+  `https://app.staging.poppynz.com/`, `/app/` -> same, `/app/auth/sign-up` ->
+  `https://app.staging.poppynz.com/auth/sign-up`, `/app/auth/sign-in?foo=1` ->
+  `https://app.staging.poppynz.com/auth/sign-in?foo=1`, `/fr/app` -> `https://app.staging.poppynz.com/`,
+  `/fr/app/auth/sign-up` -> `https://app.staging.poppynz.com/auth/sign-up`. Following one redirect
+  (`curl -sIL`) reaches a 200 on the app subdomain. No regression: `/`, `/fr/`, an existing page all still
+  200 and un-redirected; `/appointments` still 404s from WordPress rather than redirecting. Rendered `/`
+  and `/fr/` both show `/app/auth/sign-up` (14 occurrences: header, hero cards, service cards, helpers CTA,
+  final CTA x2) and `/app/auth/sign-in` (2 occurrences: header, footer) — all relative, none absolute.
+  `import.php` re-run a second time: every entry `unchanged`.
+- Theme `style.css` `Version` bumped to `1.0.2` (cache-buster for the theme's enqueued assets).
+- **Deploy note**: because this changed `theme/poppynz/functions.php`, the theme-copy step
+  (`bootstrap.php`'s step 2, or bootstrap.php in full — it's idempotent) must be re-run after `unpack.php`
+  on every deploy that touches theme files — `import.php` never copies theme files, only `unpack.php`'s zip
+  extraction and that copy step do.

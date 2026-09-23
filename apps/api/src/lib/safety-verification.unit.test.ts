@@ -2,13 +2,14 @@ import {
   canApplyCredibledTransition,
   credibledStatusToCheckOrderStatus
 } from '@repo/credibled';
-import type { CheckOrder, Payment, SafetyVerification } from '@repo/db';
+import type { CheckOrder, CheckOrderItem, Payment, SafetyVerification } from '@repo/db';
 import { describe, expect, it } from 'vitest';
 import {
   addMonths,
   expiryFromCompletion,
   isVerified,
   orderPresentedStatus,
+  byReviewPriority,
   presentedStatus,
   toAdminSummary,
   toApplicantSummary,
@@ -240,6 +241,68 @@ describe('what each audience can see', () => {
       toAdminSummary(record({ route: 'uploaded_document', checkOrderId: null }), '2026-08-22')
         .hasCredibledCheck
     ).toBe(false);
+  });
+
+  it('shows Credibled’s result per check, labelled', () => {
+    const summary = toAdminSummary(record({ status: 'review_required' }), '2026-08-22', {
+      ...order({ outcome: 'not_cleared', credibledScore: 'Not Cleared' }),
+      items: [
+        {
+          id: 'item-1',
+          orderId: 'order-1',
+          documentTypeId: 'type-1',
+          credibledCheckTypeValue: 'request_motor_vehicle_records',
+          costCents: 2500,
+          outcome: 'not_cleared',
+          credibledStatus: 'Complete',
+          credibledScore: 'Not Cleared',
+          createdAt: new Date('2026-08-01T00:00:00.000Z')
+        } as CheckOrderItem
+      ]
+    });
+    expect(summary.credibledResult).toEqual({
+      outcome: 'not_cleared',
+      score: 'Not Cleared',
+      checks: [
+        {
+          label: 'Canadian Driver Abstracts',
+          outcome: 'not_cleared',
+          status: 'Complete',
+          score: 'Not Cleared'
+        }
+      ]
+    });
+    // Money stays off the review screen here too.
+    expect(JSON.stringify(summary)).not.toContain('2500');
+  });
+
+  it('has no result for an upload, or for an order completed before results were kept', () => {
+    expect(toAdminSummary(record(), '2026-08-22').credibledResult).toBeNull();
+    expect(
+      toAdminSummary(record(), '2026-08-22', { ...order({ outcome: null }), items: [] })
+        .credibledResult
+    ).toBeNull();
+  });
+
+  it('puts adverse results first, then the ones that need the report read', () => {
+    const at = (outcome: 'cleared' | 'not_cleared' | 'inconclusive' | null, createdAt: string) => ({
+      credibledResult: outcome ? { outcome } : null,
+      createdAt
+    });
+    const queue = [
+      at(null, '2026-08-01'),
+      at('cleared', '2026-08-02'),
+      at('inconclusive', '2026-08-05'),
+      at('not_cleared', '2026-08-04'),
+      at('not_cleared', '2026-08-03')
+    ].sort(byReviewPriority);
+    expect(queue.map((entry) => [entry.credibledResult?.outcome ?? null, entry.createdAt])).toEqual([
+      ['not_cleared', '2026-08-03'],
+      ['not_cleared', '2026-08-04'],
+      ['inconclusive', '2026-08-05'],
+      [null, '2026-08-01'],
+      ['cleared', '2026-08-02']
+    ]);
   });
 
   it('keeps money off the review screen', () => {

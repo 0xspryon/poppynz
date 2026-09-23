@@ -51,15 +51,36 @@ export type CheckOrderAdvanceInput = {
   set: CheckOrderUpdateInput;
 };
 
-/** Everything completion writes, atomically: the order closes and the
- * verdict it produced is created in review_required. */
+export type CheckOrderOutcome = NonNullable<CheckOrder['outcome']>;
+
+/** What Credibled concluded, as recorded on completion. `checks` are matched
+ * to the order's items by check-type value; entries naming a check the order
+ * does not hold are dropped. */
+export type CheckOrderResultInput = {
+  outcome: CheckOrderOutcome;
+  score: string | null;
+  checks: ReadonlyArray<{
+    value: string | null;
+    status: string | null;
+    score: string | null;
+    outcome: CheckOrderOutcome;
+  }>;
+};
+
+/** Everything completion writes, atomically: the order closes with
+ * Credibled's result on it and the verdict it produced is created in
+ * review_required — whatever the result says. */
 export type CheckOrderCompletionInput = {
   completedAt: Date;
+  result: CheckOrderResultInput;
   verification: Pick<
     SafetyVerificationInsert,
     'consentAt' | 'consentPolicyVersion' | 'issuedOn' | 'expiresOn'
   >;
 };
+
+/** A finished order and its items, for the reviewing administrator. */
+export type CheckOrderWithItems = CheckOrder & { items: Array<CheckOrderItem> };
 
 /** Statuses that occupy the single open slot per (user, role). */
 export const openCheckOrderStatuses: Array<CheckOrderStatus> = [
@@ -120,6 +141,9 @@ export class CheckOrderRepo extends Context.Tag('@repo/db/CheckOrderRepo')<
 
     /** The basket: which Credibled checks this order will place. */
     listItems: (orderId: string) => Effect.Effect<Array<CheckOrderItem>, SqlError>;
+    /** Orders with their items, in two queries — the review queue reads one
+     * per verdict and must not fan out a query each. */
+    listWithItems: (ids: ReadonlyArray<string>) => Effect.Effect<Array<CheckOrderWithItems>, SqlError>;
     addItem: (input: CheckOrderItemCreateInput) => Effect.Effect<CheckOrderItem, SqlError>;
     removeItem: (
       orderId: string,
@@ -234,7 +258,13 @@ export const CheckOrderRepoLive = Layer.effect(
             // nothing and, crucially, creates no second verdict.
             const closed = yield* db
               .update(checkOrder)
-              .set({ status: 'complete', completedAt: input.completedAt, updatedAt: new Date() })
+              .set({
+                status: 'complete',
+                completedAt: input.completedAt,
+                outcome: input.result.outcome,
+                credibledScore: input.result.score,
+                updatedAt: new Date()
+              })
               .where(
                 and(
                   eq(checkOrder.id, id),
@@ -273,6 +303,20 @@ export const CheckOrderRepoLive = Layer.effect(
               .from(checkOrderItem)
               .where(eq(checkOrderItem.orderId, order.id));
             for (const item of items) {
+              const check = input.result.checks.find(
+                (entry) => entry.value === item.credibledCheckTypeValue
+              );
+              if (check) {
+                yield* db
+                  .update(checkOrderItem)
+                  .set({
+                    outcome: check.outcome,
+                    credibledStatus: check.status,
+                    credibledScore: check.score
+                  })
+                  .where(eq(checkOrderItem.id, item.id));
+              }
+
               yield* db
                 .insert(kycDocument)
                 .values({
@@ -337,6 +381,26 @@ export const CheckOrderRepoLive = Layer.effect(
           .where(eq(checkOrderItem.orderId, orderId))
           .orderBy(checkOrderItem.createdAt),
 
+      listWithItems: (ids) =>
+        Effect.gen(function* () {
+          if (ids.length === 0) {
+            return [];
+          }
+          const orders = yield* db
+            .select()
+            .from(checkOrder)
+            .where(inArray(checkOrder.id, [...ids]));
+          const items = yield* db
+            .select()
+            .from(checkOrderItem)
+            .where(inArray(checkOrderItem.orderId, [...ids]))
+            .orderBy(checkOrderItem.createdAt);
+          return orders.map((order) => ({
+            ...order,
+            items: items.filter((item) => item.orderId === order.id)
+          }));
+        }),
+
       addItem: (input) =>
         db
           .insert(checkOrderItem)
@@ -386,6 +450,7 @@ export const EmptyCheckOrderRepoTest = makeCheckOrderRepoTest({
   listInFlight: () => Effect.succeed([]),
   listAwaitingPlacement: () => Effect.succeed([]),
   listItems: () => Effect.succeed([]),
+  listWithItems: () => Effect.succeed([]),
   addItem: () => notFound() as never,
   removeItem: notFound
 });

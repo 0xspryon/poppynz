@@ -1,5 +1,6 @@
 import {
   canApplyCredibledTransition,
+  credibledOutcomeFromStatus,
   credibledStatusToCheckOrderStatus,
   Credibled
 } from '@repo/credibled';
@@ -70,6 +71,9 @@ const reconcileOne = (order: CheckOrder, months: number) =>
       const now = new Date();
       const result = yield* orders.complete(order.id, {
         completedAt: now,
+        // The status read carries per-check scores but no overall one, so
+        // clearance is inferred from every check being Cleared.
+        result: credibledOutcomeFromStatus(status.value),
         verification: {
           consentAt: order.consentAt,
           consentPolicyVersion: order.consentPolicyVersion,

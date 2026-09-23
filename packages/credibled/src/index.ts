@@ -3,3 +3,4 @@ export * from './client';
 export * from './signature';
 export * from './poppynz-status';
 export * from './status-mapping';
+export * from './outcome';

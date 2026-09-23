@@ -126,6 +126,7 @@ const makeLayer = (
       listInFlight: () => Effect.succeed([]),
       listAwaitingPlacement: () => Effect.succeed(current ? [current] : []),
       listItems: () => Effect.succeed(options.items ?? [item()]),
+      listWithItems: () => Effect.succeed([]),
       addItem: () => Effect.die('not used'),
       removeItem: () => Effect.die('not used')
     }),

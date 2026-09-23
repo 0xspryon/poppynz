@@ -1,0 +1,71 @@
+{
+  "uuid": "39283725-0480-4034-9f9f-b5a460cc1937",
+  "created_at": "2026-09-22T14:10:06.192780Z",
+  "updated_at": "2026-09-22T15:42:18.026094Z",
+  "is_active": true,
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane.doe@example.com",
+  "phoneCode": 1,
+  "phone": "+1 4165550100",
+  "applicant_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "application_status": "Complete",
+  "application_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "status": "None",
+  "application_url": null,
+  "score": "Cleared",
+  "check_executions": [
+    {
+      "id": "check_exec_04ee0581c9a24f0b",
+      "status": "COMPLETE",
+      "check_name": "credential_verification"
+    }
+  ],
+  "webhook_hit_at": "2026-09-22T15:42:18.100000Z",
+  "report_id": "C6DtaZ2J",
+  "invoice": null,
+  "requested_countries": null,
+  "cred_application_url": null,
+  "cred_email_sent": "False",
+  "employer_reference_years_or_individually": null,
+  "employer_references_min": null,
+  "employer_references_max": null,
+  "employer_references_years": null,
+  "is_self_check": false,
+  "send_email": true,
+  "completed_email_sent": true,
+  "completed_email_sent_at": "2026-09-22T15:42:19.000000Z",
+  "delivery_status": null,
+  "delivery_status_updated_at": null,
+  "delivery_failure_reason": null,
+  "delivery_notified_at": null,
+  "reminders_sent": [],
+  "environment": "production",
+  "recruiter": "7c1e9a20-1111-4b22-9c33-abcdef012345",
+  "scan_type": "e4f5a6b7-2222-4c33-8d44-fedcba987654",
+  "scan_list": [
+    {
+      "id": "9aa1bb22-3333-4d44-8e55-112233445566",
+      "bgCCheck": "39283725-0480-4034-9f9f-b5a460cc1937",
+      "scanType": "e4f5a6b7-2222-4c33-8d44-fedcba987654",
+      "scanName": "Credential Verification",
+      "club": null,
+      "invoice": null,
+      "value": "request_credential_verification",
+      "application_status": "Complete",
+      "webhook_hit_at": "2026-09-22T15:42:18.100000Z",
+      "requester": "Credibled",
+      "score": "Cleared",
+      "created_at": "2026-09-22T14:10:06.200000Z",
+      "updated_at": "2026-09-22T15:42:18.100000Z"
+    }
+  ],
+  "recruiterName": "Alex Recruiter",
+  "recruiterEmail": "alex.recruiter@client.com",
+  "check_status": {
+    "id": "check_exec_04ee0581c9a24f0b",
+    "status": "COMPLETE",
+    "check_name": "credential_verification"
+  },
+  "data_type": "background_check"
+}

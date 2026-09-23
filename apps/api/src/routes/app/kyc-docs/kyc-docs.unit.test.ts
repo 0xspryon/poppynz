@@ -152,6 +152,7 @@ const makeLayer = (
       listInFlight: () => Effect.succeed([]),
       listAwaitingPlacement: () => Effect.succeed([]),
       listItems: () => Effect.succeed((options.orderItems ?? []) as never),
+      listWithItems: () => Effect.succeed([]),
       addItem: () => Effect.fail(new DBNotFoundError({ entity: 'x', value: '' }) as never),
       removeItem: (_orderId, itemId) => {
         options.onRemoveItem?.(itemId);

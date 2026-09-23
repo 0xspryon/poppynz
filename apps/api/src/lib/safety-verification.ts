@@ -1,5 +1,8 @@
+import { credibledCheckTypeLabel } from '@repo/credibled/check-types';
 import type {
   CheckOrder,
+  CheckOrderOutcome,
+  CheckOrderWithItems,
   Payment,
   SafetyVerification,
   SafetyVerificationRole,
@@ -174,7 +177,43 @@ export const toApplicantSummary = (state: ApplicantSafetyState, today: string) =
  * the metadata needed to make a decision. Money is deliberately absent: what
  * an applicant paid has no bearing on whether they are safe.
  */
-export const toAdminSummary = (record: SafetyVerification, today: string) => ({
+/**
+ * Credibled's result on the order behind a verdict. Null for an uploaded
+ * document, and for an order completed before results were recorded — the
+ * report is then the only source.
+ */
+export const toCredibledResult = (order: CheckOrderWithItems | null) =>
+  order?.outcome
+    ? {
+      outcome: order.outcome,
+      score: order.credibledScore,
+      checks: order.items.map((item) => ({
+        label: credibledCheckTypeLabel(item.credibledCheckTypeValue),
+        outcome: item.outcome,
+        status: item.credibledStatus,
+        score: item.credibledScore
+      }))
+    }
+    : null;
+
+// Adverse results first, then the ones a person has to read the report for;
+// clean results and uploads last. Oldest first within a band.
+const reviewPriority = (outcome: CheckOrderOutcome | null) =>
+  outcome === 'not_cleared' ? 0 : outcome === 'inconclusive' ? 1 : 2;
+
+export const byReviewPriority = <T extends { credibledResult: { outcome: CheckOrderOutcome } | null; createdAt: string }>(
+  left: T,
+  right: T
+) =>
+  reviewPriority(left.credibledResult?.outcome ?? null) -
+  reviewPriority(right.credibledResult?.outcome ?? null) ||
+  left.createdAt.localeCompare(right.createdAt);
+
+export const toAdminSummary = (
+  record: SafetyVerification,
+  today: string,
+  order: CheckOrderWithItems | null = null
+) => ({
   id: record.id,
   userId: record.userId,
   role: record.role,
@@ -185,6 +224,8 @@ export const toAdminSummary = (record: SafetyVerification, today: string) => ({
   // An order only ever produces a verdict once Credibled has finished with
   // it, so a linked order always has a report to open.
   hasCredibledCheck: record.checkOrderId !== null,
+  // What Credibled concluded. Shown to inform the decision, never to make it.
+  credibledResult: toCredibledResult(order),
   consentAt: record.consentAt?.toISOString() ?? null,
   consentPolicyVersion: record.consentPolicyVersion,
   issuingAuthority: record.issuingAuthority,

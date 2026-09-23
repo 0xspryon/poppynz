@@ -1,8 +1,10 @@
 import {
   canApplyCredibledTransition,
+  credibledOutcomeFromWebhook,
   credibledStatusToCheckOrderStatus,
   verifyCredibledSignature,
-  type CredibledAudience
+  type CredibledAudience,
+  type CredibledWebhookResultFields
 } from '@repo/credibled';
 import { CheckOrderRepo, inFlightCheckOrderStatuses } from '@repo/db';
 import { credibledConfig, safetyVerificationConfig } from '@repo/env';
@@ -51,10 +53,9 @@ import { publishNotificationBestEffort } from '@repo/notify';
 /** Credibled payloads are small; anything large is not one of theirs. */
 const MAX_BODY_BYTES = 64 * 1024;
 
-type CredibledWebhookPayload = {
+type CredibledWebhookPayload = CredibledWebhookResultFields & {
   uuid?: unknown;
   data_type?: unknown;
-  application_status?: unknown;
   /** Credibled-hosted applicant link, preferred over the raw Certn one —
    * the same preference createBackgroundCheck applies. */
   cred_application_url?: unknown;
@@ -96,6 +97,11 @@ const validityMonths = safetyVerificationConfig.pipe(
  * verdict — in review_required, never verified — and the two writes happen in
  * one transaction inside the repository so a webhook can never leave an order
  * closed with no verdict behind it.
+ *
+ * Success and failure both land in review. What differs is what is recorded
+ * alongside: Credibled's overall and per-check scores, classified as cleared,
+ * not_cleared or inconclusive, so the administrator sees the result without
+ * opening the report and an adverse one heads the queue.
  */
 const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayload) =>
   Effect.gen(function* () {
@@ -155,8 +161,10 @@ const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayl
       // A completed check dates from now; the applicant is not verified yet —
       // an admin still decides — but the validity window is measured from
       // completion, not from the decision, so a slow review doesn't extend it.
+      const outcome = credibledOutcomeFromWebhook(payload);
       const result = yield* orders.complete(order.id, {
         completedAt: now,
+        result: outcome,
         verification: {
           consentAt: order.consentAt,
           consentPolicyVersion: order.consentPolicyVersion,
@@ -171,7 +179,7 @@ const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayl
         type: 'safety_verification.updated',
         payload: { status: 'review_required' }
       });
-      return `applied: ${order.status} -> complete (verification ${result.verification.id} awaiting review)`;
+      return `applied: ${order.status} -> complete, ${outcome.outcome} (verification ${result.verification.id} awaiting review)`;
     }
 
     // Guarded like completion is: the rank check ran on the row as read, and

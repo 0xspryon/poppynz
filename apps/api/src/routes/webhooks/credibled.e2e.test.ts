@@ -1,4 +1,5 @@
 import { credibledSignature } from '@repo/credibled';
+import cleared from '@repo/credibled/fixtures/webhook-complete-cleared.json';
 import {
   DBNotFoundError,
   makeCheckOrderRepoTest,
@@ -106,6 +107,7 @@ const makeApp = (
         listInFlight: () => Effect.succeed([]),
         listAwaitingPlacement: () => Effect.succeed([]),
         listItems: () => Effect.succeed([]),
+        listWithItems: () => Effect.succeed([]),
         addItem: () => Effect.die('not used'),
         removeItem: () => Effect.die('not used')
       }),
@@ -229,6 +231,56 @@ describe('credibled webhook — application', () => {
     expect(completions).toHaveLength(1);
     expect(completions[0]?.verification.expiresOn).toBeTruthy();
     expect(completions[0]?.verification.issuedOn).toBeTruthy();
+  });
+
+  it('records a real cleared result on the order, still leaving the verdict to a person', async () => {
+    const completions: Array<CheckOrderCompletionInput> = [];
+    const res = await post(
+      makeApp({
+        found: record({ credibledCheckUuid: cleared.uuid }),
+        onComplete: (_id, input) => completions.push(input)
+      }),
+      cleared
+    );
+
+    expect(res.status).toBe(200);
+    expect(completions).toHaveLength(1);
+    expect(completions[0]?.result).toEqual({
+      outcome: 'cleared',
+      score: 'Cleared',
+      checks: [
+        {
+          value: 'request_credential_verification',
+          name: 'Credential Verification',
+          status: 'Complete',
+          score: 'Cleared',
+          outcome: 'cleared'
+        }
+      ]
+    });
+    expect(completions[0]?.verification.expiresOn).toBeTruthy();
+  });
+
+  it('records an adverse result and still completes into review, never a rejection', async () => {
+    const completions: Array<CheckOrderCompletionInput> = [];
+    const adverse = {
+      ...cleared,
+      score: 'Not Cleared',
+      scan_list: [{ ...cleared.scan_list[0], score: 'Not Cleared' }]
+    };
+    const res = await post(
+      makeApp({
+        found: record({ credibledCheckUuid: cleared.uuid }),
+        onComplete: (_id, input) => completions.push(input)
+      }),
+      adverse
+    );
+
+    expect(res.status).toBe(200);
+    expect(completions).toHaveLength(1);
+    expect(completions[0]?.result.outcome).toBe('not_cleared');
+    expect(completions[0]?.result.score).toBe('Not Cleared');
+    expect(completions[0]?.result.checks[0]?.outcome).toBe('not_cleared');
   });
 
   it('completes without dates when Credibled needs a person but nothing is finished', async () => {

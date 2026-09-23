@@ -135,6 +135,14 @@ export const checkOrderStatus = appDb.enum('check_order_status', [
   'failed',
   'cancelled'
 ]);
+// What Credibled concluded about a finished check, read off its own scores.
+// Informs the administrator and orders the review queue; never a verdict.
+// Unfamiliar scores land in `not_cleared` so they reach a person as a flag.
+export const checkOrderOutcome = appDb.enum('check_order_outcome', [
+  'cleared',
+  'not_cleared',
+  'inconclusive'
+]);
 
 export const user = appDb.table('user', {
   id: text('id').primaryKey(),
@@ -445,6 +453,11 @@ export const checkOrder = appDb.table(
     orderAttempts: integer('order_attempts').default(0).notNull(),
     lastOrderError: text('last_order_error'),
     completedAt: timestamp('completed_at'),
+    // Set once, on completion. Null on an order that never finished, and on
+    // orders completed before outcomes were recorded.
+    outcome: checkOrderOutcome('outcome'),
+    // Credibled's overall score, verbatim ("Cleared", …).
+    credibledScore: text('credibled_score'),
 
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -484,6 +497,11 @@ export const checkOrderItem = appDb.table(
     // Frozen when the item is added, so an admin editing the price mid-basket
     // cannot change what the applicant was quoted.
     costCents: integer('cost_cents').notNull(),
+    // This check's own result, recorded when the order completes. Null when
+    // Credibled's result named no check we could match to this item.
+    outcome: checkOrderOutcome('outcome'),
+    credibledStatus: text('credibled_status'),
+    credibledScore: text('credibled_score'),
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (table) => [

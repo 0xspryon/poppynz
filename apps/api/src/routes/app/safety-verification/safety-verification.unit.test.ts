@@ -322,6 +322,7 @@ const makeLayer = (
       listInFlight: () => Effect.succeed([]),
       listAwaitingPlacement: () => Effect.succeed([]),
       listItems: () => Effect.succeed(options.items ?? []),
+      listWithItems: () => Effect.succeed([]),
       addItem: (input) => {
         recorded.itemsAdded.push(input);
         return Effect.succeed(item({ ...input } as Partial<CheckOrderItem>));

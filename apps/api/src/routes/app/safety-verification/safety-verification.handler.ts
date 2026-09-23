@@ -29,6 +29,7 @@ import {
   type UserAndSession
 } from '@/api/lib/effect-auth';
 import {
+  byReviewPriority,
   credibledAudienceForRole,
   expiryFromCompletion,
   toAdminSummary,
@@ -674,10 +675,23 @@ export const listSafetyVerificationsForReviewRouteProgram = (headers: Headers) =
     yield* requirePermissions(headers, { safetyVerification: ['review'] })(authenticated);
 
     const repo = yield* SafetyVerificationRepo;
+    const orders = yield* CheckOrderRepo;
     const records = yield* mapRepoError(repo.listForReview());
+    const orderIds = records.flatMap((record) => (record.checkOrderId ? [record.checkOrderId] : []));
+    const withItems = yield* mapRepoError(orders.listWithItems(orderIds));
     const currentDate = today();
 
-    return { verifications: records.map((record) => toAdminSummary(record, currentDate)) };
+    const verifications = records
+      .map((record) =>
+        toAdminSummary(
+          record,
+          currentDate,
+          withItems.find((order) => order.id === record.checkOrderId) ?? null
+        )
+      )
+      .sort(byReviewPriority);
+
+    return { verifications };
   });
 
 export const decideSafetyVerificationRouteProgram = (

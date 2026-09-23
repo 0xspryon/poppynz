@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./check-types": "./src/check-types.ts"
+    "./check-types": "./src/check-types.ts",
+    "./fixtures/*": "./src/fixtures/*"
   },
   "scripts": {
     "test": "bun test src"

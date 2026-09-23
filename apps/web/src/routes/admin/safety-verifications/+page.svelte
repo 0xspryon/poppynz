@@ -8,11 +8,20 @@
 		safetyVerificationReportUrl,
 		type AdminSafetyVerification
 	} from '$lib/api/safety-verification';
-	import StatusChip from '$lib/components/StatusChip.svelte';
+	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
 	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+
+	type Outcome = NonNullable<AdminSafetyVerification['credibledResult']>['outcome'];
+
+	// Credibled's own conclusion. It informs the decision; it never makes it.
+	const outcomeChips: Record<Outcome, { status: ChipStatus; label: string }> = {
+		cleared: { status: 'approved', label: 'Cleared' },
+		not_cleared: { status: 'rejected', label: 'Not cleared' },
+		inconclusive: { status: 'missing', label: 'Read the report' }
+	};
 
 	let items: Array<AdminSafetyVerification> = $state([]);
 	let loading = $state(true);
@@ -78,7 +87,7 @@
 <h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Safety verifications</h1>
 <p class="mt-1 mb-5 text-sm text-base-content-muted">
 	Awaiting a decision. A completed Credibled check is not an approval — review the evidence, then
-	decide.
+	decide. Results Credibled did not clear are listed first.
 </p>
 
 {#if loading}
@@ -106,7 +115,24 @@
 					<span class="text-xs text-base-content-muted">
 						{item.role === 'family' ? 'Family' : 'Helper'}
 					</span>
+					{#if item.credibledResult}
+						<StatusChip {...outcomeChips[item.credibledResult.outcome]} />
+					{/if}
 				</div>
+
+				{#if item.credibledResult && item.credibledResult.checks.length > 0}
+					<ul class="mt-2 flex flex-col gap-1 text-xs text-base-content-muted">
+						{#each item.credibledResult.checks as check (check.label)}
+							<li class="flex flex-wrap items-center gap-2">
+								<span class="font-medium text-base-content">{check.label}</span>
+								{#if check.outcome}
+									<StatusChip {...outcomeChips[check.outcome]} />
+								{/if}
+								{#if check.score}<span>Score: {check.score}</span>{/if}
+							</li>
+						{/each}
+					</ul>
+				{/if}
 
 				<dl class="mt-2 grid gap-x-6 gap-y-1 text-xs text-base-content-muted sm:grid-cols-2">
 					{#if item.issuingAuthority}

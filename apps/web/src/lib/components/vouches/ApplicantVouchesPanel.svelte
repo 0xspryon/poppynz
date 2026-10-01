@@ -39,6 +39,7 @@
 					"We couldn't send a request to that email. Check it belongs to an approved Poppynz member.",
 				VOUCH_ALREADY_REQUESTED: () => 'You already have an open request with this person.',
 				VOUCH_APPLICANT_ONLY: () => 'Only helpers can ask for vouches.',
+				VOUCH_RATE_LIMITED: (error) => error.message,
 				INVALID_VOUCH_INPUT: () => 'Check the email and how you know them, then try again.',
 				VOUCH_LOOKUP_FAILED: () => RETRY_MESSAGE,
 				VOUCH_NOT_FOUND: () => RETRY_MESSAGE,
@@ -115,9 +116,7 @@
 	{#if data.vouches.length > 0}
 		<div class="mt-4 flex flex-col gap-2">
 			{#each data.vouches as vouch (vouch.id)}
-				<div
-					class="flex items-center gap-3 rounded-[10px] border border-card-border px-4 py-3"
-				>
+				<div class="flex items-center gap-3 rounded-[10px] border border-card-border px-4 py-3">
 					<div class="min-w-0 flex-1">
 						<div class="truncate text-[13.5px] font-semibold text-base-content">
 							{vouch.voucherName}

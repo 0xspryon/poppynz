@@ -34,7 +34,11 @@
 
 	const answerLabel = { yes: 'Yes', no: 'No', unsure: 'Not sure' } as const;
 	const formatDate = (iso: string) =>
-		new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+		new Date(iso).toLocaleDateString(undefined, {
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric'
+		});
 </script>
 
 <div class="rounded-lg border border-card-border bg-base-100 p-5">
@@ -52,30 +56,42 @@
 						<span class="text-[11.5px] text-outline">
 							{vouch.voucher.role === 'family' ? 'Family' : 'Helper'} · {vouch.voucher.email}
 						</span>
-						<span class="ml-auto rounded-[5px] bg-base-300 px-2 py-0.5 text-[11px] font-semibold capitalize">
+						<span
+							class="ml-auto rounded-[5px] bg-base-300 px-2 py-0.5 text-[11px] font-semibold capitalize"
+						>
 							{vouch.status}{vouch.counts ? ' · counts' : ''}
 						</span>
 					</div>
 					{#if !vouch.voucher.inGoodStanding}
-						<p class="mt-1 text-[12px] text-warning">Voucher is no longer approved or is banned — not counted.</p>
+						<p class="mt-1 text-[12px] text-warning">
+							Voucher is no longer approved or is banned — not counted.
+						</p>
 					{/if}
-					<p class="mt-1 text-[12px] text-base-content-muted">Applicant says: "{vouch.relationship}"</p>
+					<p class="mt-1 text-[12px] text-base-content-muted">
+						Applicant says: "{vouch.relationship}"
+					</p>
 					{#if vouch.answers}
 						<dl class="mt-2 grid grid-cols-[170px_1fr] gap-x-3 gap-y-1 text-[12.5px]">
-							<dt class="text-outline">How they know them</dt><dd>{vouch.answers.howKnow}</dd>
-							<dt class="text-outline">Known for</dt><dd>{vouch.answers.howLong}</dd>
-							<dt class="text-outline">Would trust with care</dt><dd>{answerLabel[vouch.answers.wouldTrust]}</dd>
+							<dt class="text-outline">How they know them</dt>
+							<dd>{vouch.answers.howKnow}</dd>
+							<dt class="text-outline">Known for</dt>
+							<dd>{vouch.answers.howLong}</dd>
+							<dt class="text-outline">Would trust with care</dt>
+							<dd>{answerLabel[vouch.answers.wouldTrust]}</dd>
 							<dt class="text-outline">Concerns</dt>
 							<dd class={vouch.answers.hasConcerns ? 'font-semibold text-error' : ''}>
 								{vouch.answers.hasConcerns ? `Yes — ${vouch.answers.concernsDetail ?? ''}` : 'No'}
 							</dd>
-							<dt class="text-outline">Would hire / recommend</dt><dd>{answerLabel[vouch.answers.wouldHire]}</dd>
+							<dt class="text-outline">Would hire / recommend</dt>
+							<dd>{answerLabel[vouch.answers.wouldHire]}</dd>
 							{#if vouch.answers.anythingElse}
-								<dt class="text-outline">Anything else</dt><dd>{vouch.answers.anythingElse}</dd>
+								<dt class="text-outline">Anything else</dt>
+								<dd>{vouch.answers.anythingElse}</dd>
 							{/if}
 						</dl>
 						<p class="mt-2 text-[11px] text-outline">
-							Attested {vouch.attestedAt ? formatDate(vouch.attestedAt) : '—'} · IP {vouch.submittedIp ?? 'unknown'}
+							Attested {vouch.attestedAt ? formatDate(vouch.attestedAt) : '—'} · IP (client-reported)
+							{vouch.submittedIp ?? 'unknown'}
 						</p>
 					{/if}
 					{#if vouch.adminReason}
@@ -83,8 +99,16 @@
 					{/if}
 					{#if vouch.status === 'pending' || vouch.status === 'accepted'}
 						<div class="mt-2.5 flex gap-2">
-							<button type="button" class="btn btn-outline btn-xs" onclick={() => (acting = { vouch, action: 'flag' })}>Flag</button>
-							<button type="button" class="btn btn-outline btn-xs" onclick={() => (acting = { vouch, action: 'revoke' })}>Revoke</button>
+							<button
+								type="button"
+								class="btn btn-outline btn-xs"
+								onclick={() => (acting = { vouch, action: 'flag' })}>Flag</button
+							>
+							<button
+								type="button"
+								class="btn btn-outline btn-xs"
+								onclick={() => (acting = { vouch, action: 'revoke' })}>Revoke</button
+							>
 						</div>
 					{/if}
 				</div>

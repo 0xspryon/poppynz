@@ -81,8 +81,10 @@
 		accepted: { label: 'Vouched', cls: 'bg-success-content text-success' },
 		declined: { label: 'Declined', cls: 'bg-base-300 text-base-content-muted' },
 		expired: { label: 'Expired', cls: 'bg-base-300 text-base-content-muted' },
-		revoked: { label: 'Withdrawn', cls: 'bg-base-300 text-base-content-muted' },
-		flagged: { label: 'Under review', cls: 'bg-base-300 text-base-content-muted' }
+		// Admin flags/revokes and the voucher's own withdrawal look the same here:
+		// the voucher never learns of an admin action, and isn't told they withdrew.
+		revoked: { label: 'Closed', cls: 'bg-base-300 text-base-content-muted' },
+		flagged: { label: 'Closed', cls: 'bg-base-300 text-base-content-muted' }
 	};
 </script>
 
@@ -104,34 +106,54 @@
 			<span class="loading loading-spinner loading-lg text-primary"></span>
 		</div>
 	{:else if requests.length === 0}
-		<p class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm text-base-content-muted">
+		<p
+			class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm text-base-content-muted"
+		>
 			No vouch requests yet.
 		</p>
 	{:else}
 		<div class="flex flex-col gap-2">
 			{#each requests as entry (entry.id)}
-				<div class="flex flex-wrap items-center gap-3 rounded-[10px] border border-card-border bg-base-100 px-4 py-3.5">
+				<div
+					class="flex flex-wrap items-center gap-3 rounded-[10px] border border-card-border bg-base-100 px-4 py-3.5"
+				>
 					{#if entry.applicantImage}
 						<img src={entry.applicantImage} alt="" class="size-10 rounded-full object-cover" />
 					{:else}
-						<span class="flex size-10 items-center justify-center rounded-full bg-base-400 text-[13px] font-bold text-secondary">
+						<span
+							class="flex size-10 items-center justify-center rounded-full bg-base-400 text-[13px] font-bold text-secondary"
+						>
 							{entry.applicantName.slice(0, 2).toUpperCase()}
 						</span>
 					{/if}
 					<div class="min-w-0 flex-1">
-						<div class="truncate text-[13.5px] font-semibold text-base-content">{entry.applicantName}</div>
+						<div class="truncate text-[13.5px] font-semibold text-base-content">
+							{entry.applicantName}
+						</div>
 						<div class="truncate text-[12px] text-base-content-muted">"{entry.relationship}"</div>
 					</div>
-					<span class="rounded-[5px] px-2.5 py-1 text-[11px] font-semibold {chip[entry.status].cls}">
+					<span
+						class="rounded-[5px] px-2.5 py-1 text-[11px] font-semibold {chip[entry.status].cls}"
+					>
 						{chip[entry.status].label}
 					</span>
 					{#if entry.status === 'pending'}
-						<button type="button" class="btn btn-primary btn-sm" onclick={() => (formFor = entry)}>Vouch</button>
-						<button type="button" class="btn btn-ghost btn-sm" onclick={() => (confirm = { kind: 'decline', entry })}>
+						<button type="button" class="btn btn-primary btn-sm" onclick={() => (formFor = entry)}
+							>Vouch</button
+						>
+						<button
+							type="button"
+							class="btn btn-ghost btn-sm"
+							onclick={() => (confirm = { kind: 'decline', entry })}
+						>
 							Decline
 						</button>
 					{:else if entry.status === 'accepted'}
-						<button type="button" class="btn btn-ghost btn-sm" onclick={() => (confirm = { kind: 'withdraw', entry })}>
+						<button
+							type="button"
+							class="btn btn-ghost btn-sm"
+							onclick={() => (confirm = { kind: 'withdraw', entry })}
+						>
 							Withdraw
 						</button>
 					{/if}

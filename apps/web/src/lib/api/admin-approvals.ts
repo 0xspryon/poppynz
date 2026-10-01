@@ -9,6 +9,9 @@ const approveEndpoint = apiClient.approvals.$post;
 const revokeEndpoint = apiClient.approvals[':id'].revoke.$post;
 const fileUrlEndpoint = apiClient.admin['kyc-docs'][':id']['file-url'].$get;
 const expiryEndpoint = apiClient.admin['kyc-docs'][':id'].$patch;
+const remarksEndpoint = apiClient.admin['approval-requests'][':id'].remarks.$put;
+const flagVouchEndpoint = apiClient.admin.vouches[':id'].flag.$post;
+const revokeVouchEndpoint = apiClient.admin.vouches[':id'].revoke.$post;
 
 export type ApprovalQueue = Extract<
 	Awaited<ReturnType<typeof listApprovalRequests>>,
@@ -23,6 +26,7 @@ export type KycFileView = Extract<
 	Awaited<ReturnType<typeof getKycDocumentFileUrl>>,
 	{ ok: true }
 >['data'];
+export type AdminVouch = ApprovalRequestDetail['vouches'][number];
 
 export type ApprovalQueueError = ErrorsOf<typeof listEndpoint>;
 export type ApprovalDetailError = ErrorsOf<typeof detailEndpoint>;
@@ -79,6 +83,23 @@ export async function updateKycDocumentExpiry(documentId: string, expiryDate: st
 		typeof expiryEndpoint
 	>[0];
 	return call(expiryEndpoint(args));
+}
+
+export async function saveGeneralRemarks(id: string, generalRemarks: string) {
+	// The API reads the body via parseJsonBody (no hono validator), so the
+	// RPC input type omits `json` — the client still serializes it at runtime.
+	const args = { param: { id }, json: { generalRemarks } } as unknown as Parameters<
+		typeof remarksEndpoint
+	>[0];
+	return call(remarksEndpoint(args));
+}
+
+export async function actOnVouch(id: string, action: 'flag' | 'revoke', reason: string) {
+	const endpoint = action === 'flag' ? flagVouchEndpoint : revokeVouchEndpoint;
+	// The API reads the body via parseJsonBody (no hono validator), so the
+	// RPC input type omits `json` — the client still serializes it at runtime.
+	const args = { param: { id }, json: { reason } } as unknown as Parameters<typeof endpoint>[0];
+	return call(endpoint(args));
 }
 
 export type { ApiResult };

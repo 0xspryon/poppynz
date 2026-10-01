@@ -4,3 +4,7 @@ export const validKycDocumentStatuses = ['submitted', 'approved', 'rejected'] as
 export const validLanguages = ['en', 'es'] as const;
 export const signupIntentTtlMs = 5 * 60 * 1000;
 export const referralInviteTtlMs = 14 * 24 * 60 * 60 * 1000;
+
+/** Vouches a helper applicant is encouraged (not required) to collect. */
+export const RECOMMENDED_VOUCHES = 2;
+export const vouchRequestTtlMs = 14 * 24 * 60 * 60 * 1000;

@@ -24,7 +24,8 @@ export const appAc = createAccessControl({
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
   tcs: ['read', 'accept', 'write'],
-  userSearch: ['read', 'write']
+  userSearch: ['read', 'write'],
+  vouch: ['read', 'write', 'review']
 });
 
 export const familyRole = appAc.newRole({
@@ -40,7 +41,8 @@ export const familyRole = appAc.newRole({
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
   tcs: ['read', 'accept'],
-  userSearch: ['write']
+  userSearch: ['write'],
+  vouch: ['read', 'write']
 });
 
 export const spRole = appAc.newRole({
@@ -56,7 +58,8 @@ export const spRole = appAc.newRole({
   safetyVerification: ['read', 'write'],
   serviceCatalogue: ['read'],
   serviceOffered: ['read', 'write'],
-  tcs: ['read', 'accept']
+  tcs: ['read', 'accept'],
+  vouch: ['read', 'write']
 });
 
 export const adminRole = appAc.newRole({
@@ -78,7 +81,8 @@ export const adminRole = appAc.newRole({
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
   tcs: ['read', 'accept', 'write'],
-  userSearch: ['read', 'write']
+  userSearch: ['read', 'write'],
+  vouch: ['read', 'write', 'review']
 });
 
 export const roles = {

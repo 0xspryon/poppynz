@@ -217,6 +217,37 @@ export const referralInviteMail = (mail: {
   ].join('\n')
 });
 
+export const vouchRequestMail = (mail: {
+  applicantName: string;
+  relationship: string;
+  link: string;
+}): MailContent => ({
+  subject: `${mail.applicantName} asked you to vouch for them on Poppynz`,
+  html: layout(
+    paragraph('Hi,') +
+      paragraph(
+        `${escapeHtml(mail.applicantName)} is applying to be a helper on Poppynz and asked you to vouch for them. They describe how they know you as: <i>${escapeHtml(mail.relationship)}</i>.`
+      ) +
+      paragraph(
+        'A vouch is a personal endorsement. Only say yes if you know this person and would trust them with care. Your answers are seen only by the Poppynz team, never by the applicant.'
+      ) +
+      button(mail.link, 'Review the request') +
+      paragraph("If you don't know this person, decline the request.")
+  ),
+  text: [
+    'Hi,',
+    '',
+    `${mail.applicantName} is applying to be a helper on Poppynz and asked you to vouch for them.`,
+    `How they know you: ${mail.relationship}`,
+    '',
+    'A vouch is a personal endorsement. Only say yes if you know this person and would trust them with care. Your answers are seen only by the Poppynz team, never by the applicant.',
+    '',
+    `Review the request: ${mail.link}`,
+    '',
+    "If you don't know this person, decline the request."
+  ].join('\n')
+});
+
 export const approvalRequestSubmittedMail = (mail: {
   name: string | null;
   role: MailRole;

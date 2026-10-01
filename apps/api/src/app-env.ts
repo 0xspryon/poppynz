@@ -22,18 +22,15 @@ import type {
   UserDirectoryRepo,
   UserProfileRepo,
   UserRepo,
-  UserSearchRepo
+  UserSearchRepo,
+  VouchRepo
 } from '@repo/db';
 import type { GooglePlaces } from '@repo/google';
 import type { Credibled } from '@repo/credibled';
 import type { NotificationHub } from '@repo/notify';
 import type { ObjectStorage } from '@repo/objs';
 import type { Payments } from '@repo/payments';
-import type {
-  FamilySearchQueue,
-  ProviderSearchQueue,
-  SafetyVerificationQueue
-} from '@repo/queue';
+import type { FamilySearchQueue, ProviderSearchQueue, SafetyVerificationQueue } from '@repo/queue';
 import type { FamilySearchIndex, ProviderSearchIndex } from '@repo/typesense';
 import type { ManagedRuntime } from 'effect';
 import type { SigninService } from './routes/app/auth/signin/signin.handler';
@@ -62,6 +59,7 @@ export type AppServices =
   | FamilySearchOutboxRepo
   | FamilySearchRepo
   | ReferralRepo
+  | VouchRepo
   | SafetyVerificationRepo
   | CheckOrderRepo
   | PaymentRepo

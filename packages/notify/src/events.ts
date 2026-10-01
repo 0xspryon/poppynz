@@ -70,6 +70,15 @@ export type NotificationPayloads = {
   'safety_verification.updated': {
     status: 'invited' | 'in_progress' | 'review_required' | 'verified' | 'rejected';
   };
+  /** Someone asked the viewer to vouch for them. */
+  'vouch.requested': {
+    vouchId: string;
+    applicantName: string;
+  };
+  /** One of the viewer's own vouch requests moved. Deliberately empty — the
+   * applicant must never learn which voucher was flagged or why; the page
+   * refetches its generic list. */
+  'vouch.updated': Record<string, never>;
 };
 
 // Planned (not yet published) — future domains follow the same pattern:

@@ -8,6 +8,7 @@
 		type OnboardingHistory,
 		type OnboardingState
 	} from '$lib/api/onboarding';
+	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { toast } from '$lib/toast.svelte';
 
@@ -15,15 +16,28 @@
 		role: 'family' | 'service-provider';
 		hub: Pick<OnboardingState, 'approval' | 'latestApprovalRequest'>;
 		history: OnboardingHistory;
+		vouchCount?: number | null;
 		onchanged: () => Promise<void>;
 	}
 
-	let { role, hub, history, onchanged }: Props = $props();
+	let { role, hub, history, vouchCount = null, onchanged }: Props = $props();
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 	const DAY_MS = 24 * 60 * 60 * 1000;
+	const RECOMMENDED_VOUCHES = 2;
 
 	let submitting = $state(false);
+	let nudgeOpen = $state(false);
+
+	/** Vouches are a nudge, never a gate: fewer than recommended asks once,
+	 * then submits anyway. Families (vouchCount null) go straight through. */
+	function requestSubmit() {
+		if (vouchCount !== null && vouchCount < RECOMMENDED_VOUCHES) {
+			nudgeOpen = true;
+			return;
+		}
+		void submit();
+	}
 
 	const verifiedLabel = $derived(role === 'family' ? 'Verified family' : 'Verified Mom Helper');
 
@@ -208,7 +222,7 @@
 				type="button"
 				class="btn btn-primary"
 				disabled={submitting}
-				onclick={() => void submit()}
+				onclick={requestSubmit}
 			>
 				{#if submitting}
 					<span class="loading loading-spinner loading-sm"></span>
@@ -247,7 +261,7 @@
 				type="button"
 				class="btn btn-primary"
 				disabled={submitting}
-				onclick={() => void submit()}
+				onclick={requestSubmit}
 			>
 				{#if submitting}
 					<span class="loading loading-spinner loading-sm"></span>
@@ -284,7 +298,7 @@
 			type="button"
 			class="btn btn-primary"
 			disabled={submitting}
-			onclick={() => void submit()}
+			onclick={requestSubmit}
 		>
 			{#if submitting}
 				<span class="loading loading-spinner loading-sm"></span>
@@ -339,3 +353,17 @@
 		No history yet — your submissions and decisions will appear here.
 	</p>
 {/if}
+
+<ConfirmDialog
+	open={nudgeOpen}
+	title="Submit without two vouches?"
+	body={`You have ${vouchCount ?? 0} of ${RECOMMENDED_VOUCHES} recommended vouches. You can still submit — our team will email you to arrange a quick chat before deciding.`}
+	confirmLabel="Submit anyway"
+	confirmClass="btn-primary"
+	busy={submitting}
+	onconfirm={() => {
+		nudgeOpen = false;
+		void submit();
+	}}
+	oncancel={() => (nudgeOpen = false)}
+/>

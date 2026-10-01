@@ -14,6 +14,8 @@
 		getSafetyVerification,
 		type SafetyVerificationState
 	} from '$lib/api/safety-verification';
+	import { getMyVouches, type MyVouches } from '$lib/api/vouches';
+	import ApplicantVouchesPanel from '$lib/components/vouches/ApplicantVouchesPanel.svelte';
 	import ApprovalPanel from '$lib/components/verification/ApprovalPanel.svelte';
 	import DocumentChecklist from '$lib/components/verification/DocumentChecklist.svelte';
 	import SafetyCheckPanel from '$lib/components/verification/SafetyCheckPanel.svelte';
@@ -27,21 +29,24 @@
 	let onboarding = $state<OnboardingState | null>(null);
 	let safety = $state<SafetyVerificationState | null>(null);
 	let history = $state<OnboardingHistory | null>(null);
+	let vouches = $state<MyVouches | null>(null);
 	let loading = $state(true);
 	let errorMessage = $state('');
 
 	/** Re-reads everything without blanking the page, so a section's own
 	 * spinner or dialog survives the refresh it triggered. */
 	async function load() {
-		const [stateResult, safetyResult, historyResult] = await Promise.all([
+		const [stateResult, safetyResult, historyResult, vouchesResult] = await Promise.all([
 			getOnboardingState(),
 			getSafetyVerification(),
-			getOnboardingHistory()
+			getOnboardingHistory(),
+			getMyVouches()
 		]);
-		if (stateResult.ok && safetyResult.ok && historyResult.ok) {
+		if (stateResult.ok && safetyResult.ok && historyResult.ok && vouchesResult.ok) {
 			onboarding = stateResult.data;
 			safety = safetyResult.data;
 			history = historyResult.data;
+			vouches = vouchesResult.data;
 			errorMessage = '';
 		} else {
 			errorMessage = RETRY_MESSAGE;
@@ -67,7 +72,8 @@
 		const unsubscribers = [
 			notifications.on('safety_verification.updated', () => void load()),
 			notifications.on('approval.decided', () => void load()),
-			notifications.on('approval.revoked', () => void load())
+			notifications.on('approval.revoked', () => void load()),
+			notifications.on('vouch.updated', () => void load())
 		];
 		return () => {
 			for (const unsubscribe of unsubscribers) unsubscribe();
@@ -182,7 +188,7 @@
 		</div>
 	{:else if errorMessage && !onboarding}
 		<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
-	{:else if onboarding && safety && history}
+	{:else if onboarding && safety && history && vouches}
 		<nav aria-label="Verification steps">
 			<ol class="grid gap-2.5 sm:grid-cols-3">
 				{#each steps as step, index (step.id)}
@@ -247,13 +253,24 @@
 			/>
 		</section>
 
+		<section id="vouches" class="mt-10 scroll-mt-6">
+			<h2 class="mb-4 font-display text-lg font-bold text-base-content">Vouches</h2>
+			<ApplicantVouchesPanel data={vouches} onchanged={load} />
+		</section>
+
 		<section id="review" class="mt-10 scroll-mt-6">
 			{@render sectionHeading(
 				2,
 				'Poppynz review',
 				'Our team reviews your profile and lets you know if anything else is needed.'
 			)}
-			<ApprovalPanel role="service-provider" hub={onboarding} {history} onchanged={load} />
+			<ApprovalPanel
+				role="service-provider"
+				hub={onboarding}
+				{history}
+				vouchCount={vouches.counting}
+				onchanged={load}
+			/>
 		</section>
 	{/if}
 </div>

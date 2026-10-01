@@ -7,7 +7,7 @@ import {
   type VouchWithVoucher
 } from '@repo/db';
 import { publishNotificationBestEffort } from '@repo/notify';
-import { Cause, Data, Effect, Exit, Option } from 'effect';
+import { Cause, Data, Effect, Exit, Option, Schema } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
   authErrorToResponse,
@@ -16,13 +16,21 @@ import {
   requirePermissions,
   type UserAndSession
 } from '@/api/lib/effect-auth';
-import { RECOMMENDED_VOUCHES, vouchRequestTtlMs } from '@/api/lib/constants';
+import {
+  RECOMMENDED_VOUCHES,
+  VOUCH_MAX_OPEN_REQUESTS,
+  VOUCH_MAX_REQUESTS_PER_WINDOW,
+  vouchRequestTtlMs,
+  vouchRequestWindowMs
+} from '@/api/lib/constants';
 import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
+import { isUniqueViolation } from '@/api/lib/sql-errors';
 import { resolveUiOrigin } from '@/api/lib/ui-origin';
 import {
   applicantVouchStatus,
   canVouch,
+  pairBlocksNewRequest,
   presentedVouchStatus,
   summariseVouches,
   vouchCounts
@@ -47,6 +55,7 @@ export class VouchAlreadyRequestedError extends Data.TaggedError(
 export class VouchNotFoundError extends Data.TaggedError('VouchNotFoundError')<{}> {}
 export class VouchStateError extends Data.TaggedError('VouchStateError')<{}> {}
 export class VouchLockedError extends Data.TaggedError('VouchLockedError')<{}> {}
+export class VouchRateLimitedError extends Data.TaggedError('VouchRateLimitedError')<{}> {}
 
 const repoError = (cause: SqlError) => new VouchRepoError({ cause });
 
@@ -126,6 +135,19 @@ export const requestVouchProgram = (
       return yield* Effect.fail(new VoucherUnavailableError());
     }
 
+    // Checked before the voucher lookup so the limit also throttles anyone
+    // walking the form through a list of emails.
+    const vouchRepo = yield* VouchRepo;
+    const recent = yield* vouchRepo
+      .countRecentByApplicant(applicant.id, new Date(Date.now() - vouchRequestWindowMs))
+      .pipe(Effect.mapError(repoError));
+    if (
+      recent.pendingOpen >= VOUCH_MAX_OPEN_REQUESTS ||
+      recent.createdSince >= VOUCH_MAX_REQUESTS_PER_WINDOW
+    ) {
+      return yield* Effect.fail(new VouchRateLimitedError());
+    }
+
     const userRepo = yield* UserRepo;
     const voucher = yield* userRepo.findByEmail(input.email).pipe(
       Effect.catchTags({
@@ -151,7 +173,15 @@ export const requestVouchProgram = (
       return yield* Effect.fail(new VoucherUnavailableError());
     }
 
-    const vouchRepo = yield* VouchRepo;
+    // A flag/admin revoke, or the voucher's own recent "no", closes the pair —
+    // reported with the same vague error so it reveals nothing.
+    const history = yield* vouchRepo
+      .listByPair(applicant.id, voucher.id)
+      .pipe(Effect.mapError(repoError));
+    if (pairBlocksNewRequest(history, voucher.id, now)) {
+      return yield* Effect.fail(new VoucherUnavailableError());
+    }
+
     const open = yield* vouchRepo
       .findOpenByPair(applicant.id, voucher.id)
       .pipe(Effect.mapError(repoError));
@@ -277,7 +307,11 @@ export const submitVouchProgram = (
           }
         })
       ),
-      Effect.mapError(repoError)
+      // Two pending requests to the same voucher accepted at once: the
+      // one-accepted-per-pair index rejects the loser — a state conflict, not a 500.
+      Effect.mapError((cause) =>
+        isUniqueViolation(cause) ? new VouchStateError() : repoError(cause)
+      )
     );
     if (!updated) {
       return yield* Effect.fail(new VouchStateError());
@@ -376,6 +410,14 @@ const authed = (headers: Headers, permission: 'read' | 'write' | 'review') =>
     )
   );
 
+const isUuid = Schema.is(Schema.UUID);
+
+/** A malformed id can't name a vouch: 404 without asking the database. */
+const vouchIdParam = (c: HonoContext<HonoEnv>) => {
+  const id = c.req.param('id') ?? '';
+  return isUuid(id) ? Effect.succeed(id) : Effect.fail(new VouchNotFoundError());
+};
+
 /** First hop of the forwarded chain — same rule as the webhook log. */
 const sourceIpOf = (c: HonoContext<HonoEnv>): string | null => {
   const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
@@ -401,20 +443,23 @@ export const submitVouchRouteProgram = (c: HonoContext<HonoEnv>, headers: Header
   Effect.gen(function* () {
     const input = yield* validateVouchSubmitInput(yield* parseJsonBody(c, vouchJsonError));
     const userAndSession = yield* authed(headers, 'write');
-    return yield* submitVouchProgram(userAndSession, c.req.param('id') ?? '', input, sourceIpOf(c));
+    const vouchId = yield* vouchIdParam(c);
+    return yield* submitVouchProgram(userAndSession, vouchId, input, sourceIpOf(c));
   });
 
 export const declineVouchRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
-  authed(headers, 'write').pipe(
-    Effect.flatMap((userAndSession) => declineVouchProgram(userAndSession, c.req.param('id') ?? ''))
-  );
+  Effect.gen(function* () {
+    const userAndSession = yield* authed(headers, 'write');
+    const vouchId = yield* vouchIdParam(c);
+    return yield* declineVouchProgram(userAndSession, vouchId);
+  });
 
 export const withdrawVouchRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
-  authed(headers, 'write').pipe(
-    Effect.flatMap((userAndSession) =>
-      withdrawVouchProgram(userAndSession, c.req.param('id') ?? '')
-    )
-  );
+  Effect.gen(function* () {
+    const userAndSession = yield* authed(headers, 'write');
+    const vouchId = yield* vouchIdParam(c);
+    return yield* withdrawVouchProgram(userAndSession, vouchId);
+  });
 
 export const adminVouchActionRouteProgram = (
   c: HonoContext<HonoEnv>,
@@ -424,12 +469,8 @@ export const adminVouchActionRouteProgram = (
   Effect.gen(function* () {
     const input = yield* validateVouchAdminActionInput(yield* parseJsonBody(c, vouchJsonError));
     const userAndSession = yield* authed(headers, 'review');
-    return yield* adminVouchActionProgram(
-      userAndSession.user.id,
-      c.req.param('id') ?? '',
-      action,
-      input.reason
-    );
+    const vouchId = yield* vouchIdParam(c);
+    return yield* adminVouchActionProgram(userAndSession.user.id, vouchId, action, input.reason);
   });
 
 export type VouchRouteError =
@@ -514,6 +555,17 @@ const vouchErrorToResponse = (c: HonoContext<HonoEnv>, error: VouchRouteError) =
           }
         },
         409
+      );
+    case 'VouchRateLimitedError':
+      return c.json(
+        {
+          error: {
+            code: 'VOUCH_RATE_LIMITED' as const,
+            message:
+              "You've sent a lot of vouch requests. Please wait for replies before asking more people."
+          }
+        },
+        429
       );
     default:
       return handleNever(c, error);

@@ -2,9 +2,11 @@ import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
 import {
   and,
+  count,
   desc,
   eq,
   gt,
+  gte,
   inArray,
   type InferInsertModel,
   type InferSelectModel,
@@ -82,6 +84,17 @@ export class VouchRepo extends Context.Tag('@repo/db/VouchRepo')<
       applicantUserId: string,
       voucherUserId: string
     ) => Effect.Effect<Vouch | null, SqlError>;
+    /** Every vouch ever requested between this pair, in any status. */
+    listByPair: (
+      applicantUserId: string,
+      voucherUserId: string
+    ) => Effect.Effect<Array<Vouch>, SqlError>;
+    /** For the request rate limit: open (pending, unexpired) requests now,
+     * and requests created at or after `since`, whatever their status. */
+    countRecentByApplicant: (
+      applicantUserId: string,
+      since: Date
+    ) => Effect.Effect<{ pendingOpen: number; createdSince: number }, SqlError>;
     listForApplicants: (
       applicantUserIds: ReadonlyArray<string>
     ) => Effect.Effect<Array<VouchWithVoucher>, SqlError>;
@@ -132,6 +145,36 @@ export const VouchRepoLive = Layer.effect(
           )
           .limit(1)
           .pipe(Effect.map((rows) => rows[0] ?? null)),
+      listByPair: (applicantUserId, voucherUserId) =>
+        db
+          .select()
+          .from(vouch)
+          .where(
+            and(eq(vouch.applicantUserId, applicantUserId), eq(vouch.voucherUserId, voucherUserId))
+          )
+          .orderBy(desc(vouch.createdAt)),
+      countRecentByApplicant: (applicantUserId, since) =>
+        Effect.all([
+          db
+            .select({ total: count() })
+            .from(vouch)
+            .where(
+              and(
+                eq(vouch.applicantUserId, applicantUserId),
+                eq(vouch.status, 'pending'),
+                gt(vouch.expiresAt, new Date())
+              )
+            ),
+          db
+            .select({ total: count() })
+            .from(vouch)
+            .where(and(eq(vouch.applicantUserId, applicantUserId), gte(vouch.createdAt, since)))
+        ]).pipe(
+          Effect.map(([pending, created]) => ({
+            pendingOpen: pending[0]?.total ?? 0,
+            createdSince: created[0]?.total ?? 0
+          }))
+        ),
       listForApplicants: (applicantUserIds) =>
         applicantUserIds.length === 0
           ? Effect.succeed([])
@@ -259,6 +302,8 @@ export const EmptyVouchRepoTest = makeVouchRepoTest({
   create: () => Effect.succeed(dummyVouch),
   findById: (id) => Effect.fail(new DBNotFoundError({ entity: 'vouch', value: id })),
   findOpenByPair: () => Effect.succeed(null),
+  listByPair: () => Effect.succeed([]),
+  countRecentByApplicant: () => Effect.succeed({ pendingOpen: 0, createdSince: 0 }),
   listForApplicants: () => Effect.succeed([]),
   listForVoucher: () => Effect.succeed([]),
   transition: () => Effect.succeed(null)

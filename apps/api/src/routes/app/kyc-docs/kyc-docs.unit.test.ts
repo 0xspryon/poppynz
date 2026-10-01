@@ -107,7 +107,7 @@ const makeLayer = (
     user?: User;
     hasPermission?: boolean;
     /** Decide permission checks against a real role's grants instead. */
-    grantedBy?: typeof familyRole;
+    grantedBy?: { authorize: (request: never) => { success: boolean } };
     type?: KycDocumentType | null;
     /** Every active type, when a test needs more than the one under edit. */
     types?: Array<KycDocumentType>;

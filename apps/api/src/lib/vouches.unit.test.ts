@@ -1,8 +1,9 @@
-import { dummyVouch, type VouchWithVoucher } from '@repo/db';
+import { dummyVouch, type Vouch, type VouchWithVoucher } from '@repo/db';
 import { describe, expect, it } from 'vitest';
 import {
   applicantVouchStatus,
   canVouch,
+  pairBlocksNewRequest,
   presentedVouchStatus,
   summariseVouches,
   vouchCounts
@@ -90,5 +91,50 @@ describe('applicantVouchStatus', () => {
     expect(applicantVouchStatus(entry({}, { banned: true }), NOW)).toBe('not_counted');
     expect(applicantVouchStatus(entry(), NOW)).toBe('completed');
     expect(applicantVouchStatus(entry({ status: 'declined' }), NOW)).toBe('declined');
+  });
+});
+
+describe('pairBlocksNewRequest', () => {
+  const VOUCHER = dummyVouch.voucherUserId;
+  const DAY = 24 * 60 * 60 * 1000;
+  const row = (overrides: Partial<Vouch>): Vouch => ({ ...dummyVouch, ...overrides });
+  const ago = (ms: number) => new Date(NOW.getTime() - ms);
+
+  it('allows a pair with no history, or only expired/accepted/pending rows', () => {
+    expect(pairBlocksNewRequest([], VOUCHER, NOW)).toBe(false);
+    expect(
+      pairBlocksNewRequest(
+        [row({ status: 'pending', expiresAt: ago(DAY) }), row({ status: 'accepted' })],
+        VOUCHER,
+        NOW
+      )
+    ).toBe(false);
+  });
+
+  it('blocks forever after an admin flag or an admin revoke', () => {
+    const old = ago(400 * DAY);
+    expect(
+      pairBlocksNewRequest(
+        [row({ status: 'flagged', revokedBy: 'admin-1', decidedAt: old })],
+        VOUCHER,
+        NOW
+      )
+    ).toBe(true);
+    expect(
+      pairBlocksNewRequest(
+        [row({ status: 'revoked', revokedBy: 'admin-1', decidedAt: old })],
+        VOUCHER,
+        NOW
+      )
+    ).toBe(true);
+  });
+
+  it('blocks for 14 days after the voucher declined or withdrew, then allows again', () => {
+    const declined = (decidedAt: Date) => row({ status: 'declined', decidedAt });
+    const withdrew = (decidedAt: Date) => row({ status: 'revoked', revokedBy: VOUCHER, decidedAt });
+    expect(pairBlocksNewRequest([declined(ago(13 * DAY))], VOUCHER, NOW)).toBe(true);
+    expect(pairBlocksNewRequest([withdrew(ago(13 * DAY))], VOUCHER, NOW)).toBe(true);
+    expect(pairBlocksNewRequest([declined(ago(15 * DAY))], VOUCHER, NOW)).toBe(false);
+    expect(pairBlocksNewRequest([withdrew(ago(15 * DAY))], VOUCHER, NOW)).toBe(false);
   });
 });

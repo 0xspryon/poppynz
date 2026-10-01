@@ -1,4 +1,5 @@
 import type { Vouch, VoucherStanding, VouchStatus, VouchWithVoucher } from '@repo/db';
+import { vouchRequestTtlMs } from './constants';
 
 /**
  * The vouch rules, in one place and free of I/O. Nothing here is stored:
@@ -62,3 +63,24 @@ export const applicantVouchStatus = (vouch: VouchWithVoucher, now: Date): Applic
       return 'not_counted';
   }
 };
+
+/**
+ * Whether this pair's history stops the applicant asking the same voucher
+ * again. An admin flag or admin revoke closes the pair for good; the voucher
+ * declining or withdrawing closes it for one request window, so a "no"
+ * can't be turned into a stream of fresh requests.
+ */
+export const pairBlocksNewRequest = (
+  history: ReadonlyArray<Vouch>,
+  voucherUserId: string,
+  now: Date
+) =>
+  history.some((vouch) => {
+    const byVoucher = vouch.revokedBy === voucherUserId;
+    if (vouch.status === 'flagged' || (vouch.status === 'revoked' && !byVoucher)) return true;
+    if (vouch.status === 'declined' || vouch.status === 'revoked') {
+      const decidedAt = vouch.decidedAt ?? vouch.updatedAt;
+      return now.getTime() - decidedAt.getTime() < vouchRequestTtlMs;
+    }
+    return false;
+  });

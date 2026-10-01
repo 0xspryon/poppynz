@@ -1,3 +1,4 @@
+import { SqlError } from '@effect/sql/SqlError';
 import {
   DBNotFoundError,
   dummyVouch,
@@ -16,14 +17,19 @@ import {
 import { makeNotificationHubTest } from '@repo/notify';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
+import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
 import { makeMailerTest, type VouchRequestMail } from '@/api/lib/mailer';
 import {
   adminVouchActionProgram,
+  adminVouchActionRouteProgram,
+  declineVouchRouteProgram,
   listMyVouchesProgram,
   requestVouchProgram,
   submitVouchProgram,
-  withdrawVouchProgram
+  submitVouchRouteProgram,
+  withdrawVouchProgram,
+  withdrawVouchRouteProgram
 } from './vouches.handler';
 
 const user = (overrides: Partial<User> = {}): User => ({
@@ -83,6 +89,12 @@ const makeLayer = (
     transitionResult?: Vouch | null;
     onCreate?: (input: unknown) => void;
     onTransition?: (input: VouchTransition) => void;
+    transitionFailsWith?: SqlError;
+    pairHistory?: Array<Vouch>;
+    recent?: { pendingOpen: number; createdSince: number };
+    onCountSince?: (since: Date) => void;
+    /** Called on every vouch-repo read or write, to prove one never happened. */
+    onRepoTouch?: () => void;
     sent?: Array<VouchRequestMail>;
   } = {}
 ) =>
@@ -119,15 +131,24 @@ const makeLayer = (
         options.onCreate?.(input);
         return Effect.succeed({ ...dummyVouch, ...input });
       },
-      findById: (id) =>
-        options.vouch
+      findById: (id) => {
+        options.onRepoTouch?.();
+        return options.vouch
           ? Effect.succeed(options.vouch)
-          : Effect.fail(new DBNotFoundError({ entity: 'vouch', value: id })),
+          : Effect.fail(new DBNotFoundError({ entity: 'vouch', value: id }));
+      },
       findOpenByPair: () => Effect.succeed(options.openPair ?? null),
+      listByPair: () => Effect.succeed(options.pairHistory ?? []),
+      countRecentByApplicant: (_applicantUserId, since) => {
+        options.onCountSince?.(since);
+        return Effect.succeed(options.recent ?? { pendingOpen: 0, createdSince: 0 });
+      },
       listForApplicants: () => Effect.succeed(options.listed ?? []),
       listForVoucher: () => Effect.succeed([]),
       transition: (input) => {
+        options.onRepoTouch?.();
         options.onTransition?.(input);
+        if (options.transitionFailsWith) return Effect.fail(options.transitionFailsWith);
         return Effect.succeed(
           options.transitionResult === undefined
             ? { ...(options.vouch ?? dummyVouch), ...input.set }
@@ -225,6 +246,77 @@ describe('requestVouchProgram', () => {
     expect(failureOf(exit)).toMatchObject({ _tag: 'VouchAlreadyRequestedError' });
   });
 
+  const DAY = 24 * 60 * 60 * 1000;
+  const requestWith = (options: Parameters<typeof makeLayer>[0]) =>
+    Effect.runPromiseExit(
+      requestVouchProgram(
+        asSession(applicant),
+        { email: voucher.email, relationship: 'X' },
+        ctx
+      ).pipe(Effect.provide(makeLayer(options)))
+    );
+
+  it('refuses re-asking a voucher an admin flagged or revoked, with the vague error', async () => {
+    const created: Array<unknown> = [];
+    const flagged = await requestWith({
+      pairHistory: [{ ...dummyVouch, status: 'flagged', revokedBy: 'admin-1' }],
+      onCreate: (i) => created.push(i)
+    });
+    const revoked = await requestWith({
+      pairHistory: [
+        { ...dummyVouch, status: 'revoked', revokedBy: 'admin-1', decidedAt: new Date(0) }
+      ],
+      onCreate: (i) => created.push(i)
+    });
+    expect(failureOf(flagged)).toMatchObject({ _tag: 'VoucherUnavailableError' });
+    expect(failureOf(revoked)).toMatchObject({ _tag: 'VoucherUnavailableError' });
+    expect(created).toEqual([]);
+  });
+
+  it('refuses re-asking within 14 days of the voucher declining or withdrawing', async () => {
+    const recently = new Date(Date.now() - 2 * DAY);
+    const declined = await requestWith({
+      pairHistory: [{ ...dummyVouch, status: 'declined', decidedAt: recently }]
+    });
+    const withdrew = await requestWith({
+      pairHistory: [
+        { ...dummyVouch, status: 'revoked', revokedBy: voucher.id, decidedAt: recently }
+      ]
+    });
+    expect(failureOf(declined)).toMatchObject({ _tag: 'VoucherUnavailableError' });
+    expect(failureOf(withdrew)).toMatchObject({ _tag: 'VoucherUnavailableError' });
+  });
+
+  it('allows re-asking once 14 days have passed since the voucher declined', async () => {
+    const exit = await requestWith({
+      pairHistory: [
+        { ...dummyVouch, status: 'declined', decidedAt: new Date(Date.now() - 15 * DAY) }
+      ]
+    });
+    expect(Exit.isSuccess(exit)).toBe(true);
+  });
+
+  it('rate-limits at 5 open requests or 10 created in the last 24 hours', async () => {
+    const created: Array<unknown> = [];
+    const since: Array<Date> = [];
+    const tooManyOpen = await requestWith({
+      recent: { pendingOpen: 5, createdSince: 5 },
+      onCreate: (i) => created.push(i),
+      onCountSince: (d) => since.push(d)
+    });
+    const tooManyToday = await requestWith({
+      recent: { pendingOpen: 0, createdSince: 10 },
+      onCreate: (i) => created.push(i)
+    });
+    expect(failureOf(tooManyOpen)).toMatchObject({ _tag: 'VouchRateLimitedError' });
+    expect(failureOf(tooManyToday)).toMatchObject({ _tag: 'VouchRateLimitedError' });
+    expect(created).toEqual([]);
+    expect(Math.abs(Date.now() - DAY - since[0].getTime())).toBeLessThan(5_000);
+
+    const underLimit = await requestWith({ recent: { pendingOpen: 4, createdSince: 9 } });
+    expect(Exit.isSuccess(underLimit)).toBe(true);
+  });
+
   it('only lets helpers ask for vouches', async () => {
     const exit = await Effect.runPromiseExit(
       requestVouchProgram(
@@ -296,6 +388,36 @@ describe('submitVouchProgram', () => {
     expect(transitions[0].set.attestedAt).toBeInstanceOf(Date);
   });
 
+  it('maps a lost race on the one-accepted-per-pair index to VouchStateError', async () => {
+    const exit = await Effect.runPromiseExit(
+      submitVouchProgram(asSession(voucher), dummyVouch.id, answers, null).pipe(
+        Effect.provide(
+          makeLayer({
+            vouch: { ...dummyVouch, voucherUserId: voucher.id },
+            transitionFailsWith: new SqlError({
+              cause: { code: '23505', constraint: 'vouches_pair_accepted_uidx' }
+            })
+          })
+        )
+      )
+    );
+    expect(failureOf(exit)).toMatchObject({ _tag: 'VouchStateError' });
+  });
+
+  it('still reports other repo failures as VouchRepoError', async () => {
+    const exit = await Effect.runPromiseExit(
+      submitVouchProgram(asSession(voucher), dummyVouch.id, answers, null).pipe(
+        Effect.provide(
+          makeLayer({
+            vouch: { ...dummyVouch, voucherUserId: voucher.id },
+            transitionFailsWith: new SqlError({ message: 'db down' })
+          })
+        )
+      )
+    );
+    expect(failureOf(exit)).toMatchObject({ _tag: 'VouchRepoError' });
+  });
+
   it("treats someone else's vouch as not found", async () => {
     const exit = await Effect.runPromiseExit(
       submitVouchProgram(asSession(voucher), dummyVouch.id, answers, null).pipe(
@@ -362,5 +484,54 @@ describe('adminVouchActionProgram', () => {
       )
     );
     expect(failureOf(exit)).toMatchObject({ _tag: 'VouchStateError' });
+  });
+});
+
+describe('vouch route programs: the :id param', () => {
+  const contextFor = (id: string, body: unknown = {}) =>
+    ({
+      req: {
+        json: async () => body,
+        param: (key: string) => (key === 'id' ? id : undefined),
+        header: () => undefined
+      }
+    }) as unknown as HonoContext<HonoEnv>;
+
+  it('answers a non-UUID id with VouchNotFoundError without touching the vouch repo', async () => {
+    let touched = 0;
+    const layer = makeLayer({ vouch: dummyVouch, onRepoTouch: () => touched++ });
+    const run = <A, E>(program: Effect.Effect<A, E, Layer.Layer.Success<typeof layer>>) =>
+      Effect.runPromiseExit(program.pipe(Effect.provide(layer)));
+    const exits: Array<Exit.Exit<unknown, { _tag: string }>> = [
+      await run(submitVouchRouteProgram(contextFor('not-a-uuid', answers), new Headers())),
+      await run(declineVouchRouteProgram(contextFor('not-a-uuid'), new Headers())),
+      await run(withdrawVouchRouteProgram(contextFor("1' OR 1=1"), new Headers())),
+      await run(
+        adminVouchActionRouteProgram(
+          contextFor('vouch-1', { reason: 'x' }),
+          new Headers(),
+          'flagged'
+        )
+      ),
+      await run(
+        adminVouchActionRouteProgram(contextFor('', { reason: 'x' }), new Headers(), 'revoked')
+      )
+    ];
+    for (const exit of exits) {
+      expect(failureOf(exit)).toMatchObject({ _tag: 'VouchNotFoundError' });
+    }
+    expect(touched).toBe(0);
+  });
+
+  it('passes a UUID id through to the repo', async () => {
+    let touched = 0;
+    const exit = await Effect.runPromiseExit(
+      declineVouchRouteProgram(
+        contextFor('01928f3e-7b6a-7c1d-9e2f-0123456789ab'),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ onRepoTouch: () => touched++ })))
+    );
+    expect(failureOf(exit)).toMatchObject({ _tag: 'VouchNotFoundError' });
+    expect(touched).toBe(1);
   });
 });

@@ -1,6 +1,7 @@
 <script lang="ts">
 	/** Admin-only view of a helper's vouches, answers included. */
 	import { actOnVouch, type AdminVouch } from '$lib/api/admin-approvals';
+	import { formatDate } from '$lib/date';
 	import VouchActionDialog from '$lib/components/admin/VouchActionDialog.svelte';
 	import { toast } from '$lib/toast.svelte';
 
@@ -33,12 +34,6 @@
 	}
 
 	const answerLabel = { yes: 'Yes', no: 'No', unsure: 'Not sure' } as const;
-	const formatDate = (iso: string) =>
-		new Date(iso).toLocaleDateString(undefined, {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		});
 </script>
 
 <div class="rounded-lg border border-card-border bg-base-100 p-5">

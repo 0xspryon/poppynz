@@ -2,6 +2,7 @@
 	/** Admin-only free text on the approval request — typically notes from
 	 * an off-app chat. Never shown to the applicant. */
 	import { saveGeneralRemarks } from '$lib/api/admin-approvals';
+	import { formatDateTime } from '$lib/date';
 	import { toast } from '$lib/toast.svelte';
 
 	interface Props {
@@ -34,7 +35,9 @@
 
 <div class="rounded-lg border border-card-border bg-base-100 p-5">
 	<label class="fieldset">
-		<span class="mb-1 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">General remarks</span>
+		<span class="mb-1 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase"
+			>General remarks</span
+		>
 		<textarea
 			class="textarea min-h-28 w-full"
 			maxlength="5000"
@@ -44,9 +47,14 @@
 	</label>
 	<div class="mt-2 flex items-center justify-between gap-2">
 		<span class="text-xs text-outline">
-			{updatedAt ? `Last saved ${new Date(updatedAt).toLocaleString()}` : 'Only admins see this.'}
+			{updatedAt ? `Last saved ${formatDateTime(updatedAt)}` : 'Only admins see this.'}
 		</span>
-		<button type="button" class="btn btn-primary btn-sm" disabled={!dirty || saving} onclick={() => void save()}>
+		<button
+			type="button"
+			class="btn btn-primary btn-sm"
+			disabled={!dirty || saving}
+			onclick={() => void save()}
+		>
 			{#if saving}<span class="loading loading-spinner loading-xs"></span>{/if}
 			Save
 		</button>

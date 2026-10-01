@@ -547,6 +547,37 @@ describe('POST /conversations (reach-out)', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'ApprovalRequiredError', role: 'family' });
   });
 
+  it('treats an unapproved recipient as not found', async () => {
+    const exit = await Effect.runPromiseExit(
+      createReachoutRouteProgram(
+        makeContext({ body: { recipientUserId: 'provider-1', serviceIds: [offeredService().id] } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({ viewer: familyUser(), counterpart: providerUser(), providerApproved: false })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'RecipientNotFoundError' });
+  });
+
+  it('treats a banned recipient as not found', async () => {
+    const exit = await Effect.runPromiseExit(
+      createReachoutRouteProgram(
+        makeContext({ body: { recipientUserId: 'provider-1', serviceIds: [offeredService().id] } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: familyUser(),
+            counterpart: providerUser({ banned: true, banExpires: null })
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'RecipientNotFoundError' });
+  });
+
   it('rejects invalid payloads before touching auth or repos', async () => {
     const exit = await Effect.runPromiseExit(
       createReachoutRouteProgram(

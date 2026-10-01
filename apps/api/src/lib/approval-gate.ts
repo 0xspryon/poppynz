@@ -1,4 +1,4 @@
-import { ApprovalRepo } from '@repo/db';
+import { ApprovalRepo, type User } from '@repo/db';
 import { Data, Effect } from 'effect';
 import type { UserAndSession } from './effect-auth';
 
@@ -72,3 +72,30 @@ export const approvalGateUnavailableResponseBody = {
   code: 'APPROVAL_UNAVAILABLE' as const,
   message: 'We could not confirm your approval. Please try again shortly.'
 };
+
+/** The other side of a reach-out or contract has no live approval (or is
+ * banned). Routes decide how much to reveal: reach-out maps this to "not
+ * found", a contract inside an existing conversation says so plainly. */
+export class CounterpartNotApprovedError extends Data.TaggedError(
+  'CounterpartNotApprovedError'
+)<{}> {}
+
+export const requireCounterpartApproval = (
+  counterpart: Pick<User, 'id' | 'banned' | 'banExpires'>
+) =>
+  Effect.gen(function* () {
+    const now = new Date();
+    if (
+      counterpart.banned === true &&
+      (counterpart.banExpires === null || counterpart.banExpires > now)
+    ) {
+      return yield* Effect.fail(new CounterpartNotApprovedError());
+    }
+    const repo = yield* ApprovalRepo;
+    yield* repo.findCurrentByUserId(counterpart.id).pipe(
+      Effect.catchTags({
+        DBNotFoundError: () => Effect.fail(new CounterpartNotApprovedError()),
+        SqlError: () => Effect.fail(new ApprovalGateUnavailableError())
+      })
+    );
+  });

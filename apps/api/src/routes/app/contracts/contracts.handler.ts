@@ -27,6 +27,13 @@ import {
   safetyVerificationGateUnavailableResponseBody,
   safetyVerificationRequiredResponseBody
 } from '@/api/lib/safety-verification-gate';
+import {
+  approvalGateUnavailableResponseBody,
+  approvalRequiredResponseBody,
+  requireCounterpartApproval,
+  requireLiveApproval,
+  CounterpartNotApprovedError
+} from '@/api/lib/approval-gate';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import {
   contractCreateJsonError,
@@ -411,6 +418,18 @@ const loadParticipantContract = (contractId: string, viewerUserId: string) =>
     return contract;
   });
 
+/** Contracts are bookings: the person on the other side must still hold a
+ * live approval when terms are sent or accepted. */
+const requireContractCounterpart = (counterpartUserId: string) =>
+  UserRepo.pipe(
+    Effect.flatMap((repo) => repo.findById(counterpartUserId)),
+    Effect.catchTags({
+      DBNotFoundError: () => Effect.fail(new CounterpartNotApprovedError()),
+      SqlError: (cause) => Effect.fail(new ContractRepoError({ cause }))
+    }),
+    Effect.flatMap(requireCounterpartApproval)
+  );
+
 const loadPendingVersion = (contractId: string) =>
   ContractRepo.pipe(
     Effect.flatMap((repo) => repo.listVersions(contractId)),
@@ -603,6 +622,7 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     if (pending.services.length === 0) {
       return yield* Effect.fail(new EmptyContractTermsError());
     }
+    yield* requireContractCounterpart(contract.providerUserId);
 
     // The floor is re-checked against the provider's CURRENT listing at send
     // time — a draft that sat while the provider raised rates must be revised,
@@ -706,6 +726,7 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     if (isExpired(pending, cutoff)) {
       return yield* Effect.fail(new ContractProposalExpiredError());
     }
+    yield* requireContractCounterpart(pending.proposedByUserId);
 
     // Supersede + accept + activate run in one transaction — a concurrent
     // decline can never leave the contract without an accepted version.
@@ -1015,6 +1036,7 @@ export const createContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Hea
       authenticated
     );
     yield* requireVerifiedSafety(userAndSession);
+    yield* requireLiveApproval(userAndSession);
     return yield* createContractProgram(userAndSession, input);
   });
 
@@ -1066,6 +1088,7 @@ export const sendContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Heade
       authenticated
     );
     yield* requireVerifiedSafety(userAndSession);
+    yield* requireLiveApproval(userAndSession);
     return yield* sendContractProgram(userAndSession, contractId);
   });
 
@@ -1087,6 +1110,7 @@ export const acceptContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Hea
       authenticated
     );
     yield* requireVerifiedSafety(userAndSession);
+    yield* requireLiveApproval(userAndSession);
     return yield* acceptContractProgram(userAndSession, contractId);
   });
 
@@ -1268,6 +1292,28 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
       return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
     case 'SafetyVerificationGateUnavailableError':
       return c.json({ error: safetyVerificationGateUnavailableResponseBody }, 503);
+    case 'ApprovalRequiredError':
+      return c.json(
+        {
+          error: approvalRequiredResponseBody(
+            error.role,
+            'You need a current approval to send or accept contract terms.'
+          )
+        },
+        403
+      );
+    case 'ApprovalGateUnavailableError':
+      return c.json({ error: approvalGateUnavailableResponseBody }, 503);
+    case 'CounterpartNotApprovedError':
+      return c.json(
+        {
+          error: {
+            code: 'COUNTERPART_UNAVAILABLE' as const,
+            message: "The other person can't take on new contracts right now."
+          }
+        },
+        409
+      );
     default:
       return handleNever(c, error);
   }

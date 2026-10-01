@@ -26,6 +26,7 @@ import {
 import {
   approvalGateUnavailableResponseBody,
   approvalRequiredResponseBody,
+  requireCounterpartApproval,
   requireLiveApproval
 } from '@/api/lib/approval-gate';
 import {
@@ -251,6 +252,14 @@ export const createReachoutProgram = (
     // new contacts.
     yield* requireVerifiedSafety(userAndSession);
     yield* requireLiveApproval(userAndSession);
+
+    // The recipient must be live too — an unapproved or banned person is
+    // indistinguishable from one who doesn't exist, so nobody can probe status.
+    yield* requireCounterpartApproval(recipient).pipe(
+      Effect.catchTag('CounterpartNotApprovedError', () =>
+        Effect.fail(new RecipientNotFoundError())
+      )
+    );
 
     const ignoredCutoff = yield* reachoutIgnoredCutoff;
     const existing = yield* conversationRepo

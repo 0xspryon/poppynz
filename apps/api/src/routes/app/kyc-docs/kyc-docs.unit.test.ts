@@ -18,6 +18,7 @@ import {
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
+import { adminRole, familyRole, spRole } from '@/api/lib/auth-roles';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
 import {
   createKycDocumentTypeRouteProgram,
@@ -105,6 +106,8 @@ const makeLayer = (
   options: {
     user?: User;
     hasPermission?: boolean;
+    /** Decide permission checks against a real role's grants instead. */
+    grantedBy?: typeof familyRole;
     type?: KycDocumentType | null;
     /** Every active type, when a test needs more than the one under edit. */
     types?: Array<KycDocumentType>;
@@ -162,7 +165,12 @@ const makeLayer = (
     makeAuthServiceTest({
       getSession: () =>
         Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
-      userHasPermission: () => Effect.succeed(options.hasPermission ?? true)
+      userHasPermission: (_headers, permissions) =>
+        Effect.succeed(
+          options.grantedBy
+            ? options.grantedBy.authorize(permissions as never).success
+            : (options.hasPermission ?? true)
+        )
     }),
     makeUserRepoTest({
       findById: (id) =>
@@ -651,6 +659,33 @@ describe('KYC route programs', () => {
 
     expect(updated.expiryDate).toBe('2027-07-01T00:00:00.000Z');
     expect(getFailure(nullExpiry)._tag).toBe('KycValidationError');
+  });
+
+  it('forbids applicants (kycDocument write only) from changing any document expiry', async () => {
+    for (const [role, grantedBy] of [
+      ['family', familyRole],
+      ['service-provider', spRole]
+    ] as const) {
+      const exit = await Effect.runPromise(
+        updateAdminKycDocumentRouteProgram(
+          contextWithJson({ expiryDate: '2027-07-01T00:00:00.000Z' }),
+          new Headers(),
+          'kyc-document-1'
+        ).pipe(Effect.provide(makeLayer({ user: user({ role }), grantedBy })), Effect.exit)
+      );
+      expect(getFailure(exit)._tag).toBe('ForbiddenError');
+    }
+  });
+
+  it('lets an admin (kycDocument review) change a document expiry', async () => {
+    const updated = await Effect.runPromise(
+      updateAdminKycDocumentRouteProgram(
+        contextWithJson({ expiryDate: '2027-07-01T00:00:00.000Z' }),
+        new Headers(),
+        'kyc-document-1'
+      ).pipe(Effect.provide(makeLayer({ user: user({ role: 'admin' }), grantedBy: adminRole })))
+    );
+    expect(updated.expiryDate).toBe('2027-07-01T00:00:00.000Z');
   });
 
   it('translates missing KYC records and repo failures', async () => {

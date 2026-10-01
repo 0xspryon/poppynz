@@ -15,7 +15,10 @@ export const appAc = createAccessControl({
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
-  kycDocument: ['read', 'write'],
+  // `review` is the admin-only capability over someone else's documents
+  // (e.g. correcting an expiry date). Applicants keep `write`, which only
+  // submits their own — ownership is enforced at the route.
+  kycDocument: ['read', 'write', 'review'],
   kycDocumentType: ['read', 'write'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
@@ -76,7 +79,7 @@ export const adminRole = appAc.newRole({
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
-  kycDocument: ['read', 'write'],
+  kycDocument: ['read', 'write', 'review'],
   kycDocumentType: ['read', 'write'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],

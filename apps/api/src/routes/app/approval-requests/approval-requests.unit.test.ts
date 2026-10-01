@@ -70,6 +70,9 @@ const approvalRequest = (overrides: Partial<ApprovalRequest> = {}): ApprovalRequ
   reviewedBy: null,
   reviewedAt: null,
   reason: null,
+  generalRemarks: null,
+  generalRemarksUpdatedBy: null,
+  generalRemarksUpdatedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   ...overrides
@@ -262,7 +265,8 @@ const makeLayer = (
               reason
             })
           : Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id }));
-      }
+      },
+      updateGeneralRemarks: () => Effect.die('not used')
     }),
     makeKycDocumentTypeRepoTest({
       listActive: () => Effect.succeed(options.documentTypes ?? [documentType()]),

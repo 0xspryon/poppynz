@@ -63,6 +63,9 @@ const makeApprovalRequest = (overrides: Partial<ApprovalRequest> = {}): Approval
   reviewedBy: null,
   reviewedAt: null,
   reason: null,
+  generalRemarks: null,
+  generalRemarksUpdatedBy: null,
+  generalRemarksUpdatedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   ...overrides
@@ -128,7 +131,8 @@ const makeApprovalRequestRepo = (requests: Array<ApprovalRequest>) => ({
     request.reviewedBy = reviewedBy;
     request.reason = reason;
     return Effect.succeed(request);
-  }
+  },
+  updateGeneralRemarks: () => Effect.die('not used')
 });
 
 const makeApp = (

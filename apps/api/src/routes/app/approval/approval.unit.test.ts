@@ -74,6 +74,9 @@ const makeApprovalRequest = (overrides: Partial<ApprovalRequest> = {}): Approval
   reviewedBy: null,
   reviewedAt: null,
   reason: null,
+  generalRemarks: null,
+  generalRemarksUpdatedBy: null,
+  generalRemarksUpdatedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   ...overrides
@@ -235,7 +238,8 @@ const makeLayer = (
           : Effect.succeed(makeApprovalRequest({ id, reviewedBy, status: 'approved' }));
       },
       reject: (id, reviewedBy, reason) =>
-        Effect.succeed(makeApprovalRequest({ id, reviewedBy, reason, status: 'rejected' }))
+        Effect.succeed(makeApprovalRequest({ id, reviewedBy, reason, status: 'rejected' })),
+      updateGeneralRemarks: () => Effect.die('not used')
     }),
     makeUserProfileRepoTest({
       create: (input) =>

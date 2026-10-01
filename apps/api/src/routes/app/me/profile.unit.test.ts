@@ -27,7 +27,9 @@ import {
   getProfileProgram,
   ProfileNotFoundError,
   ProfileRepoError,
+  ProfilePhotoKeyError,
   updateProfileLocationProgram,
+  updateProfilePhotoProgram,
   updateProfileProgram
 } from './profile.handler';
 
@@ -187,6 +189,7 @@ const makeLayer = (
     services?: Array<ServiceOffered>;
     onUpdate?: (input: UserProfileUpdate) => void;
     onLocationUpdate?: (input: UserProfileLocationUpdate) => void;
+    onImageUpdate?: (imageKey: string | null) => void;
     googleLocation?: GooglePlaceLocation;
     imageUrlError?: ObjectStorageError;
   } = {}
@@ -223,6 +226,13 @@ const makeLayer = (
         if (!currentProfile || currentProfile.userId !== userId)
           return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }));
         currentProfile = { ...currentProfile, ...input };
+        return Effect.succeed(currentProfile);
+      },
+      updateImageByUserId: (userId, imageKey) => {
+        options.onImageUpdate?.(imageKey);
+        if (!currentProfile || currentProfile.userId !== userId)
+          return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }));
+        currentProfile = { ...currentProfile, image: imageKey };
         return Effect.succeed(currentProfile);
       }
     }),
@@ -431,6 +441,37 @@ describe('profile programs', () => {
         longitude: -79.3832
       })
     ]);
+  });
+
+  it('stores an own profile-picture key and returns a presigned URL', async () => {
+    const updates: Array<string | null> = [];
+    const fileKey = 'users/user-1/public/profile-pictures/abc-me.jpg';
+    const result = await Effect.runPromise(
+      updateProfilePhotoProgram(userAndSession, { fileKey }).pipe(
+        Effect.provide(makeLayer({ onImageUpdate: (key) => updates.push(key) }))
+      )
+    );
+
+    expect(updates).toEqual([fileKey]);
+    expect(result.image).not.toBeNull();
+    expect(result.image).not.toBe(fileKey);
+  });
+
+  it.each([
+    'users/user-2/public/profile-pictures/abc-me.jpg',
+    'users/user-1/kyc/doc-type/abc-id.pdf',
+    'users/user-1/public/profile-pictures/../../kyc/doc/abc.pdf'
+  ])('rejects a photo key outside the own profile-picture prefix: %s', async (fileKey) => {
+    const updates: Array<string | null> = [];
+    const exit = await Effect.runPromise(
+      updateProfilePhotoProgram(userAndSession, { fileKey }).pipe(
+        Effect.provide(makeLayer({ onImageUpdate: (key) => updates.push(key) })),
+        Effect.exit
+      )
+    );
+
+    expect(getFailure(exit)).toBeInstanceOf(ProfilePhotoKeyError);
+    expect(updates).toEqual([]);
   });
 
   it('translates missing profile to ProfileNotFoundError', async () => {

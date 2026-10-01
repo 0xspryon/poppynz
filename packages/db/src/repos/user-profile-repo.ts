@@ -47,6 +47,11 @@ export class UserProfileRepo extends Context.Tag('@repo/db/UserProfileRepo')<
       userId: string,
       input: UserProfileLocationUpdate
     ) => Effect.Effect<SafeUserProfile, SqlError | DBNotFoundError>;
+    /** Sets the storage key of the user's profile photo (`user.image`). */
+    updateImageByUserId: (
+      userId: string,
+      imageKey: string | null
+    ) => Effect.Effect<SafeUserProfile, SqlError | DBNotFoundError>;
   }
 >() {}
 
@@ -54,6 +59,29 @@ export const UserProfileRepoLive = Layer.effect(
   UserProfileRepo,
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle;
+
+    const findSafeProfile = (userId: string) =>
+      db
+        .select({ profile: userProfile, email: user.email, role: user.role, image: user.image })
+        .from(userProfile)
+        .innerJoin(user, eq(userProfile.userId, user.id))
+        .where(eq(userProfile.userId, userId))
+        .limit(1)
+        .pipe(
+          Effect.flatMap((rows) => {
+            const row = rows[0];
+
+            if (row) {
+              return Effect.succeed({
+                ...row.profile,
+                email: row.email,
+                role: row.role,
+                image: row.image
+              });
+            }
+            return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }));
+          })
+        );
 
     return {
       create: (input) =>
@@ -158,15 +186,32 @@ export const UserProfileRepoLive = Layer.effect(
               }
               return Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId }));
             })
-          )
+          ),
+      updateImageByUserId: (userId, imageKey) =>
+        db
+          .update(user)
+          .set({ image: imageKey })
+          .where(eq(user.id, userId))
+          .pipe(Effect.flatMap(() => findSafeProfile(userId)))
     };
   })
 );
 
 export const UserProfileRepoDefault = UserProfileRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makeUserProfileRepoTest = (implementation: Context.Tag.Service<UserProfileRepo>) =>
-  Layer.succeed(UserProfileRepo, implementation);
+type UserProfileRepoService = Context.Tag.Service<UserProfileRepo>;
+
+// `updateImageByUserId` is optional so suites written before profile photos
+// existed keep compiling; it fails like a missing row unless a test supplies it.
+export const makeUserProfileRepoTest = (
+  implementation: Omit<UserProfileRepoService, 'updateImageByUserId'> &
+    Partial<Pick<UserProfileRepoService, 'updateImageByUserId'>>
+) =>
+  Layer.succeed(UserProfileRepo, {
+    updateImageByUserId: () =>
+      Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: '' })),
+    ...implementation
+  });
 
 export const EmptyUserProfileRepoTest = makeUserProfileRepoTest({
   create: () => Effect.fail(new SqlError({ cause: '', message: '' })),

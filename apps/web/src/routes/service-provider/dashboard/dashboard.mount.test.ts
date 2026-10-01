@@ -17,7 +17,7 @@ const freshOnboardingState = () => ({
 	userId: 'user-1',
 	firstName: 'Pat',
 	lastName: 'Helper',
-	progress: { completed: 1, total: 4 },
+	progress: { completed: 1, total: 3 },
 	steps: {
 		profile: { complete: false, missingFields: ['phoneNumber'] },
 		documents: { complete: false, requiredSubmitted: 1, requiredTotal: 3 },

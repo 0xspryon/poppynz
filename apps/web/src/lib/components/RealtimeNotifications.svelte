@@ -34,8 +34,9 @@
 	const messagesHref = $derived(
 		role === 'family' ? resolve('/family/messages') : resolve('/service-provider/messages')
 	);
+	// Helpers have one Verification page in place of Documents / Approval.
 	const approvalHref = $derived(
-		role === 'family' ? resolve('/family/approval') : resolve('/service-provider/approval')
+		role === 'family' ? resolve('/family/approval') : resolve('/service-provider/verification')
 	);
 	const contractsHref = $derived(
 		role === 'family' ? resolve('/family/contracts') : resolve('/service-provider/contracts')
@@ -44,7 +45,7 @@
 		role === 'family' ? resolve('/family/verification') : resolve('/service-provider/verification')
 	);
 	const documentsHref = $derived(
-		role === 'family' ? resolve('/family/documents') : resolve('/service-provider/documents')
+		role === 'family' ? resolve('/family/documents') : resolve('/service-provider/verification')
 	);
 	const contractDetailHref = (id: string) =>
 		role === 'family'

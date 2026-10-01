@@ -40,7 +40,7 @@
 		});
 	});
 
-	// The pink Documents badge mirrors the current onboarding warnings; refresh
+	// The pink Verification badge mirrors the current onboarding warnings; refresh
 	// it whenever the provider moves between pages (e.g. right after an upload).
 	async function refreshBadge() {
 		const result = await getOnboardingState();
@@ -64,36 +64,60 @@
 	const impersonated = $derived(session?.impersonatedBy != null);
 	const initial = $derived(email.charAt(0).toUpperCase());
 
+	// Grouped so a brand-new helper sees the onboarding pages first; Documents,
+	// Safety verification and Approval live together under Verification.
 	const items: Array<SidebarItem> = $derived([
-		{ href: resolve('/service-provider/dashboard'), label: 'Dashboard', icon: 'la-th-large' },
-		{ href: resolve('/service-provider/find'), label: 'Find families', icon: 'la-search' },
+		{
+			href: resolve('/service-provider/dashboard'),
+			label: 'Home',
+			icon: 'la-home',
+			group: 'Get started'
+		},
+		{
+			href: resolve('/service-provider/profile'),
+			label: 'Profile',
+			icon: 'la-user',
+			group: 'Get started'
+		},
+		{
+			href: resolve('/service-provider/services'),
+			label: 'Services & rates',
+			icon: 'la-heart',
+			group: 'Get started'
+		},
+		{
+			href: resolve('/service-provider/verification'),
+			label: 'Verification',
+			icon: 'la-shield-alt',
+			badge: missingDocuments,
+			group: 'Get started'
+		},
+		{
+			href: resolve('/service-provider/find'),
+			label: 'Find families',
+			icon: 'la-search',
+			group: 'Your Poppynz'
+		},
 		{
 			href: resolve('/service-provider/messages'),
 			label: 'Messages',
 			icon: 'la-comment',
-			badge: unread.count
+			badge: unread.count,
+			group: 'Your Poppynz'
 		},
 		{
 			href: resolve('/service-provider/contracts'),
 			label: 'Contracts',
 			icon: 'la-file-signature',
-			badge: contractsBadge.count
+			badge: contractsBadge.count,
+			group: 'Your Poppynz'
 		},
-		{ href: resolve('/service-provider/profile'), label: 'Profile', icon: 'la-user' },
 		{
-			href: resolve('/service-provider/documents'),
-			label: 'Documents',
-			icon: 'la-file-alt',
-			badge: missingDocuments
-		},
-		{ href: resolve('/service-provider/services'), label: 'Services & rates', icon: 'la-heart' },
-		{
-			href: resolve('/service-provider/verification'),
-			label: 'Safety verification',
-			icon: 'la-shield-alt'
-		},
-		{ href: resolve('/service-provider/approval'), label: 'Approval', icon: 'la-user-shield' },
-		{ href: resolve('/service-provider/referrals'), label: 'Referrals', icon: 'la-user-plus' }
+			href: resolve('/service-provider/referrals'),
+			label: 'Referrals',
+			icon: 'la-user-plus',
+			group: 'More'
+		}
 	]);
 </script>
 

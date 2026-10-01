@@ -8,6 +8,9 @@
 		icon: string;
 		/** Pink attention badge count (e.g. missing documents); hidden when falsy. */
 		badge?: number;
+		/** Section heading shown above the first item of each run of the same
+		 * group (e.g. "Get started"); ungrouped items render without one. */
+		group?: string;
 	}
 </script>
 
@@ -68,8 +71,16 @@
 	{kicker}
 </div>
 
-{#each items as item (item.href)}
+{#each items as item, index (item.href)}
 	{@const active = page.url.pathname.startsWith(item.href)}
+	{#if item.group && item.group !== items[index - 1]?.group}
+		<div
+			class="px-3 pb-1 text-[10px] font-semibold tracking-[0.14em] text-secondary-content-faint
+				uppercase {index === 0 ? '' : 'pt-4'}"
+		>
+			{item.group}
+		</div>
+	{/if}
 	<a
 		href={item.href}
 		class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors

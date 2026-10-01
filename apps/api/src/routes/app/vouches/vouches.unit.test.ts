@@ -12,6 +12,7 @@ import {
   type User,
   type Vouch,
   type VouchTransition,
+  type VouchWithApplicant,
   type VouchWithVoucher
 } from '@repo/db';
 import { makeNotificationHubTest } from '@repo/notify';
@@ -25,6 +26,7 @@ import {
   adminVouchActionRouteProgram,
   declineVouchRouteProgram,
   listMyVouchesProgram,
+  listVouchRequestsProgram,
   requestVouchProgram,
   submitVouchProgram,
   submitVouchRouteProgram,
@@ -86,6 +88,7 @@ const makeLayer = (
     vouch?: Vouch;
     openPair?: Vouch | null;
     listed?: Array<VouchWithVoucher>;
+    voucherListed?: Array<VouchWithApplicant>;
     transitionResult?: Vouch | null;
     onCreate?: (input: unknown) => void;
     onTransition?: (input: VouchTransition) => void;
@@ -144,7 +147,7 @@ const makeLayer = (
         return Effect.succeed(options.recent ?? { pendingOpen: 0, createdSince: 0 });
       },
       listForApplicants: () => Effect.succeed(options.listed ?? []),
-      listForVoucher: () => Effect.succeed([]),
+      listForVoucher: () => Effect.succeed(options.voucherListed ?? []),
       transition: (input) => {
         options.onRepoTouch?.();
         options.onTransition?.(input);
@@ -363,6 +366,37 @@ describe('listMyVouchesProgram', () => {
     expect(result.vouches[0].status).toBe('not_counted');
     expect(JSON.stringify(result)).not.toContain('secret');
     expect(result).toMatchObject({ counting: 0, recommended: 2 });
+  });
+});
+
+describe('listVouchRequestsProgram', () => {
+  it('shows the voucher "closed" for admin flags and revokes, never the admin action', async () => {
+    const asVoucherRow = (overrides: Partial<Vouch>): VouchWithApplicant => ({
+      ...dummyVouch,
+      ...overrides,
+      applicant: { name: 'Ana Applicant', firstName: null, lastName: null, image: null }
+    });
+    const result = await Effect.runPromise(
+      listVouchRequestsProgram(asSession(voucher)).pipe(
+        Effect.provide(
+          makeLayer({
+            voucherListed: [
+              asVoucherRow({ id: 'v-1', status: 'flagged', adminReason: 'secret reason' }),
+              asVoucherRow({ id: 'v-2', status: 'revoked', revokedBy: 'admin-1' }),
+              asVoucherRow({ id: 'v-3', status: 'revoked', revokedBy: voucher.id }),
+              asVoucherRow({ id: 'v-4', status: 'accepted' })
+            ]
+          })
+        )
+      )
+    );
+    expect(result.requests.map((request) => [request.id, request.status])).toEqual([
+      ['v-1', 'closed'],
+      ['v-2', 'closed'],
+      ['v-3', 'closed'],
+      ['v-4', 'accepted']
+    ]);
+    expect(JSON.stringify(result)).not.toMatch(/flagged"|revoked"|secret/);
   });
 });
 

@@ -33,7 +33,8 @@ import {
   pairBlocksNewRequest,
   presentedVouchStatus,
   summariseVouches,
-  vouchCounts
+  vouchCounts,
+  voucherVouchStatus
 } from '@/api/lib/vouches';
 import {
   validateVouchAdminActionInput,
@@ -264,7 +265,7 @@ export const listVouchRequestsProgram = (userAndSession: UserAndSession) =>
         applicantName: fullName(vouch.applicant, vouch.applicant.name),
         applicantImage: vouch.applicant.image,
         relationship: vouch.relationship,
-        status: presentedVouchStatus(vouch, now),
+        status: voucherVouchStatus(vouch, now),
         requestedAt: vouch.createdAt.toISOString(),
         expiresAt: vouch.expiresAt.toISOString()
       }))

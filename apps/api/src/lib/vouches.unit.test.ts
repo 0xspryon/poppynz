@@ -6,7 +6,8 @@ import {
   pairBlocksNewRequest,
   presentedVouchStatus,
   summariseVouches,
-  vouchCounts
+  vouchCounts,
+  voucherVouchStatus
 } from './vouches';
 
 const NOW = new Date('2026-10-01T12:00:00.000Z');
@@ -91,6 +92,23 @@ describe('applicantVouchStatus', () => {
     expect(applicantVouchStatus(entry({}, { banned: true }), NOW)).toBe('not_counted');
     expect(applicantVouchStatus(entry(), NOW)).toBe('completed');
     expect(applicantVouchStatus(entry({ status: 'declined' }), NOW)).toBe('declined');
+  });
+});
+
+describe('voucherVouchStatus', () => {
+  it('collapses admin flags, admin revokes and withdrawals into closed', () => {
+    expect(voucherVouchStatus(entry({ status: 'flagged' }), NOW)).toBe('closed');
+    expect(voucherVouchStatus(entry({ status: 'revoked', revokedBy: 'admin-1' }), NOW)).toBe(
+      'closed'
+    );
+    expect(voucherVouchStatus(entry({ status: 'accepted' }), NOW)).toBe('accepted');
+    expect(voucherVouchStatus(entry({ status: 'declined' }), NOW)).toBe('declined');
+    expect(
+      voucherVouchStatus(
+        entry({ status: 'pending', expiresAt: new Date(NOW.getTime() - 1) }),
+        NOW
+      )
+    ).toBe('expired');
   });
 });
 

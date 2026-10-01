@@ -64,6 +64,19 @@ export const applicantVouchStatus = (vouch: VouchWithVoucher, now: Date): Applic
   }
 };
 
+/** What the voucher may see of their own requests. Admin flags, admin
+ * revokes and the voucher's own withdrawal all read "closed", so the inbox —
+ * and its network response — never reveals that an admin acted. */
+export type VoucherVouchStatus = 'pending' | 'accepted' | 'declined' | 'expired' | 'closed';
+
+export const voucherVouchStatus = (
+  vouch: Pick<Vouch, 'status' | 'expiresAt'>,
+  now: Date
+): VoucherVouchStatus => {
+  const status = presentedVouchStatus(vouch, now);
+  return status === 'flagged' || status === 'revoked' ? 'closed' : status;
+};
+
 /**
  * Whether this pair's history stops the applicant asking the same voucher
  * again. An admin flag or admin revoke closes the pair for good; the voucher

@@ -81,10 +81,9 @@
 		accepted: { label: 'Vouched', cls: 'bg-success-content text-success' },
 		declined: { label: 'Declined', cls: 'bg-base-300 text-base-content-muted' },
 		expired: { label: 'Expired', cls: 'bg-base-300 text-base-content-muted' },
-		// Admin flags/revokes and the voucher's own withdrawal look the same here:
-		// the voucher never learns of an admin action, and isn't told they withdrew.
-		revoked: { label: 'Closed', cls: 'bg-base-300 text-base-content-muted' },
-		flagged: { label: 'Closed', cls: 'bg-base-300 text-base-content-muted' }
+		// The API already folds admin flags/revokes and the voucher's own
+		// withdrawal into "closed": the voucher never learns of an admin action.
+		closed: { label: 'Closed', cls: 'bg-base-300 text-base-content-muted' }
 	};
 </script>
 

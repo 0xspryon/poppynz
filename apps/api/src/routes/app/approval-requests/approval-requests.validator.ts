@@ -18,3 +18,13 @@ export const validateApprovalRequestRejectInput = validateInput(
   approvalRequestValidationError
 );
 export const approvalRequestJsonError = approvalRequestValidationError;
+
+export const generalRemarksSchema = Schema.Struct({
+  generalRemarks: Schema.Trim.pipe(Schema.maxLength(5000))
+});
+
+export type GeneralRemarksInput = Schema.Schema.Type<typeof generalRemarksSchema>;
+export const validateGeneralRemarksInput = validateInput(
+  generalRemarksSchema,
+  approvalRequestValidationError
+);

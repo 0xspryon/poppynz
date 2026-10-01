@@ -209,6 +209,7 @@ const makeLayer = (
     mailerFail?: boolean;
     vouches?: Array<VouchWithVoucher>;
     onUpdateRemarks?: (id: string, remarks: string | null, updatedBy: string) => void;
+    onCheckPermission?: (permissions: Record<string, Array<string>>) => void;
   } = {}
 ) => {
   const currentUser = options.user ?? user();
@@ -376,7 +377,10 @@ const makeLayer = (
     makeAuthServiceTest({
       getSession: () =>
         Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
-      userHasPermission: () => Effect.succeed(options.hasPermission ?? true)
+      userHasPermission: (_headers, permissions) => {
+        options.onCheckPermission?.(permissions);
+        return Effect.succeed(options.hasPermission ?? true);
+      }
     }),
     makeUserRepoTest({
       // Falls back to the default provider so admin-run programs can look up
@@ -708,6 +712,33 @@ describe('admin approval request review route programs', () => {
     expect(getFailure(exit)._tag).toBe('ForbiddenError');
   });
 
+  it('checks the review permission (not just write) before rejecting, and denies a caller without it', async () => {
+    const checkedPermissions: Array<Record<string, Array<string>>> = [];
+
+    // Any signed-in family/helper has approvalRequest:['write'] (to submit
+    // their own request) but never 'review' — the reject route must ask for
+    // 'review' specifically, or such a caller could reject any request.
+    const exit = await Effect.runPromise(
+      rejectAdminApprovalRequestRouteProgram(
+        contextWithJson({ reason: 'Missing required documents.' }),
+        new Headers(),
+        'request-1'
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            hasPermission: false,
+            onCheckPermission: (permissions) => checkedPermissions.push(permissions)
+          })
+        ),
+        Effect.exit
+      )
+    );
+
+    expect(getFailure(exit)._tag).toBe('ForbiddenError');
+    expect(checkedPermissions).toEqual([{ approvalRequest: ['review'] }]);
+  });
+
   it('reject route requires a reason', async () => {
     const exit = await Effect.runPromise(
       rejectAdminApprovalRequestRouteProgram(
@@ -883,7 +914,13 @@ describe('PUT /admin/approval-requests/:id/remarks', () => {
     expect(getFailure(exit)._tag).toBe('RequestValidationError');
   });
 
-  it('denies the update without approval-request write permission', async () => {
+  it('checks the review permission (not just write) and denies a caller without it', async () => {
+    const checkedPermissions: Array<Record<string, Array<string>>> = [];
+
+    // Any signed-in family/helper has approvalRequest:['write'] (to submit
+    // their own request) but never 'review' — this route must ask for
+    // 'review' specifically, or such a caller could set remarks on any
+    // request.
     const exit = await Effect.runPromise(
       updateGeneralRemarksRouteProgram(
         contextWithJson({ generalRemarks: 'Spoke on Tuesday.' }),
@@ -891,12 +928,17 @@ describe('PUT /admin/approval-requests/:id/remarks', () => {
         'request-1'
       ).pipe(
         Effect.provide(
-          makeLayer({ user: user({ id: 'admin-1', role: 'admin' }), hasPermission: false })
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            hasPermission: false,
+            onCheckPermission: (permissions) => checkedPermissions.push(permissions)
+          })
         ),
         Effect.exit
       )
     );
 
     expect(getFailure(exit)._tag).toBe('ForbiddenError');
+    expect(checkedPermissions).toEqual([{ approvalRequest: ['review'] }]);
   });
 });

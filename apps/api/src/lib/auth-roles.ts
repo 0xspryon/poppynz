@@ -6,7 +6,12 @@ export const appAc = createAccessControl({
   // endpoints (list/ban/impersonate) can authorize against our custom roles.
   ...defaultStatements,
   approval: ['write'],
-  approvalRequest: ['read', 'write'],
+  // `review` is the admin-only decision capability: deciding (reject/approve)
+  // a submitted request and setting the admin's own general remarks on it.
+  // Applicants keep `write` only, to create/submit their own request —
+  // ownership there is enforced at the route (findSubmittedByUserId), since a
+  // permission can't express "but only yours".
+  approvalRequest: ['read', 'write', 'review'],
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
@@ -67,7 +72,7 @@ export const adminRole = appAc.newRole({
   // session management) — deliberately without "impersonate-admins".
   ...adminAc.statements,
   approval: ['write'],
-  approvalRequest: ['read', 'write'],
+  approvalRequest: ['read', 'write', 'review'],
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],

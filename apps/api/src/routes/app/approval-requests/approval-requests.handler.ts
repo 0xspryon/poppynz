@@ -245,7 +245,7 @@ export const rejectAdminApprovalRequestRouteProgram = (
     const rawBody = yield* parseJsonBody(c, approvalRequestJsonError);
     const input = yield* validateApprovalRequestRejectInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['write'] })(
+    const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['review'] })(
       authenticated
     );
     const repo = yield* ApprovalRequestRepo;
@@ -288,7 +288,7 @@ export const updateGeneralRemarksRouteProgram = (
       yield* parseJsonBody(c, approvalRequestJsonError)
     );
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['write'] })(
+    const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['review'] })(
       authenticated
     );
     const repo = yield* ApprovalRequestRepo;

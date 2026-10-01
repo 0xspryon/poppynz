@@ -2,6 +2,11 @@
 
 These project-specific rules exist to prevent repeat mistakes from prior implementation rounds.
 
+## Creating Worktrees
+
+- Create feature worktrees with `bun setup:worktree -b feature/<feature_name> ../<feature_name> develop`, run from an existing checkout (e.g. `develop/`).
+- Do not use a bare `git worktree add` and then copy `.env` files or create directories by hand. The script pulls `develop` first, copies the root, `apps/api` and `apps/web` `.env` files, symlinks `packages/db/.env` and `apps/worker/.env` to the api one, creates `bun_node_modules` (needed before `docker compose up`), and runs `bun install`.
+
 ## Handler Error Exhaustiveness
 
 - Route handlers must not type `exitToResponse` as `unknown` when the route program has a derivable error type.

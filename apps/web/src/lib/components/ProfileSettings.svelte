@@ -5,6 +5,7 @@
 		getProfile,
 		updateProfile,
 		updateProfileLocation,
+		uploadProfilePhoto,
 		type PlaceSuggestion,
 		type ProviderProfile
 	} from '$lib/api/provider-profile';
@@ -14,9 +15,15 @@
 		/** Subtitle under the page heading. */
 		description: string;
 		bioPlaceholder: string;
+		/** Helpers need a photo for their profile to count as complete. */
+		photoRequired?: boolean;
 	}
 
-	let { description, bioPlaceholder }: Props = $props();
+	let { description, bioPlaceholder, photoRequired = false }: Props = $props();
+
+	// Mirrors the API's public-image limits so a bad pick fails before upload.
+	const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+	const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 
@@ -41,6 +48,11 @@
 	let savingLocation = $state(false);
 	let locationError = $state('');
 	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+	// Profile photo
+	let photoInput = $state<HTMLInputElement | null>(null);
+	let uploadingPhoto = $state(false);
+	let photoError = $state('');
 
 	function fillForm(data: ProviderProfile) {
 		firstName = data.firstName ?? '';
@@ -94,6 +106,40 @@
 		}
 		saving = false;
 	}
+
+	async function onPhotoPicked(event: Event) {
+		const input = event.currentTarget as HTMLInputElement;
+		const file = input.files?.[0];
+		input.value = '';
+		if (!file || uploadingPhoto) return;
+		photoError = '';
+		if (!PHOTO_TYPES.includes(file.type)) {
+			photoError = 'Choose a JPG, PNG or WebP image.';
+			return;
+		}
+		if (file.size > PHOTO_MAX_BYTES) {
+			photoError = 'That photo is over 5 MB — choose a smaller one.';
+			return;
+		}
+		uploadingPhoto = true;
+		const result = await uploadProfilePhoto(file);
+		if (result.ok) {
+			profile = result.data;
+			toast.success('Photo saved.');
+		} else if (result.error.code === 'INVALID_UPLOAD') {
+			photoError = result.error.message;
+		} else {
+			toast.error(RETRY_MESSAGE, { title: 'Photo not saved' });
+		}
+		uploadingPhoto = false;
+	}
+
+	const initials = $derived(
+		[profile?.firstName, profile?.lastName]
+			.map((part) => part?.trim().charAt(0) ?? '')
+			.join('')
+			.toUpperCase()
+	);
 
 	function onQueryInput() {
 		clearTimeout(searchTimer);
@@ -157,6 +203,57 @@
 	{:else if errorMessage}
 		<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
 	{:else}
+		<div
+			class="mb-5 flex flex-wrap items-center gap-5 rounded-lg border bg-base-100 p-6 lg:p-7
+				{photoRequired && !profile?.image ? 'border-warning-border' : 'border-card-border'}"
+		>
+			{#if profile?.image}
+				<img
+					src={profile.image}
+					alt="Your profile"
+					class="size-20 shrink-0 rounded-full object-cover"
+				/>
+			{:else}
+				<span
+					class="flex size-20 shrink-0 items-center justify-center rounded-full bg-base-300
+						font-display text-xl font-bold text-outline"
+					aria-hidden="true"
+				>
+					{#if initials}{initials}{:else}<i class="las la-user text-3xl"></i>{/if}
+				</span>
+			{/if}
+			<div class="min-w-0 flex-1">
+				<h2 class="text-base font-bold text-base-content">Profile photo</h2>
+				<p class="mt-0.5 text-xs text-base-content-muted">
+					{photoRequired && !profile?.image
+						? 'Required — a clear, friendly photo of your face helps families feel at ease.'
+						: 'A clear, friendly photo of your face helps families feel at ease.'}
+					JPG, PNG or WebP, up to 5 MB.
+				</p>
+				{#if photoError}
+					<p role="alert" class="mt-2 text-sm font-medium text-error">{photoError}</p>
+				{/if}
+			</div>
+			<input
+				bind:this={photoInput}
+				type="file"
+				accept={PHOTO_TYPES.join(',')}
+				class="hidden"
+				onchange={(event) => void onPhotoPicked(event)}
+			/>
+			<button
+				type="button"
+				class="btn btn-outline btn-sm btn-secondary"
+				disabled={uploadingPhoto}
+				onclick={() => photoInput?.click()}
+			>
+				{#if uploadingPhoto}
+					<span class="loading loading-spinner loading-xs"></span>
+				{/if}
+				{profile?.image ? 'Change photo' : 'Upload photo'}
+			</button>
+		</div>
+
 		<form class="rounded-lg border border-card-border bg-base-100 p-6 lg:p-7" onsubmit={save}>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<fieldset class="fieldset">

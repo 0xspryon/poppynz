@@ -43,7 +43,12 @@ const nullOnNotFound = <A, R>(effect: Effect.Effect<A, SqlError | DBNotFoundErro
   );
 
 const profileMissingFields = (profile: SafeUserProfile) => {
-  const missing: Array<'firstName' | 'lastName' | 'phoneNumber' | 'location' | 'shortBio'> = [];
+  const missing: Array<
+    'photo' | 'firstName' | 'lastName' | 'phoneNumber' | 'location' | 'shortBio'
+  > = [];
+  // Families decide from the photo first, so a helper's profile isn't
+  // complete without one.
+  if (!profile.image) missing.push('photo');
   if (!profile.firstName?.trim()) missing.push('firstName');
   if (!profile.lastName?.trim()) missing.push('lastName');
   if (!profile.phoneNumber?.trim()) missing.push('phoneNumber');
@@ -124,9 +129,14 @@ export const getOnboardingProgram = (userAndSession: UserAndSession) =>
       userId,
       firstName: profile.firstName,
       lastName: profile.lastName,
+      // Three equal steps — profile, documents, services — each a third of
+      // the bar, however many documents the documents step holds.
       progress: {
-        completed: (profileComplete ? 1 : 0) + requiredSubmitted + (servicesComplete ? 1 : 0),
-        total: 2 + requiredEntries.length
+        completed:
+          (profileComplete ? 1 : 0) +
+          (requiredSubmitted === requiredEntries.length ? 1 : 0) +
+          (servicesComplete ? 1 : 0),
+        total: 3
       },
       steps: {
         profile: { complete: profileComplete, missingFields },

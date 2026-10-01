@@ -366,7 +366,7 @@
 				When the Poppynz team has reviewed and approved your profile, you'll be able to browse
 				families looking for help near you.
 			</p>
-			<a href={resolve('/service-provider/approval')} class="btn btn-primary btn-sm">
+			<a href={resolve('/service-provider/verification')} class="btn btn-primary btn-sm">
 				Check your approval status
 			</a>
 		</div>

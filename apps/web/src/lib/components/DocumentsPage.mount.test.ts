@@ -10,7 +10,7 @@ vi.mock('$lib/api/onboarding', () => ({
 }));
 vi.mock('$lib/api/kyc-documents', () => ({ uploadKycDocument: vi.fn() }));
 
-import DocumentsPage from './+page.svelte';
+import DocumentsPage from './DocumentsPage.svelte';
 
 /** A fresh object per call, like a real response — the historical infinite
  * request loop only reproduces when each fetch yields a new reference. */
@@ -18,7 +18,7 @@ const freshOnboardingState = () => ({
 	userId: 'user-1',
 	firstName: 'Pat',
 	lastName: 'Helper',
-	progress: { completed: 1, total: 4 },
+	progress: { completed: 1, total: 3 },
 	steps: {
 		profile: { complete: true, missingFields: [] },
 		documents: { complete: false, requiredSubmitted: 1, requiredTotal: 3 },
@@ -55,7 +55,10 @@ describe('service-provider documents', () => {
 				)
 		);
 
-		const app = mount(DocumentsPage, { target: document.body });
+		const app = mount(DocumentsPage, {
+			target: document.body,
+			props: { role: 'service-provider' }
+		});
 		await settle();
 
 		// Unmount before asserting: if the regression returns, a failing

@@ -75,6 +75,7 @@ const profile = (overrides: Partial<SafeUserProfile> = {}): SafeUserProfile => (
   googlePlaceId: 'place-1',
   latitude: 43.6532,
   longitude: -79.3832,
+  image: 'users/user-1/public/profile-pictures/photo.jpg',
   ...overrides
 });
 
@@ -283,8 +284,8 @@ describe('getOnboardingProgram', () => {
       requiredTotal: 2
     });
     expect(result.steps.services).toEqual({ complete: false, count: 0 });
-    // profile done + 1 of 2 required docs, out of profile + 2 docs + services
-    expect(result.progress).toEqual({ completed: 2, total: 4 });
+    // three equal steps: only the profile is done (documents are 1 of 2)
+    expect(result.progress).toEqual({ completed: 1, total: 3 });
     // admin-only type is excluded from the provider checklist
     expect(result.documents.map((entry) => entry.documentTypeId)).toEqual([
       'document-type-1',
@@ -308,7 +309,13 @@ describe('getOnboardingProgram', () => {
       getOnboardingProgram(userAndSession()).pipe(
         Effect.provide(
           makeLayer({
-            profile: profile({ firstName: null, shortBio: null, latitude: null, longitude: null }),
+            profile: profile({
+              image: null,
+              firstName: null,
+              shortBio: null,
+              latitude: null,
+              longitude: null
+            }),
             requests: [approvalRequest()]
           })
         )
@@ -316,7 +323,12 @@ describe('getOnboardingProgram', () => {
     );
 
     expect(result.steps.profile.complete).toBe(false);
-    expect(result.steps.profile.missingFields).toEqual(['firstName', 'location', 'shortBio']);
+    expect(result.steps.profile.missingFields).toEqual([
+      'photo',
+      'firstName',
+      'location',
+      'shortBio'
+    ]);
     expect(result.canSubmit).toBe(false);
     expect(result.latestApprovalRequest).toMatchObject({ id: 'request-1', status: 'submitted' });
   });

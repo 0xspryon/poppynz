@@ -26,8 +26,10 @@ import {
   profileUpdateJsonError,
   validateProfileUpdateInput,
   validateProfileLocationUpdateInput,
+  validateProfilePhotoUpdateInput,
   type ProfileUpdateInput,
-  type ProfileLocationUpdateInput
+  type ProfileLocationUpdateInput,
+  type ProfilePhotoUpdateInput
 } from './profile.validator';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import { presignProfileImageUrl } from '@/api/lib/profile-image';
@@ -46,6 +48,13 @@ export class ProfileRepoError extends Data.TaggedError('ProfileRepoError')<{
 }> {}
 
 export class ProfileNotFoundError extends Data.TaggedError('ProfileNotFoundError')<{}> {}
+
+export class ProfilePhotoKeyError extends Data.TaggedError('ProfilePhotoKeyError')<{}> {}
+
+// Only a key minted for this user's own profile-picture prefix may become
+// their photo — anything else would let one user point at another's object.
+export const ownProfilePhotoKey = (userId: string, fileKey: string) =>
+  fileKey.startsWith(`users/${userId}/public/profile-pictures/`) && !fileKey.includes('..');
 
 const toApprovalSummary = (approval: Approval | null) =>
   approval
@@ -254,10 +263,33 @@ export const updateProfileLocationProgram = (
     return yield* buildProfileResponse(profile);
   });
 
+export const updateProfilePhotoProgram = (
+  userAndSession: UserAndSession,
+  input: ProfilePhotoUpdateInput
+) =>
+  Effect.gen(function* () {
+    if (!ownProfilePhotoKey(userAndSession.user.id, input.fileKey)) {
+      return yield* Effect.fail(new ProfilePhotoKeyError());
+    }
+
+    const profileRepo = yield* UserProfileRepo;
+    const profile = yield* profileRepo
+      .updateImageByUserId(userAndSession.user.id, input.fileKey)
+      .pipe(
+        Effect.catchTags({
+          DBNotFoundError: () => Effect.fail(new ProfileNotFoundError()),
+          SqlError: (cause) => Effect.fail(new ProfileRepoError({ cause }))
+        })
+      );
+
+    return yield* buildProfileResponse(profile);
+  });
+
 export type ProfileError =
   | Effect.Effect.Error<ReturnType<typeof getProfileProgram>>
   | Effect.Effect.Error<ReturnType<typeof updateProfileProgram>>
-  | Effect.Effect.Error<ReturnType<typeof updateProfileLocationProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof updateProfileLocationProgram>>
+  | Effect.Effect.Error<ReturnType<typeof updateProfilePhotoProgram>>;
 
 const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) => {
   switch (error._tag) {
@@ -290,6 +322,16 @@ const profileErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileError) =>
           }
         },
         502
+      );
+    case 'ProfilePhotoKeyError':
+      return c.json(
+        {
+          error: {
+            code: 'INVALID_PROFILE_PHOTO' as const,
+            message: 'That photo upload does not belong to your profile.'
+          }
+        },
+        400
       );
     case 'GooglePlaceNotFoundError':
       return c.json(
@@ -369,10 +411,26 @@ export const updateProfileLocationRouteProgram = (c: HonoContext<HonoEnv>, heade
     return profile;
   });
 
+export const updateProfilePhotoRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function* () {
+    const rawBody = yield* parseJsonBody(c, profileUpdateJsonError);
+    const input = yield* validateProfilePhotoUpdateInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, {
+      profile: ['update']
+    })(authenticated);
+
+    const profile = yield* updateProfilePhotoProgram(userAndSession, input);
+    yield* scheduleSearchReconcile(profile);
+
+    return profile;
+  });
+
 export type ProfileRouteError =
   | Effect.Effect.Error<ReturnType<typeof getProfileRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof updateProfileRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof updateProfileLocationRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof updateProfileLocationRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof updateProfilePhotoRouteProgram>>;
 
 const profileRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileRouteError) => {
   switch (error._tag) {
@@ -386,6 +444,7 @@ const profileRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ProfileRout
     case 'ProfileRepoError':
     case 'ProfileNotFoundError':
     case 'ProfileImageUrlError':
+    case 'ProfilePhotoKeyError':
       return profileErrorToResponse(c, error);
     case 'GooglePlaceNotFoundError':
       return c.json(
@@ -451,6 +510,14 @@ export async function updateProfileLocationHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(updateProfileLocationRouteProgram(c, headers));
+
+  return exitToResponse(c, exit);
+}
+
+export async function updateProfilePhotoHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const headers = c.req.raw.headers;
+  const exit = await runtime.runPromiseExit(updateProfilePhotoRouteProgram(c, headers));
 
   return exitToResponse(c, exit);
 }

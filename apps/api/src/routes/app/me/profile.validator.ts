@@ -27,8 +27,15 @@ export const profileLocationUpdateSchema = Schema.Struct({
   googlePlaceId: trimmedNonEmptyString.pipe(Schema.maxLength(512))
 });
 
+// The key handed back by POST /uploads/presigned-url for a
+// `public-profile-picture` upload; ownership is checked in the handler.
+export const profilePhotoUpdateSchema = Schema.Struct({
+  fileKey: trimmedNonEmptyString.pipe(Schema.maxLength(512))
+});
+
 export type ProfileUpdateInput = Schema.Schema.Type<typeof profileUpdateSchema>;
 export type ProfileLocationUpdateInput = Schema.Schema.Type<typeof profileLocationUpdateSchema>;
+export type ProfilePhotoUpdateInput = Schema.Schema.Type<typeof profilePhotoUpdateSchema>;
 
 export const validateProfileUpdateInput = validateInput(
   profileUpdateSchema,
@@ -37,6 +44,11 @@ export const validateProfileUpdateInput = validateInput(
 
 export const validateProfileLocationUpdateInput = validateInput(
   profileLocationUpdateSchema,
+  profileUpdateValidationError
+);
+
+export const validateProfilePhotoUpdateInput = validateInput(
+  profilePhotoUpdateSchema,
   profileUpdateValidationError
 );
 

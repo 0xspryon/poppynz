@@ -45,6 +45,10 @@
 		locationMissing?: boolean;
 		/** Where the family adds their address. */
 		profileHref?: ResolvedPathname | null;
+		/** No card on file: contract billing charges it, so sending is blocked. */
+		paymentMethodMissing?: boolean;
+		/** Where the family adds a card. */
+		billingHref?: ResolvedPathname | null;
 		busy?: boolean;
 		onsave?: (terms: ContractTermsInput) => void;
 		onsend: (terms: ContractTermsInput) => void;
@@ -60,6 +64,8 @@
 		timeZoneLabel = null,
 		locationMissing = false,
 		profileHref = null,
+		paymentMethodMissing = false,
+		billingHref = null,
 		busy = false,
 		onsave,
 		onsend
@@ -359,11 +365,22 @@
 		</p>
 	{/if}
 
+	{#if paymentMethodMissing}
+		<p class="mt-3 rounded-lg bg-base-300 px-4 py-3 text-[12.5px] text-neutral" role="alert">
+			{#if billingHref}
+				<a class="font-semibold text-secondary hover:underline" href={billingHref}>Add a card</a>
+			{:else}
+				Add a card
+			{/if}
+			to send — your card is used for contract billing.
+		</p>
+	{/if}
+
 	<div class="mt-4 flex items-center gap-2.5">
 		<button
 			type="button"
 			class="btn btn-primary btn-sm"
-			disabled={busy || items.length === 0 || locationMissing}
+			disabled={busy || items.length === 0 || locationMissing || paymentMethodMissing}
 			onclick={() => onsend(toTerms())}
 		>
 			{#if busy}<span class="loading loading-xs loading-spinner"></span>{/if}

@@ -201,6 +201,9 @@
 			error.code === 'FAMILY_LOCATION_REQUIRED'
 		) {
 			toast.error(error.message);
+		} else if (error.code === 'PAYMENT_METHOD_REQUIRED') {
+			toast.error(error.message, { title: 'Card needed' });
+			void refresh(contractId);
 		} else {
 			toast.error("That didn't go through. Please try again.");
 		}
@@ -660,6 +663,8 @@
 						timeZoneLabel={contract.timeZoneLabel}
 						locationMissing={contract.timeZone === null}
 						profileHref={resolve('/family/profile')}
+						paymentMethodMissing={contract.hasPaymentMethod === false}
+						billingHref={resolve('/family/billing')}
 						{busy}
 						onsave={handleSaveDraft}
 						onsend={handleSendTerms}

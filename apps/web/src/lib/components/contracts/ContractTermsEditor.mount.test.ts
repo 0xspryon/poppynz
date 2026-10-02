@@ -133,4 +133,38 @@ describe('ContractTermsEditor', () => {
 		expect(disabled).toBe(true);
 		expect(link).toContain('Add your address');
 	});
+
+	it('blocks sending and points to Billing while the family has no card', () => {
+		const app = mount(ContractTermsEditor, {
+			target: document.body,
+			props: {
+				...baseProps,
+				onsend: vi.fn(),
+				paymentMethodMissing: true,
+				billingHref: '/family/billing' as never
+			}
+		});
+		flushSync();
+		const disabled = sendButton().disabled;
+		const prompt = document
+			.querySelector('[role="alert"]')
+			?.textContent?.replace(/\s+/g, ' ')
+			.trim();
+		const link = document.querySelector('a[href="/family/billing"]')?.textContent;
+		unmount(app);
+		expect(disabled).toBe(true);
+		expect(link).toBe('Add a card');
+		expect(prompt).toBe('Add a card to send — your card is used for contract billing.');
+	});
+
+	it('lets a family with a card send', () => {
+		const app = mount(ContractTermsEditor, {
+			target: document.body,
+			props: { ...baseProps, onsend: vi.fn(), paymentMethodMissing: false }
+		});
+		flushSync();
+		const disabled = sendButton().disabled;
+		unmount(app);
+		expect(disabled).toBe(false);
+	});
 });

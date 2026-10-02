@@ -248,6 +248,7 @@ const makeLayer = (
     onCreate?: (input: unknown) => void;
     onCreateVersion?: (input: unknown) => void;
     onUpdateTerms?: (versionId: string, input: unknown) => void;
+    onSendPending?: (versionId: string, terms: unknown) => void;
     onSetEnding?: (input: unknown) => void;
     onMarkSeen?: (contractId: string, side: string) => void;
     familyApproved?: boolean;
@@ -383,11 +384,12 @@ const makeLayer = (
         options.onUpdateTerms?.(versionId, input);
         return Effect.succeed(draftVersion({ id: versionId, ...input }));
       },
-      sendPendingVersion: (_contractId, versionId) => {
+      sendPendingVersion: (_contractId, versionId, terms) => {
         options.calls?.push('sendPending');
+        options.onSendPending?.(versionId, terms);
         return Effect.succeed(
           options.sendPendingResult === undefined
-            ? proposedVersion({ id: versionId, sentAt: new Date() })
+            ? proposedVersion({ id: versionId, ...terms, sentAt: new Date() })
             : options.sendPendingResult
         );
       },
@@ -867,7 +869,9 @@ describe('POST /contracts/:id/send', () => {
     );
 
     expect(result).toMatchObject({ id: CONTRACT_ID, status: 'proposed' });
-    expect(calls).toEqual(['updateTerms', 'sendPending']);
+    // Terms, zone and status flip go in one guarded write — no separate
+    // terms update a concurrent draft save could race.
+    expect(calls).toEqual(['sendPending']);
     expect(published).toEqual([
       {
         userId: 'provider-1',
@@ -940,8 +944,10 @@ describe('POST /contracts/:id/send', () => {
     const updates: Array<unknown> = [];
     const layer = makeLayer({
       contractById: baseContract(),
-      versions: [draftVersion()],
-      onUpdateTerms: (_versionId, input) => updates.push(input)
+      versions: [draftVersion({ endsOn: '2099-03-01', endsAtMinutes: 720 })],
+      // Listing moved since the draft; the refreshed snapshot is what is sent.
+      offered: [offeredService({ hourlyRateCents: 2700 })],
+      onSendPending: (_versionId, terms) => updates.push(terms)
     });
 
     await Effect.runPromise(
@@ -950,7 +956,14 @@ describe('POST /contracts/:id/send', () => {
       )
     );
 
-    expect(updates[0]).toMatchObject({ timeZone: WPG, startsOn: '2099-01-05' });
+    expect(updates).toHaveLength(1);
+    expect(updates[0]).toMatchObject({
+      timeZone: WPG,
+      startsOn: '2099-01-05',
+      endsOn: '2099-03-01',
+      endsAtMinutes: 720,
+      services: [{ serviceId: SERVICE_ID, rateCents: 2600, listedRateCents: 2700 }]
+    });
   });
 
   it('refuses to send without a start date', async () => {

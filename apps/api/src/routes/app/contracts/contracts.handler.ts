@@ -711,17 +711,18 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
       return yield* Effect.fail(new StartDateNotInFutureError());
     }
 
-    yield* contractRepo
-      .updateVersionTerms(pending.id, {
+    // The validated terms and the zone are written in the same guarded
+    // statement as the status flip, so a concurrent draft save can't slip
+    // unvalidated terms into the proposal (it is overwritten by what was
+    // checked here, or lands after and finds the version no longer a draft).
+    const sent = yield* contractRepo
+      .sendPendingVersion(contractId, pending.id, {
         services: refreshed,
         startsOn: pending.startsOn,
         endsOn: pending.endsOn,
         endsAtMinutes: pending.endsAtMinutes,
         timeZone
       })
-      .pipe((errors) => mapContractRepoError(errors));
-    const sent = yield* contractRepo
-      .sendPendingVersion(contractId, pending.id)
       .pipe((errors) => mapContractRepoError(errors));
     if (!sent) {
       return yield* Effect.fail(new ContractStateError());

@@ -152,6 +152,27 @@ export const makeMockPayments = (
 
     removeCard: () => Effect.void,
 
+    // Payout accounts: enabled straight away, so the whole helper flow runs
+    // without Stripe. The "hosted onboarding" is the return page itself.
+    createPayoutAccount: ({ userId }) => Effect.succeed({ reference: `mock_acct_${userId}` }),
+
+    createOnboardingLink: ({ returnUrl }) =>
+      Effect.sync(() => ({
+        url: returnUrl,
+        expiresAt: new Date(now().getTime() + 5 * 60 * 1000)
+      })),
+
+    getPayoutAccount: () =>
+      Effect.succeed({
+        detailsSubmitted: true,
+        payoutsEnabled: true,
+        transfersActive: true,
+        requirementsDue: [],
+        disabledReason: null
+      }),
+
+    createDashboardLink: () => Effect.succeed({ url: 'about:blank' }),
+
     verifyWebhook: () =>
       Effect.fail(new PaymentWebhookSignatureError({ reason: 'the mock provider has no webhooks' }))
   };

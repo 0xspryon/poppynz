@@ -113,6 +113,33 @@ export type ProviderCardSetup = {
   readonly paymentMethod: CardDetails | null;
 };
 
+/** A helper's payout account as the provider reports it, normalised. Always
+ * re-fetched — a webhook only says "something changed", never what. */
+export type PayoutAccountSnapshot = {
+  readonly detailsSubmitted: boolean;
+  readonly payoutsEnabled: boolean;
+  /** The `transfers` capability is `active`. */
+  readonly transfersActive: boolean;
+  /** Provider requirement codes due now or past due, deduplicated. */
+  readonly requirementsDue: ReadonlyArray<string>;
+  readonly disabledReason: string | null;
+};
+
+export type PayoutAccountCreated = {
+  /** The connected account id (`acct_…` on Stripe). */
+  readonly reference: string;
+};
+
+/** A single-use hosted-onboarding URL. Short-lived; never stored. */
+export type OnboardingLink = {
+  readonly url: string;
+  readonly expiresAt: Date;
+};
+
+export type DashboardLink = {
+  readonly url: string;
+};
+
 /** A verified webhook delivery, reduced to what routing needs. The payload's
  * object is never acted on — callers re-fetch by reference. */
 export type PaymentWebhookEvent = {
@@ -135,7 +162,11 @@ export type PaymentOperation =
   | 'startCardSetup'
   | 'getCardSetup'
   | 'removeCard'
-  | 'verifyWebhook';
+  | 'verifyWebhook'
+  | 'createPayoutAccount'
+  | 'createOnboardingLink'
+  | 'getPayoutAccount'
+  | 'createDashboardLink';
 
 export class PaymentDeclinedError extends Data.TaggedError('PaymentDeclinedError')<{
   reason: string;
@@ -196,6 +227,21 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
     getCardSetup: (reference: string) => Effect.Effect<ProviderCardSetup, PaymentProviderError>;
     /** Detaches a card from its customer. */
     removeCard: (cardReference: string) => Effect.Effect<void, PaymentProviderError>;
+    /** Creates the helper's connected account. Same user → same account
+     * (idempotency key `payout-account:<userId>`). */
+    createPayoutAccount: (input: {
+      userId: string;
+      email: string;
+    }) => Effect.Effect<PayoutAccountCreated, PaymentProviderError>;
+    /** Hosted onboarding for an existing account. */
+    createOnboardingLink: (input: {
+      reference: string;
+      returnUrl: string;
+      refreshUrl: string;
+    }) => Effect.Effect<OnboardingLink, PaymentProviderError>;
+    getPayoutAccount: (reference: string) => Effect.Effect<PayoutAccountSnapshot, PaymentProviderError>;
+    /** A login link to the provider's payout dashboard. */
+    createDashboardLink: (reference: string) => Effect.Effect<DashboardLink, PaymentProviderError>;
     verifyWebhook: (
       rawBody: string,
       signatureHeader: string | null

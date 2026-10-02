@@ -50,6 +50,8 @@
 		counterpartFirstName: string;
 		/** The draft's start date, for the "repeats weekly from" copy. */
 		startsOn?: string | null;
+		/** "Central Time" — the family's zone, for the copy. */
+		timeZoneLabel?: string | null;
 		/** Chat deep-link for the missing-service dialog. */
 		chatHref?: ResolvedPathname | null;
 		oncommit: (item: ServiceLineItem) => void;
@@ -63,6 +65,7 @@
 		listingLabel,
 		counterpartFirstName,
 		startsOn = null,
+		timeZoneLabel = null,
 		chatHref = null,
 		oncommit,
 		oncancel
@@ -150,7 +153,7 @@
 		editorCandidate !== null ? overlapping(editorCandidate, allDraftSessions) : []
 	);
 
-	// 15-minute wall-clock steps across the whole day (NZ local time).
+	// 15-minute wall-clock steps across the whole day (the family's local time).
 	const TIME_STEP = 15;
 	const startOptions = Array.from({ length: (24 * 60) / TIME_STEP }, (_, i) => i * TIME_STEP);
 	const endOptions = $derived(
@@ -435,7 +438,9 @@
 					<p class="text-xs text-base-content-muted">
 						You set the times — {counterpartFirstName} publishes no calendar. Repeats weekly{startsOn
 							? ` from ${formatDateWithWeekday(startsOn)}`
-							: ''} · times are NZ local time.
+							: ''} · times are in the family's local time{timeZoneLabel
+							? ` (${timeZoneLabel})`
+							: ''}.
 					</p>
 				</div>
 

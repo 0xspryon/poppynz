@@ -40,6 +40,7 @@ export type ContractTermsInput = {
 	}>;
 	startsOn?: string | null;
 	endsOn?: string | null;
+	endsAtMinutes?: number | null;
 };
 export type SaveTermsError = ErrorsOf<typeof termsEndpoint>;
 export type SendContractError = ErrorsOf<typeof sendEndpoint>;

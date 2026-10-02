@@ -53,7 +53,7 @@
 	}
 </script>
 
-<div class="flex items-center justify-between px-2.5 pb-2">
+<div class="flex shrink-0 items-center justify-between px-2.5 pb-2">
 	<BrandMark tone="dark" />
 	{#if onclose}
 		<button
@@ -67,42 +67,48 @@
 		</button>
 	{/if}
 </div>
-<div class="px-2.5 pb-4 text-[10px] font-semibold tracking-[0.14em] text-primary-soft uppercase">
+<div
+	class="shrink-0 px-2.5 pb-4 text-[10px] font-semibold tracking-[0.14em] text-primary-soft uppercase"
+>
 	{kicker}
 </div>
 
-{#each items as item, index (item.href)}
-	{@const active = page.url.pathname.startsWith(item.href)}
-	{#if item.group && item.group !== items[index - 1]?.group}
-		<div
-			class="px-3 pb-1 text-[10px] font-semibold tracking-[0.14em] text-secondary-content-faint
+<!-- Only the links scroll when they outgrow the column; the brand above and the
+	 language toggle / user card / sign out below stay pinned in view. -->
+<nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto" aria-label="Main">
+	{#each items as item, index (item.href)}
+		{@const active = page.url.pathname.startsWith(item.href)}
+		{#if item.group && item.group !== items[index - 1]?.group}
+			<div
+				class="px-3 pb-1 text-[10px] font-semibold tracking-[0.14em] text-secondary-content-faint
 				uppercase {index === 0 ? '' : 'pt-4'}"
-		>
-			{item.group}
-		</div>
-	{/if}
-	<a
-		href={item.href}
-		class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors
-			{active
-			? 'bg-primary/20 text-secondary-content'
-			: 'text-secondary-content-muted hover:bg-primary/10 hover:text-secondary-content'}"
-		aria-current={active ? 'page' : undefined}
-		onclick={onnavigate}
-	>
-		<i class="las {item.icon} text-lg" aria-hidden="true"></i>
-		{item.label}
-		{#if item.badge}
-			<span
-				class="ml-auto rounded-pill bg-accent px-2 py-0.5 text-[10px] font-bold text-accent-content"
 			>
-				{item.badge}
-			</span>
+				{item.group}
+			</div>
 		{/if}
-	</a>
-{/each}
+		<a
+			href={item.href}
+			class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-semibold transition-colors
+			{active
+				? 'bg-primary/20 text-secondary-content'
+				: 'text-secondary-content-muted hover:bg-primary/10 hover:text-secondary-content'}"
+			aria-current={active ? 'page' : undefined}
+			onclick={onnavigate}
+		>
+			<i class="las {item.icon} text-lg" aria-hidden="true"></i>
+			{item.label}
+			{#if item.badge}
+				<span
+					class="ml-auto rounded-pill bg-accent px-2 py-0.5 text-[10px] font-bold text-accent-content"
+				>
+					{item.badge}
+				</span>
+			{/if}
+		</a>
+	{/each}
+</nav>
 
-<div class="mt-auto flex flex-col gap-3.5">
+<div class="flex shrink-0 flex-col gap-3.5 pt-2">
 	<div class="flex justify-center">
 		<LangToggle tone="dark" />
 	</div>

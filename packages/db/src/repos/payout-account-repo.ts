@@ -1,6 +1,6 @@
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
-import { eq, sql, type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
+import { and, eq, sql, type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
 import { payoutAccount } from '../schema';
@@ -35,10 +35,16 @@ export class PayoutAccountRepo extends Context.Tag('@repo/db/PayoutAccountRepo')
     create: (
       input: PayoutAccountCreateInput
     ) => Effect.Effect<PayoutAccount, SqlError | DBNotFoundError>;
+    /** Compare-and-set on the account it was fetched for: lands only while
+     * `account_reference` still matches. Null when it lost that race — the
+     * account on file changed (a provider switch replaced it) between the
+     * re-fetch and this write — or when the user has no account row; callers
+     * treat that as a no-op rather than an error. */
     applySnapshot: (
       userId: string,
+      accountReference: string,
       snapshot: PayoutAccountSnapshotInput
-    ) => Effect.Effect<PayoutAccount, SqlError | DBNotFoundError>;
+    ) => Effect.Effect<PayoutAccount | null, SqlError>;
   }
 >() {}
 
@@ -104,13 +110,18 @@ export const PayoutAccountRepoLive = Layer.effect(
           return yield* findByUserId(input.userId).pipe(Effect.flatMap(orNotFound(input.userId)));
         }),
 
-      applySnapshot: (userId, snapshot) =>
+      applySnapshot: (userId, accountReference, snapshot) =>
         db
           .update(payoutAccount)
           .set({ ...snapshot, updatedAt: new Date() })
-          .where(eq(payoutAccount.userId, userId))
+          .where(
+            and(
+              eq(payoutAccount.userId, userId),
+              eq(payoutAccount.accountReference, accountReference)
+            )
+          )
           .returning()
-          .pipe(Effect.flatMap((rows) => orNotFound(userId)(rows[0])))
+          .pipe(Effect.map(firstOrNull))
     };
   })
 );
@@ -179,14 +190,12 @@ export const makeInMemoryPayoutAccountRepo = (
           rows.set(input.userId, row);
           return row;
         }),
-      applySnapshot: (userId, snapshot) =>
+      applySnapshot: (userId, accountReference, snapshot) =>
         Effect.sync(() => {
+          const existing = rows.get(userId);
+          if (!existing || existing.accountReference !== accountReference) return null;
           applied.push({ userId, snapshot });
-          const row = {
-            ...(rows.get(userId) ?? dummyPayoutAccount({ userId })),
-            ...snapshot,
-            updatedAt: new Date()
-          };
+          const row = { ...existing, ...snapshot, updatedAt: new Date() };
           rows.set(userId, row);
           return row;
         })

@@ -40,7 +40,7 @@ const isoCalendarDate = Schema.String.pipe(
 
 const MINUTES_PER_DAY = 24 * 60;
 
-// One weekly session: NZ wall-clock minutes from midnight (never UTC), Monday
+// One weekly session: wall-clock minutes from midnight in the contract's zone (never UTC), Monday
 // = 0. Overlapping sessions are legal — the UI warns, the provider judges.
 const contractSessionSchema = Schema.Struct({
   weekday: Schema.Int.pipe(Schema.between(0, 6)),
@@ -73,7 +73,11 @@ export const contractTermsSchema = Schema.Struct({
     )
   ),
   startsOn: Schema.optional(Schema.NullOr(isoCalendarDate)),
-  endsOn: Schema.optional(Schema.NullOr(isoCalendarDate))
+  endsOn: Schema.optional(Schema.NullOr(isoCalendarDate)),
+  // Last-day end time for the negotiated end date, wall-clock minutes.
+  endsAtMinutes: Schema.optional(
+    Schema.NullOr(Schema.Int.pipe(Schema.between(1, MINUTES_PER_DAY)))
+  )
 }).pipe(
   Schema.filter(
     (terms) =>
@@ -81,6 +85,13 @@ export const contractTermsSchema = Schema.Struct({
       !terms.endsOn ||
       terms.endsOn >= terms.startsOn ||
       'the end date must not be before the start date'
+  ),
+  Schema.filter(
+    (terms) =>
+      terms.endsAtMinutes === undefined ||
+      terms.endsAtMinutes === null ||
+      Boolean(terms.endsOn) ||
+      'a last-day end time needs an end date'
   )
 );
 

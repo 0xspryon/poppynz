@@ -779,6 +779,51 @@ describe('PUT /contracts/:id/terms', () => {
       proposedByUserId: 'family-1'
     });
   });
+
+  it('saves a last-day end time with the end date', async () => {
+    const updates: Array<unknown> = [];
+    const layer = makeLayer({
+      contractById: baseContract(),
+      versions: [draftVersion()],
+      onUpdateTerms: (_versionId, input) => updates.push(input)
+    });
+
+    await Effect.runPromise(
+      saveTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, endsOn: '2026-12-11', endsAtMinutes: 720 }
+        }),
+        new Headers()
+      ).pipe(Effect.provide(layer))
+    );
+
+    expect(updates[0]).toMatchObject({ endsOn: '2026-12-11', endsAtMinutes: 720 });
+    expect(updates[0]).not.toHaveProperty('timeZone');
+  });
+
+  it('rejects an end time without an end date at validation', async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: { ...termsBody, endsAtMinutes: 720 } }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] })))
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'RequestValidationError' });
+  });
+
+  it('rejects an end time outside 1..1440 at validation', async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, endsOn: '2026-12-11', endsAtMinutes: 0 }
+        }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] })))
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'RequestValidationError' });
+  });
 });
 
 describe('POST /contracts/:id/send', () => {

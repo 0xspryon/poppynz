@@ -322,6 +322,7 @@ const toTermsResponse = (version: ContractVersion, viewerUserId: string, expiryD
   services: version.services,
   startsOn: version.startsOn,
   endsOn: version.endsOn,
+  endsAtMinutes: version.endsAtMinutes,
   weeklyEstimateCents: weeklyEstimateCents(version.services),
   currency: version.services[0]?.currency ?? 'CAD',
   sentAt: version.sentAt?.toISOString() ?? null,
@@ -574,7 +575,8 @@ export const saveTermsProgram = (
       services,
       startsOn: input.startsOn ?? null,
       endsOn: input.endsOn ?? null,
-      endsAtMinutes: null
+      // An end time only means something on a negotiated end date.
+      endsAtMinutes: input.endsOn ? (input.endsAtMinutes ?? null) : null
     };
 
     if (pending !== null) {

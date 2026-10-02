@@ -154,6 +154,15 @@ export const vouchStatus = appDb.enum('vouch_status', [
   'flagged'
 ]);
 
+// Derived by the API from the three Stripe readiness flags; see
+// migrations/0026_payout_accounts.sql.
+export const payoutAccountStatus = appDb.enum('payout_account_status', [
+  'onboarding',
+  'ready',
+  'restricted',
+  'disabled'
+]);
+
 export const user = appDb.table('user', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
@@ -534,6 +543,37 @@ export const stripeWebhookEvent = appDb.table(
     error: text('error')
   },
   (table) => [index('stripe_webhook_events_received_at_idx').on(table.receivedAt)]
+);
+
+// A helper's payout account (Stripe Connect Express). Holds the last snapshot
+// RE-FETCHED from the provider — never webhook payload contents.
+export const payoutAccount = appDb.table(
+  'payout_accounts',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    provider: text('provider').notNull(),
+    accountReference: text('account_reference').notNull(),
+    status: payoutAccountStatus('status').notNull().default('onboarding'),
+    detailsSubmitted: boolean('details_submitted').notNull().default(false),
+    payoutsEnabled: boolean('payouts_enabled').notNull().default(false),
+    transfersActive: boolean('transfers_active').notNull().default(false),
+    // Raw provider requirement codes; the API turns them into labels.
+    requirementsDue: jsonb('requirements_due')
+      .$type<Array<string>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    disabledReason: text('disabled_reason'),
+    // Null until the first re-fetch; drives PAYOUTS_REFRESH_AFTER_MINUTES.
+    refreshedAt: timestamp('refreshed_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [uniqueIndex('payout_accounts_account_reference_uidx').on(table.accountReference)]
 );
 
 // A Credibled order: the basket, the charge it settled with, and the vendor's

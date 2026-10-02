@@ -10,6 +10,7 @@ import type {
   KycDocumentRepo,
   KycDocumentTypeRepo,
   PaymentRepo,
+  PayoutAccountRepo,
   ServiceCatalogueRepo,
   ServiceNeededRepo,
   ServiceOfferedRepo,
@@ -67,6 +68,7 @@ export type AppServices =
   | PaymentRepo
   | BillingCustomerRepo
   | StripeWebhookEventRepo
+  | PayoutAccountRepo
   | UserDirectoryRepo
   | UserSearchRepo
   | ConversationRepo

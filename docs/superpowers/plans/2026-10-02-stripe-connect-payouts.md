@@ -4,7 +4,7 @@
 
 **Goal:** Helpers set up a Stripe Connect Express payout account on Stripe's hosted pages and see whether they are payment-ready; pieces 3 and 4 get `isPaymentReady(userId)`, and nothing in 2b blocks acceptance.
 
-**Architecture:** `@repo/payments` gains four payout operations on the existing `Payments` port (mock: instantly enabled; Stripe: `accounts` / `accountLinks` / login links in a new `src/stripe-connect.ts` spread into 2a's Stripe service). A new `payout_accounts` table stores one re-fetched snapshot per helper, with the status derived by a pure function in `apps/api/src/lib/payouts.ts`. New `/payouts` routes (permission `payouts`), an `account.updated` case on 2a's `/webhooks/stripe` dispatcher, `payoutsReady` on the contract detail, and a web Payouts page, sidebar badge and acceptance reminder.
+**Architecture:** `@repo/payments` gains four payout operations on the existing `Payments` port in `src/port.ts` (mock in `src/mock.ts`: instantly enabled; Stripe: `accounts` / `accountLinks` / login links in a new `src/stripe-connect.ts` spread into 2a's `makeStripePayments`). A new `payout_accounts` table stores one re-fetched snapshot per helper, with the status derived by a pure function in `apps/api/src/lib/payouts.ts`. New `/payouts` routes (permission `payouts`), an `account.updated` case in 2a's `processStripeEvent` (`/webhooks/stripe`), `payoutsReady` on the contract detail, and a web Payouts page, sidebar badge and acceptance reminder.
 
 **Tech Stack:** Bun workspaces + Turborepo, Effect 3, Hono RPC, Drizzle (hand-written SQL migrations), `stripe` Node SDK (installed by 2a; types checked against `stripe@23.0.0`, API version `2026-09-30.endive`), SvelteKit 5 (runes) + DaisyUI 5, vitest (api, web), `bun test` (packages), Stripe CLI 1.53 (local e2e).
 
@@ -13,9 +13,16 @@
 ## Global Constraints
 
 - Work in the worktree `/run/media/hbt/work/poppynz/stripe-integration`. Never `cd` into another worktree; never `git stash`.
-- **Piece 2a is merged first, exactly as its spec describes.** This plan references 2a's names: `PAYMENTS_PROVIDER` (`mock` | `stripe`, default `mock`), `stripeConfig` in `@repo/env`, `packages/payments/src/stripe.ts` (Stripe-backed `Payments` built from an injectable Stripe client), `PaymentProviderError` with `operation` widened to every operation, `verifyWebhook` → `{ eventId, type, objectId, account? }`, `POST /webhooks/stripe` in `apps/api/src/routes/webhooks/stripe.ts`, `stripe_webhook_events` + `StripeWebhookEventRepo`. Where 2a's exact code shape is unknown, the task says so and gives the complete code for 2b's part; reconcile names against 2a's merged code (search, don't guess).
-- Stripe is imported **only inside `@repo/payments`** (`src/stripe.ts`, `src/stripe-connect.ts`, `scripts/`). Nothing in `apps/` imports `stripe`.
-- **Test mode only.** Never use or print a live key; scripts refuse any key that doesn't start with `sk_test_`. Never print `STRIPE_SECRET_KEY` or `STRIPE_WEBHOOK_SECRET`.
+- **Piece 2a has landed** on `feature/stripe-integration` (reconciled against HEAD `b67bb83`). This plan uses its real names:
+  - `@repo/payments` is split into `src/port.ts` (types, `PaymentOperation` union, `PaymentProviderError`, `PaymentWebhookSignatureError`, the `Payments` tag), `src/mock.ts` (`makeMockPayments(options)`, `PaymentsMock`, `makePaymentsTest(partial)`), `src/stripe.ts` (`StripeApi` — the narrow SDK slice — `makeStripeClient(secretKey)`, `makeStripePayments({ client, webhookSecret })`, `STRIPE_API_VERSION = '2026-09-30.endive'`) and `src/layer.ts` (`PaymentsLive`, which reads `stripeConfig` and refuses a non-`sk_test_`/`rk_test_` key). `src/index.ts` only re-exports `port`, `mock` and `layer`.
+  - `verifyWebhook(rawBody, signatureHeader)` uses `client.webhooks.constructEventAsync` (async: under Bun the SDK's SubtleCrypto provider can't verify synchronously) and returns `PaymentWebhookEvent = { eventId, type, objectId, paymentReference: string | null, account: string | null }` — `account` is already filled from `event.account` for Connect events.
+  - `stripeConfig` (`@repo/env`): `{ provider: 'mock' | 'stripe' (PAYMENTS_PROVIDER, default mock), secretKey, webhookSecret (Option<Redacted>), settleAfterMinutes, abandonAfterHours }`.
+  - `POST /webhooks/stripe` (`apps/api/src/routes/webhooks/stripe.ts`): `stripeWebhookProgram(rawBody, signature)` verifies, `StripeWebhookEventRepo.record` → `'new' | 'unprocessed' | 'processed'`, runs `processStripeEvent(event)` (returns a log note string; any failure → `markFailed` + 500), then `markProcessed`. `bodyLimit` (512 KiB) sits in front. `processStripeEvent` already has an `account.updated` placeholder case for 2b.
+  - Contract detail already carries `hasPaymentMethod: boolean | null` (family viewer only); `billing: ['read','write']` is a family-only permission.
+  - 2a's provider-switch rule: a stored provider reference only counts while its `provider` equals `payments.provider` (`toCard` in `@repo/billing`, `BillingCustomerRepo.upsertCustomer` replaces a row from another provider). 2b follows the same rule for payout accounts.
+- Stripe is imported **only inside `@repo/payments`** (`src/stripe.ts`, `src/stripe-connect.ts`, `scripts/`). Nothing in `apps/` imports `stripe`. Inside the package, `stripe-connect.ts` imports from `./port` (never `./index`, which re-exports `layer` → `stripe` → `stripe-connect`).
+- **Test mode only.** Never use or print a live key; scripts refuse any key that doesn't start with `sk_test_`. Never print `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_CONNECT_WEBHOOK_SECRET` or any `CREDIBLED_*` value.
+- **Provider-scoped accounts (2a's rule).** A `payout_accounts` row counts only while `row.provider === payments.provider`; under another provider it reads as "no account", and `PayoutAccountRepo.create` replaces it (resetting the snapshot). This is what keeps a `mock_acct_…` row from a mock run from being sent to Stripe, or reported ready, after `PAYMENTS_PROVIDER=stripe`.
 - Express accounts: country `CA`, `business_type: 'individual'`, `capabilities.transfers.requested: true`, `metadata.user_id`, idempotency key `payout-account:<userId>`. Onboarding via Account Links (`type: 'account_onboarding'`), never stored.
 - Payment-ready = `details_submitted` AND `payouts_enabled` AND `capabilities.transfers === 'active'`. Status is always re-fetched from Stripe, never read from a webhook payload.
 - Status derivation (exact): `ready` = all three true; `disabled` = `disabledReason` starts with `rejected.`; `restricted` = details submitted but not ready; `onboarding` = otherwise.
@@ -23,7 +30,8 @@
 - Config (exact): `APP_WEB_ORIGIN` default `https://app.poppynz.com` (local `.env`: `http://localhost:5175`); `PAYOUTS_REFRESH_AFTER_MINUTES` default `60`. Return URL `<APP_WEB_ORIGIN>/service-provider/payouts?from=stripe`; refresh URL `<APP_WEB_ORIGIN>/service-provider/payouts?refresh=1`.
 - Permission (exact): `payouts: ['read', 'write']`, granted to the service-provider role. `GET /payouts` needs `read`; the three `POST`s need `write`.
 - Error codes (exact): `NO_PAYOUT_ACCOUNT` (409, refresh/dashboard without an account), `PAYOUTS_PROVIDER_ERROR` (502), `PAYOUTS_LOOKUP_FAILED` (500). Auth errors use the existing `authErrorToResponse` codes.
-- Migration `0026_payout_accounts` (2a takes `0025`). Hand-authored SQL plus a hand-added `meta/_journal.json` entry. Never run `drizzle-kit generate`. All new foreign keys are `ON DELETE restrict`.
+- Migration `0026_payout_accounts` (2a's `0025_stripe_payments` is the last, journal `when` `1788160000000`; 2b uses `1788170000000`). Hand-authored SQL plus a hand-added `meta/_journal.json` entry. Never run `drizzle-kit generate`. All new foreign keys are `ON DELETE restrict`.
+- Type-checks: `bunx tsc -p tsconfig.build.json --noEmit` in `apps/api` only covers `src/hc.ts`'s graph (app routes, `@repo/*` sources). It does **not** reach `src/index.ts`, the webhook routes or any test file; Tasks 6 and 11 use 2a's throwaway entry config for those.
 - AGENTS.md rules: route error types derived from programs (`Effect.Effect.Error<ReturnType<typeof program>>`); mappers switch on `_tag` and end in `handleNever`; new route/domain programs get focused unit tests; pipe repo/provider calls through mappers (`repo.x().pipe((errors) => mapPayoutsRepoError(errors))`); permissions, not role checks; user-facing outcomes are toasts.
 - Reminder copy (exact): "**You'll need a payout account to collect your earnings.** Set it up now, or later — you'll be asked again before your first payment."
 - Commit after every task with a conventional message ending in the trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -32,24 +40,27 @@
 
 | File | Responsibility |
 |---|---|
-| `packages/payments/src/index.ts` | Port types + four payout operations; mock implementations |
+| `packages/payments/src/port.ts` (2a) | Payout types, four payout operations on `Payments`, four names appended to `PaymentOperation` |
+| `packages/payments/src/mock.ts` (2a) | Mock implementations in `makeMockPayments` |
 | `packages/payments/src/payouts-mock.test.ts` | Mock contract tests |
 | `packages/payments/src/stripe-connect.ts` | Stripe adapter for the four operations + snapshot normalisation |
 | `packages/payments/src/stripe-connect.test.ts` | Adapter tests against a faked Stripe client |
-| `packages/payments/src/stripe.ts` (2a) | Spread the Connect operations into the Stripe service |
-| `packages/payments/src/webhook-secrets.ts` (+ `.test.ts`) | Verify a signature against the platform OR Connect endpoint secret |
+| `packages/payments/src/stripe.ts` (2a) | `StripeApi` widened with the Connect slice; operations spread into `makeStripePayments`; `verifyWebhook` tries the Connect secret too |
+| `packages/payments/src/stripe.test.ts` (2a) | One Connect-signed `verifyWebhook` case |
+| `packages/payments/src/layer.ts` (2a) | Passes `connectWebhookSecret` to `makeStripePayments` |
+| `packages/payments/src/webhook-secrets.ts` (+ `.test.ts`) | Verify a signature (async) against the platform OR Connect endpoint secret |
 | `packages/payments/scripts/e2e-payout-account.ts` | Local e2e helper (test mode): payout-ready Custom account, `touch` |
 | `packages/env/src/index.ts` | `payoutsConfig`; `stripeConfig.connectWebhookSecret` |
 | `packages/db/src/migrations/0026_payout_accounts.sql` + `meta/_journal.json` | Table, enum, FK, unique index |
 | `packages/db/src/schema.ts` | `payoutAccountStatus`, `payoutAccount` |
-| `packages/db/src/repos/payout-account-repo.ts` | `PayoutAccountRepo` (+ test layer) |
+| `packages/db/src/repos/payout-account-repo.ts` | `PayoutAccountRepo`, `makePayoutAccountRepoTest`, `makeInMemoryPayoutAccountRepo`, `dummyPayoutAccount` (2a's `billing-customer-repo.ts` pattern) |
 | `apps/api/src/lib/payouts.ts` | Derivation, labels, refresh rule, `isPaymentReady`, `hasReadyPayoutAccount`, `handleAccountUpdated` |
-| `apps/api/src/lib/payouts.test-support.ts` | Shared fixtures + in-memory repo for api tests |
+| `apps/api/src/lib/payouts.test-support.ts` | `readySnapshot` (a `@repo/payments` type, so it can't live in `@repo/db`) |
 | `apps/api/src/lib/payouts.unit.test.ts` | Domain tests |
 | `apps/api/src/lib/auth-roles.ts` | `payouts` permission |
 | `apps/api/src/routes/app/payouts/payouts.handler.ts`, `payouts.ts`, `payouts.unit.test.ts` | `/payouts` routes |
-| `apps/api/src/routes/app/index.ts`, `managed-runtime.ts`, `app-env.ts` | Registration |
-| `apps/api/src/routes/webhooks/stripe.ts` (2a) (+ its unit test) | `account.updated` case |
+| `apps/api/src/routes/app/index.ts`, `managed-runtime.ts`, `app-env.ts` | Registration (`apps/worker` is unchanged: it builds `PaymentsLive`, which gains the operations, and 2b has no worker job) |
+| `apps/api/src/routes/webhooks/stripe.ts` (2a) (+ `stripe.unit.test.ts`) | `account.updated` case in `processStripeEvent`; `makeWorld` gains a payout repo |
 | `apps/api/src/routes/app/contracts/contracts.handler.ts` (+ unit test) | `payoutsReady` on the detail |
 | `apps/web/src/lib/api/payouts.ts` | RPC wrappers |
 | `apps/web/src/lib/payouts-badge.svelte.ts` (+ `payouts-badge.test.ts`) | Sidebar badge store |
@@ -67,12 +78,12 @@
 ### Task 1: Payout operations on the payment port, with the mock
 
 **Files:**
-- Modify: `packages/payments/src/index.ts`
+- Modify: `packages/payments/src/port.ts`, `packages/payments/src/mock.ts`
 - Create: `packages/payments/src/payouts-mock.test.ts`
 
 **Interfaces:**
-- Consumes: 2a's `Payments` tag, `makeMockPayments`, `makePaymentsTest`, `PaymentProviderError` (with `operation` widened by 2a).
-- Produces (exported from `@repo/payments`):
+- Consumes: 2a's `Payments` tag and `PaymentOperation` union (`src/port.ts`), `makeMockPayments(options: { failStart?, failRefund?, now? })` and `makePaymentsTest(partial)` (`src/mock.ts`), `PaymentProviderError` (`{ operation: PaymentOperation; cause: unknown }`).
+- Produces (exported from `@repo/payments` through `index.ts`'s `export * from './port'`):
   - `type PayoutAccountSnapshot = { readonly detailsSubmitted: boolean; readonly payoutsEnabled: boolean; readonly transfersActive: boolean; readonly requirementsDue: ReadonlyArray<string>; readonly disabledReason: string | null }`
   - `type PayoutAccountCreated = { readonly reference: string }`
   - `type OnboardingLink = { readonly url: string; readonly expiresAt: Date }`
@@ -82,7 +93,7 @@
     - `createOnboardingLink(input: { reference: string; returnUrl: string; refreshUrl: string }): Effect<OnboardingLink, PaymentProviderError>`
     - `getPayoutAccount(reference: string): Effect<PayoutAccountSnapshot, PaymentProviderError>`
     - `createDashboardLink(reference: string): Effect<DashboardLink, PaymentProviderError>`
-  - `PaymentProviderError['operation']` includes `'createPayoutAccount' | 'createOnboardingLink' | 'getPayoutAccount' | 'createDashboardLink'`.
+  - `PaymentOperation` (and so `PaymentProviderError['operation']`) includes `'createPayoutAccount' | 'createOnboardingLink' | 'getPayoutAccount' | 'createDashboardLink'`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -91,7 +102,8 @@
 ```ts
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
-import { makeMockPayments, PaymentProviderError } from './index';
+import { makeMockPayments } from './mock';
+import { PaymentProviderError } from './port';
 
 describe('mock payout accounts', () => {
   const payments = makeMockPayments({ now: () => new Date('2026-10-02T12:00:00Z') });
@@ -149,25 +161,29 @@ Expected: FAIL — `payments.createPayoutAccount is not a function` (and a type 
 
 - [ ] **Step 3: Add the types and port operations**
 
-In `packages/payments/src/index.ts`:
+In `packages/payments/src/port.ts`:
 
-1. Widen the error's operation union. 2a widened `operation` "to every operation"; add the four payout names to it. If 2a wrote the union inline it becomes (keep 2a's names, append these four):
+1. Append the four payout names to 2a's `PaymentOperation` union (`PaymentProviderError` takes `operation: PaymentOperation`, so it widens with it). The union becomes:
 
 ```ts
-export class PaymentProviderError extends Data.TaggedError('PaymentProviderError')<{
-  operation:
-    | /* …2a's operation names, unchanged… */
-    | 'createPayoutAccount'
-    | 'createOnboardingLink'
-    | 'getPayoutAccount'
-    | 'createDashboardLink';
-  cause: unknown;
-}> {}
+export type PaymentOperation =
+  | 'startPayment'
+  | 'resumePayment'
+  | 'getPayment'
+  | 'cancelPayment'
+  | 'refund'
+  | 'ensureCustomer'
+  | 'startCardSetup'
+  | 'getCardSetup'
+  | 'removeCard'
+  | 'verifyWebhook'
+  | 'createPayoutAccount'
+  | 'createOnboardingLink'
+  | 'getPayoutAccount'
+  | 'createDashboardLink';
 ```
 
-If 2a extracted a named type (e.g. `PaymentOperation`), append the four names to that type instead.
-
-2. Add these types next to `PaymentRefund`:
+2. Add these types after `ProviderCardSetup` (before `PaymentWebhookEvent`):
 
 ```ts
 /** A helper's payout account as the provider reports it, normalised. Always
@@ -198,7 +214,7 @@ export type DashboardLink = {
 };
 ```
 
-3. Add the four operations to the `Payments` service type (after 2a's last operation):
+3. Add the four operations to the `Payments` service type in the `Context.Tag('@repo/payments/Payments')` declaration, after `removeCard` and before `verifyWebhook`:
 
 ```ts
     /** Creates the helper's connected account. Same user → same account
@@ -218,7 +234,7 @@ export type DashboardLink = {
     createDashboardLink: (reference: string) => Effect.Effect<DashboardLink, PaymentProviderError>;
 ```
 
-4. In the object returned by `makeMockPayments`, add (it already has `now` in scope):
+4. In `packages/payments/src/mock.ts`, in the object returned by `makeMockPayments`, add after `removeCard: () => Effect.void,` and before `verifyWebhook` (`now` is already in scope; the import list needs nothing new):
 
 ```ts
     // Payout accounts: enabled straight away, so the whole helper flow runs
@@ -249,12 +265,12 @@ Run: `cd packages/payments && bun test src`
 Expected: PASS (2a's tests and the new file).
 
 Run: `cd apps/api && bunx tsc -p tsconfig.build.json --noEmit`
-Expected: errors only in `packages/payments/src/stripe.ts`, where 2a's Stripe service object lacks the four new operations. Leave them; Task 2 adds them. (If 2a's Stripe factory is typed loosely and there are no errors, continue.)
+Expected: one error, in `packages/payments/src/stripe.ts`: the object `makeStripePayments` returns (typed `Context.Tag.Service<Payments>`) lacks the four new operations. Leave it; Task 2 adds them.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add packages/payments/src/index.ts packages/payments/src/payouts-mock.test.ts
+git add packages/payments/src/port.ts packages/payments/src/mock.ts packages/payments/src/payouts-mock.test.ts
 git commit -m "feat(payments): payout account operations on the port, mock enabled instantly
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -269,9 +285,10 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Modify: `packages/payments/src/stripe.ts` (2a)
 
 **Interfaces:**
-- Consumes: Task 1 types; the `stripe` dependency 2a added to `packages/payments/package.json`; 2a's Stripe service factory in `src/stripe.ts` and the Stripe client it is built from.
+- Consumes: Task 1 types; `stripe@^23.0.0` (already in `packages/payments/package.json`); 2a's `StripeApi` (the narrow SDK slice `makeStripeClient` returns and `makeStripePayments({ client, webhookSecret })` takes) in `src/stripe.ts`.
 - Produces:
-  - `type StripeConnectClient = { readonly accounts: Pick<Stripe['accounts'], 'create' | 'retrieve' | 'createLoginLink'>; readonly accountLinks: Pick<Stripe['accountLinks'], 'create'> }` (a real `Stripe` instance satisfies it)
+  - `type StripeConnectClient = { accounts: Pick<Stripe['accounts'], 'create' | 'retrieve' | 'createLoginLink'>; accountLinks: Pick<Stripe['accountLinks'], 'create'> }` (a real `Stripe` instance satisfies it)
+  - `StripeApi` (2a) becomes `{ …2a's six resources… } & StripeConnectClient`
   - `toPayoutAccountSnapshot(account: Stripe.Account): PayoutAccountSnapshot`
   - `makeStripeConnectOperations(stripe: StripeConnectClient): Pick<Context.Tag.Service<Payments>, 'createPayoutAccount' | 'createOnboardingLink' | 'getPayoutAccount' | 'createDashboardLink'>`
 
@@ -478,21 +495,17 @@ Expected: FAIL — `Cannot find module './stripe-connect'`.
 ```ts
 import { Effect, type Context } from 'effect';
 import type Stripe from 'stripe';
-import {
-  PaymentProviderError,
-  type Payments,
-  type PayoutAccountSnapshot
-} from './index';
+import { PaymentProviderError, type Payments, type PayoutAccountSnapshot } from './port';
 
 /**
  * Stripe Connect (Express) for helper payout accounts — piece 2b.
  *
- * Only the four calls 2b needs, typed structurally so tests pass a fake and
- * 2a's real `Stripe` client satisfies it as is.
+ * Only the four calls 2b needs, typed structurally (like 2a's `StripeApi`) so
+ * tests pass a fake and the real `Stripe` client satisfies it as is.
  */
 export type StripeConnectClient = {
-  readonly accounts: Pick<Stripe['accounts'], 'create' | 'retrieve' | 'createLoginLink'>;
-  readonly accountLinks: Pick<Stripe['accountLinks'], 'create'>;
+  accounts: Pick<Stripe['accounts'], 'create' | 'retrieve' | 'createLoginLink'>;
+  accountLinks: Pick<Stripe['accountLinks'], 'create'>;
 };
 
 type ConnectOperations = Pick<
@@ -562,30 +575,49 @@ export const makeStripeConnectOperations = (stripe: StripeConnectClient): Connec
 });
 ```
 
-(If 2a moved `PaymentProviderError`/`Payments` out of `index.ts` into another module, import them from there — the import is a runtime cycle otherwise only if `index.ts` re-exports `stripe.ts`, which is safe because the class is used at call time, not at module load.)
-
 - [ ] **Step 4: Run the adapter tests**
 
 Run: `cd packages/payments && bun test src/stripe-connect.test.ts`
-Expected: PASS (9 tests).
+Expected: PASS (8 tests).
 
 - [ ] **Step 5: Spread the operations into 2a's Stripe service**
 
-In `packages/payments/src/stripe.ts`, find the function 2a wrote that builds the Stripe-backed `Payments` service from the injectable Stripe client (the object literal with `provider: 'stripe'` and `startPayment`, `getPayment`, …). Add the import and spread the four operations into that object, using the same client variable 2a's operations use (written here as `stripe`):
+In `packages/payments/src/stripe.ts`:
+
+1. Add the import below the `./port` import:
 
 ```ts
-import { makeStripeConnectOperations } from './stripe-connect';
+import { makeStripeConnectOperations, type StripeConnectClient } from './stripe-connect';
 ```
+
+2. Widen 2a's `StripeApi` with the Connect slice (a `new Stripe(...)` still satisfies it, so `makeStripeClient` is unchanged):
 
 ```ts
-  return {
-    provider: 'stripe',
-    // …2a's operations, unchanged…
-    ...makeStripeConnectOperations(stripe)
-  };
+/** The slice of the SDK this adapter uses. Narrow on purpose: a test fake only
+ * has to implement these methods. */
+export type StripeApi = {
+  paymentIntents: Pick<Stripe['paymentIntents'], 'create' | 'retrieve' | 'cancel'>;
+  setupIntents: Pick<Stripe['setupIntents'], 'create' | 'retrieve'>;
+  customers: Pick<Stripe['customers'], 'create'>;
+  paymentMethods: Pick<Stripe['paymentMethods'], 'detach'>;
+  refunds: Pick<Stripe['refunds'], 'create'>;
+  webhooks: Pick<Stripe['webhooks'], 'constructEventAsync'>;
+} & StripeConnectClient;
 ```
 
-If 2a types its injectable client as a narrower structural type than `Stripe`, widen that type with `& StripeConnectClient` (import the type from `./stripe-connect`) and add `accounts`/`accountLinks` stubs to 2a's fake client in its test file only if its type then fails to compile (`accounts: {} as never, accountLinks: {} as never`).
+3. In `makeStripePayments`, spread the operations into the returned object, right after `removeCard` and before `verifyWebhook` (2a's client variable is `client`):
+
+```ts
+    removeCard: (cardReference) =>
+      call('removeCard', () => client.paymentMethods.detach(cardReference)).pipe(Effect.asVoid),
+
+    // Helper payout accounts (Stripe Connect Express, piece 2b).
+    ...makeStripeConnectOperations(client),
+
+    verifyWebhook: (rawBody, signatureHeader) =>
+```
+
+2a's `fakeStripe()` in `stripe.test.ts` casts `as unknown as StripeApi`, so it keeps compiling without `accounts`/`accountLinks`; none of its tests reach them.
 
 - [ ] **Step 6: Type-check and run the package suite**
 
@@ -619,8 +651,11 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
   - `type PayoutAccountStatus = 'onboarding' | 'ready' | 'restricted' | 'disabled'`
   - `type PayoutAccountCreateInput = { userId: string; provider: string; accountReference: string }`
   - `type PayoutAccountSnapshotInput = { status: PayoutAccountStatus; detailsSubmitted: boolean; payoutsEnabled: boolean; transfersActive: boolean; requirementsDue: Array<string>; disabledReason: string | null; refreshedAt: Date }`
-  - `PayoutAccountRepo` with `findByUserId(userId): Effect<PayoutAccount | null, SqlError>`, `findByReference(reference): Effect<PayoutAccount | null, SqlError>`, `create(input): Effect<PayoutAccount, SqlError | DBNotFoundError>` (returns the existing row on a concurrent duplicate), `applySnapshot(userId, snapshot): Effect<PayoutAccount, SqlError | DBNotFoundError>`
-  - `PayoutAccountRepoDefault`, `makePayoutAccountRepoTest(impl)`
+  - `PayoutAccountRepo` with `findByUserId(userId): Effect<PayoutAccount | null, SqlError>`, `findByReference(reference): Effect<PayoutAccount | null, SqlError>`, `create(input): Effect<PayoutAccount, SqlError | DBNotFoundError>` (same provider already on file → that row, untouched, so a concurrent duplicate is a no-op; a row from ANOTHER provider → replaced and its snapshot reset, like 2a's `BillingCustomerRepo.upsertCustomer`), `applySnapshot(userId, snapshot): Effect<PayoutAccount, SqlError | DBNotFoundError>`
+  - `PayoutAccountRepoDefault`
+  - `makePayoutAccountRepoTest(partial)` (2a's `makeStripeWebhookEventRepoTest` style: lookups default to `null`, writes die)
+  - `type AppliedPayoutSnapshot = { userId: string; snapshot: PayoutAccountSnapshotInput }`
+  - `makeInMemoryPayoutAccountRepo(initial?, applied?) → { layer, rows }` and `dummyPayoutAccount(overrides?)` (2a's `makeInMemoryBillingCustomerRepo` / `dummyBillingCustomer` pattern; `dummyPayoutAccount` defaults to `userId 'helper-1'`, `provider 'stripe'`, `accountReference 'acct_123'`, `status 'onboarding'`, `refreshedAt` now)
 
 There is no database test harness in `packages/db` (repos are exercised through api unit tests with test layers and by the local e2e, Task 12). This task's gate is the type-check; Task 12 applies the migration and exercises the repo against Postgres.
 
@@ -670,11 +705,16 @@ CREATE UNIQUE INDEX "payout_accounts_account_reference_uidx" ON "app_db"."payout
 ```
 
 Check: `bun -e "const j=require('./packages/db/src/migrations/meta/_journal.json'); console.log(j.entries.slice(-2).map(e=>e.idx+' '+e.tag+' '+e.when).join('\n'))"` (from the worktree root)
-Expected: `25 0025_stripe_payments …` then `26 0026_payout_accounts 1788170000000`, with 26's `when` greater than 25's (raise it if 2a used a larger value).
+Expected:
+
+```
+25 0025_stripe_payments 1788160000000
+26 0026_payout_accounts 1788170000000
+```
 
 - [ ] **Step 3: Add the schema**
 
-In `packages/db/src/schema.ts`, after the `vouchStatus` enum (around line 149, with the other enums):
+In `packages/db/src/schema.ts` (`boolean`, `jsonb`, `text`, `timestamp`, `uniqueIndex` and `sql` are already imported), after the `vouchStatus` enum (line 149, with the other enums):
 
 ```ts
 // Derived by the API from the three Stripe readiness flags; see
@@ -687,7 +727,7 @@ export const payoutAccountStatus = appDb.enum('payout_account_status', [
 ]);
 ```
 
-After the `payment` table (after its closing `);`, around line 482):
+After 2a's `stripeWebhookEvent` table (after its closing `);`, around line 539 — the payment tables 2a added are `payment`, `billingCustomer`, `stripeWebhookEvent`, in that order):
 
 ```ts
 // A helper's payout account (Stripe Connect Express). Holds the last snapshot
@@ -731,7 +771,7 @@ export const payoutAccount = appDb.table(
 ```ts
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
-import { eq, type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
+import { eq, sql, type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
 import { payoutAccount } from '../schema';
@@ -757,9 +797,12 @@ export class PayoutAccountRepo extends Context.Tag('@repo/db/PayoutAccountRepo')
   PayoutAccountRepo,
   {
     findByUserId: (userId: string) => Effect.Effect<PayoutAccount | null, SqlError>;
+    /** How an account.updated webhook finds its helper. */
     findByReference: (reference: string) => Effect.Effect<PayoutAccount | null, SqlError>;
-    /** Inserts the helper's account; a concurrent duplicate (same user)
-     * returns the row that won instead of failing. */
+    /** Records the helper's account. One account per helper per provider: an
+     * existing row for the same provider is returned untouched (a racing
+     * second create is a no-op); a row from ANOTHER provider (mock → stripe)
+     * is replaced and its snapshot reset. */
     create: (
       input: PayoutAccountCreateInput
     ) => Effect.Effect<PayoutAccount, SqlError | DBNotFoundError>;
@@ -770,11 +813,23 @@ export class PayoutAccountRepo extends Context.Tag('@repo/db/PayoutAccountRepo')
   }
 >() {}
 
+/** What a new or replaced account starts from: nothing fetched yet. */
+const unfetched = {
+  status: 'onboarding' as const,
+  detailsSubmitted: false,
+  payoutsEnabled: false,
+  transfersActive: false,
+  requirementsDue: [] as Array<string>,
+  disabledReason: null,
+  refreshedAt: null
+};
+
+const firstOrNull = (rows: Array<PayoutAccount>) => rows[0] ?? null;
+
 export const PayoutAccountRepoLive = Layer.effect(
   PayoutAccountRepo,
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle;
-    const firstOrNull = (rows: Array<PayoutAccount>) => rows[0] ?? null;
     const orNotFound = (userId: string) => (row: PayoutAccount | null | undefined) =>
       row
         ? Effect.succeed(row)
@@ -800,18 +855,25 @@ export const PayoutAccountRepoLive = Layer.effect(
           .pipe(Effect.map(firstOrNull)),
 
       create: (input) =>
-        db
-          .insert(payoutAccount)
-          .values(input)
-          .onConflictDoNothing({ target: payoutAccount.userId })
-          .returning()
-          .pipe(
-            Effect.flatMap((rows) =>
-              rows[0]
-                ? Effect.succeed(rows[0])
-                : findByUserId(input.userId).pipe(Effect.flatMap(orNotFound(input.userId)))
-            )
-          ),
+        Effect.gen(function* () {
+          const written = yield* db
+            .insert(payoutAccount)
+            .values(input)
+            .onConflictDoUpdate({
+              target: payoutAccount.userId,
+              set: {
+                provider: input.provider,
+                accountReference: input.accountReference,
+                ...unfetched,
+                updatedAt: new Date()
+              },
+              setWhere: sql`${payoutAccount.provider} <> ${input.provider}`
+            })
+            .returning();
+          if (written[0]) return written[0];
+          // Same provider already on file: keep it.
+          return yield* findByUserId(input.userId).pipe(Effect.flatMap(orNotFound(input.userId)));
+        }),
 
       applySnapshot: (userId, snapshot) =>
         db
@@ -826,21 +888,97 @@ export const PayoutAccountRepoLive = Layer.effect(
 
 export const PayoutAccountRepoDefault = PayoutAccountRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makePayoutAccountRepoTest = (implementation: Context.Tag.Service<PayoutAccountRepo>) =>
-  Layer.succeed(PayoutAccountRepo, implementation);
+/** Lookups find nothing and writes die unless the test supplies them. */
+export const makePayoutAccountRepoTest = (
+  implementation: Partial<Context.Tag.Service<PayoutAccountRepo>>
+) =>
+  Layer.succeed(PayoutAccountRepo, {
+    findByUserId: () => Effect.succeed(null),
+    findByReference: () => Effect.succeed(null),
+    create: () => Effect.die('PayoutAccountRepo.create not stubbed'),
+    applySnapshot: () => Effect.die('PayoutAccountRepo.applySnapshot not stubbed'),
+    ...implementation
+  });
+
+/** A stored account, for fixtures: a Stripe account still onboarding. */
+export const dummyPayoutAccount = (overrides: Partial<PayoutAccount> = {}): PayoutAccount => ({
+  userId: 'helper-1',
+  provider: 'stripe',
+  accountReference: 'acct_123',
+  status: 'onboarding',
+  detailsSubmitted: false,
+  payoutsEnabled: false,
+  transfersActive: false,
+  requirementsDue: [],
+  disabledReason: null,
+  refreshedAt: new Date(),
+  createdAt: new Date('2026-10-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-10-01T00:00:00.000Z'),
+  ...overrides
+});
+
+export type AppliedPayoutSnapshot = { userId: string; snapshot: PayoutAccountSnapshotInput };
+
+/** In-memory stand-in with the live repo's semantics, for unit tests. Every
+ * `applySnapshot` is also appended to `applied`. */
+export const makeInMemoryPayoutAccountRepo = (
+  initial: ReadonlyArray<PayoutAccount> = [],
+  applied: Array<AppliedPayoutSnapshot> = []
+): {
+  layer: Layer.Layer<PayoutAccountRepo>;
+  rows: Map<string, PayoutAccount>;
+} => {
+  const rows = new Map(initial.map((row) => [row.userId, row] as const));
+  return {
+    rows,
+    layer: Layer.succeed(PayoutAccountRepo, {
+      findByUserId: (userId) => Effect.succeed(rows.get(userId) ?? null),
+      findByReference: (reference) =>
+        Effect.succeed(
+          [...rows.values()].find((row) => row.accountReference === reference) ?? null
+        ),
+      create: (input) =>
+        Effect.sync(() => {
+          const existing = rows.get(input.userId);
+          if (existing && existing.provider === input.provider) return existing;
+          const row = dummyPayoutAccount({
+            ...input,
+            ...unfetched,
+            createdAt: existing?.createdAt ?? new Date(),
+            updatedAt: new Date()
+          });
+          rows.set(input.userId, row);
+          return row;
+        }),
+      applySnapshot: (userId, snapshot) =>
+        Effect.sync(() => {
+          applied.push({ userId, snapshot });
+          const row = {
+            ...(rows.get(userId) ?? dummyPayoutAccount({ userId })),
+            ...snapshot,
+            updatedAt: new Date()
+          };
+          rows.set(userId, row);
+          return row;
+        })
+    })
+  };
+};
 ```
 
 - [ ] **Step 5: Export and register**
 
-`packages/db/src/index.ts`: after `export * from './repos/payment-repo';` add:
+`packages/db/src/index.ts`: after 2a's `export * from './repos/stripe-webhook-event-repo';` add:
 
 ```ts
 export * from './repos/payout-account-repo';
 ```
 
-`apps/api/src/app-env.ts`: add `PayoutAccountRepo,` to the `@repo/db` type import (after `PaymentRepo,`) and `| PayoutAccountRepo` to `AppServices` (after `| PaymentRepo`).
+`apps/api/src/app-env.ts`: add `PayoutAccountRepo,` to the `@repo/db` type import (after `PaymentRepo,`) and `| PayoutAccountRepo` to `AppServices` (after 2a's `| StripeWebhookEventRepo`).
 
-`apps/api/src/managed-runtime.ts`: add `PayoutAccountRepoDefault,` to the `@repo/db` import (after `PaymentRepoDefault,`) and to `AppLive` (after `PaymentRepoDefault,`).
+`apps/api/src/managed-runtime.ts`: add `PayoutAccountRepoDefault,` to the `@repo/db` import (after `PaymentRepoDefault,`) and to `AppLive` (after 2a's `StripeWebhookEventRepoDefault,`).
+
+`apps/worker` needs nothing: no worker job reads payout accounts in 2b, and its `PaymentsLive` picks up the new operations by itself.
 
 - [ ] **Step 6: Type-check**
 
@@ -868,7 +1006,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `apps/api/src/lib/payouts.ts`, `apps/api/src/lib/payouts.test-support.ts`, `apps/api/src/lib/payouts.unit.test.ts`
 
 **Interfaces:**
-- Consumes: Task 1 (`Payments.getPayoutAccount`, `PayoutAccountSnapshot`, `PaymentProviderError`); Task 3 (`PayoutAccountRepo`, `PayoutAccount`, `PayoutAccountStatus`, `PayoutAccountSnapshotInput`, `makePayoutAccountRepoTest`).
+- Consumes: Task 1 (`Payments.getPayoutAccount`, `Payments.provider`, `PayoutAccountSnapshot`, `PaymentProviderError`); Task 3 (`PayoutAccountRepo`, `PayoutAccount`, `PayoutAccountStatus`, `PayoutAccountSnapshotInput`, `makePayoutAccountRepoTest`, `makeInMemoryPayoutAccountRepo`, `dummyPayoutAccount`, `AppliedPayoutSnapshot`).
 - Produces:
   - `@repo/env`: `payoutsConfig: Config<{ appWebOrigin: string; refreshAfterMinutes: number }>`
   - `apps/api/src/lib/payouts.ts`:
@@ -880,17 +1018,17 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
     - `isStale(account: Pick<PayoutAccount, 'refreshedAt'>, now: Date, refreshAfterMinutes: number): boolean`
     - `requirementLabels(codes: ReadonlyArray<string>): Array<string>`
     - `toSnapshotInput(snapshot: PayoutAccountSnapshot, refreshedAt: Date): PayoutAccountSnapshotInput`
-    - `loadPayoutAccount(userId): Effect<PayoutAccount | null, PayoutsRepoError, PayoutAccountRepo>`
+    - `loadPayoutAccount(userId): Effect<PayoutAccount | null, PayoutsRepoError, Payments | PayoutAccountRepo>` (null when the row belongs to another provider)
     - `refreshPayoutAccount(account: PayoutAccount): Effect<PayoutAccount, PayoutsProviderError | PayoutsRepoError, Payments | PayoutAccountRepo>`
     - `currentPayoutAccount(userId): Effect<PayoutAccount | null, PayoutsRepoError, Payments | PayoutAccountRepo>` (re-fetches when stale; a provider failure keeps the stored row)
     - `isPaymentReady(userId): Effect<boolean, never, Payments | PayoutAccountRepo>` (for pieces 3 and 4)
-    - `hasReadyPayoutAccount(userId): Effect<boolean, never, PayoutAccountRepo>` (stored snapshot only; for the contract detail)
+    - `hasReadyPayoutAccount(userId): Effect<boolean, never, Payments | PayoutAccountRepo>` (stored snapshot only; for the contract detail, whose program already needs `Payments` for 2a's `cardOnFile`)
     - `handleAccountUpdated(accountReference): Effect<'applied' | 'unknown_account', PayoutsProviderError | PayoutsRepoError, Payments | PayoutAccountRepo>`
-  - `apps/api/src/lib/payouts.test-support.ts`: `storedPayoutAccount(overrides?)`, `readySnapshot(overrides?)`, `type AppliedSnapshot`, `makeInMemoryPayoutAccountRepo(initial?, applied?) → { layer, rows }`
+  - `apps/api/src/lib/payouts.test-support.ts`: `readySnapshot(overrides?)` (the db fixtures live in `@repo/db`, Task 3)
 
 - [ ] **Step 1: Add the config**
 
-In `packages/env/src/index.ts`, after `contractConfig`:
+In `packages/env/src/index.ts`, after 2a's `stripeConfig`:
 
 ```ts
 // Helper payout accounts (Stripe Connect, piece 2b).
@@ -909,7 +1047,7 @@ export const payoutsConfig = Config.all({
 });
 ```
 
-Append to both `.env.example` (root) and `apps/api/.env.example`:
+Append to both `.env.example` (root, after the safety-verification block — 2a added no Stripe block there) and `apps/api/.env.example` (after 2a's Stripe block, which ends `PAYMENTS_ABANDON_AFTER_HOURS=24`):
 
 ```dotenv
 # --- Helper payout accounts (Stripe Connect, piece 2b) ---
@@ -920,38 +1058,16 @@ APP_WEB_ORIGIN=http://localhost:5175
 PAYOUTS_REFRESH_AFTER_MINUTES=60
 ```
 
-(`apps/api/.env.example` has uncommitted user edits for 2a's `STRIPE_SECRET_KEY`; append below them and don't revert anything.)
-
-- [ ] **Step 2: Write the shared test support**
+- [ ] **Step 2: Write the api test support**
 
 `apps/api/src/lib/payouts.test-support.ts`:
 
 ```ts
-import {
-  makePayoutAccountRepoTest,
-  type PayoutAccount,
-  type PayoutAccountSnapshotInput
-} from '@repo/db';
 import type { PayoutAccountSnapshot } from '@repo/payments';
-import { Effect } from 'effect';
 
-/** Test-only fixtures shared by the payouts, webhook and contracts suites. */
-export const storedPayoutAccount = (overrides: Partial<PayoutAccount> = {}): PayoutAccount => ({
-  userId: 'helper-1',
-  provider: 'stripe',
-  accountReference: 'acct_123',
-  status: 'onboarding',
-  detailsSubmitted: false,
-  payoutsEnabled: false,
-  transfersActive: false,
-  requirementsDue: [],
-  disabledReason: null,
-  refreshedAt: new Date(),
-  createdAt: new Date('2026-10-01T00:00:00.000Z'),
-  updatedAt: new Date('2026-10-01T00:00:00.000Z'),
-  ...overrides
-});
-
+/** Test-only: a provider snapshot of a fully enabled account. The stored-row
+ * fixtures (`dummyPayoutAccount`, `makeInMemoryPayoutAccountRepo`) live in
+ * `@repo/db`, next to the repo. */
 export const readySnapshot = (
   overrides: Partial<PayoutAccountSnapshot> = {}
 ): PayoutAccountSnapshot => ({
@@ -962,36 +1078,6 @@ export const readySnapshot = (
   disabledReason: null,
   ...overrides
 });
-
-export type AppliedSnapshot = { userId: string; snapshot: PayoutAccountSnapshotInput };
-
-export const makeInMemoryPayoutAccountRepo = (
-  initial: ReadonlyArray<PayoutAccount> = [],
-  applied: Array<AppliedSnapshot> = []
-) => {
-  const rows = new Map(initial.map((row) => [row.userId, row] as const));
-  const layer = makePayoutAccountRepoTest({
-    findByUserId: (userId) => Effect.succeed(rows.get(userId) ?? null),
-    findByReference: (reference) =>
-      Effect.succeed([...rows.values()].find((row) => row.accountReference === reference) ?? null),
-    create: (input) =>
-      Effect.sync(() => {
-        const existing = rows.get(input.userId);
-        if (existing) return existing;
-        const row = storedPayoutAccount({ ...input, refreshedAt: null });
-        rows.set(input.userId, row);
-        return row;
-      }),
-    applySnapshot: (userId, snapshot) =>
-      Effect.sync(() => {
-        applied.push({ userId, snapshot });
-        const row = { ...(rows.get(userId) ?? storedPayoutAccount({ userId })), ...snapshot };
-        rows.set(userId, row);
-        return row;
-      })
-  });
-  return { layer, rows };
-};
 ```
 
 - [ ] **Step 3: Write the failing tests**
@@ -1000,7 +1086,12 @@ export const makeInMemoryPayoutAccountRepo = (
 
 ```ts
 import { SqlError } from '@effect/sql/SqlError';
-import { makePayoutAccountRepoTest } from '@repo/db';
+import {
+  dummyPayoutAccount,
+  makeInMemoryPayoutAccountRepo,
+  makePayoutAccountRepoTest,
+  type AppliedPayoutSnapshot
+} from '@repo/db';
 import { makePaymentsTest, PaymentProviderError } from '@repo/payments';
 import { Effect, Layer } from 'effect';
 import { describe, expect, it } from 'vitest';
@@ -1012,21 +1103,18 @@ import {
   isStale,
   requirementLabels
 } from './payouts';
-import {
-  makeInMemoryPayoutAccountRepo,
-  readySnapshot,
-  storedPayoutAccount,
-  type AppliedSnapshot
-} from './payouts.test-support';
+import { readySnapshot } from './payouts.test-support';
 
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60 * 1000);
 
+/** A Stripe-backed Payments (dummyPayoutAccount rows are `provider: 'stripe'`). */
 const paymentsReturning = (
   fetched: Array<string>,
   snapshot = readySnapshot(),
   fail = false
 ) =>
   makePaymentsTest({
+    provider: 'stripe',
     getPayoutAccount: (reference) => {
       fetched.push(reference);
       return fail
@@ -1122,7 +1210,7 @@ describe('isPaymentReady', () => {
   it('uses a fresh stored snapshot without calling the provider', async () => {
     const fetched: Array<string> = [];
     const { layer } = makeInMemoryPayoutAccountRepo([
-      storedPayoutAccount({ status: 'ready', refreshedAt: minutesAgo(5) })
+      dummyPayoutAccount({ status: 'ready', refreshedAt: minutesAgo(5) })
     ]);
     const ready = await Effect.runPromise(
       isPaymentReady('helper-1').pipe(Effect.provide(Layer.merge(layer, paymentsReturning(fetched))))
@@ -1133,9 +1221,9 @@ describe('isPaymentReady', () => {
 
   it('re-fetches a stale snapshot and stores it', async () => {
     const fetched: Array<string> = [];
-    const applied: Array<AppliedSnapshot> = [];
+    const applied: Array<AppliedPayoutSnapshot> = [];
     const { layer } = makeInMemoryPayoutAccountRepo(
-      [storedPayoutAccount({ status: 'onboarding', refreshedAt: minutesAgo(90) })],
+      [dummyPayoutAccount({ status: 'onboarding', refreshedAt: minutesAgo(90) })],
       applied
     );
     const ready = await Effect.runPromise(
@@ -1148,7 +1236,7 @@ describe('isPaymentReady', () => {
 
   it('keeps the stored answer when the provider is down', async () => {
     const { layer } = makeInMemoryPayoutAccountRepo([
-      storedPayoutAccount({ status: 'restricted', refreshedAt: minutesAgo(90) })
+      dummyPayoutAccount({ status: 'restricted', refreshedAt: minutesAgo(90) })
     ]);
     const ready = await Effect.runPromise(
       isPaymentReady('helper-1').pipe(
@@ -1174,23 +1262,43 @@ describe('isPaymentReady', () => {
 
 describe('hasReadyPayoutAccount', () => {
   it('reads the stored status only', async () => {
+    const fetched: Array<string> = [];
     const { layer } = makeInMemoryPayoutAccountRepo([
-      storedPayoutAccount({ status: 'ready', refreshedAt: minutesAgo(600) })
+      dummyPayoutAccount({ status: 'ready', refreshedAt: minutesAgo(600) })
     ]);
-    expect(await Effect.runPromise(hasReadyPayoutAccount('helper-1').pipe(Effect.provide(layer)))).toBe(
-      true
-    );
-    expect(await Effect.runPromise(hasReadyPayoutAccount('nobody').pipe(Effect.provide(layer)))).toBe(
-      false
-    );
+    const provided = Layer.merge(layer, paymentsReturning(fetched));
+    expect(
+      await Effect.runPromise(hasReadyPayoutAccount('helper-1').pipe(Effect.provide(provided)))
+    ).toBe(true);
+    expect(
+      await Effect.runPromise(hasReadyPayoutAccount('nobody').pipe(Effect.provide(provided)))
+    ).toBe(false);
+    expect(fetched).toEqual([]);
+  });
+
+  it("ignores an account from another provider (2a's mock → stripe rule)", async () => {
+    const { layer } = makeInMemoryPayoutAccountRepo([
+      dummyPayoutAccount({
+        provider: 'mock',
+        accountReference: 'mock_acct_helper-1',
+        status: 'ready'
+      })
+    ]);
+    expect(
+      await Effect.runPromise(
+        hasReadyPayoutAccount('helper-1').pipe(
+          Effect.provide(Layer.merge(layer, paymentsReturning([])))
+        )
+      )
+    ).toBe(false);
   });
 });
 
 describe('handleAccountUpdated', () => {
   it('re-fetches and stores the snapshot of a known account', async () => {
     const fetched: Array<string> = [];
-    const applied: Array<AppliedSnapshot> = [];
-    const { layer, rows } = makeInMemoryPayoutAccountRepo([storedPayoutAccount()], applied);
+    const applied: Array<AppliedPayoutSnapshot> = [];
+    const { layer, rows } = makeInMemoryPayoutAccountRepo([dummyPayoutAccount()], applied);
     const outcome = await Effect.runPromise(
       handleAccountUpdated('acct_123').pipe(
         Effect.provide(Layer.merge(layer, paymentsReturning(fetched)))
@@ -1203,7 +1311,7 @@ describe('handleAccountUpdated', () => {
 
   it('ignores an account Poppynz does not know', async () => {
     const fetched: Array<string> = [];
-    const { layer } = makeInMemoryPayoutAccountRepo([storedPayoutAccount()]);
+    const { layer } = makeInMemoryPayoutAccountRepo([dummyPayoutAccount()]);
     const outcome = await Effect.runPromise(
       handleAccountUpdated('acct_unknown').pipe(
         Effect.provide(Layer.merge(layer, paymentsReturning(fetched)))
@@ -1214,8 +1322,8 @@ describe('handleAccountUpdated', () => {
   });
 
   it('is safe to apply twice (a redelivered event lands on the same state)', async () => {
-    const applied: Array<AppliedSnapshot> = [];
-    const { layer, rows } = makeInMemoryPayoutAccountRepo([storedPayoutAccount()], applied);
+    const applied: Array<AppliedPayoutSnapshot> = [];
+    const { layer, rows } = makeInMemoryPayoutAccountRepo([dummyPayoutAccount()], applied);
     const provided = Layer.merge(layer, paymentsReturning([]));
     await Effect.runPromise(handleAccountUpdated('acct_123').pipe(Effect.provide(provided)));
     const once = rows.get('helper-1');
@@ -1225,7 +1333,7 @@ describe('handleAccountUpdated', () => {
   });
 
   it('fails with PayoutsProviderError so the webhook answers 500 and Stripe retries', async () => {
-    const { layer } = makeInMemoryPayoutAccountRepo([storedPayoutAccount()]);
+    const { layer } = makeInMemoryPayoutAccountRepo([dummyPayoutAccount()]);
     const exit = await Effect.runPromiseExit(
       handleAccountUpdated('acct_123').pipe(
         Effect.provide(Layer.merge(layer, paymentsReturning([], readySnapshot(), true)))
@@ -1346,11 +1454,18 @@ export const toSnapshotInput = (
   refreshedAt
 });
 
+/** The helper's account under the CURRENT provider. A row left by another
+ * provider (a `mock_acct_…` after switching to Stripe) reads as no account —
+ * 2a's rule for stored references (`toCard` in `@repo/billing`). */
 export const loadPayoutAccount = (userId: string) =>
-  PayoutAccountRepo.pipe(
-    Effect.flatMap((repo) => repo.findByUserId(userId)),
-    (errors) => mapPayoutsRepoError(errors)
-  );
+  Effect.gen(function* () {
+    const repo = yield* PayoutAccountRepo;
+    const payments = yield* Payments;
+    const account = yield* repo
+      .findByUserId(userId)
+      .pipe((errors) => mapPayoutsRepoError(errors));
+    return account !== null && account.provider === payments.provider ? account : null;
+  });
 
 /** Re-fetch from the provider and store. Never trusts a webhook body. */
 export const refreshPayoutAccount = (account: PayoutAccount) =>
@@ -1395,7 +1510,7 @@ export const isPaymentReady = (
 /** Stored snapshot only — cheap enough for every contract detail read. */
 export const hasReadyPayoutAccount = (
   userId: string
-): Effect.Effect<boolean, never, PayoutAccountRepo> =>
+): Effect.Effect<boolean, never, Payments | PayoutAccountRepo> =>
   loadPayoutAccount(userId).pipe(
     Effect.map((account) => account?.status === 'ready'),
     Effect.orElseSucceed(() => false)
@@ -1405,10 +1520,11 @@ export const hasReadyPayoutAccount = (
 export const handleAccountUpdated = (accountReference: string) =>
   Effect.gen(function* () {
     const repo = yield* PayoutAccountRepo;
+    const payments = yield* Payments;
     const account = yield* repo
       .findByReference(accountReference)
       .pipe((errors) => mapPayoutsRepoError(errors));
-    if (!account) return 'unknown_account' as const;
+    if (!account || account.provider !== payments.provider) return 'unknown_account' as const;
     yield* refreshPayoutAccount(account);
     return 'applied' as const;
   });
@@ -1440,7 +1556,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 - Create: `apps/api/src/routes/app/payouts/payouts.handler.ts`, `apps/api/src/routes/app/payouts/payouts.ts`, `apps/api/src/routes/app/payouts/payouts.unit.test.ts`
 
 **Interfaces:**
-- Consumes: Task 4 (`currentPayoutAccount`, `loadPayoutAccount`, `refreshPayoutAccount`, `requirementLabels`, `payoutsPolicy`, `mapPayoutsProviderError`, `mapPayoutsRepoError`, test support); Task 3 (`PayoutAccountRepo.create`); Task 1 (`Payments.createPayoutAccount`, `createOnboardingLink`, `createDashboardLink`, `provider`).
+- Consumes: Task 4 (`currentPayoutAccount`, `loadPayoutAccount`, `refreshPayoutAccount`, `requirementLabels`, `payoutsPolicy`, `mapPayoutsProviderError`, `mapPayoutsRepoError`, `readySnapshot`); Task 3 (`PayoutAccountRepo.create`, `makeInMemoryPayoutAccountRepo`, `dummyPayoutAccount`, `AppliedPayoutSnapshot`); Task 1 (`Payments.createPayoutAccount`, `createOnboardingLink`, `createDashboardLink`, `provider`).
 - Produces:
   - Response shape `PayoutsResponse = { status: PayoutAccountStatus | null; paymentReady: boolean; requirementsDue: Array<string>; provider: PaymentProvider; hasAccount: boolean }` for `GET /payouts` and `POST /payouts/refresh`
   - `POST /payouts/onboarding` → `{ url: string }`; `POST /payouts/dashboard` → `{ url: string }`
@@ -1468,8 +1584,12 @@ In `apps/api/src/lib/auth-roles.ts`:
 
 ```ts
 import {
+  dummyPayoutAccount,
+  makeInMemoryPayoutAccountRepo,
   makeSessionRepoTest,
   makeUserRepoTest,
+  type AppliedPayoutSnapshot,
+  type PayoutAccount,
   type Session,
   type User
 } from '@repo/db';
@@ -1479,13 +1599,7 @@ import { Hono } from 'hono';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
-import {
-  makeInMemoryPayoutAccountRepo,
-  readySnapshot,
-  storedPayoutAccount,
-  type AppliedSnapshot
-} from '@/api/lib/payouts.test-support';
-import type { PayoutAccount } from '@repo/db';
+import { readySnapshot } from '@/api/lib/payouts.test-support';
 import {
   getPayoutsRouteProgram,
   payoutsDashboardRouteProgram,
@@ -1531,7 +1645,7 @@ type Recorded = {
   links: Array<{ reference: string; returnUrl: string; refreshUrl: string }>;
   fetched: Array<string>;
   dashboards: Array<string>;
-  applied: Array<AppliedSnapshot>;
+  applied: Array<AppliedPayoutSnapshot>;
 };
 
 const makeLayer = (
@@ -1628,7 +1742,7 @@ describe('GET /payouts', () => {
         Effect.provide(
           makeLayer({
             recorded,
-            accounts: [storedPayoutAccount({ status: 'onboarding', refreshedAt: minutesAgo(30) })]
+            accounts: [dummyPayoutAccount({ status: 'onboarding', refreshedAt: minutesAgo(30) })]
           })
         )
       )
@@ -1644,7 +1758,7 @@ describe('GET /payouts', () => {
         Effect.provide(
           makeLayer({
             recorded,
-            accounts: [storedPayoutAccount({ status: 'onboarding', refreshedAt: minutesAgo(61) })]
+            accounts: [dummyPayoutAccount({ status: 'onboarding', refreshedAt: minutesAgo(61) })]
           })
         )
       )
@@ -1660,7 +1774,7 @@ describe('GET /payouts', () => {
     await Effect.runPromise(
       getPayoutsRouteProgram(new Headers()).pipe(
         Effect.provide(
-          makeLayer({ recorded, accounts: [storedPayoutAccount({ refreshedAt: minutesAgo(15) })] })
+          makeLayer({ recorded, accounts: [dummyPayoutAccount({ refreshedAt: minutesAgo(15) })] })
         )
       )
     );
@@ -1673,7 +1787,7 @@ describe('GET /payouts', () => {
         Effect.provide(
           makeLayer({
             providerFails: true,
-            accounts: [storedPayoutAccount({ status: 'onboarding', refreshedAt: minutesAgo(90) })]
+            accounts: [dummyPayoutAccount({ status: 'onboarding', refreshedAt: minutesAgo(90) })]
           })
         )
       )
@@ -1687,7 +1801,7 @@ describe('GET /payouts', () => {
         Effect.provide(
           makeLayer({
             accounts: [
-              storedPayoutAccount({
+              dummyPayoutAccount({
                 status: 'restricted',
                 detailsSubmitted: true,
                 requirementsDue: ['external_account', 'individual.verification.document'],
@@ -1748,11 +1862,33 @@ describe('POST /payouts/onboarding', () => {
     const recorded: Recorded = { created: [], links: [], fetched: [], dashboards: [], applied: [] };
     await Effect.runPromise(
       startPayoutsOnboardingRouteProgram(new Headers()).pipe(
-        Effect.provide(makeLayer({ recorded, accounts: [storedPayoutAccount()] }))
+        Effect.provide(makeLayer({ recorded, accounts: [dummyPayoutAccount()] }))
       )
     );
     expect(recorded.created).toEqual([]);
     expect(recorded.links[0].reference).toBe('acct_123');
+  });
+
+  it('replaces an account left by another provider (mock → stripe) with a Stripe one', async () => {
+    const recorded: Recorded = { created: [], links: [], fetched: [], dashboards: [], applied: [] };
+    await Effect.runPromise(
+      startPayoutsOnboardingRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            recorded,
+            accounts: [
+              dummyPayoutAccount({
+                provider: 'mock',
+                accountReference: 'mock_acct_helper-1',
+                status: 'ready'
+              })
+            ]
+          })
+        )
+      )
+    );
+    expect(recorded.created).toEqual([{ userId: 'helper-1', email: 'priya@example.com' }]);
+    expect(recorded.links[0].reference).toBe('acct_new');
   });
 
   it('fails with PayoutsProviderError when Stripe refuses', async () => {
@@ -1780,7 +1916,7 @@ describe('POST /payouts/refresh', () => {
     const result = await Effect.runPromise(
       refreshPayoutsRouteProgram(new Headers()).pipe(
         Effect.provide(
-          makeLayer({ recorded, accounts: [storedPayoutAccount({ refreshedAt: new Date() })] })
+          makeLayer({ recorded, accounts: [dummyPayoutAccount({ refreshedAt: new Date() })] })
         )
       )
     );
@@ -1800,7 +1936,7 @@ describe('POST /payouts/dashboard', () => {
   it('returns the Express dashboard link', async () => {
     const result = await Effect.runPromise(
       payoutsDashboardRouteProgram(new Headers()).pipe(
-        Effect.provide(makeLayer({ accounts: [storedPayoutAccount({ status: 'ready' })] }))
+        Effect.provide(makeLayer({ accounts: [dummyPayoutAccount({ status: 'ready' })] }))
       )
     );
     expect(result).toEqual({ url: 'https://connect.stripe.com/express/acct_123' });
@@ -2096,16 +2232,19 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `packages/payments/src/webhook-secrets.ts`, `packages/payments/src/webhook-secrets.test.ts`
-- Modify: `packages/payments/src/stripe.ts` (2a's `verifyWebhook`), `packages/env/src/index.ts` (`stripeConfig`), `apps/api/src/routes/webhooks/stripe.ts` (2a), 2a's webhook unit test (`apps/api/src/routes/webhooks/stripe.unit.test.ts` or wherever 2a put it), `apps/api/.env.example`, `docs/activating-stripe-connect.md`
+- Modify: `packages/payments/src/stripe.ts` (2a's `makeStripePayments` options and `verifyWebhook`), `packages/payments/src/stripe.test.ts` (2a), `packages/payments/src/layer.ts` (2a's `PaymentsLive`), `packages/env/src/index.ts` (`stripeConfig`), `apps/api/src/routes/webhooks/stripe.ts` (2a's `processStripeEvent`), `apps/api/src/routes/webhooks/stripe.unit.test.ts` (2a's `makeWorld`), `apps/api/.env.example`, `docs/activating-stripe-connect.md`
 
 **Interfaces:**
-- Consumes: Task 4 `handleAccountUpdated(accountReference)` and its errors `PayoutsProviderError | PayoutsRepoError`; 2a's verified event `{ eventId, type, objectId, account? }`, its `StripeWebhookEventRepo` (`record`, `markProcessed`, `markFailed`) and its dispatcher.
+- Consumes: Task 4 `handleAccountUpdated(accountReference)` (fails with `PayoutsProviderError | PayoutsRepoError`); 2a's `PaymentWebhookEvent` (`{ eventId, type, objectId, paymentReference, account }`), `processStripeEvent(event)` (returns a log-note string; any failure makes `stripeWebhookProgram` call `markFailed` and answer 500), the `makeWorld(options)` harness in `stripe.unit.test.ts` (`world.post(signature?, body?)`, `world.log.{recorded,processed,failed}`, `options.verified` / `options.seen`).
 - Produces:
-  - `constructEventWithAnySecret<T>(construct: (secret: string) => T, secrets: ReadonlyArray<string>): T`
+  - `constructEventWithAnySecret<T>(construct: (secret: string) => Promise<T>, secrets: ReadonlyArray<string>): Promise<T>`
   - `stripeConfig.connectWebhookSecret: Option<Redacted<string>>` (env `STRIPE_CONNECT_WEBHOOK_SECRET`)
-  - Webhook behaviour: `account.updated` → `handleAccountUpdated(objectId)`; unknown account → recorded, 200; provider/DB failure → `markFailed`, 500.
+  - `makeStripePayments({ client, webhookSecret, connectWebhookSecret? })` — `connectWebhookSecret?: string | null`, default `null`
+  - Webhook behaviour: `account.updated` → `handleAccountUpdated(event.objectId)` (for this event the object IS the connected account, so `objectId === account`); unknown account → recorded, 200; provider/DB failure → `markFailed`, 500.
 
-Why the second secret: Stripe delivers Connect events (`account.updated` on connected accounts) only to endpoints created with "Listen to events on Connected accounts", and each dashboard endpoint has its own signing secret. Locally `stripe listen` signs both streams with one secret, but staging/live will have two endpoints pointing at the same `/webhooks/stripe` URL. Verification stays mandatory: an event must match one of the configured secrets.
+Why the second secret: Stripe delivers Connect events (`account.updated` on connected accounts) only to endpoints created with "Listen to events on Connected accounts", and each dashboard endpoint has its own signing secret. Locally `stripe listen` signs both streams with one secret, but staging/live will have two endpoints pointing at the same `/webhooks/stripe` URL. Verification stays mandatory: `STRIPE_WEBHOOK_SECRET` is still required (2a refuses everything without it), and an event must match one of the configured secrets.
+
+stripe@23 verifies asynchronously (`constructEventAsync`; 2a's `StripeApi.webhooks` is `Pick<Stripe['webhooks'], 'constructEventAsync'>`), so the helper takes and returns promises.
 
 - [ ] **Step 1: Write the failing test for the multi-secret helper**
 
@@ -2115,28 +2254,38 @@ Why the second secret: Stripe delivers Connect events (`account.updated` on conn
 import { describe, expect, it } from 'bun:test';
 import { constructEventWithAnySecret } from './webhook-secrets';
 
-const constructWith = (validSecret: string) => (secret: string) => {
+const constructWith = (validSecret: string) => async (secret: string) => {
   if (secret !== validSecret) throw new Error(`bad signature for ${secret}`);
   return { id: 'evt_1' };
 };
 
 describe('constructEventWithAnySecret', () => {
-  it('accepts an event signed with the platform secret', () => {
-    expect(constructEventWithAnySecret(constructWith('whsec_platform'), ['whsec_platform', 'whsec_connect'])).toEqual({ id: 'evt_1' });
+  it('accepts an event signed with the platform secret', async () => {
+    expect(
+      await constructEventWithAnySecret(constructWith('whsec_platform'), [
+        'whsec_platform',
+        'whsec_connect'
+      ])
+    ).toEqual({ id: 'evt_1' });
   });
 
-  it('accepts an event signed with the Connect secret', () => {
-    expect(constructEventWithAnySecret(constructWith('whsec_connect'), ['whsec_platform', 'whsec_connect'])).toEqual({ id: 'evt_1' });
+  it('accepts an event signed with the Connect secret', async () => {
+    expect(
+      await constructEventWithAnySecret(constructWith('whsec_connect'), [
+        'whsec_platform',
+        'whsec_connect'
+      ])
+    ).toEqual({ id: 'evt_1' });
   });
 
-  it('rejects an event matching neither, with the last verification error', () => {
-    expect(() =>
+  it('rejects an event matching neither, with the last verification error', async () => {
+    await expect(
       constructEventWithAnySecret(constructWith('whsec_other'), ['whsec_platform', 'whsec_connect'])
-    ).toThrow('bad signature for whsec_connect');
+    ).rejects.toThrow('bad signature for whsec_connect');
   });
 
-  it('rejects everything when no secret is configured', () => {
-    expect(() => constructEventWithAnySecret(constructWith('x'), [])).toThrow(
+  it('rejects everything when no secret is configured', async () => {
+    await expect(constructEventWithAnySecret(constructWith('x'), [])).rejects.toThrow(
       'no Stripe webhook secret configured'
     );
   });
@@ -2157,16 +2306,17 @@ Expected: FAIL — `Cannot find module './webhook-secrets'`.
  * Stripe signs platform events and Connect events with different endpoint
  * secrets once they are registered as two dashboard endpoints (both pointing
  * at /webhooks/stripe). An event is accepted when it verifies against ANY
- * configured secret — never when none is configured.
+ * configured secret — never when none is configured. Async because stripe@23
+ * verifies with `constructEventAsync` (SubtleCrypto under Bun).
  */
-export const constructEventWithAnySecret = <T>(
-  construct: (secret: string) => T,
+export const constructEventWithAnySecret = async <T>(
+  construct: (secret: string) => Promise<T>,
   secrets: ReadonlyArray<string>
-): T => {
+): Promise<T> => {
   let lastError: unknown = new Error('no Stripe webhook secret configured');
   for (const secret of secrets) {
     try {
-      return construct(secret);
+      return await construct(secret);
     } catch (error) {
       lastError = error;
     }
@@ -2180,9 +2330,47 @@ export const constructEventWithAnySecret = <T>(
 Run: `cd packages/payments && bun test src/webhook-secrets.test.ts`
 Expected: PASS (4 tests).
 
-- [ ] **Step 5: Wire the Connect secret into config and `verifyWebhook`**
+- [ ] **Step 5: Write the failing Connect-secret case in 2a's adapter suite**
 
-`packages/env/src/index.ts`, inside 2a's `stripeConfig = Config.all({ … })`, next to its webhook secret entry:
+In `packages/payments/src/stripe.test.ts`, inside `describe('verifyWebhook', () => { … })`, after `'refuses everything when no webhook secret is configured'`, add (it reuses 2a's `payments`, `fakeStripe` and `WEBHOOK_SECRET`):
+
+```ts
+  it('accepts a Connect event signed with the Connect endpoint secret, keeping its account', async () => {
+    const connectPayload = JSON.stringify({
+      id: 'evt_2',
+      object: 'event',
+      type: 'account.updated',
+      account: 'acct_123',
+      data: { object: { id: 'acct_123', object: 'account' } }
+    });
+    const header = await Stripe.webhooks.generateTestHeaderStringAsync({
+      payload: connectPayload,
+      secret: 'whsec_connect'
+    });
+    const withConnect = makeStripePayments({
+      client: fakeStripe().client,
+      webhookSecret: WEBHOOK_SECRET,
+      connectWebhookSecret: 'whsec_connect'
+    });
+    expect(await Effect.runPromise(withConnect.verifyWebhook(connectPayload, header))).toEqual({
+      eventId: 'evt_2',
+      type: 'account.updated',
+      objectId: 'acct_123',
+      paymentReference: null,
+      account: 'acct_123'
+    });
+    // Without the Connect secret configured, the same delivery is refused.
+    const exit = await Effect.runPromiseExit(payments.verifyWebhook(connectPayload, header));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+```
+
+Run: `cd packages/payments && bun test src/stripe.test.ts -t "Connect endpoint secret"`
+Expected: FAIL — the Connect-signed delivery is refused (only `STRIPE_WEBHOOK_SECRET` is tried).
+
+- [ ] **Step 6: Wire the Connect secret into config, the adapter and the layer**
+
+`packages/env/src/index.ts`, inside 2a's `stripeConfig = Config.all({ … })`, after `webhookSecret: Config.option(Config.redacted('STRIPE_WEBHOOK_SECRET')),`:
 
 ```ts
   // The Connect endpoint's signing secret (account.updated on connected
@@ -2191,20 +2379,58 @@ Expected: PASS (4 tests).
   connectWebhookSecret: Config.option(Config.redacted('STRIPE_CONNECT_WEBHOOK_SECRET')),
 ```
 
-`packages/payments/src/stripe.ts`: in 2a's `verifyWebhook`, replace the single `stripe.webhooks.constructEvent(rawBody, signatureHeader, <webhook secret>)` call with the multi-secret helper. With 2a's secret written here as `webhookSecret` (a string) and the new option threaded through the same options object 2a uses for it:
+`packages/payments/src/stripe.ts`:
+
+1. Add the import below the `./stripe-connect` import (Task 2):
 
 ```ts
 import { constructEventWithAnySecret } from './webhook-secrets';
 ```
 
+2. Replace the head of `makeStripePayments` (its options type and destructuring):
+
 ```ts
-      const event = constructEventWithAnySecret(
-        (secret) => stripe.webhooks.constructEvent(rawBody, signatureHeader, secret),
-        [webhookSecret, ...(connectWebhookSecret ? [connectWebhookSecret] : [])]
-      );
+export const makeStripePayments = (options: {
+  client: StripeApi;
+  /** Null when STRIPE_WEBHOOK_SECRET is unset: every delivery is then refused. */
+  webhookSecret: string | null;
+  /** STRIPE_CONNECT_WEBHOOK_SECRET — the Connect endpoint's secret, tried
+   * after the platform one. Optional (local `stripe listen` uses one secret). */
+  connectWebhookSecret?: string | null;
+}): Context.Tag.Service<Payments> => {
+  const { client, webhookSecret, connectWebhookSecret = null } = options;
 ```
 
-Where 2a builds the Stripe service from `stripeConfig` (the provider switch), pass `Option.getOrUndefined(config.connectWebhookSecret)` unwrapped with `Redacted.value` alongside the existing webhook secret. Keep 2a's catch that turns a throw into `PaymentWebhookSignatureError`; 2a's signature tests (valid, tampered, wrong secret, stale timestamp) must still pass unchanged.
+3. In `verifyWebhook`, replace 2a's single-secret `Effect.tryPromise` (the `const event = yield* Effect.tryPromise({ try: () => client.webhooks.constructEventAsync(rawBody, signatureHeader, webhookSecret), … })`) with:
+
+```ts
+        // The async variant: under Bun the SDK resolves to its web build, whose
+        // SubtleCrypto provider cannot verify synchronously. Platform secret
+        // first, then the Connect endpoint's (piece 2b).
+        const event = yield* Effect.tryPromise({
+          try: () =>
+            constructEventWithAnySecret(
+              (secret) => client.webhooks.constructEventAsync(rawBody, signatureHeader, secret),
+              connectWebhookSecret === null ? [webhookSecret] : [webhookSecret, connectWebhookSecret]
+            ),
+          catch: (cause) =>
+            new PaymentWebhookSignatureError({
+              reason: cause instanceof Error ? cause.message : 'invalid signature'
+            })
+        });
+```
+
+Everything else in `verifyWebhook` stays: the `webhookSecret === null` and missing-header refusals before it, and the normalisation after it (which already sets `account: event.account ?? null`).
+
+`packages/payments/src/layer.ts`: in `PaymentsLive`, replace the final `return makeStripePayments({ client: makeStripeClient(secretKey), webhookSecret });` with:
+
+```ts
+    return makeStripePayments({
+      client: makeStripeClient(secretKey),
+      webhookSecret,
+      connectWebhookSecret: secretValue(config.connectWebhookSecret)
+    });
+```
 
 Append to `apps/api/.env.example` (below Task 4's block):
 
@@ -2214,139 +2440,178 @@ Append to `apps/api/.env.example` (below Task 4's block):
 STRIPE_CONNECT_WEBHOOK_SECRET=
 ```
 
-- [ ] **Step 6: Write the failing webhook test**
+Run: `cd packages/payments && bun test src`
+Expected: PASS — 2a's signature tests (valid, tampered, other secret, stale timestamp, no secret) unchanged, plus the Connect case.
 
-In 2a's webhook unit test file, next to its `payment_intent.succeeded` dispatch test, add the cases below. They reuse 2a's harness — written here as `runStripeWebhook(event, layer)` (signs a test payload and runs the route program) and `makeWebhookLayer(options)` (2a's test layer with an in-memory `StripeWebhookEventRepo` exposing `recorded`, `processed`, `failed` arrays). Rename to 2a's actual helpers; merge `makeInMemoryPayoutAccountRepo(...).layer` and a `makePaymentsTest({ getPayoutAccount })` override into 2a's layer the way its other tests add repos.
+- [ ] **Step 7: Write the failing webhook tests**
+
+In `apps/api/src/routes/webhooks/stripe.unit.test.ts`, give 2a's `makeWorld` a payout repo (every world gets one, since `processStripeEvent` now requires `PayoutAccountRepo`):
+
+1. Imports — add `dummyPayoutAccount`, `makeInMemoryPayoutAccountRepo` and `type PayoutAccount` to the `@repo/db` import; add `PaymentProviderError` to the `@repo/payments` import; add:
 
 ```ts
-import {
-  makeInMemoryPayoutAccountRepo,
-  readySnapshot,
-  storedPayoutAccount
-} from '@/api/lib/payouts.test-support';
+import { readySnapshot } from '@/api/lib/payouts.test-support';
+```
 
-describe('account.updated', () => {
-  const accountUpdated = (eventId = 'evt_acct_1', objectId = 'acct_123') => ({
-    id: eventId,
-    type: 'account.updated',
-    account: objectId,
-    data: { object: { id: objectId, object: 'account' } }
-  });
+2. In `makeWorld`'s `options` type, after `cardOnFile?: string | null;`:
+
+```ts
+    /** Helper payout accounts on file (piece 2b). */
+    payoutAccounts?: Array<PayoutAccount>;
+    /** Stripe can't be reached when a payout account is re-fetched. */
+    payoutProviderFails?: boolean;
+```
+
+3. In `makeWorld`'s `log` object, replace its last entry `updates: [] as Array<Partial<Payment>>` with:
+
+```ts
+    updates: [] as Array<Partial<Payment>>,
+    /** Payout accounts re-fetched from the provider. */
+    fetchedAccounts: [] as Array<string>
+```
+
+4. After the `const billing = makeInMemoryBillingCustomerRepo([...]);` statement:
+
+```ts
+  const payouts = makeInMemoryPayoutAccountRepo(options.payoutAccounts ?? []);
+```
+
+5. In the `makePaymentsTest({ provider: 'stripe', … })` call, after the `getCardSetup` override:
+
+```ts
+      getPayoutAccount: (reference) => {
+        log.fetchedAccounts.push(reference);
+        return options.payoutProviderFails
+          ? Effect.fail(new PaymentProviderError({ operation: 'getPayoutAccount', cause: 'down' }))
+          : Effect.succeed(readySnapshot());
+      },
+```
+
+6. In the `Layer.mergeAll(...)` list, after `billing.layer,` add `payouts.layer,`.
+
+7. In the returned object, add `payouts` (after `billing`).
+
+Then append a new suite at the end of the file:
+
+```ts
+describe('account.updated (piece 2b)', () => {
+  const accountUpdated = (overrides: Partial<PaymentWebhookEvent> = {}) =>
+    event({
+      eventId: 'evt_acct_1',
+      type: 'account.updated',
+      objectId: 'acct_123',
+      account: 'acct_123',
+      ...overrides
+    });
 
   it('re-fetches a known account and stores the snapshot', async () => {
-    const fetched: Array<string> = [];
-    const payouts = makeInMemoryPayoutAccountRepo([storedPayoutAccount()]);
-    const { layer, events } = makeWebhookLayer({
-      extra: [payouts.layer],
-      payments: {
-        getPayoutAccount: (reference: string) => {
-          fetched.push(reference);
-          return Effect.succeed(readySnapshot());
-        }
-      }
-    });
-    const response = await runStripeWebhook(accountUpdated(), layer);
+    const world = makeWorld({ verified: accountUpdated(), payoutAccounts: [dummyPayoutAccount()] });
+    const response = await world.post();
     expect(response.status).toBe(200);
-    expect(fetched).toEqual(['acct_123']);
-    expect(payouts.rows.get('helper-1')?.status).toBe('ready');
-    expect(events.processed).toEqual(['evt_acct_1']);
+    expect(world.log.fetchedAccounts).toEqual(['acct_123']);
+    expect(world.payouts.rows.get('helper-1')?.status).toBe('ready');
+    expect(world.log.processed).toEqual(['evt_acct_1']);
   });
 
   it('records an unknown account and answers 200', async () => {
-    const fetched: Array<string> = [];
-    const payouts = makeInMemoryPayoutAccountRepo([]);
-    const { layer, events } = makeWebhookLayer({
-      extra: [payouts.layer],
-      payments: {
-        getPayoutAccount: (reference: string) => {
-          fetched.push(reference);
-          return Effect.succeed(readySnapshot());
-        }
-      }
+    const world = makeWorld({
+      verified: accountUpdated({ eventId: 'evt_acct_2', objectId: 'acct_unknown', account: 'acct_unknown' }),
+      payoutAccounts: []
     });
-    const response = await runStripeWebhook(accountUpdated('evt_acct_2', 'acct_unknown'), layer);
+    const response = await world.post();
     expect(response.status).toBe(200);
-    expect(fetched).toEqual([]);
-    expect(events.recorded).toContain('evt_acct_2');
+    expect(world.log.fetchedAccounts).toEqual([]);
+    expect(world.log.recorded).toEqual(['evt_acct_2']);
+    expect(world.log.processed).toEqual(['evt_acct_2']);
   });
 
   it('answers 200 to a duplicate delivery without re-fetching', async () => {
-    const fetched: Array<string> = [];
-    const payouts = makeInMemoryPayoutAccountRepo([storedPayoutAccount()]);
-    const { layer } = makeWebhookLayer({
-      extra: [payouts.layer],
-      payments: {
-        getPayoutAccount: (reference: string) => {
-          fetched.push(reference);
-          return Effect.succeed(readySnapshot());
-        }
-      }
+    const world = makeWorld({
+      verified: accountUpdated(),
+      payoutAccounts: [dummyPayoutAccount()],
+      seen: 'processed'
     });
-    await runStripeWebhook(accountUpdated('evt_dup'), layer);
-    const again = await runStripeWebhook(accountUpdated('evt_dup'), layer);
-    expect(again.status).toBe(200);
-    expect(fetched).toEqual(['acct_123']);
+    const response = await world.post();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, duplicate: true });
+    expect(world.log.fetchedAccounts).toEqual([]);
   });
 
   it('marks the event failed and answers 500 when Stripe cannot be reached', async () => {
-    const payouts = makeInMemoryPayoutAccountRepo([storedPayoutAccount()]);
-    const { layer, events } = makeWebhookLayer({
-      extra: [payouts.layer],
-      payments: {
-        getPayoutAccount: () =>
-          Effect.fail(new PaymentProviderError({ operation: 'getPayoutAccount', cause: 'down' }))
-      }
+    const world = makeWorld({
+      verified: accountUpdated(),
+      payoutAccounts: [dummyPayoutAccount()],
+      payoutProviderFails: true
     });
-    const response = await runStripeWebhook(accountUpdated('evt_fail'), layer);
+    const response = await world.post();
     expect(response.status).toBe(500);
-    expect(events.failed).toContain('evt_fail');
+    expect(world.log.failed).toEqual(['evt_acct_1']);
+    expect(world.log.processed).toEqual([]);
   });
 });
 ```
 
-Run: `cd apps/api && bunx vitest run src/routes/webhooks -t "account.updated"`
-Expected: FAIL — the known-account case answers 200 without re-fetching (2a records `account.updated` as an unhandled type).
+Run: `cd apps/api && bunx vitest run src/routes/webhooks/stripe.unit.test.ts -t "account.updated"`
+Expected: FAIL — the known-account case answers 200 without re-fetching (`fetchedAccounts` is `[]`: 2a's placeholder returns `'account.updated: not handled yet'`), and the provider-failure case answers 200 instead of 500. The unknown-account and duplicate cases already pass.
 
-- [ ] **Step 7: Add the dispatcher case**
+- [ ] **Step 8: Replace 2a's placeholder case**
 
-In `apps/api/src/routes/webhooks/stripe.ts`, in 2a's dispatch over the verified event type (2a's spec lists `account.updated: handled by piece 2b`), add the case. With the verified event written as `event` and 2a's dispatch as a `switch` inside `Effect.gen`:
+In `apps/api/src/routes/webhooks/stripe.ts`:
+
+- add the import after the `@repo/payments` import:
 
 ```ts
 import { handleAccountUpdated } from '@/api/lib/payouts';
 ```
 
+- in `processStripeEvent`'s `switch (event.type)`, replace 2a's placeholder
+
 ```ts
-      // Connect: a helper's payout account changed. Wake-up signal only —
-      // the account is re-fetched; an unknown account is recorded and ignored.
+      case 'account.updated':
+        // Connected accounts arrive with piece 2b (helper payout accounts).
+        return 'account.updated: not handled yet';
+```
+
+with
+
+```ts
       case 'account.updated': {
-        yield* handleAccountUpdated(event.objectId);
-        break;
+        // Connect (piece 2b): a helper's payout account changed. A wake-up
+        // signal only — the account is re-fetched and stored; an account we
+        // don't know is acknowledged and ignored. The event's object IS the
+        // connected account, so objectId is its acct_ id.
+        const outcome = yield* handleAccountUpdated(event.objectId);
+        return `payout account: ${outcome}`;
       }
 ```
 
-If 2a's dispatcher maps its failure union by `_tag` (ending in `handleNever`), add the two new tags to the branch that calls `markFailed` and answers 500:
+No error mapping is needed: `stripeWebhookProgram` runs `processStripeEvent(event).pipe(Effect.exit)` and treats ANY failure (here `PayoutsProviderError` / `PayoutsRepoError`) as `markFailed` + 500. `PayoutAccountRepo` (Task 3) and `Payments` (2a) are already in `AppLive`, so the webhook runtime provides them.
 
-```ts
-    case 'PayoutsProviderError':
-    case 'PayoutsRepoError':
-```
-
-`PayoutAccountRepo` and `Payments` are already in `AppLive` (Task 3; 2a), so the webhook runtime provides them.
-
-- [ ] **Step 8: Run the webhook suite and the type-check**
+- [ ] **Step 9: Run the webhook suite and type-check the entry point**
 
 Run: `cd apps/api && bunx vitest run src/routes/webhooks`
-Expected: PASS (2a's cases and the four new ones).
+Expected: PASS (2a's cases and the four new ones; the credibled e2e unchanged).
 
 Run: `cd packages/payments && bun test src`
-Expected: PASS (2a's signature tests unchanged).
+Expected: PASS.
 
-Run: `cd apps/api && bunx tsc -p tsconfig.build.json --noEmit`
-Expected: no errors.
+`bun run build` only compiles `src/hc.ts`'s graph, which does not include the webhook routes, so type-check the entry point (and this task's test file) with 2a's throwaway config:
 
-- [ ] **Step 9: Document the live endpoints**
+```bash
+cd /run/media/hbt/work/poppynz/stripe-integration/apps/api
+cat > "${TMPDIR:-/tmp}/tsconfig.api-entry.json" <<JSON
+{ "extends": "$PWD/tsconfig.build.json",
+  "compilerOptions": { "noEmit": true, "declaration": false, "declarationMap": false, "rootDir": "$PWD/src" },
+  "files": ["$PWD/src/index.ts", "$PWD/src/hc.ts", "$PWD/src/routes/webhooks/stripe.unit.test.ts"] }
+JSON
+node_modules/.bin/tsc -p "${TMPDIR:-/tmp}/tsconfig.api-entry.json" && echo ENTRY_OK
+```
 
-In `docs/activating-stripe-connect.md`, replace the bullet that starts "A live webhook endpoint in the dashboard" with:
+Expected: `ENTRY_OK`.
+
+- [ ] **Step 10: Document the live endpoints**
+
+In `docs/activating-stripe-connect.md`, replace the bullet that starts "A live webhook endpoint in the dashboard pointing at" with:
 
 ```markdown
 - Two live webhook endpoints in the dashboard, both pointing at `https://<api host>/webhooks/stripe`:
@@ -2357,10 +2622,10 @@ In `docs/activating-stripe-connect.md`, replace the bullet that starts "A live w
 - `APP_WEB_ORIGIN=https://app.poppynz.com` (the default) — where Stripe's hosted onboarding returns helpers.
 ```
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add packages/payments/src/webhook-secrets.ts packages/payments/src/webhook-secrets.test.ts packages/payments/src/stripe.ts packages/env/src/index.ts apps/api/src/routes/webhooks apps/api/.env.example docs/activating-stripe-connect.md
+git add packages/payments/src/webhook-secrets.ts packages/payments/src/webhook-secrets.test.ts packages/payments/src/stripe.ts packages/payments/src/stripe.test.ts packages/payments/src/layer.ts packages/env/src/index.ts apps/api/src/routes/webhooks apps/api/.env.example docs/activating-stripe-connect.md
 git commit -m "feat(api): account.updated refreshes helper payout accounts; Connect webhook secret
 
 Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
@@ -2371,38 +2636,39 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 7: `payoutsReady` on the contract detail
 
 **Files:**
-- Modify: `apps/api/src/routes/app/contracts/contracts.handler.ts` (`getContractProgram`, ~line 1032)
-- Test: `apps/api/src/routes/app/contracts/contracts.unit.test.ts` (`makeLayer` ~line 227, `describe('GET /contracts/:id')` ~line 1710)
+- Modify: `apps/api/src/routes/app/contracts/contracts.handler.ts` (`getContractProgram`, line 1046)
+- Test: `apps/api/src/routes/app/contracts/contracts.unit.test.ts` (`makeLayer` line 230, `describe('GET /contracts/:id')` line 1738)
 
 **Interfaces:**
-- Consumes: Task 4 `hasReadyPayoutAccount(userId): Effect<boolean, never, PayoutAccountRepo>`; test support `storedPayoutAccount`; Task 3 `makePayoutAccountRepoTest`, `PayoutAccountStatus`.
-- Produces: contract detail field `payoutsReady: boolean | null` — `true`/`false` for the helper (provider) viewer, `null` for the family viewer. `actions.canAccept` is unchanged (never gated on it).
+- Consumes: Task 4 `hasReadyPayoutAccount(userId): Effect<boolean, never, Payments | PayoutAccountRepo>`; Task 3 `makePayoutAccountRepoTest`, `dummyPayoutAccount`, `PayoutAccountStatus`; 2a's `hasPaymentMethod` (computed just above, family-only, `null` for the provider).
+- Produces: contract detail field `payoutsReady: boolean | null` — `true`/`false` for the helper (provider) viewer, `null` for the family viewer (the mirror of 2a's `hasPaymentMethod`). `actions.canAccept` is unchanged (never gated on it).
 
 - [ ] **Step 1: Give the test layer a payout account**
 
 In `contracts.unit.test.ts`:
-- add to the `@repo/db` import: `makePayoutAccountRepoTest,` and `type PayoutAccountStatus,`
-- add `import { storedPayoutAccount } from '@/api/lib/payouts.test-support';`
-- add to `makeLayer`'s `options` type:
+- add to the `@repo/db` import: `dummyPayoutAccount,`, `makePayoutAccountRepoTest,` and `type PayoutAccountStatus,`
+- add to `makeLayer`'s `options` type, after 2a's `familyCard?: boolean;`:
 
 ```ts
     /** The helper's stored payout status; null/undefined = no payout account. */
     payoutAccountStatus?: PayoutAccountStatus | null;
 ```
 
-- add to the `Layer.mergeAll(...)` list in `makeLayer` (before `makeNotificationHubTest`):
+- add to the `Layer.mergeAll(...)` list in `makeLayer`, right after 2a's `makePaymentsTest({}),` (whose provider is `'mock'` — the fixture row must match it, or Task 4's provider rule hides it):
 
 ```ts
     makePayoutAccountRepoTest({
       findByUserId: (userId) =>
         Effect.succeed(
           options.payoutAccountStatus
-            ? storedPayoutAccount({ userId, status: options.payoutAccountStatus })
+            ? dummyPayoutAccount({
+                userId,
+                provider: 'mock',
+                accountReference: `mock_acct_${userId}`,
+                status: options.payoutAccountStatus
+              })
             : null
-        ),
-      findByReference: () => Effect.die('not used'),
-      create: () => Effect.die('not used'),
-      applySnapshot: () => Effect.die('not used')
+        )
     }),
 ```
 
@@ -2481,18 +2747,17 @@ Expected: FAIL — `expected undefined to be false`.
 - [ ] **Step 4: Add the field**
 
 In `contracts.handler.ts`:
-- add the import: `import { hasReadyPayoutAccount } from '@/api/lib/payouts';`
-- in `getContractProgram`, just before `return {` (after `acceptBlockedReason` is computed), add:
+- add the import after the other `@/api/lib/*` imports: `import { hasReadyPayoutAccount } from '@/api/lib/payouts';`
+- in `getContractProgram`, right after 2a's `hasPaymentMethod` (the `const hasPaymentMethod = isFamily ? … : null;` statement), add:
 
 ```ts
-    // Helper-only reminder at acceptance (piece 2b). Stored snapshot only;
-    // readiness never gates accepting — pieces 3 and 4 enforce it.
-    const payoutsReady = viewerSide === 'provider' ? yield* hasReadyPayoutAccount(viewer.id) : null;
+    // The mirror for the helper (piece 2b): told whether payouts are ready,
+    // for the reminder at acceptance; null for the family. Stored snapshot
+    // only, and readiness never gates accepting — pieces 3 and 4 enforce it.
+    const payoutsReady = isFamily ? null : yield* hasReadyPayoutAccount(viewer.id);
 ```
 
-- in the returned `contract` object, after `acceptBlockedReason,` add `payoutsReady,`.
-
-(2a adds `hasPaymentMethod` for the family viewer next to these lines; keep both.)
+- in the returned `contract` object, after 2a's `hasPaymentMethod,` add `payoutsReady,`.
 
 - [ ] **Step 5: Run the contracts suite, the api suite and build the RPC types**
 
@@ -3126,7 +3391,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 **Files:**
 - Create: `apps/web/src/lib/components/payouts/PayoutsReminder.svelte`, `apps/web/src/lib/components/payouts/PayoutsReminder.mount.test.ts`, `apps/web/src/lib/components/admin/ConfirmDialog.mount.test.ts`
-- Modify: `apps/web/src/lib/components/admin/ConfirmDialog.svelte`, `apps/web/src/lib/components/contracts/ContractDetailPage.svelte` (accept `ConfirmDialog`, ~line 845)
+- Modify: `apps/web/src/lib/components/admin/ConfirmDialog.svelte`, `apps/web/src/lib/components/contracts/ContractDetailPage.svelte` (accept `ConfirmDialog`, line 850)
 
 **Interfaces:**
 - Consumes: Task 7 `ContractDetail['payoutsReady']: boolean | null` (via the RPC types built in Task 7).
@@ -3318,11 +3583,33 @@ Run from the worktree root:
 bun run lint
 bun run check-types
 cd packages/payments && bun test src && cd ../..
+cd packages/billing && bun test src && cd ../..
 cd apps/api && bunx vitest run && bun run build && cd ../..
+cd apps/worker && bunx vitest run && cd ../..
 cd apps/web && bun run check && bunx vitest run && cd ../..
 ```
 
-Expected: every command exits 0. Fix and re-run anything that fails; commit fixes as `fix: …` with the trailer.
+`packages/billing` and `apps/worker` build `Payments` through `makePaymentsTest` / `PaymentsLive`, which gained the four operations; their suites must stay green.
+
+Then type-check what `bun run build` doesn't reach — the API entry point (webhook routes) and 2b's api test files (vitest doesn't type-check):
+
+```bash
+cd /run/media/hbt/work/poppynz/stripe-integration/apps/api
+cat > "${TMPDIR:-/tmp}/tsconfig.api-entry.json" <<JSON
+{ "extends": "$PWD/tsconfig.build.json",
+  "compilerOptions": { "noEmit": true, "declaration": false, "declarationMap": false, "rootDir": "$PWD/src" },
+  "files": [
+    "$PWD/src/index.ts",
+    "$PWD/src/hc.ts",
+    "$PWD/src/lib/payouts.unit.test.ts",
+    "$PWD/src/routes/app/payouts/payouts.unit.test.ts",
+    "$PWD/src/routes/webhooks/stripe.unit.test.ts"
+  ] }
+JSON
+node_modules/.bin/tsc -p "${TMPDIR:-/tmp}/tsconfig.api-entry.json" && echo ENTRY_OK
+```
+
+Expected: every command exits 0 and the last prints `ENTRY_OK`. (`contracts.unit.test.ts` is left out on purpose: at 2a's HEAD it already has two type errors unrelated to payments — a `SafeUserProfile` fixture missing `image`, line 114, and an `Effect<…, any>` at line 2591 — so its Task 7 additions are covered by vitest only.) Fix and re-run anything that fails; commit fixes as `fix: …` with the trailer.
 
 - [ ] **Step 4: Confirm the tree**
 
@@ -3335,7 +3622,13 @@ Expected: clean (or only the intentional fix commits made in Step 3).
 
 **Files:**
 - Create: `packages/payments/scripts/e2e-payout-account.ts`
-- Modify (local only, never committed): `apps/api/.env`; `/run/media/hbt/work/poppynz/.claude/launch.json` (add a web entry)
+- Modify (local only, never committed): `apps/api/.env` (only if a value below is missing). The `web-stripe` entry in `/run/media/hbt/work/poppynz/.claude/launch.json` already exists (2a added it); don't add another.
+
+> **WARNING — real Credibled key.** As 2a left it, `apps/api/.env` (symlinked as `apps/worker/.env` and `packages/db/.env`) has `PAYMENTS_PROVIDER=stripe` **and the real Credibled provider key** (`CREDIBLED_BASE_URL=https://api.credibled.com/…`, `CREDIBLED_PROVIDER_API_KEY` set). A paid background-check order placed in this stack is a real Credibled order. 2b's e2e must not trigger any background-check order:
+> - Never open a Safety verification checkout, never pay or "Pay & order" anything, never confirm a `PaymentModal`. The helpers signed up below only need the Payouts page; stop the sign-up wizard before any safety-verification step.
+> - Never run `stripe trigger …`, `stripe events resend …` or replay a `payment_intent.*` / `charge.*` event — the only Stripe events 2b generates are `account.updated` for the test connected accounts.
+> - Stop the worker for the whole task (Step 3) — 2b needs no worker job, and it is the process that places Credibled orders — and record `check_orders` before and after (Steps 3 and 10); the count must not change.
+> - Never print or copy any `CREDIBLED_*` or `STRIPE_*` secret value.
 
 Rules for this task: test-mode keys only; never print `STRIPE_SECRET_KEY` or the webhook secret; **never fill in or click through Stripe-hosted pages** (look, screenshot, go back). An Express account can't be completed through the API (its terms of service must be accepted on Stripe's pages), so the "complete a test account through the API" scenario uses a test-mode **Custom** account created by the e2e script only, prefilled with Stripe's documented test values (`dob 1901-01-01`, `address_full_match`, `id_number 000000000`, phone `0000000000`, CA bank `11000-000` / `000123456789`, `tos_acceptance` set by the platform). The app's own code still creates Express accounts only.
 
@@ -3361,6 +3654,7 @@ Rules for this task: test-mode keys only; never print `STRIPE_SECRET_KEY` or the
  *   bun --env-file=apps/api/.env packages/payments/scripts/e2e-payout-account.ts create-ready
  */
 import Stripe from 'stripe';
+import { STRIPE_API_VERSION } from '../src/stripe';
 
 const key = process.env.STRIPE_SECRET_KEY ?? '';
 if (!key.startsWith('sk_test_')) {
@@ -3368,7 +3662,8 @@ if (!key.startsWith('sk_test_')) {
   process.exit(1);
 }
 
-const stripe = new Stripe(key);
+// Same pinned API version as the app's adapter (2a).
+const stripe = new Stripe(key, { apiVersion: STRIPE_API_VERSION });
 
 const flags = (account: Stripe.Account) => ({
   id: account.id,
@@ -3488,7 +3783,7 @@ grep -cE '^(PAYMENTS_PROVIDER=stripe|APP_WEB_ORIGIN=http://localhost:5175|STRIPE
 grep -c 'localhost:5175' apps/api/.env
 ```
 
-Expected: `3`, then at least `2` (`TRUSTED_ORIGINS` already lists 5175). `apps/worker/.env` is a symlink to `apps/api/.env`, so the worker sees the same values.
+Expected: `3`, then at least `2` (`TRUSTED_ORIGINS` already lists 5175). At 2a's HEAD `PAYMENTS_PROVIDER=stripe`, a `sk_test_` key and a `whsec_` secret are already set; the script only adds `APP_WEB_ORIGIN` / `PAYOUTS_REFRESH_AFTER_MINUTES` and rewrites the webhook secret with the CLI's stable one. `apps/worker/.env` and `packages/db/.env` are symlinks to `apps/api/.env`. Don't touch any `CREDIBLED_*` line.
 
 - [ ] **Step 3: Start the stack from this worktree**
 
@@ -3496,14 +3791,23 @@ Run: `docker inspect api --format '{{ index .Config.Labels "com.docker.compose.p
 - If it prints another worktree's path: stop and ask the user before taking that stack down.
 - Otherwise: `mkdir -p bun_node_modules && docker compose up -d && docker restart api` (the api container misses host edits, and must re-read `.env`).
 
+Then stop the worker (it places Credibled orders; 2b needs no worker job) and record the order count:
+
+```bash
+docker stop worker
+docker exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc "select count(*) from app_db.check_orders"'
+```
+
+Note the number; Step 10 checks it is unchanged.
+
 Run: `docker logs migrations 2>&1 | tail -5`
 Expected: migrations applied without error.
 
 Run: `docker exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\d app_db.payout_accounts"'`
 Expected: the table with `user_id` PK, `payout_accounts_account_reference_uidx`, and FK `payout_accounts_user_id_user_id_fk … ON DELETE RESTRICT`.
 
-Run: `curl -s localhost:3000/api/health`
-Expected: `Up!` (if the API base path differs, use the one in `apps/api/src/hc.ts`).
+Run: `curl -s localhost:3000/api/v1/health`
+Expected: `Up!` (`API_BASE_PATH` is `/api/v1`; the webhook stays at `/webhooks/stripe`, outside it).
 
 - [ ] **Step 4: Forward webhooks (platform and Connect)**
 
@@ -3517,11 +3821,11 @@ Expected in its output: `Ready! … Your webhook signing secret is whsec_…` (t
 
 - [ ] **Step 5: Web on port 5175**
 
-Add to `/run/media/hbt/work/poppynz/.claude/launch.json` (`configurations`), if absent:
+`/run/media/hbt/work/poppynz/.claude/launch.json` already has 2a's entry for this worktree:
 
 ```json
     {
-      "name": "web-stripe-integration",
+      "name": "web-stripe",
       "runtimeExecutable": "bun",
       "runtimeArgs": ["run", "--cwd", "stripe-integration/apps/web", "dev", "--port", "5175", "--strictPort"],
       "port": 5175,
@@ -3529,7 +3833,7 @@ Add to `/run/media/hbt/work/poppynz/.claude/launch.json` (`configurations`), if 
     }
 ```
 
-Make sure no other 5175 entry is running (`web-develop`, `web-contract-dates`, `web-sidenav` share the port), then start `web-stripe-integration` with the preview tool and open `http://localhost:5175`.
+Make sure no other 5175 entry is running (`web-develop`, `web-contract-dates`, `web-sidenav` share the port), then start `web-stripe` with the preview tool and open `http://localhost:5175`.
 
 - [ ] **Step 6: Scenario A — create an account through the app and reach Stripe's page**
 
@@ -3565,8 +3869,10 @@ Ask the user whether they want to complete Stripe's hosted onboarding once for h
 - [ ] **Step 10: Report and tidy**
 
 - Stop `stripe listen` (TaskStop on the background command).
-- Leave `apps/api/.env` as configured (it is gitignored) and say so in the report, including `PAYMENTS_PROVIDER=stripe`.
-- `git status --short` → only the launch.json change lives outside the worktree; the worktree is clean.
+- Re-run the `check_orders` count from Step 3: it must equal the number noted there. If it changed, say so first in the report.
+- `docker start worker`.
+- Leave `apps/api/.env` as configured (it is gitignored) and say so in the report, including `PAYMENTS_PROVIDER=stripe` and that the real Credibled key is still in it.
+- `git status --short` → clean (launch.json was not changed).
 - Report each scenario with pass/fail and the screenshots. The Custom test account(s) remain in the Stripe test account; mention their ids so the user can delete them from the dashboard if they want.
 
 ---
@@ -3574,4 +3880,5 @@ Ask the user whether they want to complete Stripe's hosted onboarding once for h
 ## Self-review notes
 
 - Spec coverage: §1 port + mock (Tasks 1–2); §2 table, derivation, repo (Tasks 3–4); §3 permission, `GET /payouts` with the 1-hour rule, onboarding/refresh/dashboard with 409, `APP_WEB_ORIGIN`, webhook `account.updated` with unknown accounts → 200, `isPaymentReady`, contract `payoutsReady` (Tasks 4–7); §4 page states, return handling, badge, reminder (Tasks 8–10); §5 unit, web mount and local e2e (each task, Task 12).
-- Names used across tasks: `PayoutAccountSnapshot`, `PayoutAccountRepo.{findByUserId,findByReference,create,applySnapshot}`, `derivePayoutStatus`, `isPaymentReady`, `hasReadyPayoutAccount`, `handleAccountUpdated`, `PayoutsRepoError`, `PayoutsProviderError`, `NoPayoutAccountError`, `payoutsBadge.needsSetup`, `payoutsReady`.
+- Names used across tasks: `PayoutAccountSnapshot`, `PayoutAccountRepo.{findByUserId,findByReference,create,applySnapshot}`, `makePayoutAccountRepoTest`, `makeInMemoryPayoutAccountRepo`, `dummyPayoutAccount`, `AppliedPayoutSnapshot`, `readySnapshot`, `StripeConnectClient`, `makeStripeConnectOperations`, `constructEventWithAnySecret`, `connectWebhookSecret`, `derivePayoutStatus`, `isPaymentReady`, `hasReadyPayoutAccount`, `handleAccountUpdated`, `PayoutsRepoError`, `PayoutsProviderError`, `NoPayoutAccountError`, `payoutsBadge.needsSetup`, `payoutsReady`.
+- Reconciled with 2a at `b67bb83`: port/mock live in `src/port.ts` / `src/mock.ts` (not `index.ts`); `PaymentOperation` is a named union; the Stripe client is `StripeApi` and is called `client` inside `makeStripePayments`; webhook verification is async (`constructEventAsync`), so the multi-secret helper is async; `PaymentWebhookEvent` already carries `account`; the webhook dispatcher is `processStripeEvent` (a string-returning switch with an `account.updated` placeholder) and its test harness is `makeWorld`; repos follow `billing-customer-repo.ts` (in-memory repo + `dummy*` in `@repo/db`); payout rows are provider-scoped like 2a's billing customers.

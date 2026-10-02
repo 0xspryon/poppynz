@@ -51,10 +51,14 @@
 		role === 'family'
 			? resolve('/family/contracts/[id]', { id })
 			: resolve('/service-provider/contracts/[id]', { id });
+	const vouchesHref = $derived(
+		role === 'family' ? resolve('/family/vouches') : resolve('/service-provider/vouches')
+	);
 
 	const onMessagesPage = () => page.url.pathname.startsWith(messagesHref);
 	const onApprovalPage = () => page.url.pathname.startsWith(approvalHref);
 	const onContractsPage = () => page.url.pathname.startsWith(contractsHref);
+	const onVouchesPage = () => page.url.pathname.startsWith(vouchesHref);
 	// Both pages subscribe themselves and refetch; a toast there would be noise.
 	const onVerificationPage = () =>
 		page.url.pathname.startsWith(verificationHref) || page.url.pathname.startsWith(documentsHref);
@@ -189,6 +193,12 @@
 				} else {
 					toast.info(copy.message, { title: copy.title });
 				}
+			}),
+			notifications.on('vouch.requested', (event) => {
+				if (onVouchesPage()) return;
+				toast.info(`${event.payload.applicantName} asked you to vouch for them.`, {
+					title: 'Vouch request'
+				});
 			}),
 			notifications.on('contract.ended', (event) => {
 				void contractsBadge.refresh();

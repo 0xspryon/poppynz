@@ -338,7 +338,8 @@ export const updateAdminKycDocumentRouteProgram = (
     const rawBody = yield* parseJsonBody(c, kycDocJsonError);
     const input = yield* validateKycDocumentExpiryUpdateInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    yield* requirePermissions(headers, { kycDocument: ['write'] })(authenticated);
+    // Admin-only: `write` is held by every applicant and carries no ownership.
+    yield* requirePermissions(headers, { kycDocument: ['review'] })(authenticated);
     const docRepo = yield* KycDocumentRepo;
     const existing = yield* mapKycRepoError(docRepo.findByIdWithType(id));
     const expiryDate = yield* parseFutureDate(

@@ -6,9 +6,10 @@ import {
   KycDocumentTypeRepo,
   ServiceNeededRepo,
   UserProfileRepo,
-  UserRepo
+  UserRepo,
+  VouchRepo
 } from '@repo/db';
-import { Cause, Data, Effect, Exit, Option } from 'effect';
+import { Cause, Data, Effect, Exit, Option, Schema } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
   authErrorToResponse,
@@ -20,9 +21,12 @@ import { applicantRoleOf, type ApplicantRole } from '@/api/lib/approval-gate';
 import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
 import { loadChecklist, loadChecklistWithTypes } from '@/api/lib/onboarding-checklist';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
+import { summariseVouches } from '@/api/lib/vouches';
+import { toAdminVouch } from '../vouches/vouches.handler';
 import {
   approvalRequestJsonError,
-  validateApprovalRequestRejectInput
+  validateApprovalRequestRejectInput,
+  validateGeneralRemarksInput
 } from './approval-requests.validator';
 import { publishNotificationBestEffort } from '@repo/notify';
 
@@ -50,13 +54,21 @@ const ensureApplicant = <T extends { user: { role: string | null } }>(userAndSes
 const roleOrProvider = (role: string | null | undefined): ApplicantRole =>
   applicantRoleOf(role) ?? 'service-provider';
 
-const toRequestResponse = <T extends { reviewedAt: Date | null; createdAt: Date; updatedAt: Date }>(
+const toRequestResponse = <
+  T extends {
+    reviewedAt: Date | null;
+    createdAt: Date;
+    updatedAt: Date;
+    generalRemarksUpdatedAt: Date | null;
+  }
+>(
   request: T
 ) => ({
   ...request,
   reviewedAt: request.reviewedAt?.toISOString() ?? null,
   createdAt: request.createdAt.toISOString(),
-  updatedAt: request.updatedAt.toISOString()
+  updatedAt: request.updatedAt.toISOString(),
+  generalRemarksUpdatedAt: request.generalRemarksUpdatedAt?.toISOString() ?? null
 });
 
 const buildWarnings = (userId: string, role: ApplicantRole) =>
@@ -135,6 +147,23 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
       )
     );
 
+    // Vouches only apply to helpers; one query for the whole page.
+    const helperIds = [...roleByUser.entries()]
+      .filter(([, role]) => role === 'service-provider')
+      .map(([userId]) => userId);
+    const vouchRepo = yield* VouchRepo;
+    const vouches = yield* vouchRepo.listForApplicants(helperIds);
+    const now = new Date();
+    const vouchesByUser = new Map(
+      helperIds.map((userId) => [
+        userId,
+        summariseVouches(
+          vouches.filter((vouch) => vouch.applicantUserId === userId),
+          now
+        )
+      ])
+    );
+
     return {
       requests: requests.map((request) => ({
         ...toRequestResponse(request),
@@ -142,16 +171,28 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
         warnings: warningsByUser.get(request.userId) ?? {
           missingRequiredDocuments: [],
           missingServicesOffered: false
-        }
+        },
+        vouches: vouchesByUser.get(request.userId) ?? { counting: 0, hasConcern: false },
+        hasGeneralRemarks: (request.generalRemarks ?? '').trim().length > 0
       })),
       counts: { ...counts, total: counts.submitted + counts.approved + counts.rejected }
     };
   });
 
+const isUuid = Schema.is(Schema.UUID);
+
+/** A malformed id can't name an approval request: 404 (the same as an
+ * unknown one) without asking the database, which would 500 on the cast. */
+const requireApprovalRequestId = (id: string) =>
+  isUuid(id)
+    ? Effect.succeed(id)
+    : Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id }));
+
 export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string) =>
   Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { approvalRequest: ['read'] })(authenticated);
+    yield* requireApprovalRequestId(id);
     const requestRepo = yield* ApprovalRequestRepo;
     const profileRepo = yield* UserProfileRepo;
     const approvalRepo = yield* ApprovalRepo;
@@ -159,20 +200,27 @@ export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string
     const request = yield* requestRepo.findById(id);
     const profile = yield* profileRepo.findByUserId(request.userId);
     const role = roleOrProvider(profile.role);
-    const [{ checklist, services, warnings }, currentApproval, servicesNeeded] = yield* Effect.all(
-      [
-        loadChecklist(request.userId, role),
-        approvalRepo
-          .findCurrentByUserId(request.userId)
-          .pipe(Effect.catchTag('DBNotFoundError', () => Effect.succeed(null))),
-        // A family lists what it needs rather than what it offers; the
-        // reviewer sees it for context, it is not a condition of approval.
-        role === 'family' ? needsRepo.listByUserId(request.userId) : Effect.succeed([])
-      ],
-      { concurrency: 'unbounded' }
-    );
+    const [{ checklist, services, warnings }, currentApproval, servicesNeeded, vouches] =
+      yield* Effect.all(
+        [
+          loadChecklist(request.userId, role),
+          approvalRepo
+            .findCurrentByUserId(request.userId)
+            .pipe(Effect.catchTag('DBNotFoundError', () => Effect.succeed(null))),
+          // A family lists what it needs rather than what it offers; the
+          // reviewer sees it for context, it is not a condition of approval.
+          role === 'family' ? needsRepo.listByUserId(request.userId) : Effect.succeed([]),
+          // Vouches only apply to helpers.
+          role === 'service-provider'
+            ? VouchRepo.pipe(Effect.flatMap((repo) => repo.listForApplicants([request.userId])))
+            : Effect.succeed([])
+        ],
+        { concurrency: 'unbounded' }
+      );
+    const now = new Date();
     return {
       approvalRequest: toRequestResponse(request),
+      vouches: vouches.map((vouch) => toAdminVouch(vouch, now)),
       applicantRole: role,
       currentApproval: currentApproval
         ? {
@@ -207,9 +255,10 @@ export const rejectAdminApprovalRequestRouteProgram = (
     const rawBody = yield* parseJsonBody(c, approvalRequestJsonError);
     const input = yield* validateApprovalRequestRejectInput(rawBody);
     const authenticated = yield* authenticate(headers);
-    const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['write'] })(
+    const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['review'] })(
       authenticated
     );
+    yield* requireApprovalRequestId(id);
     const repo = yield* ApprovalRequestRepo;
     const request = yield* repo.reject(id, userAndSession.user.id, input.reason);
 
@@ -240,11 +289,35 @@ export const rejectAdminApprovalRequestRouteProgram = (
     return toRequestResponse(request);
   });
 
+export const updateGeneralRemarksRouteProgram = (
+  c: HonoContext<HonoEnv>,
+  headers: Headers,
+  id: string
+) =>
+  Effect.gen(function* () {
+    const input = yield* validateGeneralRemarksInput(
+      yield* parseJsonBody(c, approvalRequestJsonError)
+    );
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['review'] })(
+      authenticated
+    );
+    yield* requireApprovalRequestId(id);
+    const repo = yield* ApprovalRequestRepo;
+    const request = yield* repo.updateGeneralRemarks(
+      id,
+      input.generalRemarks.length > 0 ? input.generalRemarks : null,
+      userAndSession.user.id
+    );
+    return toRequestResponse(request);
+  });
+
 export type ApprovalRequestsRouteError =
   | Effect.Effect.Error<ReturnType<typeof createApprovalRequestRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof listAdminApprovalRequestsRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof getAdminApprovalRequestRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof rejectAdminApprovalRequestRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof rejectAdminApprovalRequestRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof updateGeneralRemarksRouteProgram>>;
 
 const repoErrorResponse = (c: HonoContext<HonoEnv>, error: SqlError | DBNotFoundError) => {
   switch (error._tag) {
@@ -354,5 +427,14 @@ export async function rejectAdminApprovalRequestHandler(c: HonoContext<HonoEnv>)
   const headers = c.req.raw.headers;
   const id = c.req.param('id') ?? '';
   const exit = await runtime.runPromiseExit(rejectAdminApprovalRequestRouteProgram(c, headers, id));
+  return exitToResponse(c, exit);
+}
+
+export async function updateGeneralRemarksHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const id = c.req.param('id') ?? '';
+  const exit = await runtime.runPromiseExit(
+    updateGeneralRemarksRouteProgram(c, c.req.raw.headers, id)
+  );
   return exitToResponse(c, exit);
 }

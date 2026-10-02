@@ -25,6 +25,8 @@ import { userSearchesRoute } from './user-searches/user-searches';
 import { adminSafetyVerificationsRoute } from './admin/safety-verifications';
 import { safetyVerificationRoute } from './safety-verification/safety-verification';
 import { referralsRoute } from './referrals/referrals';
+import { vouchesRoute } from './vouches/vouches';
+import { adminVouchesRoute } from './admin/vouches';
 import { contractsRoute } from './contracts/contracts';
 import { conversationsRoute } from './conversations/conversations';
 import { notificationsRoute } from './notifications/notifications';
@@ -57,6 +59,8 @@ export const appRoutes = new Hono<HonoEnv>()
   .route('/safety-verification', safetyVerificationRoute)
   .route('/admin/safety-verifications', adminSafetyVerificationsRoute)
   .route('/referrals', referralsRoute)
+  .route('/vouches', vouchesRoute)
+  .route('/admin/vouches', adminVouchesRoute)
   .route('/contracts', contractsRoute)
   .route('/conversations', conversationsRoute)
   .route('/notifications', notificationsRoute)

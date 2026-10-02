@@ -6,11 +6,19 @@ export const appAc = createAccessControl({
   // endpoints (list/ban/impersonate) can authorize against our custom roles.
   ...defaultStatements,
   approval: ['write'],
-  approvalRequest: ['read', 'write'],
+  // `review` is the admin-only decision capability: deciding (reject/approve)
+  // a submitted request and setting the admin's own general remarks on it.
+  // Applicants keep `write` only, to create/submit their own request —
+  // ownership there is enforced at the route (findSubmittedByUserId), since a
+  // permission can't express "but only yours".
+  approvalRequest: ['read', 'write', 'review'],
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
-  kycDocument: ['read', 'write'],
+  // `review` is the admin-only capability over someone else's documents
+  // (e.g. correcting an expiry date). Applicants keep `write`, which only
+  // submits their own — ownership is enforced at the route.
+  kycDocument: ['read', 'write', 'review'],
   kycDocumentType: ['read', 'write'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
@@ -24,7 +32,8 @@ export const appAc = createAccessControl({
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
   tcs: ['read', 'accept', 'write'],
-  userSearch: ['read', 'write']
+  userSearch: ['read', 'write'],
+  vouch: ['read', 'write', 'review']
 });
 
 export const familyRole = appAc.newRole({
@@ -40,7 +49,8 @@ export const familyRole = appAc.newRole({
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
   tcs: ['read', 'accept'],
-  userSearch: ['write']
+  userSearch: ['write'],
+  vouch: ['read', 'write']
 });
 
 export const spRole = appAc.newRole({
@@ -56,7 +66,8 @@ export const spRole = appAc.newRole({
   safetyVerification: ['read', 'write'],
   serviceCatalogue: ['read'],
   serviceOffered: ['read', 'write'],
-  tcs: ['read', 'accept']
+  tcs: ['read', 'accept'],
+  vouch: ['read', 'write']
 });
 
 export const adminRole = appAc.newRole({
@@ -64,11 +75,11 @@ export const adminRole = appAc.newRole({
   // session management) — deliberately without "impersonate-admins".
   ...adminAc.statements,
   approval: ['write'],
-  approvalRequest: ['read', 'write'],
+  approvalRequest: ['read', 'write', 'review'],
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
-  kycDocument: ['read', 'write'],
+  kycDocument: ['read', 'write', 'review'],
   kycDocumentType: ['read', 'write'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
@@ -78,7 +89,8 @@ export const adminRole = appAc.newRole({
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
   tcs: ['read', 'accept', 'write'],
-  userSearch: ['read', 'write']
+  userSearch: ['read', 'write'],
+  vouch: ['read', 'write', 'review']
 });
 
 export const roles = {

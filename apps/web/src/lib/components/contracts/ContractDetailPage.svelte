@@ -205,6 +205,8 @@
 		) {
 			toast.error('This contract has moved on — reloading.');
 			void refresh(contractId);
+		} else if (error.code === 'COUNTERPART_UNAVAILABLE') {
+			toast.error("The other person can't take on new contracts right now.");
 		} else {
 			toast.error(fallback);
 		}

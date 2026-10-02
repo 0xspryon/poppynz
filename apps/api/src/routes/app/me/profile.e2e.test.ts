@@ -109,6 +109,9 @@ const makeApprovalRequest = (overrides: Partial<ApprovalRequest> = {}): Approval
   reviewedBy: null,
   reviewedAt: null,
   reason: null,
+  generalRemarks: null,
+  generalRemarksUpdatedBy: null,
+  generalRemarksUpdatedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   ...overrides
@@ -303,7 +306,8 @@ const makeApp = (
         reject: (id) =>
           approvalRequest?.id === id
             ? Effect.succeed({ ...approvalRequest, status: 'rejected' })
-            : Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id }))
+            : Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id })),
+        updateGeneralRemarks: () => Effect.die('not used')
       }),
       makeObjectStorageTest({
         ensureBucketExists: () => Effect.void,

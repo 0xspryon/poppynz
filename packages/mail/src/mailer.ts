@@ -16,7 +16,8 @@ import {
   magicLinkMail,
   type MailContent,
   providerWelcomeMail,
-  referralInviteMail
+  referralInviteMail,
+  vouchRequestMail
 } from './templates';
 
 export class MailerError extends Data.TaggedError('MailerError')<{
@@ -33,6 +34,13 @@ export type ReferralInviteMail = {
   /** Display name the invite is attributed to ("from Poppynz with your name on it"). */
   inviterName: string;
   role: MailRole;
+  link: string;
+};
+
+export type VouchRequestMail = {
+  email: string;
+  applicantName: string;
+  relationship: string;
   link: string;
 };
 
@@ -132,6 +140,7 @@ export class Mailer extends Context.Tag('@api/lib/Mailer')<
     sendFamilyWelcome: (mail: FamilyWelcomeMail) => Effect.Effect<void, MailerError>;
     sendProviderWelcome: (mail: ProviderWelcomeMail) => Effect.Effect<void, MailerError>;
     sendReferralInvite: (mail: ReferralInviteMail) => Effect.Effect<void, MailerError>;
+    sendVouchRequest: (mail: VouchRequestMail) => Effect.Effect<void, MailerError>;
     sendApprovalRequestSubmitted: (
       mail: ApprovalRequestSubmittedMail
     ) => Effect.Effect<void, MailerError>;
@@ -263,6 +272,7 @@ export const makeMailer = (config: {
     sendFamilyWelcome: (mail) => deliver([mail.email], familyWelcomeMail(mail)),
     sendProviderWelcome: (mail) => deliver([mail.email], providerWelcomeMail(mail)),
     sendReferralInvite: (mail) => deliver([mail.email], referralInviteMail(mail)),
+    sendVouchRequest: (mail) => deliver([mail.email], vouchRequestMail(mail)),
     sendApprovalRequestSubmitted: (mail) =>
       deliver([mail.email], approvalRequestSubmittedMail(mail)),
     sendAdminApprovalRequestSubmitted: (mail) =>
@@ -298,6 +308,7 @@ export const makeMailerTest = (implementation: Partial<Context.Tag.Service<Maile
     sendFamilyWelcome: () => Effect.void,
     sendProviderWelcome: () => Effect.void,
     sendReferralInvite: () => Effect.void,
+    sendVouchRequest: () => Effect.void,
     sendApprovalRequestSubmitted: () => Effect.void,
     sendAdminApprovalRequestSubmitted: () => Effect.void,
     sendApprovalRequestRejected: () => Effect.void,

@@ -1,6 +1,7 @@
 import { SqlError } from '@effect/sql/SqlError';
 import {
   DBNotFoundError,
+  dummyVouch,
   makeApprovalRequestRepoTest,
   makeKycDocumentRepoTest,
   makeKycDocumentTypeRepoTest,
@@ -9,6 +10,7 @@ import {
   makeSessionRepoTest,
   makeUserProfileRepoTest,
   makeUserRepoTest,
+  makeVouchRepoTest,
   type ApprovalRequest,
   type KycDocument,
   type KycDocumentType,
@@ -17,6 +19,7 @@ import {
   type Session,
   type User,
   type UserProfile,
+  type VouchWithVoucher,
   EmptyApprovalRepoTest,
   makeServiceNeededRepoTest
 } from '@repo/db';
@@ -28,7 +31,8 @@ import {
   createApprovalRequestRouteProgram,
   getAdminApprovalRequestRouteProgram,
   listAdminApprovalRequestsRouteProgram,
-  rejectAdminApprovalRequestRouteProgram
+  rejectAdminApprovalRequestRouteProgram,
+  updateGeneralRemarksRouteProgram
 } from './approval-requests.handler';
 
 const user = (overrides: Partial<User> = {}): User => ({
@@ -63,13 +67,18 @@ const session = (overrides: Partial<Session> = {}): Session => ({
   ...overrides
 });
 
+const REQUEST_ID = '0198a3b0-0000-7000-8000-0000000000a1';
+
 const approvalRequest = (overrides: Partial<ApprovalRequest> = {}): ApprovalRequest => ({
-  id: 'request-1',
+  id: REQUEST_ID,
   userId: 'provider-1',
   status: 'submitted',
   reviewedBy: null,
   reviewedAt: null,
   reason: null,
+  generalRemarks: null,
+  generalRemarksUpdatedBy: null,
+  generalRemarksUpdatedAt: null,
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   ...overrides
@@ -140,6 +149,42 @@ const profile = (overrides: Partial<SafeUserProfile> = {}): SafeUserProfile => (
 
 const contextWithJson = (body: unknown) => ({ req: { json: async () => body } }) as any;
 
+/** A vouch that counts toward the recommended total: accepted, no
+ * concerns, and a voucher in good standing. */
+const acceptedVouchFor = (
+  applicantUserId: string,
+  voucherUserId: string,
+  overrides: Partial<VouchWithVoucher> = {}
+): VouchWithVoucher => ({
+  ...dummyVouch,
+  id: `vouch-${voucherUserId}`,
+  applicantUserId,
+  voucherUserId,
+  status: 'accepted',
+  answers: {
+    howKnow: 'Neighbour',
+    howLong: 'Three years',
+    wouldTrust: true,
+    hasConcerns: false,
+    concernsDetail: null,
+    wouldHire: true,
+    anythingElse: null
+  },
+  attestedAt: new Date('2026-06-12T00:00:00.000Z'),
+  decidedAt: new Date('2026-06-12T00:00:00.000Z'),
+  voucher: {
+    name: 'Voucher Person',
+    email: 'voucher@example.com',
+    firstName: 'Voucher',
+    lastName: 'Person',
+    banned: false,
+    banExpires: null,
+    emailVerified: true,
+    hasLiveApproval: true
+  },
+  ...overrides
+});
+
 const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
   if (!Exit.isFailure(exit)) throw new Error('Expected effect to fail');
   const failure = Cause.failureOption(exit.cause);
@@ -164,6 +209,11 @@ const makeLayer = (
     needs?: Array<{ id: string; name: string; description: string | null }>;
     sentMails?: Array<{ kind: string; mail: unknown }>;
     mailerFail?: boolean;
+    vouches?: Array<VouchWithVoucher>;
+    onUpdateRemarks?: (id: string, remarks: string | null, updatedBy: string) => void;
+    onCheckPermission?: (permissions: Record<string, Array<string>>) => void;
+    /** Called on every approval-request lookup or write by id. */
+    onRequestRepoTouch?: () => void;
   } = {}
 ) => {
   const currentUser = options.user ?? user();
@@ -233,6 +283,7 @@ const makeLayer = (
       countByStatus: () => Effect.succeed({ submitted: 0, approved: 0, rejected: 0 }),
       listByUserId: () => Effect.succeed([]),
       findById: (id) => {
+        options.onRequestRepoTouch?.();
         const request = (options.approvalRequests ?? [approvalRequest()]).find(
           (item) => item.id === id
         );
@@ -249,6 +300,7 @@ const makeLayer = (
       markApproved: (id) =>
         Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id })),
       reject: (id, reviewedBy, reason) => {
+        options.onRequestRepoTouch?.();
         options.onReject?.(id, reviewedBy, reason);
         const request = (options.approvalRequests ?? [approvalRequest()]).find(
           (item) => item.id === id
@@ -262,7 +314,32 @@ const makeLayer = (
               reason
             })
           : Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id }));
+      },
+      updateGeneralRemarks: (id, remarks, updatedBy) => {
+        options.onRequestRepoTouch?.();
+        options.onUpdateRemarks?.(id, remarks, updatedBy);
+        const request = (options.approvalRequests ?? [approvalRequest()]).find(
+          (item) => item.id === id
+        );
+        return request
+          ? Effect.succeed({
+              ...request,
+              generalRemarks: remarks,
+              generalRemarksUpdatedBy: updatedBy,
+              generalRemarksUpdatedAt: new Date('2026-06-13T00:00:00.000Z')
+            })
+          : Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id }));
       }
+    }),
+    makeVouchRepoTest({
+      create: () => Effect.succeed(dummyVouch),
+      findById: (id) => Effect.fail(new DBNotFoundError({ entity: 'vouch', value: id })),
+      findOpenByPair: () => Effect.succeed(null),
+      listByPair: () => Effect.succeed([]),
+      countRecentByApplicant: () => Effect.succeed({ pendingOpen: 0, createdSince: 0 }),
+      listForApplicants: () => Effect.succeed(options.vouches ?? []),
+      listForVoucher: () => Effect.succeed([]),
+      transition: () => Effect.succeed(null)
     }),
     makeKycDocumentTypeRepoTest({
       listActive: () => Effect.succeed(options.documentTypes ?? [documentType()]),
@@ -309,7 +386,10 @@ const makeLayer = (
     makeAuthServiceTest({
       getSession: () =>
         Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
-      userHasPermission: () => Effect.succeed(options.hasPermission ?? true)
+      userHasPermission: (_headers, permissions) => {
+        options.onCheckPermission?.(permissions);
+        return Effect.succeed(options.hasPermission ?? true);
+      }
     }),
     makeUserRepoTest({
       // Falls back to the default provider so admin-run programs can look up
@@ -480,7 +560,7 @@ describe('createApprovalRequestRouteProgram', () => {
 describe('admin approval request review route programs', () => {
   it('lists approval requests', async () => {
     const requests = [
-      approvalRequest({ id: 'request-1' }),
+      approvalRequest({ id: REQUEST_ID }),
       approvalRequest({ id: 'request-2', status: 'rejected', reason: 'Missing docs' })
     ];
 
@@ -493,7 +573,7 @@ describe('admin approval request review route programs', () => {
     );
 
     expect(result.requests).toHaveLength(2);
-    expect(result.requests[0]).toMatchObject({ id: 'request-1', status: 'submitted' });
+    expect(result.requests[0]).toMatchObject({ id: REQUEST_ID, status: 'submitted' });
     expect(result.requests[0]?.applicant).toEqual({
       email: 'provider@example.com',
       role: 'service-provider',
@@ -504,7 +584,7 @@ describe('admin approval request review route programs', () => {
 
   it('returns a family review packet with needs instead of services', async () => {
     const result = await Effect.runPromise(
-      getAdminApprovalRequestRouteProgram(new Headers(), 'request-1').pipe(
+      getAdminApprovalRequestRouteProgram(new Headers(), REQUEST_ID).pipe(
         Effect.provide(
           makeLayer({
             user: user({ id: 'admin-1', role: 'admin' }),
@@ -537,14 +617,14 @@ describe('admin approval request review route programs', () => {
 
   it('returns an approval request review packet', async () => {
     const result = await Effect.runPromise(
-      getAdminApprovalRequestRouteProgram(new Headers(), 'request-1').pipe(
+      getAdminApprovalRequestRouteProgram(new Headers(), REQUEST_ID).pipe(
         Effect.provide(
           makeLayer({ user: user({ id: 'admin-1', role: 'admin' }), documents: [], services: [] })
         )
       )
     );
 
-    expect(result.approvalRequest).toMatchObject({ id: 'request-1', status: 'submitted' });
+    expect(result.approvalRequest).toMatchObject({ id: REQUEST_ID, status: 'submitted' });
     expect(result.user).toEqual({
       id: 'provider-1',
       email: 'provider@example.com',
@@ -566,7 +646,7 @@ describe('admin approval request review route programs', () => {
       rejectAdminApprovalRequestRouteProgram(
         contextWithJson({ reason: 'Missing required documents.' }),
         new Headers(),
-        'request-1'
+        REQUEST_ID
       ).pipe(
         Effect.provide(
           makeLayer({
@@ -578,13 +658,13 @@ describe('admin approval request review route programs', () => {
     );
 
     expect(result).toMatchObject({
-      id: 'request-1',
+      id: REQUEST_ID,
       status: 'rejected',
       reviewedBy: 'admin-1',
       reason: 'Missing required documents.'
     });
     expect(rejected).toEqual([
-      { id: 'request-1', reviewedBy: 'admin-1', reason: 'Missing required documents.' }
+      { id: REQUEST_ID, reviewedBy: 'admin-1', reason: 'Missing required documents.' }
     ]);
   });
 
@@ -595,7 +675,7 @@ describe('admin approval request review route programs', () => {
       rejectAdminApprovalRequestRouteProgram(
         contextWithJson({ reason: 'Missing required documents.' }),
         new Headers(),
-        'request-1'
+        REQUEST_ID
       ).pipe(Effect.provide(makeLayer({ user: user({ id: 'admin-1', role: 'admin' }), sentMails })))
     );
 
@@ -617,7 +697,7 @@ describe('admin approval request review route programs', () => {
       rejectAdminApprovalRequestRouteProgram(
         contextWithJson({ reason: 'Missing required documents.' }),
         new Headers(),
-        'request-1'
+        REQUEST_ID
       ).pipe(
         Effect.provide(
           makeLayer({ user: user({ id: 'admin-1', role: 'admin' }), mailerFail: true })
@@ -625,7 +705,7 @@ describe('admin approval request review route programs', () => {
       )
     );
 
-    expect(result).toMatchObject({ id: 'request-1', status: 'rejected' });
+    expect(result).toMatchObject({ id: REQUEST_ID, status: 'rejected' });
   });
 
   it('rejects admin review access without approval-request permission', async () => {
@@ -641,12 +721,39 @@ describe('admin approval request review route programs', () => {
     expect(getFailure(exit)._tag).toBe('ForbiddenError');
   });
 
+  it('checks the review permission (not just write) before rejecting, and denies a caller without it', async () => {
+    const checkedPermissions: Array<Record<string, Array<string>>> = [];
+
+    // Any signed-in family/helper has approvalRequest:['write'] (to submit
+    // their own request) but never 'review' — the reject route must ask for
+    // 'review' specifically, or such a caller could reject any request.
+    const exit = await Effect.runPromise(
+      rejectAdminApprovalRequestRouteProgram(
+        contextWithJson({ reason: 'Missing required documents.' }),
+        new Headers(),
+        REQUEST_ID
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            hasPermission: false,
+            onCheckPermission: (permissions) => checkedPermissions.push(permissions)
+          })
+        ),
+        Effect.exit
+      )
+    );
+
+    expect(getFailure(exit)._tag).toBe('ForbiddenError');
+    expect(checkedPermissions).toEqual([{ approvalRequest: ['review'] }]);
+  });
+
   it('reject route requires a reason', async () => {
     const exit = await Effect.runPromise(
       rejectAdminApprovalRequestRouteProgram(
         contextWithJson({ reason: '' }),
         new Headers(),
-        'request-1'
+        REQUEST_ID
       ).pipe(
         Effect.provide(makeLayer({ user: user({ id: 'admin-1', role: 'admin' }) })),
         Effect.exit
@@ -654,5 +761,242 @@ describe('admin approval request review route programs', () => {
     );
 
     expect(getFailure(exit)._tag).toBe('RequestValidationError');
+  });
+});
+
+describe('admin approval queue — vouches', () => {
+  it('summarises counting vouches and remarks per helper', async () => {
+    const result = await Effect.runPromise(
+      listAdminApprovalRequestsRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            approvalRequests: [approvalRequest()],
+            vouches: [acceptedVouchFor('provider-1', 'v-1'), acceptedVouchFor('provider-1', 'v-2')]
+          })
+        )
+      )
+    );
+
+    expect(result.requests[0]).toMatchObject({
+      vouches: { counting: 2, hasConcern: false },
+      hasGeneralRemarks: false
+    });
+  });
+
+  it('flags hasGeneralRemarks when remarks are set', async () => {
+    const result = await Effect.runPromise(
+      listAdminApprovalRequestsRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            approvalRequests: [approvalRequest({ generalRemarks: 'Spoke on Tuesday.' })]
+          })
+        )
+      )
+    );
+
+    expect(result.requests[0]).toMatchObject({ hasGeneralRemarks: true });
+  });
+
+  it('does not summarise vouches for family applicants', async () => {
+    const result = await Effect.runPromise(
+      listAdminApprovalRequestsRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ role: 'family' }),
+            approvalRequests: [approvalRequest()],
+            vouches: [acceptedVouchFor('provider-1', 'v-1')]
+          })
+        )
+      )
+    );
+
+    expect(result.requests[0]).toMatchObject({ vouches: { counting: 0, hasConcern: false } });
+  });
+});
+
+describe('getAdminApprovalRequestRouteProgram — vouches', () => {
+  it('includes the admin vouch view for a helper applicant', async () => {
+    const result = await Effect.runPromise(
+      getAdminApprovalRequestRouteProgram(new Headers(), REQUEST_ID).pipe(
+        Effect.provide(
+          makeLayer({
+            documents: [],
+            services: [],
+            vouches: [acceptedVouchFor('provider-1', 'v-1')]
+          })
+        )
+      )
+    );
+
+    expect(result.vouches).toHaveLength(1);
+    expect(result.vouches[0]).toMatchObject({
+      voucher: { userId: 'v-1', inGoodStanding: true },
+      status: 'accepted',
+      counts: true
+    });
+    // Exactly these fields — no source IP is captured or shown.
+    expect(Object.keys(result.vouches[0]).sort()).toEqual([
+      'adminReason',
+      'answers',
+      'attestedAt',
+      'counts',
+      'decidedAt',
+      'id',
+      'relationship',
+      'requestedAt',
+      'status',
+      'voucher'
+    ]);
+  });
+
+  it('returns no vouches for a family applicant', async () => {
+    const result = await Effect.runPromise(
+      getAdminApprovalRequestRouteProgram(new Headers(), REQUEST_ID).pipe(
+        Effect.provide(
+          makeLayer({
+            profile: profile({ role: 'family' }),
+            documents: [],
+            services: [],
+            needs: []
+          })
+        )
+      )
+    );
+
+    expect(result.vouches).toEqual([]);
+  });
+});
+
+describe('PUT /admin/approval-requests/:id/remarks', () => {
+  it('stores trimmed remarks, and an empty string clears them', async () => {
+    const calls: Array<[string, string | null, string]> = [];
+
+    await Effect.runPromise(
+      updateGeneralRemarksRouteProgram(
+        contextWithJson({ generalRemarks: '  Spoke on Tuesday, warm and clear.  ' }),
+        new Headers(),
+        REQUEST_ID
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            onUpdateRemarks: (...args) => calls.push(args)
+          })
+        )
+      )
+    );
+    await Effect.runPromise(
+      updateGeneralRemarksRouteProgram(
+        contextWithJson({ generalRemarks: '' }),
+        new Headers(),
+        REQUEST_ID
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            onUpdateRemarks: (...args) => calls.push(args)
+          })
+        )
+      )
+    );
+
+    expect(calls[0]?.[1]).toBe('Spoke on Tuesday, warm and clear.');
+    expect(calls[1]?.[1]).toBeNull();
+  });
+
+  it('returns the updated request with serialised remarks timestamps', async () => {
+    const result = await Effect.runPromise(
+      updateGeneralRemarksRouteProgram(
+        contextWithJson({ generalRemarks: 'Spoke on Tuesday.' }),
+        new Headers(),
+        REQUEST_ID
+      ).pipe(Effect.provide(makeLayer({ user: user({ id: 'admin-1', role: 'admin' }) })))
+    );
+
+    expect(result).toMatchObject({
+      id: REQUEST_ID,
+      generalRemarks: 'Spoke on Tuesday.',
+      generalRemarksUpdatedBy: 'admin-1'
+    });
+    expect(result.generalRemarksUpdatedAt).toBe('2026-06-13T00:00:00.000Z');
+  });
+
+  it('rejects remarks over the length limit', async () => {
+    const exit = await Effect.runPromise(
+      updateGeneralRemarksRouteProgram(
+        contextWithJson({ generalRemarks: 'x'.repeat(5001) }),
+        new Headers(),
+        REQUEST_ID
+      ).pipe(
+        Effect.provide(makeLayer({ user: user({ id: 'admin-1', role: 'admin' }) })),
+        Effect.exit
+      )
+    );
+
+    expect(getFailure(exit)._tag).toBe('RequestValidationError');
+  });
+
+  it('checks the review permission (not just write) and denies a caller without it', async () => {
+    const checkedPermissions: Array<Record<string, Array<string>>> = [];
+
+    // Any signed-in family/helper has approvalRequest:['write'] (to submit
+    // their own request) but never 'review' — this route must ask for
+    // 'review' specifically, or such a caller could set remarks on any
+    // request.
+    const exit = await Effect.runPromise(
+      updateGeneralRemarksRouteProgram(
+        contextWithJson({ generalRemarks: 'Spoke on Tuesday.' }),
+        new Headers(),
+        REQUEST_ID
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            hasPermission: false,
+            onCheckPermission: (permissions) => checkedPermissions.push(permissions)
+          })
+        ),
+        Effect.exit
+      )
+    );
+
+    expect(getFailure(exit)._tag).toBe('ForbiddenError');
+    expect(checkedPermissions).toEqual([{ approvalRequest: ['review'] }]);
+  });
+});
+
+describe('admin approval request routes: the :id param', () => {
+  it('answers a non-UUID id with DBNotFoundError (404) without touching the repo', async () => {
+    let touched = 0;
+    const layer = makeLayer({
+      user: user({ id: 'admin-1', role: 'admin' }),
+      onRequestRepoTouch: () => touched++
+    });
+    const exits = [
+      await Effect.runPromiseExit(
+        getAdminApprovalRequestRouteProgram(new Headers(), 'not-a-uuid').pipe(Effect.provide(layer))
+      ),
+      await Effect.runPromiseExit(
+        rejectAdminApprovalRequestRouteProgram(
+          contextWithJson({ reason: 'Missing required documents.' }),
+          new Headers(),
+          "1' OR 1=1"
+        ).pipe(Effect.provide(layer))
+      ),
+      await Effect.runPromiseExit(
+        updateGeneralRemarksRouteProgram(
+          contextWithJson({ generalRemarks: 'Seems great' }),
+          new Headers(),
+          ''
+        ).pipe(Effect.provide(layer))
+      )
+    ];
+    for (const exit of exits) {
+      expect(getFailure(exit)).toMatchObject({
+        _tag: 'DBNotFoundError',
+        entity: 'approvalRequest'
+      });
+    }
+    expect(touched).toBe(0);
   });
 });

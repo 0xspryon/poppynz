@@ -2,6 +2,7 @@ import { SqlError } from '@effect/sql/SqlError';
 import {
   dummyContract,
   dummyContractVersion,
+  makeApprovalRepoTest,
   makeContractRepoTest,
   makeConversationRepoTest,
   makeServiceOfferedRepoTest,
@@ -235,6 +236,8 @@ const makeLayer = (
     onUpdateTerms?: (versionId: string, input: unknown) => void;
     onSetEnding?: (input: unknown) => void;
     onMarkSeen?: (contractId: string, side: string) => void;
+    familyApproved?: boolean;
+    providerApproved?: boolean;
   } = {}
 ) => {
   const viewer = options.viewer ?? familyUser();
@@ -285,6 +288,22 @@ const makeLayer = (
       create: () => Effect.die('not used'),
       updateByIdForUser: () => Effect.die('not used'),
       softDeleteByIdForUser: () => Effect.die('not used')
+    }),
+    makeApprovalRepoTest({
+      findCurrentByUserId: (userId) => {
+        const approved =
+          userId === familyUser().id
+            ? (options.familyApproved ?? true)
+            : (options.providerApproved ?? true);
+        return approved
+          ? Effect.succeed({
+              id: `approval-${userId}`,
+              userId,
+              status: 'approved',
+              expiresAt: new Date('2099-01-01')
+            } as never)
+          : Effect.fail(new DBNotFoundError({ entity: 'approval', value: userId }));
+      }
     }),
     makeConversationRepoTest({
       create: () => Effect.die('not used'),
@@ -1025,6 +1044,54 @@ describe('POST /contracts/:id/accept', () => {
       )
     );
     expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
+  });
+});
+
+describe('contract approval gates', () => {
+  it('blocks sending terms to a provider without a live approval', async () => {
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            providerApproved: false
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'CounterpartNotApprovedError' });
+  });
+
+  it('blocks a family without a live approval from sending terms', async () => {
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            familyApproved: false
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ApprovalRequiredError', role: 'family' });
+  });
+
+  it('blocks accepting terms proposed by a family that lost its approval', async () => {
+    const exit = await Effect.runPromiseExit(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'proposed' }),
+            versions: [proposedVersion()],
+            familyApproved: false
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'CounterpartNotApprovedError' });
   });
 });
 

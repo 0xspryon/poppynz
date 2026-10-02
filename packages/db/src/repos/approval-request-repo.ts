@@ -48,6 +48,11 @@ export class ApprovalRequestRepo extends Context.Tag('@repo/db/ApprovalRequestRe
       reviewedBy: string,
       reason: string
     ) => Effect.Effect<ApprovalRequest, SqlError | DBNotFoundError>;
+    updateGeneralRemarks: (
+      id: string,
+      remarks: string | null,
+      updatedBy: string
+    ) => Effect.Effect<ApprovalRequest, SqlError | DBNotFoundError>;
   }
 >() {}
 
@@ -171,6 +176,17 @@ export const ApprovalRequestRepoLive = Layer.effect(
           })
           .where(eq(approvalRequest.id, id))
           .returning()
+          .pipe(Effect.flatMap(oneOrNotFound(id))),
+      updateGeneralRemarks: (id, remarks, updatedBy) =>
+        db
+          .update(approvalRequest)
+          .set({
+            generalRemarks: remarks,
+            generalRemarksUpdatedBy: updatedBy,
+            generalRemarksUpdatedAt: new Date()
+          })
+          .where(eq(approvalRequest.id, id))
+          .returning()
           .pipe(Effect.flatMap(oneOrNotFound(id)))
     };
   })
@@ -195,5 +211,7 @@ export const EmptyApprovalRequestRepoTest = makeApprovalRequestRepoTest({
   findLatestByUserId: () =>
     Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: '' })),
   markApproved: () => Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: '' })),
-  reject: () => Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: '' }))
+  reject: () => Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: '' })),
+  updateGeneralRemarks: () =>
+    Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: '' }))
 });

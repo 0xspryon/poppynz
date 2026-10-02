@@ -16,6 +16,8 @@
 	import DocumentViewerDialog from '$lib/components/admin/DocumentViewerDialog.svelte';
 	import RejectRequestDialog from '$lib/components/admin/RejectRequestDialog.svelte';
 	import RevokeApprovalDialog from '$lib/components/admin/RevokeApprovalDialog.svelte';
+	import VouchesCard from '$lib/components/admin/VouchesCard.svelte';
+	import GeneralRemarksCard from '$lib/components/admin/GeneralRemarksCard.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { toast } from '$lib/toast.svelte';
 
@@ -414,6 +416,16 @@
 						{/if}
 					{/if}
 				</div>
+
+				{#if detail.applicantRole === 'service-provider'}
+					<VouchesCard vouches={detail.vouches} onchanged={load} />
+				{/if}
+				<GeneralRemarksCard
+					requestId={detail.approvalRequest.id}
+					remarks={detail.approvalRequest.generalRemarks}
+					updatedAt={detail.approvalRequest.generalRemarksUpdatedAt}
+					onchanged={load}
+				/>
 			</div>
 
 			<!-- Documents -->

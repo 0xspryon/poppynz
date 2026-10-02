@@ -19,6 +19,22 @@
 	let roleFilter = $state<RoleFilter>('all');
 	let search = $state('');
 
+	type VouchFilter = 'all' | 'needs-chat' | 'vouched' | 'concerns';
+	let vouchFilter = $state<VouchFilter>('all');
+
+	const isHelper = (entry: ApprovalQueueEntry) => entry.applicant.role === 'service-provider';
+	const needsChat = (entry: ApprovalQueueEntry) =>
+		isHelper(entry) && entry.vouches.counting < 2 && !entry.hasGeneralRemarks;
+	const matchesVouchFilter = (entry: ApprovalQueueEntry, key: VouchFilter) =>
+		key === 'all' ||
+		(key === 'needs-chat' && needsChat(entry)) ||
+		(key === 'vouched' && isHelper(entry) && entry.vouches.counting >= 2) ||
+		(key === 'concerns' && isHelper(entry) && entry.vouches.hasConcern);
+
+	$effect(() => {
+		if (roleFilter === 'family') vouchFilter = 'all';
+	});
+
 	const roleLabel = (role: ApprovalQueueEntry['applicant']['role']) =>
 		role === 'family' ? 'Family' : 'Helper';
 
@@ -78,6 +94,7 @@
 			if (filter === 'approved' && entry.status !== 'approved') return false;
 			if (filter === 'rejected' && entry.status !== 'rejected') return false;
 			if (roleFilter !== 'all' && entry.applicant.role !== roleFilter) return false;
+			if (!matchesVouchFilter(entry, vouchFilter)) return false;
 			if (query) {
 				const haystack = `${applicantName(entry)} ${entry.applicant.email}`.toLowerCase();
 				if (!haystack.includes(query)) return false;
@@ -101,6 +118,22 @@
 		{ key: 'family', label: 'Families' },
 		{ key: 'service-provider', label: 'Helpers' }
 	];
+
+	const vouchFilters = $derived.by((): Array<{ key: VouchFilter; label: string }> => {
+		const pool = (queue?.requests ?? []).filter(
+			(entry) =>
+				(filter !== 'needs-action' || entry.status === 'submitted') &&
+				(filter !== 'approved' || entry.status === 'approved') &&
+				(filter !== 'rejected' || entry.status === 'rejected')
+		);
+		const count = (key: VouchFilter) => pool.filter((entry) => matchesVouchFilter(entry, key)).length;
+		return [
+			{ key: 'all', label: 'All' },
+			{ key: 'needs-chat', label: `Needs a chat · ${count('needs-chat')}` },
+			{ key: 'vouched', label: `Vouched · ${count('vouched')}` },
+			{ key: 'concerns', label: `Concerns · ${count('concerns')}` }
+		];
+	});
 </script>
 
 <svelte:head>
@@ -148,6 +181,24 @@
 			</button>
 		{/each}
 	</div>
+
+	{#if roleFilter !== 'family'}
+		<div class="mb-4 -mt-2 flex flex-wrap items-center gap-1.5">
+			<span class="mr-1 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">Vouches</span>
+			{#each vouchFilters as entry (entry.key)}
+				<button
+					type="button"
+					class="rounded-pill px-4 py-2 text-[12.5px]
+						{vouchFilter === entry.key
+						? 'bg-secondary font-semibold text-secondary-content'
+						: 'border border-outline-variant bg-base-100 font-medium text-base-content-muted'}"
+					onclick={() => (vouchFilter = entry.key)}
+				>
+					{entry.label}
+				</button>
+			{/each}
+		</div>
+	{/if}
 
 	{#if loading}
 		<div class="flex justify-center py-24">
@@ -199,6 +250,25 @@
 								>
 								· {entry.applicant.email}
 							</div>
+							{#if isHelper(entry)}
+								<div class="mt-1 flex flex-wrap items-center gap-1.5">
+									<span
+										class="rounded-[5px] px-2 py-0.5 text-[11px] font-semibold
+											{entry.vouches.counting >= 2
+											? 'bg-success-content text-success'
+											: 'bg-base-300 text-base-content-muted'}"
+									>
+										Vouches {entry.vouches.counting}/2
+									</span>
+									{#if entry.vouches.hasConcern}
+										<span
+											class="rounded-[5px] bg-error-content px-2 py-0.5 text-[11px] font-semibold text-error"
+										>
+											Concern
+										</span>
+									{/if}
+								</div>
+							{/if}
 						</div>
 					</div>
 					<div class="mt-2 lg:mt-0">

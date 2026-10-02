@@ -22,7 +22,8 @@ import {
   UserDirectoryRepoDefault,
   UserProfileRepoDefault,
   UserRepoDefault,
-  UserSearchRepoDefault
+  UserSearchRepoDefault,
+  VouchRepoDefault
 } from '@repo/db';
 import { CredibledDefault } from '@repo/credibled';
 import { GooglePlacesLive } from '@repo/google';
@@ -60,6 +61,7 @@ export const AppLive = Layer.mergeAll(
   FamilySearchOutboxRepoDefault,
   FamilySearchRepoDefault,
   ReferralRepoDefault,
+  VouchRepoDefault,
   SafetyVerificationRepoDefault,
   CheckOrderRepoDefault,
   PaymentRepoDefault,

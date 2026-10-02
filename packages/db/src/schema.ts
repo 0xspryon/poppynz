@@ -143,6 +143,15 @@ export const checkOrderOutcome = appDb.enum('check_order_outcome', [
   'not_cleared',
   'inconclusive'
 ]);
+// A vouch's own lifecycle. `expired` is not stored — a pending row past
+// expires_at presents as expired at read time, like referrals.
+export const vouchStatus = appDb.enum('vouch_status', [
+  'pending',
+  'accepted',
+  'declined',
+  'revoked',
+  'flagged'
+]);
 
 export const user = appDb.table('user', {
   id: text('id').primaryKey(),
@@ -223,6 +232,58 @@ export const referral = appDb.table(
   ]
 );
 
+/** The voucher's answers to the six-question form. Admin-only, always. */
+export type VouchAnswers = {
+  howKnow: string;
+  howLong: string;
+  wouldTrust: 'yes' | 'no' | 'unsure';
+  hasConcerns: boolean;
+  concernsDetail: string | null;
+  wouldHire: 'yes' | 'no' | 'unsure';
+  anythingElse: string | null;
+};
+
+// An approved member endorsing a helper applicant. Approval never reads this
+// table — vouches inform the admin and nudge the applicant, nothing more.
+export const vouch = appDb.table(
+  'vouches',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    applicantUserId: text('applicant_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    voucherUserId: text('voucher_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    // The voucher's role when asked — a later role change doesn't rewrite history.
+    voucherRole: accessControlRole('voucher_role').notNull(),
+    // The applicant's own description of how they know the voucher.
+    relationship: text('relationship').notNull(),
+    status: vouchStatus('status').notNull().default('pending'),
+    answers: jsonb('answers').$type<VouchAnswers>(),
+    attestedAt: timestamp('attested_at'),
+    expiresAt: timestamp('expires_at').notNull(),
+    decidedAt: timestamp('decided_at'),
+    // Who revoked or flagged it: the voucher withdrawing, or an admin.
+    revokedBy: text('revoked_by').references(() => user.id, { onDelete: 'set null' }),
+    adminReason: text('admin_reason'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    index('vouches_applicant_user_id_idx').on(table.applicantUserId),
+    index('vouches_voucher_user_id_idx').on(table.voucherUserId),
+    uniqueIndex('vouches_pair_accepted_uidx')
+      .on(table.applicantUserId, table.voucherUserId)
+      .where(sql`${table.status} = 'accepted'`)
+  ]
+);
+
 export const kycDocumentType = appDb.table(
   'kyc_document_types',
   {
@@ -276,6 +337,13 @@ export const approvalRequest = appDb.table(
     reviewedBy: text('reviewed_by').references(() => user.id, { onDelete: 'set null' }),
     reviewedAt: timestamp('reviewed_at'),
     reason: text('reason'),
+    // Admin-only free text, typically notes from an off-app chat with the
+    // applicant. Never shown to the applicant.
+    generalRemarks: text('general_remarks'),
+    generalRemarksUpdatedBy: text('general_remarks_updated_by').references(() => user.id, {
+      onDelete: 'set null'
+    }),
+    generalRemarksUpdatedAt: timestamp('general_remarks_updated_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()

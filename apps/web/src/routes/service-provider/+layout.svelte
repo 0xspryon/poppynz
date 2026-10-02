@@ -117,6 +117,12 @@
 			label: 'Referrals',
 			icon: 'la-user-plus',
 			group: 'More'
+		},
+		{
+			href: resolve('/service-provider/vouches'),
+			label: 'Vouch requests',
+			icon: 'la-handshake',
+			group: 'More'
 		}
 	]);
 </script>

@@ -21,6 +21,8 @@
 - Commit after every task with a conventional message ending in `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Error codes (exact): `START_DATE_REQUIRED` (422), `FAMILY_LOCATION_REQUIRED` (422), `START_DATE_NOT_IN_FUTURE` (422), `CONTRACT_START_DATE_PASSED` (409).
 - Tie rule: when the negotiated end date equals the notice end date, the negotiated one wins (its end time applies).
+- Line numbers in this plan are approximate (written before `develop` added approval gates to contracts). Locate edits by the quoted code, not by line. Send and accept now also call `requireContractCounterpart(...)` after the expiry/rate checks; keep those calls and add the new checks next to them as described. The test `makeLayer` already mocks approvals as granted by default.
+- Migration numbering: `develop` already has `0023_vouches`; this branch adds `0024_contract_dates`.
 
 ## File Structure
 
@@ -31,7 +33,7 @@
 | `packages/calendar/src/lookup.ts` | Server-only `zoneForLocation` |
 | `packages/calendar/src/index.test.ts`, `lookup.test.ts` | Package tests |
 | 5 × `Dockerfile*.production` | Copy the new package manifest into the deps layer |
-| `packages/db/src/migrations/0023_contract_dates.sql` + `meta/_journal.json` | Columns + checks |
+| `packages/db/src/migrations/0024_contract_dates.sql` + `meta/_journal.json` | Columns + checks |
 | `packages/db/src/schema.ts` | `timeZone`, `endsAtMinutes`, checks, comments |
 | `packages/db/src/repos/contract-repo.ts` | Repo inputs + fixtures |
 | `apps/api/src/routes/app/contracts/contracts.validator.ts` | `endsAtMinutes` validation |
@@ -385,7 +387,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 ### Task 2: Schema, migration and repo
 
 **Files:**
-- Create: `packages/db/src/migrations/0023_contract_dates.sql`
+- Create: `packages/db/src/migrations/0024_contract_dates.sql`
 - Modify: `packages/db/src/migrations/meta/_journal.json`, `packages/db/src/schema.ts` (import line ~2, `ContractSession` comment ~813, `contractVersion` table ~896–932), `packages/db/src/repos/contract-repo.ts` (interface ~41–60, `createVersion`/`updateVersionTerms` impls ~245–270, fixtures ~422–450)
 
 **Interfaces:**
@@ -395,7 +397,7 @@ Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the migration**
 
-`packages/db/src/migrations/0023_contract_dates.sql`:
+`packages/db/src/migrations/0024_contract_dates.sql`:
 
 ```sql
 -- Contract dates follow the family's own time zone, not Pacific/Auckland.
@@ -421,10 +423,10 @@ ALTER TABLE "app_db"."contract_versions"
            OR ("ends_on" IS NOT NULL AND "ends_at_minutes" BETWEEN 1 AND 1440));
 ```
 
-In `packages/db/src/migrations/meta/_journal.json`, append to `entries` (after the `0022_check_order_outcome` object, keeping the file on one line as it is):
+In `packages/db/src/migrations/meta/_journal.json`, append to `entries` (after the `0023_vouches` object, keeping the file on one line as it is):
 
 ```json
-{"idx": 23, "version": "7", "when": 1788140000000, "tag": "0023_contract_dates", "breakpoints": true}
+{"idx": 24, "version": "7", "when": 1788150000000, "tag": "0024_contract_dates", "breakpoints": true}
 ```
 
 - [ ] **Step 2: Update the Drizzle schema**
@@ -528,7 +530,7 @@ docker compose up -d postgres
 docker compose up migrations
 ```
 
-Expected: migrations container exits 0, log mentions `0023_contract_dates`. Verify:
+Expected: migrations container exits 0, log mentions `0024_contract_dates`. Verify:
 
 ```bash
 docker exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\d app_db.contract_versions"' | grep -E "time_zone|ends_at_minutes|contract_versions_time_zone_when_sent|ends_at_minutes_valid"

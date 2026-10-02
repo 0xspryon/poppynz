@@ -61,7 +61,7 @@ boundaries (23:30 local already tomorrow in UTC), month/year rollover in
 `addDays`, lookups for Winnipeg, Regina, Kenora (Central, in Ontario),
 Cranbrook (Mountain, in BC), Toronto, Vancouver, St. John's.
 
-## 2. Data model — migration `0023_contract_dates.sql`
+## 2. Data model — migration `0024_contract_dates.sql`
 
 Hand-authored (see AGENTS/dev notes: no `drizzle-kit generate`), journal entry
 added by hand.

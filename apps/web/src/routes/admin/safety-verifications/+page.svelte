@@ -161,7 +161,7 @@
 							class="btn btn-outline btn-sm"
 							href={safetyVerificationReportUrl(item.id)}
 							target="_blank"
-							rel="noopener"
+							rel="external noopener"
 						>
 							Open report
 						</a>

@@ -23,6 +23,7 @@
 		type ContractTermsInput
 	} from '$lib/api/contracts';
 	import { getProvider } from '$lib/api/providers';
+	import { addDays, todayIn } from '@repo/calendar';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import ContractTermsEditor, {
@@ -189,6 +190,12 @@
 		} else if (error.code === 'CONTRACT_STATE_INVALID') {
 			toast.error('This contract has moved on — reloading.');
 			void refresh(contractId);
+		} else if (error.code === 'START_DATE_REQUIRED') {
+			toast.error('Pick a start date before sending.');
+		} else if (error.code === 'START_DATE_NOT_IN_FUTURE') {
+			toast.error('The start date must be after today.');
+		} else if (error.code === 'FAMILY_LOCATION_REQUIRED') {
+			toast.error('Add your address to your profile before sending.');
 		} else {
 			toast.error("That didn't go through. Please try again.");
 		}
@@ -198,6 +205,11 @@
 	 * the viewer — "try again" would loop, so refetch and let the fresh action
 	 * flags redraw the page instead. */
 	const actionErrorToast = (error: { code: string }, fallback: string) => {
+		if (error.code === 'CONTRACT_START_DATE_PASSED') {
+			toast.error('The start date has passed — ask for new terms with a later date.');
+			void refresh(contractId);
+			return;
+		}
 		if (
 			error.code === 'CONTRACT_STATE_INVALID' ||
 			error.code === 'CONTRACT_NOT_FOUND' ||
@@ -333,14 +345,12 @@
 		}
 	}
 
-	// Recomputed each time the dialog opens (reading endOpen), matching the
-	// server's UTC-based endsOn — a stale value from a long-lived tab must not
-	// disagree with the date the server will store.
+	// Recomputed each time the dialog opens (reading endOpen): the notice day in
+	// the contract's zone plus 14 calendar days — the same rule the server
+	// applies, so a long-lived tab can't show a different date.
 	const noticeEndsOn = $derived(
-		endOpen
-			? formatDateWithWeekday(
-					new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-				)
+		endOpen && contract?.timeZone
+			? formatDateWithWeekday(addDays(todayIn(contract.timeZone), 14))
 			: ''
 	);
 
@@ -620,6 +630,10 @@
 						listingLabel={`${firstName}'s listing`}
 						counterpartFirstName={firstName}
 						{chatHref}
+						earliestStartsOn={contract.earliestStartsOn}
+						timeZoneLabel={contract.timeZoneLabel}
+						locationMissing={contract.timeZone === null}
+						profileHref={resolve('/family/profile')}
 						{busy}
 						onsave={handleSaveDraft}
 						onsend={handleSendTerms}
@@ -634,6 +648,7 @@
 						heading={contract.status === 'declined'
 							? `Proposed terms — v${displayTerms.version}`
 							: 'Services & sessions'}
+						timeZoneLabel={contract.timeZoneLabel}
 					/>
 				{/if}
 
@@ -675,6 +690,14 @@
 							>
 								Accept &amp; sign
 							</button>
+						{/if}
+						{#if contract.acceptBlockedReason === 'start_date_passed'}
+							<p
+								class="rounded-lg bg-base-300 px-3 py-2 text-[12px] leading-relaxed text-neutral"
+								role="status"
+							>
+								The start date has passed — ask {firstName} for new terms with a later date.
+							</p>
 						{/if}
 						{#if contract.actions.canRequestChanges}
 							<button

@@ -32,7 +32,9 @@ export const safetyVerificationOrderSchema = Schema.Struct({
 /** The browser finished (or abandoned) confirming a payment. Only the id
  * travels — what happened is re-fetched from the provider. */
 export const safetyVerificationConfirmSchema = Schema.Struct({
-  paymentId: trimmedNonEmptyString.pipe(Schema.maxLength(64))
+  // payments.id is a uuid: anything else is a validation error, never a
+  // Postgres cast failure.
+  paymentId: Schema.UUID
 });
 
 /**

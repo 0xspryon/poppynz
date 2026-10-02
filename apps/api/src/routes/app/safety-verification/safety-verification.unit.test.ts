@@ -252,6 +252,14 @@ const makeLayer = (
     /** What re-fetching the payment from the provider says. */
     fetchedStatus?: ProviderPaymentStatus;
     providerDown?: boolean;
+    /** Starting the payment fails with a provider error (timeout, a
+     * concurrent request holding the same key, Stripe down). */
+    startProviderError?: boolean;
+    /** A concurrent request records this provider reference on the row while
+     * ours is being started. */
+    concurrentReference?: string;
+    /** The active gateway, when not the mock. */
+    provider?: 'mock' | 'stripe';
     recorded?: Recorded;
   } = {}
 ) => {
@@ -380,14 +388,29 @@ const makeLayer = (
         recorded.paymentAdvances.push(input);
         const from = Array.isArray(input.from) ? input.from : [input.from];
         if (current === null || !from.includes(current.status)) return Effect.succeed(null);
+        if (
+          input.providerReference !== undefined &&
+          current.providerReference !== input.providerReference
+        ) {
+          return Effect.succeed(null);
+        }
         current = payment({ ...current, ...input.set } as Partial<Payment>);
         return Effect.succeed(current);
       }
     }),
     (options.billing ?? makeInMemoryBillingCustomerRepo([])).layer,
     makePaymentsTest({
+      ...(options.provider ? { provider: options.provider } : {}),
       startPayment: (input) => {
         recorded.started.push(input);
+        if (options.concurrentReference && current !== null) {
+          current = payment({ ...current, providerReference: options.concurrentReference });
+        }
+        if (options.startProviderError) {
+          return Effect.fail(
+            new PaymentProviderError({ operation: 'startPayment', cause: 'busy' })
+          );
+        }
         return options.declineCharge
           ? Effect.fail(new PaymentDeclinedError({ reason: 'card declined' }))
           : mockPayments
@@ -822,10 +845,15 @@ describe('ordering a check', () => {
       idempotencyKey: 'payment-1',
       metadata: { payment_id: 'payment-1', order_id: 'order-1' }
     });
-    expect(recorded.paymentUpdates[0]?.providerReference).toBe('mock_pi_payment-1');
+    // The intent is recorded only on a row still pending with none yet.
+    expect(recorded.paymentAdvances[0]).toMatchObject({
+      from: 'pending',
+      providerReference: null,
+      set: { providerReference: 'mock_pi_payment-1' }
+    });
     // Settled through the shared path: captured, then the order is paid —
     // only if still claimed for THIS payment.
-    expect(recorded.paymentAdvances[0]).toMatchObject({
+    expect(recorded.paymentAdvances[1]).toMatchObject({
       from: 'pending',
       set: { status: 'captured' }
     });
@@ -850,11 +878,16 @@ describe('ordering a check', () => {
       paymentId: 'payment-1',
       clientSecret: 'mock_secret_mock_pi_payment-1',
       provider: 'mock',
+      // The row's frozen total: what the provider charges and the modal shows.
+      totalCents: 7500,
       savesCard: false,
       savedCard: null
     });
-    // Nothing is recorded as paid until settle sees the provider confirm.
-    expect(recorded.paymentAdvances).toHaveLength(0);
+    // Nothing is recorded as paid until settle sees the provider confirm:
+    // the only write is the intent's reference.
+    expect(recorded.paymentAdvances.map((input) => input.set)).toEqual([
+      { providerReference: 'mock_pi_payment-1', lastError: null }
+    ]);
     expect(recorded.advances).toHaveLength(0);
     expect(recorded.enqueued).toHaveLength(0);
   });
@@ -874,7 +907,10 @@ describe('ordering a check', () => {
     expect(recorded.started[0]).toMatchObject({
       customer: 'mock_cus_family-1',
       savedCard: null,
-      saveCard: true
+      saveCard: true,
+      // The card choices are part of the key: a restart that chooses
+      // differently is a different request, never a reused key.
+      idempotencyKey: 'payment-1-save'
     });
     // The modal tells the family their new card will be kept.
     expect(result).toMatchObject({ status: 'payment_required', savesCard: true });
@@ -892,7 +928,11 @@ describe('ordering a check', () => {
       recorded
     });
 
-    expect(recorded.started[0]).toMatchObject({ savedCard: 'mock_pm_saved', saveCard: false });
+    expect(recorded.started[0]).toMatchObject({
+      savedCard: 'mock_pm_saved',
+      saveCard: false,
+      idempotencyKey: 'payment-1-card-mock_pm_saved'
+    });
     expect(result).toMatchObject({
       status: 'payment_required',
       savesCard: false,
@@ -915,9 +955,11 @@ describe('ordering a check', () => {
     );
 
     expect(failureTag(exit)).toBe('SafetyVerificationPaymentError');
-    expect(recorded.paymentUpdates[0]).toMatchObject({
-      status: 'failed',
-      lastError: 'card declined'
+    // Guarded: only a row still pending with no intent recorded is failed.
+    expect(recorded.paymentAdvances[0]).toMatchObject({
+      from: 'pending',
+      providerReference: null,
+      set: { status: 'failed', lastError: 'card declined' }
     });
     expect(recorded.advances[0]).toMatchObject({
       from: { status: 'payment_pending', paymentId: 'payment-1' },
@@ -986,6 +1028,112 @@ describe('ordering a check', () => {
     expect(recorded.started.map((input) => input.idempotencyKey)).toEqual(['payment-0']);
   });
 
+  it('leaves the row pending and the order claimed when the provider errors on a restart', async () => {
+    // The provider may still have created the intent (a timeout, or a
+    // concurrent request holding the same key that handed it to the
+    // browser). Failing the row would orphan money paid into that intent.
+    const recorded = record();
+    const exit = await Effect.runPromiseExit(
+      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+            paymentById: payment({ id: 'payment-0', status: 'pending', providerReference: null }),
+            items: basketReady.items,
+            startProviderError: true,
+            recorded
+          })
+        )
+      )
+    );
+
+    expect(failureTag(exit)).toBe('SafetyVerificationVendorError');
+    expect(recorded.paymentUpdates).toHaveLength(0);
+    expect(recorded.paymentAdvances).toHaveLength(0);
+    expect(recorded.advances).toHaveLength(0);
+  });
+
+  it('leaves a fresh row pending too when the provider errors on the first start', async () => {
+    const recorded = record();
+    const exit = await Effect.runPromiseExit(
+      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
+        Effect.provide(makeLayer({ ...basketReady, startProviderError: true, recorded }))
+      )
+    );
+
+    expect(failureTag(exit)).toBe('SafetyVerificationVendorError');
+    expect(recorded.paymentAdvances).toHaveLength(0);
+    // The order stays claimed: the next attempt restarts the same row and key.
+    expect(recorded.advances).toHaveLength(0);
+  });
+
+  it('cancels its own intent and hands out nothing when a concurrent request recorded another', async () => {
+    const recorded = record();
+    const exit = await Effect.runPromiseExit(
+      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+            paymentById: payment({ id: 'payment-0', status: 'pending', providerReference: null }),
+            items: basketReady.items,
+            startedStatus: 'requires_action',
+            concurrentReference: 'pi_other',
+            recorded
+          })
+        )
+      )
+    );
+
+    expect(failureTag(exit)).toBe('SafetyVerificationConflictError');
+    expect(recorded.cancelled).toEqual(['mock_pi_payment-0']);
+    expect(recorded.paymentUpdates).toHaveLength(0);
+  });
+
+  it('abandons a reference-less row left by another provider and charges a fresh one', async () => {
+    const recorded = record();
+    const result = await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({ id: 'payment-0', status: 'pending', provider: 'stripe' }),
+      items: basketReady.items,
+      startedStatus: 'requires_action',
+      recorded
+    });
+
+    expect(recorded.paymentAdvances[0]).toMatchObject({
+      from: 'pending',
+      set: { status: 'failed', lastError: 'abandoned at provider switch' }
+    });
+    expect(recorded.claims[0]?.from).toEqual({ status: 'payment_pending', paymentId: 'payment-0' });
+    // Never started against the old provider's row.
+    expect(recorded.started.map((input) => input.idempotencyKey)).toEqual(['payment-1']);
+    expect(recorded.paymentsCreated[0]).toMatchObject({ provider: 'mock' });
+    expect(result).toMatchObject({ status: 'payment_required', paymentId: 'payment-1' });
+  });
+
+  it('abandons a referenced row left by another provider instead of resuming it', async () => {
+    const recorded = record();
+    const result = await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({
+        id: 'payment-0',
+        status: 'pending',
+        provider: 'stripe',
+        providerReference: 'pi_0'
+      }),
+      items: basketReady.items,
+      startedStatus: 'requires_action',
+      recorded
+    });
+
+    expect(recorded.resumed).toHaveLength(0);
+    expect(recorded.paymentAdvances[0]).toMatchObject({
+      from: 'pending',
+      set: { status: 'failed', lastError: 'abandoned at provider switch' }
+    });
+    expect(recorded.claims[0]?.from).toEqual({ status: 'payment_pending', paymentId: 'payment-0' });
+    expect(result).toMatchObject({ status: 'payment_required', paymentId: 'payment-1' });
+  });
+
   it('charges the restarted row its own frozen total, never a freshly recomputed quote', async () => {
     // The row was frozen at an earlier attempt; if pricing changed since
     // (fee, tax, item cost), the provider must still be charged what the row
@@ -1029,7 +1177,8 @@ describe('ordering a check', () => {
     expect(result).toMatchObject({
       status: 'payment_required',
       paymentId: 'payment-0',
-      clientSecret: 'secret_pi_0'
+      clientSecret: 'secret_pi_0',
+      totalCents: 0
     });
   });
 
@@ -1155,10 +1304,11 @@ describe('ordering a check', () => {
 });
 
 describe('confirming a payment from the browser', () => {
+  const PAYMENT_ID = '3f0c7a52-8a4b-4c1e-9d5f-2b7e6a1c0d94';
   const pendingPayment = {
-    openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+    openOrder: order({ status: 'payment_pending', paymentId: PAYMENT_ID }),
     paymentById: payment({
-      id: 'payment-0',
+      id: PAYMENT_ID,
       status: 'pending',
       providerReference: 'pi_0',
       totalCents: 7500
@@ -1166,7 +1316,7 @@ describe('confirming a payment from the browser', () => {
   };
   const confirm = (
     options: Parameters<typeof makeLayer>[0],
-    body: unknown = { paymentId: 'payment-0' }
+    body: unknown = { paymentId: PAYMENT_ID }
   ) =>
     Effect.runPromiseExit(
       confirmSafetyCheckPaymentRouteProgram(contextWithJson(body), new Headers()).pipe(
@@ -1196,7 +1346,7 @@ describe('confirming a payment from the browser', () => {
   it("refuses somebody else's payment as not found", async () => {
     const exit = await confirm({
       ...pendingPayment,
-      paymentById: payment({ id: 'payment-0', userId: 'someone-else', providerReference: 'pi_0' })
+      paymentById: payment({ id: PAYMENT_ID, userId: 'someone-else', providerReference: 'pi_0' })
     });
     expect(failureTag(exit)).toBe('SafetyVerificationNotFoundError');
   });
@@ -1214,6 +1364,18 @@ describe('confirming a payment from the browser', () => {
   it('rejects a body without a payment id', async () => {
     const exit = await confirm(pendingPayment, {});
     expect(failureTag(exit)).toBe('RequestValidationError');
+  });
+
+  it('rejects a payment id that is not a uuid before it reaches the database', async () => {
+    const exit = await confirm(pendingPayment, { paymentId: 'payment-0' });
+    expect(failureTag(exit)).toBe('RequestValidationError');
+  });
+
+  it('refuses an unknown payment id as not found', async () => {
+    const exit = await confirm(pendingPayment, {
+      paymentId: '00000000-0000-4000-8000-000000000000'
+    });
+    expect(failureTag(exit)).toBe('SafetyVerificationNotFoundError');
   });
 });
 

@@ -6,6 +6,7 @@ import {
   eq,
   inArray,
   isNotNull,
+  isNull,
   lt,
   type InferInsertModel,
   type InferSelectModel
@@ -36,6 +37,10 @@ export type PaymentUpdateInput = Partial<
  * and must not assume its write happened. */
 export type PaymentAdvanceInput = {
   from: PaymentStatus | ReadonlyArray<PaymentStatus>;
+  /** Also guards the provider reference when given: null means "no intent
+   * recorded yet". How a start records its intent without overwriting one a
+   * concurrent request already handed to the browser. */
+  providerReference?: string | null;
   set: PaymentUpdateInput;
 };
 
@@ -159,7 +164,17 @@ export const PaymentRepoLive = Layer.effect(
         return db
           .update(payment)
           .set({ ...input.set, updatedAt: new Date() })
-          .where(and(eq(payment.id, id), inArray(payment.status, statuses)))
+          .where(
+            and(
+              eq(payment.id, id),
+              inArray(payment.status, statuses),
+              input.providerReference === undefined
+                ? undefined
+                : input.providerReference === null
+                  ? isNull(payment.providerReference)
+                  : eq(payment.providerReference, input.providerReference)
+            )
+          )
           .returning()
           .pipe(Effect.map((rows) => rows[0] ?? null));
       }

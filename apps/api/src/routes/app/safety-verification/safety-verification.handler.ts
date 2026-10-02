@@ -486,6 +486,9 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
       paymentId: payment.id,
       clientSecret: started.clientSecret,
       provider: payments.provider,
+      // The row's frozen total — what the provider charges — never the live
+      // quote, which a fee or price change since the row was made would move.
+      totalCents: payment.totalCents,
       // A family paying with a new card keeps it: the modal says so.
       savesCard: keepsCard && card === null,
       // Only when the intent really carries the saved card — the modal's
@@ -534,24 +537,62 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
         return paymentRequired(result.payment, started, card);
       });
 
+    /** Records the intent on its row — only while the row is pending with no
+     * intent yet (or this very one: the same key gives the same intent). A
+     * concurrent request that recorded a DIFFERENT intent owns the row: ours
+     * is cancelled so it can never be paid, and nothing is handed out. */
+    const recordStarted = (payment: Payment, started: StartedPayment) =>
+      Effect.gen(function* () {
+        const written = yield* paymentRepo
+          .advance(payment.id, {
+            from: 'pending',
+            providerReference: null,
+            set: { providerReference: started.reference, lastError: null }
+          })
+          .pipe((errors) => mapRepoError(errors));
+        if (written !== null) return written;
+        const current = yield* mapRepoError(orNull(paymentRepo.findById(payment.id)));
+        if (current !== null && current.providerReference === started.reference) return current;
+        yield* payments
+          .cancelPayment(started.reference)
+          .pipe(
+            Effect.catchAll((error) =>
+              Effect.logWarning(`could not cancel superseded intent for ${payment.id}`, error)
+            )
+          );
+        return yield* Effect.fail(
+          new SafetyVerificationConflictError({
+            message: 'Your previous payment is still being processed. Check back in a few minutes.'
+          })
+        );
+      });
+
     /** Ask the provider to start a payment against a payment row. */
     const charge = (claimed: CheckOrder, payment: Payment) =>
       Effect.gen(function* () {
         const declined = (reason: string) =>
           Effect.gen(function* () {
             // Release the order so the applicant can try again with a fresh
-            // charge; the failed row stays as the record of the attempt. The
-            // revert is guarded on OUR payment so it cannot clobber a re-claim
-            // that got in first.
-            yield* mapRepoError(
-              paymentRepo.update(payment.id, { status: 'failed', lastError: reason })
-            );
-            yield* mapRepoError(
-              orders.advance(claimed.id, {
-                from: { status: 'payment_pending', paymentId: payment.id },
-                set: { status: 'draft', paymentId: null }
+            // charge; the failed row stays as the record of the attempt.
+            // Both writes are guarded: the row only while it is still pending
+            // with no intent recorded (a concurrent request may have handed
+            // one to the browser), the revert only for OUR payment so it
+            // cannot clobber a re-claim that got in first.
+            const failed = yield* paymentRepo
+              .advance(payment.id, {
+                from: 'pending',
+                providerReference: null,
+                set: { status: 'failed', lastError: reason }
               })
-            );
+              .pipe((errors) => mapRepoError(errors));
+            if (failed !== null) {
+              yield* orders
+                .advance(claimed.id, {
+                  from: { status: 'payment_pending', paymentId: payment.id },
+                  set: { status: 'draft', paymentId: null }
+                })
+                .pipe((errors) => mapRepoError(errors));
+            }
             return yield* Effect.fail(new SafetyVerificationPaymentError({ reason }));
           });
 
@@ -581,10 +622,16 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
 
         // The payment row's id is the idempotency key: a retry against the
         // same row is the same intent at the provider, never a second one.
+        // The card choices are part of it, because the provider refuses a
+        // reused key sent with different parameters — and a restart can
+        // choose differently (a card added or replaced since). A different
+        // choice is a different intent; recording it below is guarded so it
+        // can never overwrite one already handed to the browser.
+        const cardChoice = card !== null ? `-card-${card.reference}` : keepsCard ? '-save' : '';
         const started = yield* payments
           .startPayment({
             quote: frozenQuote,
-            idempotencyKey: payment.id,
+            idempotencyKey: `${payment.id}${cardChoice}`,
             metadata: { payment_id: payment.id, order_id: claimed.id, kind: payment.kind },
             customer: customer?.customerReference ?? null,
             savedCard: card?.reference ?? null,
@@ -594,13 +641,18 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
           .pipe(
             Effect.catchTags({
               PaymentDeclinedError: (error) => declined(error.reason),
-              PaymentProviderError: () => declined('Payment could not be processed.')
+              // Not an answer about the card. The provider may still have
+              // created the intent (a timeout, or a concurrent request holding
+              // the same key that has already handed it to the browser), so
+              // the row stays pending with no reference and the order stays
+              // claimed: the next attempt restarts with the same key and gets
+              // that same intent, never a second charge.
+              PaymentProviderError: () =>
+                Effect.fail(new SafetyVerificationVendorError({ reason: PAYMENTS_UNAVAILABLE }))
             })
           );
 
-        const recorded = yield* paymentRepo
-          .update(payment.id, { providerReference: started.reference, lastError: null })
-          .pipe((errors) => mapRepoError(errors));
+        const recorded = yield* recordStarted(payment, started);
 
         return started.status === 'succeeded'
           ? yield* settleAndRespond(claimed, recorded, started, card)
@@ -664,6 +716,26 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
     if (previous !== null && isSettledPayment(previous)) {
       const result = yield* settlePayment(previous.id).pipe((errors) => mapSettleError(errors));
       return yield* paidResponse(openOrder.id, result.payment);
+    }
+    if (
+      previous !== null &&
+      previous.status === 'pending' &&
+      previous.provider !== payments.provider
+    ) {
+      // Left by another gateway (PAYMENTS_PROVIDER switched, or rolled back).
+      // Neither restarting nor resuming it can work here: a restart would
+      // record this gateway's intent on a row settle, the webhook and the
+      // recovery job all skip as another provider's, and a resume would send
+      // the old gateway's reference to this one. Close it out — guarded, in
+      // case a concurrent request got there first — and charge afresh.
+      const abandoned = yield* paymentRepo
+        .advance(previous.id, {
+          from: 'pending',
+          set: { status: 'failed', lastError: 'abandoned at provider switch' }
+        })
+        .pipe((errors) => mapRepoError(errors));
+      if (abandoned === null) return yield* Effect.fail(alreadyInProgress());
+      return yield* claimWithNewPayment({ status: 'payment_pending', paymentId: previous.id });
     }
     if (previous !== null && previous.status === 'pending') {
       if (previous.providerReference === null) {
@@ -838,7 +910,9 @@ export const listSafetyVerificationsForReviewRouteProgram = (headers: Headers) =
     const repo = yield* SafetyVerificationRepo;
     const orders = yield* CheckOrderRepo;
     const records = yield* mapRepoError(repo.listForReview());
-    const orderIds = records.flatMap((record) => (record.checkOrderId ? [record.checkOrderId] : []));
+    const orderIds = records.flatMap((record) =>
+      record.checkOrderId ? [record.checkOrderId] : []
+    );
     const withItems = yield* mapRepoError(orders.listWithItems(orderIds));
     const currentDate = today();
 

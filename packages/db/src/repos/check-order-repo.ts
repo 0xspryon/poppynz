@@ -101,6 +101,9 @@ export class CheckOrderRepo extends Context.Tag('@repo/db/CheckOrderRepo')<
     /** The one order occupying the open slot for this applicant and role, if
      * any. Finished orders are history and never returned here. */
     findOpen: (userId: string, role: CheckOrderRole) => Effect.Effect<CheckOrder | null, SqlError>;
+    /** The order a payment was claimed for — how the settle path, which
+     * starts from a payment, finds what the money was for. */
+    findByPaymentId: (paymentId: string) => Effect.Effect<CheckOrder | null, SqlError>;
     /** Correlation for inbound Credibled webhooks — their payload carries no
      * external reference, so their uuid is the only key we have. */
     findByCredibledUuid: (uuid: string) => Effect.Effect<CheckOrder | null, SqlError>;
@@ -185,6 +188,14 @@ export const CheckOrderRepoLive = Layer.effect(
               inArray(checkOrder.status, openCheckOrderStatuses)
             )
           )
+          .limit(1)
+          .pipe(Effect.map(firstOrNull)),
+
+      findByPaymentId: (paymentId) =>
+        db
+          .select()
+          .from(checkOrder)
+          .where(and(eq(checkOrder.paymentId, paymentId), isNull(checkOrder.deletedAt)))
           .limit(1)
           .pipe(Effect.map(firstOrNull)),
 
@@ -433,14 +444,12 @@ export const CheckOrderRepoLive = Layer.effect(
 
 export const CheckOrderRepoDefault = CheckOrderRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makeCheckOrderRepoTest = (implementation: Context.Tag.Service<CheckOrderRepo>) =>
-  Layer.succeed(CheckOrderRepo, implementation);
-
 const notFound = () => Effect.fail(new DBNotFoundError({ entity: 'checkOrder', value: '' }));
 
-export const EmptyCheckOrderRepoTest = makeCheckOrderRepoTest({
+const emptyCheckOrderRepo: Context.Tag.Service<CheckOrderRepo> = {
   findById: notFound,
   findOpen: () => Effect.succeed(null),
+  findByPaymentId: () => Effect.succeed(null),
   findByCredibledUuid: () => Effect.succeed(null),
   create: () => notFound() as never,
   update: notFound,
@@ -453,4 +462,11 @@ export const EmptyCheckOrderRepoTest = makeCheckOrderRepoTest({
   listWithItems: () => Effect.succeed([]),
   addItem: () => notFound() as never,
   removeItem: notFound
-});
+};
+
+/** Unspecified methods behave like an empty table. */
+export const makeCheckOrderRepoTest = (
+  implementation: Partial<Context.Tag.Service<CheckOrderRepo>>
+) => Layer.succeed(CheckOrderRepo, { ...emptyCheckOrderRepo, ...implementation });
+
+export const EmptyCheckOrderRepoTest = makeCheckOrderRepoTest({});

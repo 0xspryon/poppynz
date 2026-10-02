@@ -1,6 +1,7 @@
 import type {
   ApprovalRepo,
   ApprovalRequestRepo,
+  BillingCustomerRepo,
   CheckOrderRepo,
   ContractRepo,
   ConversationRepo,
@@ -19,6 +20,7 @@ import type {
   ProviderSearchRepo,
   ReferralRepo,
   SafetyVerificationRepo,
+  StripeWebhookEventRepo,
   UserDirectoryRepo,
   UserProfileRepo,
   UserRepo,
@@ -63,6 +65,8 @@ export type AppServices =
   | SafetyVerificationRepo
   | CheckOrderRepo
   | PaymentRepo
+  | BillingCustomerRepo
+  | StripeWebhookEventRepo
   | UserDirectoryRepo
   | UserSearchRepo
   | ConversationRepo

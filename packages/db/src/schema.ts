@@ -111,9 +111,9 @@ export const safetyVerificationRoute = appDb.enum('safety_verification_route', [
 // reverse, so a new purpose is a new value here plus a foreign key on its own
 // table — not a new payments table.
 export const paymentKind = appDb.enum('payment_kind', ['credibled_order']);
-// `captured` has no writer yet: the mock authorises and settles in one step.
-// It exists so a hold-then-capture flow (bookings) needs no enum migration —
-// the same reasoning as `contract_status.ended`.
+// `captured` is what the settle path writes once the provider confirms the
+// money (automatic capture). `authorised` remains for rows the pre-Stripe
+// mock wrote and for a later hold-then-capture flow (contract billing).
 export const paymentStatus = appDb.enum('payment_status', [
   'pending',
   'authorised',
@@ -465,6 +465,9 @@ export const payment = appDb.table(
     authorisedAt: timestamp('authorised_at'),
     capturedAt: timestamp('captured_at'),
     refundedAt: timestamp('refunded_at'),
+    // The provider's receipt page for a captured charge (Stripe hosts it).
+    // Shown in the family's payment history; null for mock payments.
+    receiptUrl: text('receipt_url'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()
@@ -477,8 +480,60 @@ export const payment = appDb.table(
       .on(table.provider, table.providerReference)
       .where(sql`${table.providerReference} is not null`),
     index('payments_user_id_idx').on(table.userId),
-    index('payments_status_idx').on(table.status)
+    index('payments_status_idx').on(table.status),
+    // The recovery job's scan: charges still waiting on the provider.
+    index('payments_pending_created_at_idx')
+      .on(table.createdAt)
+      .where(sql`${table.status} = 'pending' and ${table.providerReference} is not null`)
   ]
+);
+
+// A paying user's customer at the payment gateway, and the one card kept on
+// file for them (families only today — helpers pay one-off). The card columns
+// are display copies; the card itself lives with the gateway. `restrict`, so
+// a user with a gateway customer cannot be deleted from under it.
+export const billingCustomer = appDb.table(
+  'billing_customers',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    provider: text('provider').notNull(),
+    customerReference: text('customer_reference').notNull(),
+    cardReference: text('card_reference'),
+    cardBrand: text('card_brand'),
+    cardLast4: text('card_last4'),
+    cardExpMonth: integer('card_exp_month'),
+    cardExpYear: integer('card_exp_year'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    // How a webhook's customer finds its user.
+    uniqueIndex('billing_customers_provider_customer_uidx').on(
+      table.provider,
+      table.customerReference
+    )
+  ]
+);
+
+// Every Stripe webhook delivery we accepted, by event id: de-duplication
+// (Stripe delivers at least once) and an audit trail. The payload is NOT
+// stored — handlers re-fetch the object from Stripe and act on that.
+export const stripeWebhookEvent = appDb.table(
+  'stripe_webhook_events',
+  {
+    eventId: text('event_id').primaryKey(),
+    type: text('type').notNull(),
+    objectId: text('object_id').notNull(),
+    receivedAt: timestamp('received_at').defaultNow().notNull(),
+    processedAt: timestamp('processed_at'),
+    error: text('error')
+  },
+  (table) => [index('stripe_webhook_events_received_at_idx').on(table.receivedAt)]
 );
 
 // A Credibled order: the basket, the charge it settled with, and the vendor's
@@ -1381,6 +1436,13 @@ export const kycDocumentRelations = relations(kycDocument, ({ one }) => ({
 export const paymentRelations = relations(payment, ({ one }) => ({
   user: one(user, {
     fields: [payment.userId],
+    references: [user.id]
+  })
+}));
+
+export const billingCustomerRelations = relations(billingCustomer, ({ one }) => ({
+  user: one(user, {
+    fields: [billingCustomer.userId],
     references: [user.id]
   })
 }));

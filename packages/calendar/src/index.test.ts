@@ -45,6 +45,22 @@ describe('instantAt', () => {
     expect(instantAt('2026-03-08', 150, WPG).toISOString()).toBe('2026-03-08T08:00:00.000Z');
   });
 
+  it('maps the first and last minutes of the gap to the moment the clock resumes', () => {
+    // 02:00 is the first non-existent minute; 02:59 the last.
+    expect(instantAt('2026-03-08', 120, WPG).toISOString()).toBe('2026-03-08T08:00:00.000Z');
+    expect(instantAt('2026-03-08', 179, WPG).toISOString()).toBe('2026-03-08T08:00:00.000Z');
+  });
+
+  it('handles a gap at midnight (Santiago springs forward 00:00 → 01:00)', () => {
+    // 2026-09-06 00:00 -04 does not exist; the clock resumes at 01:00 -03 (04:00Z).
+    expect(instantAt('2026-09-06', 0, 'America/Santiago').toISOString()).toBe(
+      '2026-09-06T04:00:00.000Z'
+    );
+    expect(instantAt('2026-09-05', 1440, 'America/Santiago').toISOString()).toBe(
+      '2026-09-06T04:00:00.000Z'
+    );
+  });
+
   it('takes the first occurrence of a time repeated by the fall-back', () => {
     // 2026-11-01 01:30 happens at 06:30Z (CDT) and again at 07:30Z (CST).
     expect(instantAt('2026-11-01', 90, WPG).toISOString()).toBe('2026-11-01T06:30:00.000Z');
@@ -77,6 +93,20 @@ describe('sessionElapsedMinutes', () => {
   it('never changes length in Regina (no DST)', () => {
     expect(sessionElapsedMinutes('2026-03-08', overnight, 'America/Regina')).toBe(240);
     expect(sessionElapsedMinutes('2026-11-01', overnight, 'America/Regina')).toBe(240);
+  });
+
+  it('counts a session starting exactly at the gap', () => {
+    // 02:00–05:00 on spring-forward night: 03:00 CDT → 05:00 CDT.
+    expect(
+      sessionElapsedMinutes('2026-03-08', { startMinutes: 120, endMinutes: 300 }, WPG)
+    ).toBe(120);
+  });
+
+  it('counts a session ending exactly at the gap', () => {
+    // 00:00–02:00 on spring-forward night: 00:00 CST → 03:00 CDT is 2 real hours.
+    expect(sessionElapsedMinutes('2026-03-08', { startMinutes: 0, endMinutes: 120 }, WPG)).toBe(
+      120
+    );
   });
 
   it('counts a gap start from the moment the clock resumes', () => {

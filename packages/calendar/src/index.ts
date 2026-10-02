@@ -49,7 +49,12 @@ export const instantAt = (date: IsoDate, minutes: number, zone: string): Date =>
   const time = Temporal.PlainTime.from({ hour: Math.floor(wall / 60), minute: wall % 60 });
   const zoned = day.toZonedDateTime({ timeZone: zone, plainTime: time });
   if (!zoned.toPlainTime().equals(time)) {
-    const resumed = zoned.getTimeZoneTransition('previous');
+    // Temporal pushed the time past the gap, so `zoned` is at or after the
+    // transition. 'previous' is strictly before its receiver: step 1 ns
+    // forward so a time landing exactly on the transition (the gap's first
+    // minute, e.g. 02:00, or a midnight gap) still finds this transition and
+    // not the one months earlier.
+    const resumed = zoned.add({ nanoseconds: 1 }).getTimeZoneTransition('previous');
     if (resumed) return new Date(resumed.epochMilliseconds);
   }
   return new Date(zoned.epochMilliseconds);

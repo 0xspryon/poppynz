@@ -3,6 +3,7 @@ import {
   text,
   timestamp,
   boolean,
+  check,
   date,
   doublePrecision,
   integer,
@@ -878,8 +879,8 @@ export const conversationMessage = appDb.table(
 );
 
 // One proposed weekly session. Times are wall-clock minutes from midnight in
-// New Zealand local time (Pacific/Auckland) — never UTC instants, so a
-// "3:30–6:00 pm" session stays 3:30–6:00 pm across DST changes.
+// the contract version's own time zone (`contract_versions.time_zone`) — never
+// UTC instants, so a "3:30–6:00 pm" session stays 3:30–6:00 pm across DST.
 export type ContractSession = {
   /** 0 = Monday … 6 = Sunday. */
   weekday: number;
@@ -977,6 +978,13 @@ export const contractVersion = appDb.table(
     // contract presents as ended at read time — a signed contract is never
     // amended; it runs out (or is ended with notice) and a new one is created.
     endsOn: date('ends_on'),
+    // Optional last-day end time for the negotiated end date: wall-clock
+    // minutes (1..1440) in time_zone. Sessions on that day are cut at it.
+    endsAtMinutes: integer('ends_at_minutes'),
+    // IANA zone the version's dates and session times are read in — the
+    // family's, taken from their location when the terms are sent and frozen
+    // at acceptance. Null only while the version is a draft.
+    timeZone: text('time_zone'),
     sentAt: timestamp('sent_at'),
     decidedAt: timestamp('decided_at'),
     declineReason: text('decline_reason'),
@@ -994,7 +1002,15 @@ export const contractVersion = appDb.table(
     uniqueIndex('contract_versions_accepted_uidx')
       .on(table.contractId)
       .where(sql`${table.status} = 'accepted'`),
-    index('contract_versions_contract_id_idx').on(table.contractId)
+    index('contract_versions_contract_id_idx').on(table.contractId),
+    check(
+      'contract_versions_time_zone_when_sent',
+      sql`${table.status} = 'draft' or ${table.timeZone} is not null`
+    ),
+    check(
+      'contract_versions_ends_at_minutes_valid',
+      sql`${table.endsAtMinutes} is null or (${table.endsOn} is not null and ${table.endsAtMinutes} between 1 and 1440)`
+    )
   ]
 );
 

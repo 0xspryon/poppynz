@@ -23,6 +23,7 @@
 		type ContractTermsInput
 	} from '$lib/api/contracts';
 	import { getProvider } from '$lib/api/providers';
+	import { todayIn } from '@repo/calendar';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import ContractTermsEditor, {
@@ -31,7 +32,12 @@
 	import ContractTermsView from '$lib/components/contracts/ContractTermsView.svelte';
 	import WeekAtAGlance from '$lib/components/contracts/WeekAtAGlance.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
-	import { minutesToHours, weeklyMinutes } from '$lib/contract-sessions';
+	import {
+		formatEndTime,
+		minutesToHours,
+		noticeLastDay,
+		weeklyMinutes
+	} from '$lib/contract-sessions';
 	import { centsToDollars } from '$lib/money';
 	import { formatDate, formatDateTime, formatDateWithWeekday } from '$lib/date';
 	import { notifications } from '$lib/notifications.svelte';
@@ -189,6 +195,12 @@
 		} else if (error.code === 'CONTRACT_STATE_INVALID') {
 			toast.error('This contract has moved on — reloading.');
 			void refresh(contractId);
+		} else if (
+			error.code === 'START_DATE_REQUIRED' ||
+			error.code === 'START_DATE_NOT_IN_FUTURE' ||
+			error.code === 'FAMILY_LOCATION_REQUIRED'
+		) {
+			toast.error(error.message);
 		} else {
 			toast.error("That didn't go through. Please try again.");
 		}
@@ -197,7 +209,12 @@
 	/** Decision/notice actions: a conflict means the contract moved on under
 	 * the viewer — "try again" would loop, so refetch and let the fresh action
 	 * flags redraw the page instead. */
-	const actionErrorToast = (error: { code: string }, fallback: string) => {
+	const actionErrorToast = (error: { code: string; message: string }, fallback: string) => {
+		if (error.code === 'CONTRACT_START_DATE_PASSED') {
+			toast.error(error.message);
+			void refresh(contractId);
+			return;
+		}
 		if (
 			error.code === 'CONTRACT_STATE_INVALID' ||
 			error.code === 'CONTRACT_NOT_FOUND' ||
@@ -333,16 +350,17 @@
 		}
 	}
 
-	// Recomputed each time the dialog opens (reading endOpen), matching the
-	// server's UTC-based endsOn — a stale value from a long-lived tab must not
-	// disagree with the date the server will store.
-	const noticeEndsOn = $derived(
-		endOpen
-			? formatDateWithWeekday(
-					new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-				)
-			: ''
-	);
+	// Recomputed each time the dialog opens (reading endOpen): the notice day in
+	// the contract's zone plus 14 calendar days, or the signed terms' earlier
+	// end (with its end time) — the same rule the server applies, so a
+	// long-lived tab can't show a different date.
+	const noticeEndsOn = $derived.by(() => {
+		if (!endOpen || !contract?.timeZone) return '';
+		const lastDay = noticeLastDay(todayIn(contract.timeZone), contract.acceptedVersion);
+		return lastDay.endsAtMinutes
+			? `${formatDateWithWeekday(lastDay.endsOn)}, until ${formatEndTime(lastDay.endsAtMinutes)}`
+			: formatDateWithWeekday(lastDay.endsOn);
+	});
 
 	/** The latest version that was actually declined — `latestVersion` may
 	 * already be the family's fresh revision draft, which never carries the
@@ -354,7 +372,9 @@
 
 	const chip = $derived.by((): { status: ChipStatus; label?: string } => {
 		if (!contract) return { status: 'empty' };
+		// An expired proposal can still be declined, but it no longer awaits you.
 		if (
+			contract.status === 'proposed' &&
 			contract.pendingVersion &&
 			!contract.pendingVersion.proposedByMe &&
 			contract.actions.canDecline
@@ -517,11 +537,20 @@
 			<div class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3">
 				<i class="las la-hourglass-end mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-neutral">
-					This proposal expired without a decision.
-					{#if contract.viewerSide === 'family'}
-						Withdraw it below to revise and send new terms.
+					{#if contract.acceptBlockedReason === 'start_date_passed'}
+						The start date arrived before this proposal was accepted.
+						{#if contract.viewerSide === 'family'}
+							Withdraw it below to revise and send new terms with a later start date.
+						{:else}
+							You can't accept it any more — {firstName} can send new terms with a later date.
+						{/if}
 					{:else}
-						{firstName} can send new terms from their side.
+						This proposal expired without a decision.
+						{#if contract.viewerSide === 'family'}
+							Withdraw it below to revise and send new terms.
+						{:else}
+							{firstName} can send new terms from their side.
+						{/if}
 					{/if}
 				</p>
 			</div>
@@ -576,7 +605,11 @@
 						Contact details are now shared and you get paid weekly on Poppynz.
 					{/if}
 					{#if contract.endsOn}
-						The contract runs until <strong>{formatDateWithWeekday(contract.endsOn)}</strong>.
+						The contract runs until <strong
+							>{formatDateWithWeekday(contract.endsOn)}{contract.endsAtMinutes
+								? ` at ${formatEndTime(contract.endsAtMinutes)}`
+								: ''}</strong
+						>.
 					{/if}
 				</p>
 			</div>
@@ -595,8 +628,11 @@
 					{/if}
 					{#if contract.endsOn}
 						{contract.status === 'ended' ? 'The last working day was' : 'The last working day is'}
-						<strong>{formatDateWithWeekday(contract.endsOn)}</strong> — payments run until then and stop
-						after.
+						<strong
+							>{formatDateWithWeekday(contract.endsOn)}{#if contract.endsAtMinutes}, until {formatEndTime(
+									contract.endsAtMinutes
+								)}{/if}</strong
+						> — payments run until then and stop after.
 					{/if}
 					{#if contract.endNote && !contract.endedByMe}
 						Note: “{contract.endNote}”
@@ -620,6 +656,10 @@
 						listingLabel={`${firstName}'s listing`}
 						counterpartFirstName={firstName}
 						{chatHref}
+						earliestStartsOn={contract.earliestStartsOn}
+						timeZoneLabel={contract.timeZoneLabel}
+						locationMissing={contract.timeZone === null}
+						profileHref={resolve('/family/profile')}
 						{busy}
 						onsave={handleSaveDraft}
 						onsend={handleSendTerms}
@@ -634,6 +674,8 @@
 						heading={contract.status === 'declined'
 							? `Proposed terms — v${displayTerms.version}`
 							: 'Services & sessions'}
+						timeZoneLabel={contract.timeZoneLabel}
+						viewerIsFamily={contract.viewerSide === 'family'}
 					/>
 				{/if}
 
@@ -675,6 +717,14 @@
 							>
 								Accept &amp; sign
 							</button>
+						{/if}
+						{#if contract.acceptBlockedReason === 'start_date_passed'}
+							<p
+								class="rounded-lg bg-base-300 px-3 py-2 text-[12px] leading-relaxed text-neutral"
+								role="status"
+							>
+								The start date has passed — ask {firstName} for new terms with a later date.
+							</p>
 						{/if}
 						{#if contract.actions.canRequestChanges}
 							<button

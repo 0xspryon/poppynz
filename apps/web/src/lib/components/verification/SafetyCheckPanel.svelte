@@ -153,7 +153,7 @@
 			class="btn btn-primary btn-sm mt-3"
 			href={summary.verification.applicationUrl}
 			target="_blank"
-			rel="noopener noreferrer"
+			rel="external noopener noreferrer"
 		>
 			Continue your check
 		</a>

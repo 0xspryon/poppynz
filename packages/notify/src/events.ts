@@ -57,11 +57,14 @@ export type NotificationPayloads = {
     contractId: string;
     counterpartName: string;
   };
-  /** The counterpart gave 2 weeks' notice; endsOn is the last working day. */
+  /** The counterpart gave 2 weeks' notice; endsOn is the effective last
+   * working day (the earlier of notice + 14 days and the negotiated end), and
+   * endsAtMinutes that day's end time when the negotiated end wins and has one. */
   'contract.ended': {
     contractId: string;
     counterpartName: string;
     endsOn: string;
+    endsAtMinutes: number | null;
   };
   /** The viewer's safety check moved: Credibled set it up (invited), is
    * processing it, finished it (awaiting review), or an admin decided.

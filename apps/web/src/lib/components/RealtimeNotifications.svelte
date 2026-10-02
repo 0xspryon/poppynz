@@ -17,6 +17,7 @@
 	} from '$lib/components/ContractDecisionModal.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
 	import { formatDateWithWeekday } from '$lib/date';
+	import { formatEndTime } from '$lib/contract-sessions';
 	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { unread } from '$lib/unread.svelte';
@@ -204,7 +205,7 @@
 				void contractsBadge.refresh();
 				if (!onContractsPage()) {
 					toast.info(
-						`${event.payload.counterpartName} gave 2 weeks' notice — last working day ${formatDateWithWeekday(event.payload.endsOn)}.`,
+						`${event.payload.counterpartName} gave 2 weeks' notice — last working day ${formatDateWithWeekday(event.payload.endsOn)}${event.payload.endsAtMinutes ? `, until ${formatEndTime(event.payload.endsAtMinutes)}` : ''}.`,
 						{ title: 'Contract ending' }
 					);
 				}

@@ -1,5 +1,6 @@
 import { credibledSignature } from '@repo/credibled';
 import cleared from '@repo/credibled/fixtures/webhook-complete-cleared.json';
+import review from '@repo/credibled/fixtures/webhook-complete-review.json';
 import {
   DBNotFoundError,
   makeCheckOrderRepoTest,
@@ -263,23 +264,18 @@ describe('credibled webhook — application', () => {
 
   it('records an adverse result and still completes into review, never a rejection', async () => {
     const completions: Array<CheckOrderCompletionInput> = [];
-    const adverse = {
-      ...cleared,
-      score: 'Not Cleared',
-      scan_list: [{ ...cleared.scan_list[0], score: 'Not Cleared' }]
-    };
     const res = await post(
       makeApp({
-        found: record({ credibledCheckUuid: cleared.uuid }),
+        found: record({ credibledCheckUuid: review.uuid }),
         onComplete: (_id, input) => completions.push(input)
       }),
-      adverse
+      review
     );
 
     expect(res.status).toBe(200);
     expect(completions).toHaveLength(1);
     expect(completions[0]?.result.outcome).toBe('not_cleared');
-    expect(completions[0]?.result.score).toBe('Not Cleared');
+    expect(completions[0]?.result.score).toBe('Review');
     expect(completions[0]?.result.checks[0]?.outcome).toBe('not_cleared');
   });
 

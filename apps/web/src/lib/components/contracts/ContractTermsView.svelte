@@ -5,6 +5,7 @@
 	 * of force. */
 	import type { ContractTerms } from '$lib/api/contracts';
 	import {
+		formatEndTime,
 		formatSessionRange,
 		minutesToHours,
 		serviceWeeklyCents,
@@ -19,9 +20,19 @@
 		terms: ContractTerms;
 		dimmed?: boolean;
 		heading?: string;
+		/** "Central Time" — the zone session times are read in. */
+		timeZoneLabel?: string | null;
+		/** The zone is the family's: they read "your local time". */
+		viewerIsFamily?: boolean;
 	}
 
-	let { terms, dimmed = false, heading = 'Services & sessions' }: Props = $props();
+	let {
+		terms,
+		dimmed = false,
+		heading = 'Services & sessions',
+		timeZoneLabel = null,
+		viewerIsFamily = false
+	}: Props = $props();
 </script>
 
 <section
@@ -30,6 +41,11 @@
 	<h3 class="mb-2 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
 		{heading}
 	</h3>
+	{#if timeZoneLabel}
+		<p class="-mt-1 mb-2 text-[11px] text-outline">
+			Times are in {viewerIsFamily ? 'your' : "the family's"} local time ({timeZoneLabel}).
+		</p>
+	{/if}
 	<ul>
 		{#each terms.services as service (service.serviceId)}
 			<li class="border-b border-base-300 py-2.5 last:border-b-0">
@@ -88,7 +104,13 @@
 			{/if}
 			<span class="text-base-content-muted">Ends</span>
 			<span class="font-medium text-base-content">
-				{terms.endsOn ? formatDateWithWeekday(terms.endsOn) : 'Ongoing'}
+				{#if terms.endsOn}
+					{formatDateWithWeekday(terms.endsOn)}{#if terms.endsAtMinutes}, until {formatEndTime(
+							terms.endsAtMinutes
+						)}{/if}
+				{:else}
+					Ongoing
+				{/if}
 			</span>
 		</div>
 	{/if}

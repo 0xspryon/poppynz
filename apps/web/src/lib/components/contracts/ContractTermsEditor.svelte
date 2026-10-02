@@ -16,7 +16,9 @@
 		type ServiceLineItem
 	} from '$lib/components/contracts/ServiceWizard.svelte';
 	import {
+		formatEndTime,
 		formatSessionRange,
+		MINUTES_PER_DAY,
 		minutesToHours,
 		serviceWeeklyCents,
 		weeklyMinutes,
@@ -35,6 +37,14 @@
 		counterpartFirstName: string;
 		/** Chat deep-link for the wizard's missing-service dialog. */
 		chatHref?: ResolvedPathname | null;
+		/** Tomorrow in the family's zone — the start-date picker's minimum. */
+		earliestStartsOn?: string | null;
+		/** "Central Time" — shown in the session wizard. */
+		timeZoneLabel?: string | null;
+		/** No saved family address: no zone, so sending is blocked. */
+		locationMissing?: boolean;
+		/** Where the family adds their address. */
+		profileHref?: ResolvedPathname | null;
 		busy?: boolean;
 		onsave?: (terms: ContractTermsInput) => void;
 		onsend: (terms: ContractTermsInput) => void;
@@ -46,6 +56,10 @@
 		listingLabel,
 		counterpartFirstName,
 		chatHref = null,
+		earliestStartsOn = null,
+		timeZoneLabel = null,
+		locationMissing = false,
+		profileHref = null,
 		busy = false,
 		onsave,
 		onsend
@@ -70,6 +84,23 @@
 	let endsOn = $state(initial?.endsOn ?? '');
 	// svelte-ignore state_referenced_locally
 	let endsOnOpen = $state(Boolean(initial?.endsOn));
+	// svelte-ignore state_referenced_locally
+	let endsAtValue = $state(initial?.endsAtMinutes ? String(initial.endsAtMinutes) : '');
+
+	/** The session picker's step. */
+	const TIME_STEP_MINUTES = 15;
+	/** 12:15 am … midnight, in the session picker's steps. */
+	const END_TIME_OPTIONS = Array.from(
+		{ length: MINUTES_PER_DAY / TIME_STEP_MINUTES },
+		(_, i) => (i + 1) * TIME_STEP_MINUTES
+	);
+
+	// An end time only means something on an end date: however the date is
+	// emptied (the clear button or the native input), forget the time so it
+	// doesn't come back pre-selected with the next date.
+	$effect(() => {
+		if (!endsOn) endsAtValue = '';
+	});
 
 	let wizardOpen = $state(false);
 	let editingItem = $state<ServiceLineItem | null>(null);
@@ -116,6 +147,7 @@
 	function clearEndsOn() {
 		endsOn = '';
 		endsOnOpen = false;
+		endsAtValue = '';
 	}
 
 	const toTerms = (): ContractTermsInput => ({
@@ -126,7 +158,8 @@
 			expectations: item.expectations
 		})),
 		startsOn: startsOn || null,
-		endsOn: endsOn || null
+		endsOn: endsOn || null,
+		endsAtMinutes: endsOn && endsAtValue ? Number(endsAtValue) : null
 	});
 </script>
 
@@ -221,6 +254,7 @@
 			id="contract-starts"
 			type="date"
 			class="input input-sm w-full text-[13px]"
+			min={earliestStartsOn ?? undefined}
 			bind:value={startsOn}
 		/>
 		<span class="text-[13px] text-base-content-muted">
@@ -255,12 +289,29 @@
 				Ongoing · + add an end date
 			</button>
 		{/if}
+		{#if endsOnOpen && endsOn}
+			<label class="text-[13px] text-base-content-muted" for="contract-ends-at">
+				Last day <span class="text-[11px] text-outline">(optional)</span>
+			</label>
+			<select
+				id="contract-ends-at"
+				class="select select-sm w-full text-[13px]"
+				bind:value={endsAtValue}
+			>
+				<option value="">Full scheduled day</option>
+				{#each END_TIME_OPTIONS as minutes (minutes)}
+					<option value={String(minutes)}>until {formatEndTime(minutes)}</option>
+				{/each}
+			</select>
+		{/if}
 	</div>
 	{#if startsOn || endsOn}
 		<p class="mt-1 text-right text-[11px] text-outline">
 			{#if startsOn}{formatDateWithWeekday(startsOn)}{/if}
 			{#if startsOn && endsOn}&nbsp;→&nbsp;{/if}
-			{#if endsOn}{formatDateWithWeekday(endsOn)}{/if}
+			{#if endsOn}{formatDateWithWeekday(endsOn)}{#if endsAtValue}, until {formatEndTime(
+						Number(endsAtValue)
+					)}{/if}{/if}
 		</p>
 	{/if}
 
@@ -296,11 +347,23 @@
 		</p>
 	</div>
 
+	{#if locationMissing}
+		<p class="mt-3 rounded-lg bg-base-300 px-4 py-3 text-[12.5px] text-neutral" role="alert">
+			Session times follow your local time zone, which comes from your address.
+			{#if profileHref}
+				<a class="font-semibold text-secondary hover:underline" href={profileHref}>
+					Add your address
+				</a>
+				to send.
+			{/if}
+		</p>
+	{/if}
+
 	<div class="mt-4 flex items-center gap-2.5">
 		<button
 			type="button"
 			class="btn btn-primary btn-sm"
-			disabled={busy || items.length === 0}
+			disabled={busy || items.length === 0 || locationMissing}
 			onclick={() => onsend(toTerms())}
 		>
 			{#if busy}<span class="loading loading-xs loading-spinner"></span>{/if}
@@ -328,6 +391,7 @@
 		{counterpartFirstName}
 		startsOn={startsOn || null}
 		{chatHref}
+		{timeZoneLabel}
 		oncommit={commitWizard}
 		oncancel={() => {
 			wizardOpen = false;

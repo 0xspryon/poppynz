@@ -1,5 +1,5 @@
-import { Schema } from 'effect';
-import { validateInput } from '@/api/lib/schema-validator';
+import { Effect, Schema } from 'effect';
+import { RequestValidationError, validateInput } from '@/api/lib/schema-validator';
 
 export const contractCreateValidationError = {
   code: 'INVALID_CONTRACT_INPUT',
@@ -40,7 +40,14 @@ const isoCalendarDate = Schema.String.pipe(
 
 const MINUTES_PER_DAY = 24 * 60;
 
-// One weekly session: NZ wall-clock minutes from midnight (never UTC), Monday
+const endTimeNeedsEndDate = 'a last-day end time needs an end date';
+
+/** Top-level message when the only problems are with the last-day end time —
+ * the services message would point the client at the wrong field. */
+export const contractEndTimeValidationMessage =
+  'The last-day end time must be whole minutes from 1 to 1440, and needs an end date.';
+
+// One weekly session: wall-clock minutes from midnight in the contract's zone (never UTC), Monday
 // = 0. Overlapping sessions are legal — the UI warns, the provider judges.
 const contractSessionSchema = Schema.Struct({
   weekday: Schema.Int.pipe(Schema.between(0, 6)),
@@ -73,7 +80,11 @@ export const contractTermsSchema = Schema.Struct({
     )
   ),
   startsOn: Schema.optional(Schema.NullOr(isoCalendarDate)),
-  endsOn: Schema.optional(Schema.NullOr(isoCalendarDate))
+  endsOn: Schema.optional(Schema.NullOr(isoCalendarDate)),
+  // Last-day end time for the negotiated end date, wall-clock minutes.
+  endsAtMinutes: Schema.optional(
+    Schema.NullOr(Schema.Int.pipe(Schema.between(1, MINUTES_PER_DAY)))
+  )
 }).pipe(
   Schema.filter(
     (terms) =>
@@ -81,15 +92,38 @@ export const contractTermsSchema = Schema.Struct({
       !terms.endsOn ||
       terms.endsOn >= terms.startsOn ||
       'the end date must not be before the start date'
+  ),
+  Schema.filter(
+    (terms) =>
+      terms.endsAtMinutes === undefined ||
+      terms.endsAtMinutes === null ||
+      Boolean(terms.endsOn) ||
+      endTimeNeedsEndDate
   )
 );
 
 export type ContractTermsInput = Schema.Schema.Type<typeof contractTermsSchema>;
 
-export const validateContractTermsInput = validateInput(
+const validateContractTermsSchema = validateInput(
   contractTermsSchema,
   contractTermsValidationError
 );
+
+const isEndTimeIssue = (issue: { path: Array<string | number>; message: string }) =>
+  issue.path[0] === 'endsAtMinutes' || issue.message === endTimeNeedsEndDate;
+
+export const validateContractTermsInput = (input: unknown) =>
+  validateContractTermsSchema(input).pipe(
+    Effect.mapError((error) =>
+      error.issues.length > 0 && error.issues.every(isEndTimeIssue)
+        ? new RequestValidationError({
+            code: error.code,
+            message: contractEndTimeValidationMessage,
+            issues: error.issues
+          })
+        : error
+    )
+  );
 
 export const contractTermsJsonError = contractTermsValidationError;
 

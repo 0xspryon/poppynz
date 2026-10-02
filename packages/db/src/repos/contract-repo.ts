@@ -46,6 +46,7 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
       services: Array<ContractServiceItem>;
       startsOn: string | null;
       endsOn: string | null;
+      endsAtMinutes?: number | null;
       sentAt?: Date;
     }) => Effect.Effect<ContractVersion, SqlError>;
     /** Guarded `where status = 'draft'`; resolves null when the version is no
@@ -56,13 +57,26 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
         services: Array<ContractServiceItem>;
         startsOn: string | null;
         endsOn: string | null;
+        endsAtMinutes: number | null;
+        /** Written at send; omitted on draft saves so it's left untouched. */
+        timeZone?: string | null;
       }
     ) => Effect.Effect<ContractVersion | null, SqlError>;
-    /** Atomically: version draft → proposed AND contract → proposed. Resolves
+    /** Atomically: write the validated terms and the zone, version draft →
+     * proposed, AND contract → proposed. The terms go in the same guarded
+     * `UPDATE … where status = 'draft'` as the status flip, so a concurrent
+     * draft save can't slip unvalidated terms into the proposal. Resolves
      * null (with nothing written) when the version was not a draft. */
     sendPendingVersion: (
       contractId: string,
-      versionId: string
+      versionId: string,
+      terms: {
+        services: Array<ContractServiceItem>;
+        startsOn: string | null;
+        endsOn: string | null;
+        endsAtMinutes: number | null;
+        timeZone: string;
+      }
     ) => Effect.Effect<ContractVersion | null, SqlError>;
     /** Atomically: version proposed → draft (sent_at cleared) AND contract →
      * restoredStatus. Resolves null when the version was not proposed. */
@@ -256,6 +270,7 @@ export const ContractRepoLive = Layer.effect(
             services: input.services,
             startsOn: input.startsOn,
             endsOn: input.endsOn,
+            endsAtMinutes: input.endsAtMinutes ?? null,
             sentAt: input.sentAt ?? null
           })
           .returning()
@@ -266,19 +281,33 @@ export const ContractRepoLive = Layer.effect(
       updateVersionTerms: (versionId, input) =>
         db
           .update(contractVersion)
-          .set({ services: input.services, startsOn: input.startsOn, endsOn: input.endsOn })
+          .set({
+            services: input.services,
+            startsOn: input.startsOn,
+            endsOn: input.endsOn,
+            endsAtMinutes: input.endsAtMinutes,
+            ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {})
+          })
           .where(and(eq(contractVersion.id, versionId), eq(contractVersion.status, 'draft')))
           .returning()
           .pipe(
             Effect.map((rows) => rows[0] ?? null),
             Effect.tap((row) => (row ? touchContract(row.contractId) : Effect.void))
           ),
-      sendPendingVersion: (contractId, versionId) =>
+      sendPendingVersion: (contractId, versionId, terms) =>
         compound(
           Effect.gen(function* () {
             const rows = yield* db
               .update(contractVersion)
-              .set({ status: 'proposed', sentAt: new Date() })
+              .set({
+                services: terms.services,
+                startsOn: terms.startsOn,
+                endsOn: terms.endsOn,
+                endsAtMinutes: terms.endsAtMinutes,
+                timeZone: terms.timeZone,
+                status: 'proposed',
+                sentAt: new Date()
+              })
               .where(and(eq(contractVersion.id, versionId), eq(contractVersion.status, 'draft')))
               .returning();
             const version = rows[0];
@@ -432,7 +461,7 @@ export const dummyContractVersion: ContractVersion = {
       listedRateCents: 2500,
       rateCents: 2600,
       currency: 'CAD',
-      // Tue & Thu 3:30–6:00 pm (NZ wall-clock minutes).
+      // Tue & Thu 3:30–6:00 pm (wall-clock minutes in the version's zone).
       sessions: [
         { weekday: 1, startMinutes: 930, endMinutes: 1080 },
         { weekday: 3, startMinutes: 930, endMinutes: 1080 }
@@ -442,6 +471,8 @@ export const dummyContractVersion: ContractVersion = {
   ],
   startsOn: '2026-08-04',
   endsOn: null,
+  endsAtMinutes: null,
+  timeZone: null,
   sentAt: null,
   decidedAt: null,
   declineReason: null,

@@ -19,6 +19,7 @@
     "@better-auth/api-key": "1.6.15",
     "@better-auth/i18n": "1.6.15",
     "@effect/sql": "^0.51.1",
+    "@repo/calendar": "*",
     "@repo/credibled": "*",
     "@repo/db": "*",
     "@repo/env": "*",

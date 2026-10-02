@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'bun:test';
 import cleared from './fixtures/webhook-complete-cleared.json';
+import review from './fixtures/webhook-complete-review.json';
 import {
   credibledOutcomeFromStatus,
   credibledOutcomeFromWebhook,
   resolveCredibledCheckValue
 } from './outcome';
 
-// The fixture is a real successful delivery's shape (applicant details
-// replaced). Everything not cleared is derived from it, since no failed
-// delivery has been captured yet.
+// Both fixtures are real deliveries' shapes (applicant details replaced): a
+// cleared check, and one Credibled did not clear, which it scores "Review".
+// Other adverse wordings below are derived from them.
 const withCheckScore = (score: string | null) => ({
   ...cleared,
   scan_list: [{ ...cleared.scan_list[0], score }]
@@ -26,6 +27,22 @@ describe('credibled outcome from a webhook', () => {
           status: 'Complete',
           score: 'Cleared',
           outcome: 'cleared'
+        }
+      ]
+    });
+  });
+
+  it('reads a real not-cleared delivery, scored "Review", as not cleared', () => {
+    expect(credibledOutcomeFromWebhook(review)).toEqual({
+      outcome: 'not_cleared',
+      score: 'Review',
+      checks: [
+        {
+          value: 'request_credential_verification',
+          name: 'Credential Verification',
+          status: 'Complete',
+          score: 'Review',
+          outcome: 'not_cleared'
         }
       ]
     });

@@ -738,7 +738,15 @@ describe('GET /conversations/:id', () => {
         conversationId: CONVERSATION_ID,
         status: 'proposed'
       },
-      contractVersions: [{ ...dummyContractVersion, status: 'proposed', sentAt: new Date() }]
+      contractVersions: [
+        {
+          ...dummyContractVersion,
+          status: 'proposed',
+          sentAt: new Date(),
+          startsOn: '2099-01-05',
+          timeZone: 'America/Toronto'
+        }
+      ]
     });
     const result = await Effect.runPromise(
       getConversationRouteProgram(
@@ -836,7 +844,15 @@ describe('GET /conversations/:id', () => {
         conversationId: CONVERSATION_ID,
         status: 'proposed'
       },
-      contractVersions: [{ ...dummyContractVersion, status: 'proposed', sentAt: new Date() }]
+      contractVersions: [
+        {
+          ...dummyContractVersion,
+          status: 'proposed',
+          sentAt: new Date(),
+          startsOn: '2099-01-05',
+          timeZone: 'America/Toronto'
+        }
+      ]
     });
     const awaitingResult = await Effect.runPromise(
       getConversationRouteProgram(

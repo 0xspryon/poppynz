@@ -11,6 +11,8 @@ import {
   type ContractVersion,
   type ContractWithContext
 } from '@repo/db';
+import { addDays, dateIn, todayIn, zoneLabel } from '@repo/calendar';
+import { zoneForLocation } from '@repo/calendar/lookup';
 import { contractConfig } from '@repo/env';
 import { publishNotificationBestEffort } from '@repo/notify';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
@@ -95,6 +97,28 @@ export class ContractProposalExpiredError extends Data.TaggedError(
   'ContractProposalExpiredError'
 )<{}> {}
 
+/** Sending needs a start date — billing cycles are anchored to it. `action`
+ * picks the copy: the sender is told to pick one, the receiver of a (dev-data)
+ * proposal without one is told to ask for new terms. */
+export class StartDateRequiredError extends Data.TaggedError('StartDateRequiredError')<{
+  action: 'send' | 'accept';
+}> {}
+
+/** The contract's zone comes from the family's location; without an address
+ * there is no zone to read dates and session times in. */
+export class FamilyLocationRequiredError extends Data.TaggedError(
+  'FamilyLocationRequiredError'
+)<{}> {}
+
+/** The start date must be later than today in the family's zone. */
+export class StartDateNotInFutureError extends Data.TaggedError('StartDateNotInFutureError')<{}> {}
+
+/** Acceptance is refused on or after the start date — cycle 1 must begin
+ * after the contract is accepted. */
+export class ContractStartDatePassedError extends Data.TaggedError(
+  'ContractStartDatePassedError'
+)<{}> {}
+
 /** Postgres unique-constraint violation (SQLSTATE 23505), possibly nested a
  * few `cause` levels deep depending on the driver wrapping. */
 const isUniqueViolation = (error: SqlError): boolean => {
@@ -166,6 +190,16 @@ const loadProfileOrNull = (userId: string) =>
     })
   );
 
+/** The family's zone from their saved coordinates, or null without them. */
+const familyTimeZone = (familyUserId: string) =>
+  loadProfileOrNull(familyUserId).pipe(
+    Effect.map((profile) =>
+      profile?.latitude != null && profile.longitude != null
+        ? zoneForLocation(profile.latitude, profile.longitude)
+        : null
+    )
+  );
+
 type ContractSide = 'family' | 'provider';
 
 const sideOf = (contract: Contract, userId: string): ContractSide =>
@@ -214,31 +248,61 @@ export const serviceWeeklyCents = (item: ContractServiceItem) =>
 export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
   services.reduce((total, item) => total + serviceWeeklyCents(item), 0);
 
-/** All contract dates (session times, starts/ends, "today") are NZ wall-clock
- * — Pacific/Auckland — regardless of where the server runs. en-CA formats as
- * YYYY-MM-DD. */
-const nzIsoDate = (at: Date) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland' }).format(at);
+/** Contract dates are calendar dates in the version's own zone (the
+ * family's, frozen at acceptance). Null only for a draft, which has no zone. */
+const contractToday = (version: ContractVersion): string | null =>
+  version.timeZone ? todayIn(version.timeZone) : null;
 
-const todayIsoDate = () => nzIsoDate(new Date());
+/** On or after the start date in the version's zone. A sent version with no
+ * start date has not *passed* one — accept refuses it as START_DATE_REQUIRED
+ * and the detail view just withholds `canAccept` (development data only; send
+ * always requires one). A sent version without a zone can't be accepted
+ * either (the CHECK constraint makes that impossible for real rows). */
+const startDatePassed = (version: ContractVersion) => {
+  if (version.startsOn === null) return false;
+  const today = contractToday(version);
+  return today === null || today >= version.startsOn;
+};
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/** A sent, undecided proposal that can no longer be accepted by the passage
+ * of time: past the expiry window, or its start date has arrived in its zone.
+ * Either way it presents as expired (read-time only, never written back),
+ * stops awaiting the receiver and stops being news for them. The single
+ * source for the detail, list, chat pill and badge so they can't disagree. */
+const proposalLapsed = (pending: ContractVersion | null, cutoff: Date) =>
+  pending !== null &&
+  pending.status === 'proposed' &&
+  (isExpired(pending, cutoff) || startDatePassed(pending));
 
-/** Last working day of the notice flow — derived, never stored. */
-const noticeEndsOn = (contract: Contract) =>
-  contract.endNoticedAt !== null
-    ? nzIsoDate(new Date(contract.endNoticedAt.getTime() + END_NOTICE_DAYS * DAY_MS))
+/** Last working day of the notice flow: the notice moment's calendar date in
+ * the contract zone plus 14 calendar days — derived, never stored. */
+const noticeEndsOn = (contract: Contract, accepted: ContractVersion | null) =>
+  contract.endNoticedAt !== null && accepted?.timeZone
+    ? addDays(dateIn(contract.endNoticedAt, accepted.timeZone), END_NOTICE_DAYS)
     : null;
 
-/** The date the contract actually stops working: the earlier of the notice
- * flow's last working day and the negotiated end-date term (if either). */
-export const effectiveEndsOn = (contract: Contract, accepted: ContractVersion | null) => {
-  const candidates = [noticeEndsOn(contract), accepted?.endsOn ?? null].filter(
-    (value): value is string => value !== null
-  );
-  if (candidates.length === 0) return null;
-  return candidates.sort()[0];
+/** The date the contract actually stops working — the earlier of the notice
+ * flow's last working day and the negotiated end-date term — and which one it
+ * was. Only a negotiated end carries a last-day end time; on a tie the
+ * negotiated end wins so its end time still applies. */
+export const effectiveEnd = (contract: Contract, accepted: ContractVersion | null) => {
+  const notice = noticeEndsOn(contract, accepted);
+  const negotiated = accepted?.endsOn ?? null;
+  if (negotiated !== null && (notice === null || negotiated <= notice)) {
+    return {
+      endsOn: negotiated,
+      source: 'negotiated' as const,
+      endsAtMinutes: accepted?.endsAtMinutes ?? null
+    };
+  }
+  if (notice !== null) {
+    return { endsOn: notice, source: 'notice' as const, endsAtMinutes: null };
+  }
+  return null;
 };
+
+export const effectiveEndsOn = (contract: Contract, accepted: ContractVersion | null) =>
+  effectiveEnd(contract, accepted)?.endsOn ?? null;
 
 export type PresentedContractStatus =
   | 'draft'
@@ -252,8 +316,8 @@ export type PresentedContractStatus =
 
 /** Read-time states: a running contract past its effective end date (notice
  * period or the negotiated end-date term) presents as ended, and an undecided
- * pre-active proposal past the expiry window presents as expired — neither is
- * ever written back. */
+ * pre-active proposal past the expiry window or its start date presents as
+ * expired — neither is ever written back. */
 export const presentedContractStatus = (
   contract: Contract,
   pending: ContractVersion | null,
@@ -263,14 +327,16 @@ export const presentedContractStatus = (
   // Strictly past: the effective end date is the LAST WORKING day — the
   // contract is still running (payments running) for the whole of it.
   const endsOn = effectiveEndsOn(contract, accepted);
+  const today = accepted !== null ? contractToday(accepted) : null;
   if (
     (contract.status === 'ending' || contract.status === 'active') &&
     endsOn !== null &&
-    endsOn < todayIsoDate()
+    today !== null &&
+    endsOn < today
   ) {
     return 'ended';
   }
-  if (contract.status === 'proposed' && isExpired(pending, cutoff)) {
+  if (contract.status === 'proposed' && proposalLapsed(pending, cutoff)) {
     return 'expired';
   }
   return contract.status;
@@ -282,14 +348,18 @@ export const presentedContractStatus = (
 const hiddenFromViewer = (contract: Contract, viewerUserId: string) =>
   contract.status === 'draft' && contract.providerUserId === viewerUserId;
 
-const newsAtFor = (row: ContractWithContext, viewerUserId: string): Date | null => {
+/** The newest thing the viewer hasn't been told about yet. A proposal that
+ * has lapsed (expiry window or start date — it presents as expired) is no
+ * longer news for its receiver: there is nothing left for them to act on. */
+const newsAtFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date): Date | null => {
   const pending = pendingOf(row.versions);
   const lastDecided = latestDecidedOf(row.versions);
   const candidates: Array<Date> = [];
   if (
     pending?.status === 'proposed' &&
     pending.proposedByUserId !== viewerUserId &&
-    pending.sentAt !== null
+    pending.sentAt !== null &&
+    !proposalLapsed(pending, cutoff)
   ) {
     candidates.push(pending.sentAt);
   }
@@ -307,8 +377,8 @@ const newsAtFor = (row: ContractWithContext, viewerUserId: string): Date | null 
   return new Date(Math.max(...candidates.map((at) => at.getTime())));
 };
 
-const hasNewsFor = (row: ContractWithContext, viewerUserId: string) => {
-  const newsAt = newsAtFor(row, viewerUserId);
+const hasNewsFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date) => {
+  const newsAt = newsAtFor(row, viewerUserId, cutoff);
   if (newsAt === null) return false;
   const seenAt = sideOf(row, viewerUserId) === 'family' ? row.familySeenAt : row.providerSeenAt;
   return newsAt > (seenAt ?? new Date(0));
@@ -322,6 +392,7 @@ const toTermsResponse = (version: ContractVersion, viewerUserId: string, expiryD
   services: version.services,
   startsOn: version.startsOn,
   endsOn: version.endsOn,
+  endsAtMinutes: version.endsAtMinutes,
   weeklyEstimateCents: weeklyEstimateCents(version.services),
   currency: version.services[0]?.currency ?? 'CAD',
   sentAt: version.sentAt?.toISOString() ?? null,
@@ -361,8 +432,8 @@ export const toContractListItem = (
     awaitingYou:
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
-      !isExpired(pending, cutoff),
-    hasNews: hasNewsFor(row, viewerUserId),
+      !proposalLapsed(pending, cutoff),
+    hasNews: hasNewsFor(row, viewerUserId, cutoff),
     counterpart: counterpartResponse(row, viewerUserId),
     serviceNames: (termsSource?.services ?? []).map((service) => service.name),
     weeklyEstimateCents: termsSource !== null ? weeklyEstimateCents(termsSource.services) : null,
@@ -393,7 +464,7 @@ export const toThreadContractSummary = (
     awaitingYou:
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
-      !isExpired(pending, cutoff),
+      !proposalLapsed(pending, cutoff),
     endsOn: effectiveEndsOn(contract, accepted),
     weeklyEstimateCents: termsSource ? weeklyEstimateCents(termsSource.services) : null
   };
@@ -573,7 +644,9 @@ export const saveTermsProgram = (
     const terms = {
       services,
       startsOn: input.startsOn ?? null,
-      endsOn: input.endsOn ?? null
+      endsOn: input.endsOn ?? null,
+      // An end time only means something on a negotiated end date.
+      endsAtMinutes: input.endsOn ? (input.endsAtMinutes ?? null) : null
     };
 
     if (pending !== null) {
@@ -647,15 +720,31 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
       return yield* Effect.fail(new RateBelowListedError({ violations }));
     }
 
-    yield* contractRepo
-      .updateVersionTerms(pending.id, {
+    if (pending.startsOn === null) {
+      return yield* Effect.fail(new StartDateRequiredError({ action: 'send' }));
+    }
+    // The zone is the family's, read now and frozen with the version at
+    // acceptance — a later move never shifts a signed contract's dates.
+    const timeZone = yield* familyTimeZone(contract.familyUserId);
+    if (timeZone === null) {
+      return yield* Effect.fail(new FamilyLocationRequiredError());
+    }
+    if (pending.startsOn <= todayIn(timeZone)) {
+      return yield* Effect.fail(new StartDateNotInFutureError());
+    }
+
+    // The validated terms and the zone are written in the same guarded
+    // statement as the status flip, so a concurrent draft save can't slip
+    // unvalidated terms into the proposal (it is overwritten by what was
+    // checked here, or lands after and finds the version no longer a draft).
+    const sent = yield* contractRepo
+      .sendPendingVersion(contractId, pending.id, {
         services: refreshed,
         startsOn: pending.startsOn,
-        endsOn: pending.endsOn
+        endsOn: pending.endsOn,
+        endsAtMinutes: pending.endsAtMinutes,
+        timeZone
       })
-      .pipe((errors) => mapContractRepoError(errors));
-    const sent = yield* contractRepo
-      .sendPendingVersion(contractId, pending.id)
       .pipe((errors) => mapContractRepoError(errors));
     if (!sent) {
       return yield* Effect.fail(new ContractStateError());
@@ -725,6 +814,12 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     const { cutoff } = yield* contractProposalContext;
     if (isExpired(pending, cutoff)) {
       return yield* Effect.fail(new ContractProposalExpiredError());
+    }
+    if (pending.startsOn === null) {
+      return yield* Effect.fail(new StartDateRequiredError({ action: 'accept' }));
+    }
+    if (startDatePassed(pending)) {
+      return yield* Effect.fail(new ContractStartDatePassedError());
     }
     yield* requireContractCounterpart(pending.proposedByUserId);
 
@@ -851,6 +946,21 @@ export const endContractProgram = (
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
 
+    // The notice end date is read in the in-force terms' zone; an active
+    // contract without accepted terms is not a state ending can apply to.
+    const { versions } = yield* loadPendingVersion(contractId);
+    const accepted = acceptedOf(versions);
+    if (!accepted?.timeZone) {
+      return yield* Effect.fail(new ContractStateError());
+    }
+    // Presented, not stored (matches the detail's `canEnd`): a contract already
+    // past its effective end in its zone reads as ended and can't be given
+    // notice, although its stored status may still say active.
+    const endBefore = effectiveEndsOn(contract, accepted);
+    if (endBefore !== null && endBefore < todayIn(accepted.timeZone)) {
+      return yield* Effect.fail(new ContractStateError());
+    }
+
     const note = input.note?.trim() ? input.note.trim() : null;
     const updated = yield* contractRepo
       .setEnding(contractId, { endedByUserId: viewer.id, endNote: note })
@@ -858,8 +968,11 @@ export const endContractProgram = (
     if (!updated) {
       return yield* Effect.fail(new ContractStateError());
     }
-    // Derived, not stored — the same computation every read applies.
-    const endsOn = noticeEndsOn(updated) ?? todayIsoDate();
+    // Derived, not stored — the same computation every read applies: the
+    // earlier of the notice period and the negotiated end (with its end time).
+    const effective = effectiveEnd(updated, accepted);
+    const endsOn = effective?.endsOn ?? todayIn(accepted.timeZone);
+    const endsAtMinutes = effective?.endsAtMinutes ?? null;
 
     const enderProfile = yield* loadProfileOrNull(viewer.id);
     const recipientUserId =
@@ -869,11 +982,12 @@ export const endContractProgram = (
       payload: {
         contractId,
         counterpartName: displayName(enderProfile, viewer.name),
-        endsOn
+        endsOn,
+        endsAtMinutes
       }
     });
 
-    return { id: contract.id, status: 'ending' as const, endsOn };
+    return { id: contract.id, status: 'ending' as const, endsOn, endsAtMinutes };
   });
 
 export const markContractSeenProgram = (userAndSession: UserAndSession, contractId: string) =>
@@ -905,11 +1019,12 @@ export const contractsBadgeCountProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
+    const { cutoff } = yield* contractProposalContext;
     const rows = yield* contractRepo
       .listForUser(viewer.id)
       .pipe((errors) => mapContractRepoError(errors));
     const total = rows.filter(
-      (row) => !hiddenFromViewer(row, viewer.id) && hasNewsFor(row, viewer.id)
+      (row) => !hiddenFromViewer(row, viewer.id) && hasNewsFor(row, viewer.id, cutoff)
     ).length;
     return { total };
   });
@@ -971,6 +1086,31 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
     const pendingVisible =
       pending !== null && (pending.status !== 'draft' || pending.proposedByUserId === viewer.id);
 
+    // The zone dates are shown in: while the family can still edit (draft,
+    // declined, changes requested) it is the zone their CURRENT location gives
+    // — that is what send will stamp, even if an older sent version carries
+    // another zone. Otherwise the shown version's frozen zone.
+    const shownVersion =
+      accepted ??
+      (pendingVisible ? pending : null) ??
+      visibleVersions[visibleVersions.length - 1] ??
+      null;
+    const timeZone =
+      isFamily && preActiveEditable
+        ? yield* familyTimeZone(row.familyUserId)
+        : shownVersion !== null && shownVersion.status !== 'draft' && shownVersion.timeZone
+          ? shownVersion.timeZone
+          : isFamily
+            ? yield* familyTimeZone(row.familyUserId)
+            : null;
+    const effective = effectiveEnd(row, accepted);
+    // Why the proposal can't be accepted, for both sides: the receiver's
+    // Accept is gone, and the proposer is told to send a later start date.
+    const acceptBlockedReason =
+      row.status === 'proposed' && pending?.status === 'proposed' && startDatePassed(pending)
+        ? ('start_date_passed' as const)
+        : null;
+
     return {
       contract: {
         id: row.id,
@@ -1001,14 +1141,26 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           declineReason: version.declineReason
         })),
         endsOn: effectiveEndsOn(row, accepted),
+        endsAtMinutes: effective?.endsAtMinutes ?? null,
+        timeZone,
+        timeZoneLabel: timeZone ? zoneLabel(timeZone) : null,
+        earliestStartsOn: timeZone ? addDays(todayIn(timeZone), 1) : null,
+        acceptBlockedReason,
         endedByMe: row.endedByUserId === viewer.id,
         endNote: row.endNote,
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,
         actions: {
           canEditTerms: isFamily && preActiveEditable,
-          canSend: isFamily && preActiveEditable && pending?.status === 'draft',
+          // Send stamps the family's zone; without an address it would refuse
+          // with FAMILY_LOCATION_REQUIRED, so it isn't offered.
+          canSend:
+            isFamily && preActiveEditable && pending?.status === 'draft' && timeZone !== null,
           canWithdraw: isFamily && row.status === 'proposed',
-          canAccept: decidable && !isExpired(pending, cutoff),
+          canAccept:
+            decidable &&
+            !proposalLapsed(pending, cutoff) &&
+            pending?.startsOn != null &&
+            acceptBlockedReason === null,
           canDecline: decidable,
           canRequestChanges: !isFamily && row.status === 'proposed' && isReceiverOfPending,
           // Presented, not stored: a contract already past its negotiated end
@@ -1284,6 +1436,57 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
           error: {
             code: 'CONTRACT_PROPOSAL_EXPIRED' as const,
             message: 'This proposal has expired — ask for new terms instead.'
+          }
+        },
+        409
+      );
+    case 'StartDateRequiredError':
+      return error.action === 'accept'
+        ? c.json(
+            {
+              error: {
+                code: 'START_DATE_REQUIRED' as const,
+                message: 'These terms have no start date — ask for new terms with a start date.'
+              }
+            },
+            422
+          )
+        : c.json(
+            {
+              error: {
+                code: 'START_DATE_REQUIRED' as const,
+                message: 'Pick a start date before sending.'
+              }
+            },
+            422
+          );
+    case 'FamilyLocationRequiredError':
+      return c.json(
+        {
+          error: {
+            code: 'FAMILY_LOCATION_REQUIRED' as const,
+            message:
+              'Add your address to your profile before sending — session times follow your local time zone.'
+          }
+        },
+        422
+      );
+    case 'StartDateNotInFutureError':
+      return c.json(
+        {
+          error: {
+            code: 'START_DATE_NOT_IN_FUTURE' as const,
+            message: 'The start date must be after today.'
+          }
+        },
+        422
+      );
+    case 'ContractStartDatePassedError':
+      return c.json(
+        {
+          error: {
+            code: 'CONTRACT_START_DATE_PASSED' as const,
+            message: 'The start date has passed — ask the family for new terms with a later date.'
           }
         },
         409

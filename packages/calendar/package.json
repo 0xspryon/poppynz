@@ -1,0 +1,17 @@
+{
+  "name": "@repo/calendar",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./lookup": "./src/lookup.ts"
+  },
+  "scripts": {
+    "test": "bun test src"
+  },
+  "dependencies": {
+    "@photostructure/tz-lookup": "^11.7.0",
+    "temporal-polyfill": "^1.0.5"
+  }
+}

@@ -142,7 +142,7 @@ const offeredService = (overrides: Partial<ServiceOffered> = {}): ServiceOffered
   ...overrides
 });
 
-// Tue & Thu 3:30-5:30 pm NZ wall-clock = 4 derived hrs/wk.
+// Tue & Thu 3:30-5:30 pm local wall-clock = 4 derived hrs/wk.
 const twoWeekdaySessions = [
   { weekday: 1, startMinutes: 930, endMinutes: 1050 },
   { weekday: 3, startMinutes: 930, endMinutes: 1050 }

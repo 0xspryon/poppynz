@@ -2302,38 +2302,66 @@ describe('a proposal whose start date has arrived presents as expired', () => {
     expect(summary).toMatchObject({ status: 'expired', awaitingYou: false });
   });
 
-  it('counts toward the badge exactly as a 14-day-expired proposal does', async () => {
-    // Time-based expiry does not suppress news: an unseen proposal is news
-    // until the receiver opens it, whatever state it presents in. The
-    // start-date case follows the same rule.
+  it.each([
+    ['its start date arrived', () => startingProposal()],
+    [
+      'the 14-day window passed',
+      () => proposedVersion({ sentAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000) })
+    ]
+  ])('is no longer news for the receiver once %s', async (_cause, version) => {
     freezeNow(ON_START_DATE);
-    const startPassed = makeLayer({
-      viewer: providerUser(),
-      contracts: [
-        withContext(baseContract({ status: 'proposed' }), [startingProposal()], 'provider-1')
-      ]
-    });
-    const windowExpired = makeLayer({
+    // Unseen by the provider: before it expired, this proposal was news.
+    const layer = makeLayer({
       viewer: providerUser(),
       contracts: [
         withContext(
-          baseContract({ status: 'proposed' }),
-          [proposedVersion({ sentAt: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000) })],
+          baseContract({ status: 'proposed', providerSeenAt: null }),
+          [version()],
           'provider-1'
         )
       ]
     });
 
-    const [startBadge, windowBadge] = await Promise.all(
-      [startPassed, windowExpired].map((layer) =>
-        Effect.runPromise(
-          contractsBadgeCountRouteProgram(new Headers()).pipe(Effect.provide(layer))
-        )
-      )
+    const list = await Effect.runPromise(
+      listContractsRouteProgram(new Headers()).pipe(Effect.provide(layer))
     );
+    expect(list.contracts[0]).toMatchObject({ status: 'expired', hasNews: false });
 
-    expect(startBadge).toEqual(windowBadge);
-    expect(startBadge).toEqual({ total: 1 });
+    const badge = await Effect.runPromise(
+      contractsBadgeCountRouteProgram(new Headers()).pipe(Effect.provide(layer))
+    );
+    expect(badge).toEqual({ total: 0 });
+  });
+
+  it('keeps other news: the family still hears about a decision on their earlier version', async () => {
+    // Only the expired proposal stops counting; decisions stay news.
+    freezeNow(ON_START_DATE);
+    const layer = makeLayer({
+      contracts: [
+        withContext(
+          baseContract({ status: 'proposed', familySeenAt: null }),
+          [
+            proposedVersion({
+              id: 'version-1',
+              version: 1,
+              status: 'changes_requested',
+              decidedAt: new Date('2026-09-07T12:00:00Z')
+            }),
+            startingProposal({ id: 'version-2', version: 2 })
+          ],
+          'family-1'
+        )
+      ]
+    });
+
+    const list = await Effect.runPromise(
+      listContractsRouteProgram(new Headers()).pipe(Effect.provide(layer))
+    );
+    expect(list.contracts[0]).toMatchObject({ status: 'expired', hasNews: true });
+    const badge = await Effect.runPromise(
+      contractsBadgeCountRouteProgram(new Headers()).pipe(Effect.provide(layer))
+    );
+    expect(badge).toEqual({ total: 1 });
   });
 
   it('detail presents expired and explains why Accept is gone; decline stays', async () => {

@@ -266,9 +266,9 @@ const startDatePassed = (version: ContractVersion) => {
 
 /** A sent, undecided proposal that can no longer be accepted by the passage
  * of time: past the expiry window, or its start date has arrived in its zone.
- * Either way it presents as expired (read-time only, never written back) and
- * stops awaiting the receiver. The single source for the detail, list and
- * chat pill so they can't disagree. */
+ * Either way it presents as expired (read-time only, never written back),
+ * stops awaiting the receiver and stops being news for them. The single
+ * source for the detail, list, chat pill and badge so they can't disagree. */
 const proposalLapsed = (pending: ContractVersion | null, cutoff: Date) =>
   pending !== null &&
   pending.status === 'proposed' &&
@@ -348,14 +348,18 @@ export const presentedContractStatus = (
 const hiddenFromViewer = (contract: Contract, viewerUserId: string) =>
   contract.status === 'draft' && contract.providerUserId === viewerUserId;
 
-const newsAtFor = (row: ContractWithContext, viewerUserId: string): Date | null => {
+/** The newest thing the viewer hasn't been told about yet. A proposal that
+ * has lapsed (expiry window or start date — it presents as expired) is no
+ * longer news for its receiver: there is nothing left for them to act on. */
+const newsAtFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date): Date | null => {
   const pending = pendingOf(row.versions);
   const lastDecided = latestDecidedOf(row.versions);
   const candidates: Array<Date> = [];
   if (
     pending?.status === 'proposed' &&
     pending.proposedByUserId !== viewerUserId &&
-    pending.sentAt !== null
+    pending.sentAt !== null &&
+    !proposalLapsed(pending, cutoff)
   ) {
     candidates.push(pending.sentAt);
   }
@@ -373,8 +377,8 @@ const newsAtFor = (row: ContractWithContext, viewerUserId: string): Date | null 
   return new Date(Math.max(...candidates.map((at) => at.getTime())));
 };
 
-const hasNewsFor = (row: ContractWithContext, viewerUserId: string) => {
-  const newsAt = newsAtFor(row, viewerUserId);
+const hasNewsFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date) => {
+  const newsAt = newsAtFor(row, viewerUserId, cutoff);
   if (newsAt === null) return false;
   const seenAt = sideOf(row, viewerUserId) === 'family' ? row.familySeenAt : row.providerSeenAt;
   return newsAt > (seenAt ?? new Date(0));
@@ -429,7 +433,7 @@ export const toContractListItem = (
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
       !proposalLapsed(pending, cutoff),
-    hasNews: hasNewsFor(row, viewerUserId),
+    hasNews: hasNewsFor(row, viewerUserId, cutoff),
     counterpart: counterpartResponse(row, viewerUserId),
     serviceNames: (termsSource?.services ?? []).map((service) => service.name),
     weeklyEstimateCents: termsSource !== null ? weeklyEstimateCents(termsSource.services) : null,
@@ -1015,11 +1019,12 @@ export const contractsBadgeCountProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
+    const { cutoff } = yield* contractProposalContext;
     const rows = yield* contractRepo
       .listForUser(viewer.id)
       .pipe((errors) => mapContractRepoError(errors));
     const total = rows.filter(
-      (row) => !hiddenFromViewer(row, viewer.id) && hasNewsFor(row, viewer.id)
+      (row) => !hiddenFromViewer(row, viewer.id) && hasNewsFor(row, viewer.id, cutoff)
     ).length;
     return { total };
   });

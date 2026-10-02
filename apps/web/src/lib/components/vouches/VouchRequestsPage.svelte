@@ -147,7 +147,9 @@
 						>
 							Decline
 						</button>
-					{:else if entry.status === 'accepted'}
+					{:else if entry.canWithdraw}
+						<!-- Accepted and the applicant isn't approved yet; after approval the
+						     vouch is locked server-side (VOUCH_LOCKED), so no button. -->
 						<button
 							type="button"
 							class="btn btn-ghost btn-sm"

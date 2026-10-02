@@ -370,12 +370,44 @@ describe('listMyVouchesProgram', () => {
 });
 
 describe('listVouchRequestsProgram', () => {
+  const asVoucherRow = (
+    overrides: Partial<Vouch>,
+    applicantHasLiveApproval = false
+  ): VouchWithApplicant => ({
+    ...dummyVouch,
+    ...overrides,
+    applicant: { name: 'Ana Applicant', firstName: null, lastName: null, image: null },
+    applicantHasLiveApproval
+  });
+
+  it('offers Withdraw only on an accepted vouch whose applicant is not yet approved', async () => {
+    const result = await Effect.runPromise(
+      listVouchRequestsProgram(asSession(voucher)).pipe(
+        Effect.provide(
+          makeLayer({
+            voucherListed: [
+              asVoucherRow({ id: 'v-accepted-unapproved', status: 'accepted' }, false),
+              asVoucherRow({ id: 'v-accepted-approved', status: 'accepted' }, true),
+              asVoucherRow({ id: 'v-pending', status: 'pending' }, false),
+              asVoucherRow({ id: 'v-flagged', status: 'flagged' }, false),
+              asVoucherRow({ id: 'v-declined', status: 'declined' }, false)
+            ]
+          })
+        )
+      )
+    );
+    expect(result.requests.map((request) => [request.id, request.canWithdraw])).toEqual([
+      ['v-accepted-unapproved', true],
+      ['v-accepted-approved', false],
+      ['v-pending', false],
+      ['v-flagged', false],
+      ['v-declined', false]
+    ]);
+    // The applicant's approval itself is not exposed to the voucher.
+    expect(JSON.stringify(result)).not.toMatch(/applicantHasLiveApproval/);
+  });
+
   it('shows the voucher "closed" for admin flags and revokes, never the admin action', async () => {
-    const asVoucherRow = (overrides: Partial<Vouch>): VouchWithApplicant => ({
-      ...dummyVouch,
-      ...overrides,
-      applicant: { name: 'Ana Applicant', firstName: null, lastName: null, image: null }
-    });
     const result = await Effect.runPromise(
       listVouchRequestsProgram(asSession(voucher)).pipe(
         Effect.provide(

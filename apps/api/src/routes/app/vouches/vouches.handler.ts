@@ -260,15 +260,21 @@ export const listVouchRequestsProgram = (userAndSession: UserAndSession) =>
       .pipe(Effect.mapError(repoError));
     const now = new Date();
     return {
-      requests: requests.map((vouch) => ({
-        id: vouch.id,
-        applicantName: fullName(vouch.applicant, vouch.applicant.name),
-        applicantImage: vouch.applicant.image,
-        relationship: vouch.relationship,
-        status: voucherVouchStatus(vouch, now),
-        requestedAt: vouch.createdAt.toISOString(),
-        expiresAt: vouch.expiresAt.toISOString()
-      }))
+      requests: requests.map((vouch) => {
+        const status = voucherVouchStatus(vouch, now);
+        return {
+          id: vouch.id,
+          applicantName: fullName(vouch.applicant, vouch.applicant.name),
+          applicantImage: vouch.applicant.image,
+          relationship: vouch.relationship,
+          status,
+          // Mirrors withdrawVouchProgram: once the applicant is approved the
+          // vouch is locked (VOUCH_LOCKED), so the button is not offered.
+          canWithdraw: status === 'accepted' && !vouch.applicantHasLiveApproval,
+          requestedAt: vouch.createdAt.toISOString(),
+          expiresAt: vouch.expiresAt.toISOString()
+        };
+      })
     };
   });
 

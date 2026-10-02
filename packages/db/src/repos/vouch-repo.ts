@@ -44,6 +44,8 @@ export type VouchWithApplicant = Vouch & {
     lastName: string | null;
     image: string | null;
   };
+  /** Whether the applicant holds a live approval right now (locks withdraw). */
+  applicantHasLiveApproval: boolean;
 };
 
 export type VouchTransition = {
@@ -237,25 +239,45 @@ export const VouchRepoLive = Layer.effect(
             name: user.name,
             image: user.image,
             firstName: userProfile.firstName,
-            lastName: userProfile.lastName
+            lastName: userProfile.lastName,
+            currentApprovalId: approval.id
           })
           .from(vouch)
           .innerJoin(user, eq(user.id, vouch.applicantUserId))
           .leftJoin(userProfile, eq(userProfile.userId, vouch.applicantUserId))
+          .leftJoin(
+            approval,
+            and(
+              eq(approval.userId, vouch.applicantUserId),
+              eq(approval.status, 'approved'),
+              gt(approval.expiresAt, new Date())
+            )
+          )
           .where(eq(vouch.voucherUserId, voucherUserId))
           .orderBy(desc(vouch.createdAt))
           .pipe(
-            Effect.map((rows) =>
-              rows.map((row) => ({
-                ...row.vouch,
-                applicant: {
-                  name: row.name,
-                  image: row.image,
-                  firstName: row.firstName ?? null,
-                  lastName: row.lastName ?? null
+            Effect.map((rows) => {
+              // The approval join can fan out; collapse to one row per vouch.
+              const byId = new Map<string, VouchWithApplicant>();
+              for (const row of rows) {
+                const existing = byId.get(row.vouch.id);
+                if (existing) {
+                  existing.applicantHasLiveApproval ||= row.currentApprovalId !== null;
+                  continue;
                 }
-              }))
-            )
+                byId.set(row.vouch.id, {
+                  ...row.vouch,
+                  applicant: {
+                    name: row.name,
+                    image: row.image,
+                    firstName: row.firstName ?? null,
+                    lastName: row.lastName ?? null
+                  },
+                  applicantHasLiveApproval: row.currentApprovalId !== null
+                });
+              }
+              return [...byId.values()];
+            })
           ),
       transition: (input) =>
         db

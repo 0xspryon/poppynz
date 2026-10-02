@@ -66,12 +66,21 @@ export type NotificationPayloads = {
     endsOn: string;
     endsAtMinutes: number | null;
   };
-  /** The viewer's safety check moved: Credibled set it up (invited), is
-   * processing it, finished it (awaiting review), or an admin decided.
-   * Deliberately thin — a page showing the verification refetches its summary
-   * on receipt; anywhere else it is just a toast. */
+  /** The viewer's safety check moved: its payment settled (payment_pending —
+   * the order is being placed) or failed (not_started — back to the basket),
+   * Credibled set it up (invited), is processing it, finished it (awaiting
+   * review), or an admin decided. Deliberately thin — a page showing the
+   * verification refetches its summary on receipt; anywhere else it is just a
+   * toast (payment events have no toast: the payer is on the page). */
   'safety_verification.updated': {
-    status: 'invited' | 'in_progress' | 'review_required' | 'verified' | 'rejected';
+    status:
+      | 'not_started'
+      | 'payment_pending'
+      | 'invited'
+      | 'in_progress'
+      | 'review_required'
+      | 'verified'
+      | 'rejected';
   };
   /** Someone asked the viewer to vouch for them. */
   'vouch.requested': {

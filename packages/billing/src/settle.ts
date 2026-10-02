@@ -1,0 +1,228 @@
+import { BillingCustomerRepo, CheckOrderRepo, PaymentRepo, type Payment } from '@repo/db';
+import { publishNotificationBestEffort } from '@repo/notify';
+import { Payments, type ProviderPayment } from '@repo/payments';
+import { SafetyVerificationQueue } from '@repo/queue';
+import { Effect } from 'effect';
+import { saveCard } from './cards';
+
+/**
+ * settle(paymentId): the ONE path that records money as taken or not.
+ *
+ * Three callers reach it — the browser's confirm request, the Stripe webhook
+ * and the worker's recovery job — in any order and possibly at once. It never
+ * trusts the caller: it re-fetches the payment from the provider, checks the
+ * fetched object against our row, and applies the outcome with compare-and-set
+ * writes, so each outcome lands exactly once whoever gets there first.
+ */
+
+export type SettleResult =
+  /** This call recorded the capture and moved the order on. */
+  | { outcome: 'captured'; payment: Payment }
+  /** This call recorded the failure and returned the order to the basket. */
+  | { outcome: 'failed'; payment: Payment }
+  /** The provider has not finished (3-D Secure, processing): nothing changed. */
+  | { outcome: 'pending'; payment: Payment }
+  /** Already settled by an earlier or concurrent caller. */
+  | { outcome: 'final'; payment: Payment }
+  /** The fetched object does not match our row; flagged, nothing else done. */
+  | { outcome: 'mismatch'; payment: Payment; reason: string }
+  /** Recorded under another provider than the active one; left alone. */
+  | { outcome: 'skipped'; payment: Payment };
+
+/** Statuses after which a payment row never moves again here. `authorised`
+ * rows are the pre-Stripe mock's settled charges. */
+const finalStatuses: ReadonlyArray<Payment['status']> = [
+  'captured',
+  'authorised',
+  'refunded',
+  'failed'
+];
+
+/** Every check the spec asks for, in order. Null when the fetched intent is
+ * ours and for the amount we priced. */
+export const mismatchReason = (row: Payment, fetched: ProviderPayment): string | null => {
+  if (fetched.metadata.payment_id !== row.id) {
+    return `provider payment ${fetched.reference} belongs to ${fetched.metadata.payment_id ?? 'nobody'}, not ${row.id}`;
+  }
+  if (fetched.amountCents !== row.totalCents) {
+    return `provider amount ${fetched.amountCents} does not match ${row.totalCents}`;
+  }
+  if (fetched.currency.toLowerCase() !== row.currency.toLowerCase()) {
+    return `provider currency ${fetched.currency} does not match ${row.currency}`;
+  }
+  return null;
+};
+
+/** The order the payment paid for moves to `paid` and is handed to the
+ * worker. Safe to repeat: an order already past `payment_pending` is left
+ * alone, and a `paid` one is re-enqueued (the queue dedupes on the order). */
+const finishOrder = (payment: Payment, at: Date) =>
+  Effect.gen(function* () {
+    const orders = yield* CheckOrderRepo;
+    const paymentRepo = yield* PaymentRepo;
+    const queue = yield* SafetyVerificationQueue;
+
+    const order = yield* orders.findByPaymentId(payment.id);
+    if (order !== null && order.status === 'paid') {
+      yield* queue.enqueueOrder({ orderId: order.id });
+      return;
+    }
+    if (order !== null && order.status !== 'payment_pending') {
+      return;
+    }
+    const paid =
+      order === null
+        ? null
+        : yield* orders.advance(order.id, {
+            from: { status: 'payment_pending', paymentId: payment.id },
+            set: { status: 'paid', consentAt: order.consentAt ?? at }
+          });
+    if (paid === null) {
+      const current = yield* orders.findByPaymentId(payment.id);
+      if (current !== null && current.status !== 'payment_pending') return;
+      // Money was taken and no order is waiting for it. Never silent: the
+      // payment carries the note so somebody settles it by hand.
+      yield* paymentRepo.update(payment.id, {
+        lastError:
+          'charge settled but the order was no longer awaiting it — needs manual settlement'
+      });
+      return;
+    }
+    // Placing the order happens in the worker so a Credibled outage is a
+    // retry rather than a lost payment.
+    yield* queue.enqueueOrder({ orderId: paid.id });
+    yield* publishNotificationBestEffort(paid.userId, {
+      type: 'safety_verification.updated',
+      payload: { status: 'payment_pending' }
+    });
+  });
+
+/** A family's first payment saves its card (`savesCard`). Only for the
+ * customer the payment's own user holds — never someone else's. */
+const rememberCard = (payment: Payment, fetched: ProviderPayment) =>
+  Effect.gen(function* () {
+    if (!fetched.savesCard || fetched.paymentMethod === null || fetched.customer === null) {
+      return;
+    }
+    const repo = yield* BillingCustomerRepo;
+    const payments = yield* Payments;
+    const owner = yield* repo.findByCustomerReference(payments.provider, fetched.customer);
+    if (owner === null || owner.userId !== payment.userId) return;
+    yield* saveCard(owner.userId, fetched.paymentMethod);
+  }).pipe(
+    // The charge is recorded; a card we failed to remember can be re-added
+    // in Billing. Failing here would only make the webhook retry forever.
+    Effect.catchAll((error) => Effect.logWarning(`could not save card for ${payment.id}`, error))
+  );
+
+const capture = (row: Payment, fetched: ProviderPayment, at: Date) =>
+  Effect.gen(function* () {
+    const paymentRepo = yield* PaymentRepo;
+    const captured = yield* paymentRepo.advance(row.id, {
+      from: 'pending',
+      set: { status: 'captured', capturedAt: at, receiptUrl: fetched.receiptUrl, lastError: null }
+    });
+    if (captured === null) {
+      return { outcome: 'final' as const, payment: yield* paymentRepo.findById(row.id) };
+    }
+    yield* finishOrder(captured, at);
+    yield* rememberCard(captured, fetched);
+    return { outcome: 'captured' as const, payment: captured };
+  });
+
+const fail = (row: Payment, reason: string) =>
+  Effect.gen(function* () {
+    const paymentRepo = yield* PaymentRepo;
+    const orders = yield* CheckOrderRepo;
+    const failed = yield* paymentRepo.advance(row.id, {
+      from: 'pending',
+      set: { status: 'failed', lastError: reason }
+    });
+    if (failed === null) {
+      return { outcome: 'final' as const, payment: yield* paymentRepo.findById(row.id) };
+    }
+    // Back to the basket so the applicant can pay again with a fresh charge.
+    // Guarded on OUR payment so it can never clobber a re-claim.
+    const order = yield* orders.findByPaymentId(row.id);
+    if (order !== null) {
+      const reverted = yield* orders.advance(order.id, {
+        from: { status: 'payment_pending', paymentId: row.id },
+        set: { status: 'draft', paymentId: null }
+      });
+      if (reverted !== null) {
+        yield* publishNotificationBestEffort(reverted.userId, {
+          type: 'safety_verification.updated',
+          payload: { status: 'not_started' }
+        });
+      }
+    }
+    return { outcome: 'failed' as const, payment: failed };
+  });
+
+const settleRow = (row: Payment, now: () => Date) =>
+  Effect.gen(function* () {
+    const paymentRepo = yield* PaymentRepo;
+    const payments = yield* Payments;
+
+    if (finalStatuses.includes(row.status)) {
+      // A capture whose follow-up never ran (crash between the two writes)
+      // is finished here; otherwise this is a no-op.
+      if (row.status === 'captured' || row.status === 'authorised') {
+        yield* finishOrder(row, now());
+      }
+      return { outcome: 'final' as const, payment: row };
+    }
+    if (row.provider !== payments.provider) {
+      return { outcome: 'skipped' as const, payment: row };
+    }
+    if (row.providerReference === null) {
+      // The provider was never reached; the order route retries the start.
+      return { outcome: 'pending' as const, payment: row };
+    }
+
+    const fetched = yield* payments.getPayment(row.providerReference);
+    const mismatch = mismatchReason(row, fetched);
+    if (mismatch !== null) {
+      const flagged = yield* paymentRepo.update(row.id, { lastError: mismatch });
+      return { outcome: 'mismatch' as const, payment: flagged, reason: mismatch };
+    }
+
+    switch (fetched.status) {
+      case 'succeeded':
+        return yield* capture(row, fetched, now());
+      case 'failed': {
+        // A declined intent can still be confirmed with another card. Cancel
+        // it before releasing the order so nothing can succeed afterwards —
+        // and if it succeeded in the meantime, record that instead.
+        const after = yield* payments.cancelPayment(row.providerReference);
+        return after.status === 'succeeded'
+          ? yield* capture(row, after, now())
+          : yield* fail(row, fetched.failureReason ?? 'The payment was declined.');
+      }
+      case 'canceled':
+        return yield* fail(row, fetched.failureReason ?? 'The payment was cancelled.');
+      default:
+        return { outcome: 'pending' as const, payment: row };
+    }
+  });
+
+export const settlePayment = (paymentId: string, now: () => Date = () => new Date()) =>
+  Effect.gen(function* () {
+    const paymentRepo = yield* PaymentRepo;
+    const row = yield* paymentRepo.findById(paymentId);
+    const result: SettleResult = yield* settleRow(row, now);
+    return result;
+  });
+
+/** The webhook's entry point: it knows the provider's reference, not our id.
+ * `unknown` for an intent we never created (another integration on the same
+ * Stripe account, or a test event). */
+export const settlePaymentByReference = (reference: string, now: () => Date = () => new Date()) =>
+  Effect.gen(function* () {
+    const paymentRepo = yield* PaymentRepo;
+    const payments = yield* Payments;
+    const row = yield* paymentRepo.findByProviderReference(payments.provider, reference);
+    if (row === null) return { outcome: 'unknown' as const };
+    const result: SettleResult = yield* settleRow(row, now);
+    return result;
+  });

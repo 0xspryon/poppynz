@@ -133,6 +133,17 @@
         "vitest": "^4.1.0",
       },
     },
+    "packages/billing": {
+      "name": "@repo/billing",
+      "version": "0.0.0",
+      "dependencies": {
+        "@repo/db": "*",
+        "@repo/notify": "*",
+        "@repo/payments": "*",
+        "@repo/queue": "*",
+        "effect": "^3.21.2",
+      },
+    },
     "packages/calendar": {
       "name": "@repo/calendar",
       "version": "0.0.0",
@@ -657,6 +668,8 @@
     "@redis/search": ["@redis/search@1.2.0", "", { "peerDependencies": { "@redis/client": "^1.0.0" } }, "sha512-tYoDBbtqOVigEDMAcTGsRlMycIIjwMCgD8eR2t0NANeQmgK/lvxNAvYyb6bZDD4frHRhIHkJu2TBRvB0ERkOmw=="],
 
     "@redis/time-series": ["@redis/time-series@1.1.0", "", { "peerDependencies": { "@redis/client": "^1.0.0" } }, "sha512-c1Q99M5ljsIuc4YdaCwfUEXsofakb9c8+Zse2qxTadu8TalLXuAESzLvFAvNVbkmSlvlzIQOLpBCmWI9wTOt+g=="],
+
+    "@repo/billing": ["@repo/billing@workspace:packages/billing"],
 
     "@repo/calendar": ["@repo/calendar@workspace:packages/calendar"],
 

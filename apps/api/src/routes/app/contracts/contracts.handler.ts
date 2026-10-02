@@ -249,11 +249,15 @@ export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
 const contractToday = (version: ContractVersion): string | null =>
   version.timeZone ? todayIn(version.timeZone) : null;
 
-/** On or after the start date in the version's zone. A sent version without
- * a start date or zone can't be accepted either (development data only). */
+/** On or after the start date in the version's zone. A sent version with no
+ * start date has not *passed* one — accept refuses it as START_DATE_REQUIRED
+ * and the detail view just withholds `canAccept` (development data only; send
+ * always requires one). A sent version without a zone can't be accepted
+ * either (the CHECK constraint makes that impossible for real rows). */
 const startDatePassed = (version: ContractVersion) => {
+  if (version.startsOn === null) return false;
   const today = contractToday(version);
-  return version.startsOn === null || today === null || today >= version.startsOn;
+  return today === null || today >= version.startsOn;
 };
 
 /** Last working day of the notice flow: the notice moment's calendar date in
@@ -793,6 +797,9 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     if (isExpired(pending, cutoff)) {
       return yield* Effect.fail(new ContractProposalExpiredError());
     }
+    if (pending.startsOn === null) {
+      return yield* Effect.fail(new StartDateRequiredError());
+    }
     if (startDatePassed(pending)) {
       return yield* Effect.fail(new ContractStartDatePassedError());
     }
@@ -1049,16 +1056,20 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
     const pendingVisible =
       pending !== null && (pending.status !== 'draft' || pending.proposedByUserId === viewer.id);
 
-    // The zone dates are shown in: the shown version's frozen zone once sent;
-    // for the family's own draft, the zone their current location gives.
+    // The zone dates are shown in: while the family can still edit (draft,
+    // declined, changes requested) it is the zone their CURRENT location gives
+    // — that is what send will stamp, even if an older sent version carries
+    // another zone. Otherwise the shown version's frozen zone.
     const shownVersion =
       accepted ?? (pendingVisible ? pending : null) ?? visibleVersions[visibleVersions.length - 1] ?? null;
     const timeZone =
-      shownVersion !== null && shownVersion.status !== 'draft' && shownVersion.timeZone
-        ? shownVersion.timeZone
-        : isFamily
-          ? yield* familyTimeZone(row.familyUserId)
-          : null;
+      isFamily && preActiveEditable
+        ? yield* familyTimeZone(row.familyUserId)
+        : shownVersion !== null && shownVersion.status !== 'draft' && shownVersion.timeZone
+          ? shownVersion.timeZone
+          : isFamily
+            ? yield* familyTimeZone(row.familyUserId)
+            : null;
     const effective = effectiveEnd(row, accepted);
     const acceptBlockedReason =
       decidable && pending !== null && startDatePassed(pending)
@@ -1107,7 +1118,11 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           canEditTerms: isFamily && preActiveEditable,
           canSend: isFamily && preActiveEditable && pending?.status === 'draft',
           canWithdraw: isFamily && row.status === 'proposed',
-          canAccept: decidable && !isExpired(pending, cutoff) && acceptBlockedReason === null,
+          canAccept:
+            decidable &&
+            !isExpired(pending, cutoff) &&
+            pending?.startsOn != null &&
+            acceptBlockedReason === null,
           canDecline: decidable,
           canRequestChanges: !isFamily && row.status === 'proposed' && isReceiverOfPending,
           // Presented, not stored: a contract already past its negotiated end

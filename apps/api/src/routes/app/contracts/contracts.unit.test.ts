@@ -1218,6 +1218,21 @@ describe('POST /contracts/:id/accept', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStartDatePassedError' });
   });
 
+  it('refuses a sent version without a start date as START_DATE_REQUIRED, not "passed"', async () => {
+    const exit = await Effect.runPromiseExit(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'proposed' }),
+            versions: [proposedVersion({ startsOn: null })]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'StartDateRequiredError' });
+  });
+
   it('allows accepting the evening before, although UTC is already on the start date', async () => {
     freezeNow('2026-09-10T04:30:00Z'); // Sep 9, 23:30 in Winnipeg
     const result = await Effect.runPromise(
@@ -1749,6 +1764,53 @@ describe('GET /contracts/:id', () => {
     );
 
     expect(contract).toMatchObject({ timeZone: null, timeZoneLabel: null, earliestStartsOn: null });
+  });
+
+  it("uses the family's current zone, not an old version's, while they revise", async () => {
+    // v1 was sent from Vancouver and declined; the family now lives in
+    // Winnipeg (makeLayer's default location). Send would stamp Winnipeg.
+    const declined = proposedVersion({
+      status: 'declined',
+      decidedAt: new Date(),
+      timeZone: 'America/Vancouver'
+    });
+    const layer = makeLayer({
+      contractWithContext: withContext(baseContract({ status: 'declined' }), [declined], 'family-1'),
+      conversationById: activeConversation()
+    });
+
+    const { contract } = await Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(contract).toMatchObject({
+      timeZone: WPG,
+      timeZoneLabel: 'Central Time',
+      earliestStartsOn: addDays(todayIn(WPG), 1)
+    });
+  });
+
+  it('withholds Accept without calling a missing start date "passed"', async () => {
+    const layer = makeLayer({
+      viewer: providerUser(),
+      contractWithContext: withContext(
+        baseContract({ status: 'proposed' }),
+        [proposedVersion({ startsOn: null, sentAt: new Date() })],
+        'provider-1'
+      ),
+      conversationById: activeConversation()
+    });
+
+    const { contract } = await Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(contract.acceptBlockedReason).toBeNull();
+    expect(contract.actions).toMatchObject({ canAccept: false, canDecline: true });
   });
 
   it('tells the provider why Accept is gone once the start date has arrived', async () => {

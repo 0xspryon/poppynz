@@ -595,8 +595,9 @@
 					{/if}
 					{#if contract.endsOn}
 						The contract runs until <strong
-							>{formatDateWithWeekday(contract.endsOn)}{#if contract.endsAtMinutes}
-								at {formatEndTime(contract.endsAtMinutes)}{/if}</strong
+							>{formatDateWithWeekday(contract.endsOn)}{contract.endsAtMinutes
+								? ` at ${formatEndTime(contract.endsAtMinutes)}`
+								: ''}</strong
 						>.
 					{/if}
 				</p>

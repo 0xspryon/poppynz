@@ -986,6 +986,34 @@ describe('ordering a check', () => {
     expect(recorded.started.map((input) => input.idempotencyKey)).toEqual(['payment-0']);
   });
 
+  it('charges the restarted row its own frozen total, never a freshly recomputed quote', async () => {
+    // The row was frozen at an earlier attempt; if pricing changed since
+    // (fee, tax, item cost), the provider must still be charged what the row
+    // records — never a figure recomputed from the current basket.
+    const recorded = record();
+    await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({
+        id: 'payment-0',
+        status: 'pending',
+        providerReference: null,
+        amountCents: 6000,
+        feeCents: 400,
+        taxCents: 0,
+        totalCents: 6400
+      }),
+      items: basketReady.items,
+      recorded
+    });
+
+    expect(recorded.started[0]?.quote).toMatchObject({
+      amountCents: 6000,
+      feeCents: 400,
+      taxCents: 0,
+      totalCents: 6400
+    });
+  });
+
   it('resumes an unfinished payment with a fresh client secret — never a second intent', async () => {
     const recorded = record();
     const result = await placeOrder({

@@ -19,6 +19,7 @@ import {
 import { safetyVerificationConfig } from '@repo/env';
 import {
   Payments,
+  type Money,
   type PaymentProviderError,
   type QuoteLineItem,
   type StartedPayment
@@ -563,11 +564,26 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
           : null;
         const card = toCard(customer, payments.provider);
 
+        // The row's own breakdown is what the provider is charged — never the
+        // freshly computed quote. On a fresh row the two agree; on a restart
+        // (provider never reached) the row was frozen at an earlier attempt,
+        // and a fee/tax/price change since then must not charge a different
+        // amount than the row records, or settle's mismatch check flags a
+        // captured payment as unresolved.
+        const frozenQuote: Money = {
+          amountCents: payment.amountCents,
+          lineItems: quote.lineItems,
+          feeCents: payment.feeCents,
+          taxCents: payment.taxCents,
+          totalCents: payment.totalCents,
+          currency: payment.currency as Money['currency']
+        };
+
         // The payment row's id is the idempotency key: a retry against the
         // same row is the same intent at the provider, never a second one.
         const started = yield* payments
           .startPayment({
-            quote,
+            quote: frozenQuote,
             idempotencyKey: payment.id,
             metadata: { payment_id: payment.id, order_id: claimed.id, kind: payment.kind },
             customer: customer?.customerReference ?? null,

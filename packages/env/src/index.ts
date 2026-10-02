@@ -213,3 +213,25 @@ export const safetyVerificationConfig = Config.all({
     Config.withDefault(3)
   )
 });
+
+// Stripe — card payments (piece 2a of the contract-billing design).
+//
+// PAYMENTS_PROVIDER picks the gateway for the API and the worker alike and
+// defaults to `mock`, so a checkout without Stripe keys keeps working and
+// never charges anything. With `stripe` the secret key is required and must
+// be a TEST-mode key: live activation is a separate, deliberate step
+// (docs/activating-stripe-connect.md). Both secrets are Redacted — read them
+// with `Redacted.value` at the call site only.
+//
+// A payment left unconfirmed (tab closed mid-3-D Secure, webhook lost) is
+// re-fetched by the worker after PAYMENTS_SETTLE_AFTER_MINUTES and cancelled
+// after PAYMENTS_ABANDON_AFTER_HOURS, which returns its order to the basket.
+export const stripeConfig = Config.all({
+  provider: Config.literal('mock', 'stripe')('PAYMENTS_PROVIDER').pipe(
+    Config.withDefault('mock' as const)
+  ),
+  secretKey: Config.option(Config.redacted('STRIPE_SECRET_KEY')),
+  webhookSecret: Config.option(Config.redacted('STRIPE_WEBHOOK_SECRET')),
+  settleAfterMinutes: Config.integer('PAYMENTS_SETTLE_AFTER_MINUTES').pipe(Config.withDefault(10)),
+  abandonAfterHours: Config.integer('PAYMENTS_ABANDON_AFTER_HOURS').pipe(Config.withDefault(24))
+});

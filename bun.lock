@@ -227,7 +227,9 @@
       "name": "@repo/payments",
       "version": "0.0.0",
       "dependencies": {
+        "@repo/env": "*",
         "effect": "^3.21.2",
+        "stripe": "^23.0.0",
       },
     },
     "packages/queue": {
@@ -1615,6 +1617,8 @@
     "strip-indent": ["strip-indent@3.0.0", "", { "dependencies": { "min-indent": "^1.0.0" } }, "sha512-laJTa3Jb+VQpaC6DseHhF7dXVqHTfJPCRDaEbid/drOhgitgYku/letMUqOXFoWV0zIIUbjpdH2t+tYj4bQMRQ=="],
 
     "strip-json-comments": ["strip-json-comments@3.1.1", "", {}, "sha512-6fPc+R4ihwqP6N/aIv2f1gMH8lOVtWQHoqC4yK6oSDVVocumAsfCqjkXnqiYMhmMwS/mEHLp7Vehlt3ql6lEig=="],
+
+    "stripe": ["stripe@23.0.0", "", { "peerDependencies": { "@types/node": ">=20" }, "optionalPeers": ["@types/node"] }, "sha512-MDE2A5ZVVluYURORaZEVghSmnLJc3w6aHAlZSxDQMsOjOb3V0O6ro/CiaeFlJS4N7uIVmsg98ocRsPmUK6YfyA=="],
 
     "strnum": ["strnum@2.4.0", "", { "dependencies": { "anynum": "^1.0.0" } }, "sha512-sHrVyWWdq28RbhjuJdZsA1SnGRJV6NiXbk6AXBxDOsgAcA+lmpUZCYjOdLBxkXMwis6RRe7dlZt4VlIWFVzkmg=="],
 

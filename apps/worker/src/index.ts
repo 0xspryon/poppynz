@@ -6,7 +6,7 @@ import { trustedOriginsConfig } from '@repo/env';
 import { CredibledDefault } from '@repo/credibled';
 import { MailerLive } from '@repo/mail';
 import { NotificationHubLive } from '@repo/notify';
-import { PaymentsMock } from '@repo/payments';
+import { PaymentsLive } from '@repo/payments';
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import {
   ApprovalRepoDefault,
@@ -59,9 +59,8 @@ const WorkerLive = Layer.mergeAll(
   PaymentRepoDefault,
   UserRepoDefault,
   CredibledDefault,
-  // Stripe lands in its own PR; the mock keeps the refund and retry paths
-  // exercised until then.
-  PaymentsMock,
+  // Same PAYMENTS_PROVIDER switch as the API (default `mock`).
+  PaymentsLive,
   MailerLive,
   // The expiry sweep re-indexes a family whose verification lapsed.
   FamilySearchQueueLive,

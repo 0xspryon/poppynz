@@ -29,7 +29,7 @@ import { CredibledDefault } from '@repo/credibled';
 import { GooglePlacesLive } from '@repo/google';
 import { NotificationHubLive } from '@repo/notify';
 import { ObjectStorageLive } from '@repo/objs';
-import { PaymentsMock } from '@repo/payments';
+import { PaymentsLive } from '@repo/payments';
 import {
   FamilySearchQueueLive,
   ProviderSearchQueueLive,
@@ -79,9 +79,9 @@ export const AppLive = Layer.mergeAll(
   FamilySearchIndexDefault,
   SafetyVerificationQueueLive,
   CredibledDefault,
-  // Stripe lands in its own PR; until then the port resolves to the mock so
-  // the ordering, refund and retry paths are exercised end to end.
-  PaymentsMock,
+  // PAYMENTS_PROVIDER picks the gateway (default `mock`); with `stripe` a
+  // missing or live secret key fails the boot rather than charging nothing.
+  PaymentsLive,
   SigninServiceLive,
   SignupServiceLive,
   AuthServiceLive

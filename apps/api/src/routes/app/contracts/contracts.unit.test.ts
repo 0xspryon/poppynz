@@ -1,10 +1,12 @@
 import { SqlError } from '@effect/sql/SqlError';
 import {
+  dummyBillingCustomer,
   dummyContract,
   dummyContractVersion,
   makeApprovalRepoTest,
   makeContractRepoTest,
   makeConversationRepoTest,
+  makeInMemoryBillingCustomerRepo,
   makeServiceOfferedRepoTest,
   makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
@@ -23,6 +25,7 @@ import {
   dummyConversation
 } from '@repo/db';
 import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
+import { makePaymentsTest } from '@repo/payments';
 import { addDays, todayIn } from '@repo/calendar';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -256,11 +259,18 @@ const makeLayer = (
     providerApproved?: boolean;
     /** The family's saved coordinates; null = no address yet. Defaults to Winnipeg. */
     familyLocation?: { latitude: number; longitude: number } | null;
+    /** Whether the family has a card on file. Defaults to true. */
+    familyCard?: boolean;
   } = {}
 ) => {
   const viewer = options.viewer ?? familyUser();
   const counterpart = viewer.id === 'family-1' ? providerUser() : familyUser();
   return Layer.mergeAll(
+    // Sending needs a card on file; these suites assert other behaviour, so
+    // the family has one unless a test says otherwise.
+    makeInMemoryBillingCustomerRepo(options.familyCard === false ? [] : [dummyBillingCustomer()])
+      .layer,
+    makePaymentsTest({}),
     // Safety verification now gates the bookable actions; these suites assert
     // other behaviour, so the applicant is verified unless a test says so.
     makeSafetyVerificationRepoTest({
@@ -981,6 +991,24 @@ describe('POST /contracts/:id/send', () => {
       )
     );
     expect(getFailure(exit)).toMatchObject({ _tag: 'NotContractActorError' });
+  });
+
+  it('refuses to send without a card on file — contract billing charges it', async () => {
+    const calls: Array<string> = [];
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            familyCard: false,
+            calls
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'PaymentMethodRequiredError' });
+    expect(calls).toEqual([]);
   });
 
   it("stamps the family's time zone on the version it sends", async () => {
@@ -1943,6 +1971,52 @@ describe('GET /contracts/:id', () => {
     expect(contract).toMatchObject({ timeZone: null, timeZoneLabel: null, earliestStartsOn: null });
     // Send would refuse with FAMILY_LOCATION_REQUIRED, so it isn't offered.
     expect(contract.actions).toMatchObject({ canEditTerms: true, canSend: false });
+  });
+
+  it('tells the family whether a card is on file and offers Send only with one', async () => {
+    const detail = (familyCard: boolean) =>
+      Effect.runPromise(
+        getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(
+            makeLayer({
+              familyCard,
+              contractWithContext: withContext(
+                baseContract({ status: 'draft' }),
+                [draftVersion()],
+                'family-1'
+              ),
+              conversationById: activeConversation()
+            })
+          )
+        )
+      );
+
+    const withCard = (await detail(true)).contract;
+    expect(withCard.hasPaymentMethod).toBe(true);
+    expect(withCard.actions.canSend).toBe(true);
+
+    const withoutCard = (await detail(false)).contract;
+    expect(withoutCard.hasPaymentMethod).toBe(false);
+    expect(withoutCard.actions).toMatchObject({ canEditTerms: true, canSend: false });
+  });
+
+  it('does not tell the provider about the family card', async () => {
+    const { contract } = await Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractWithContext: withContext(
+              baseContract({ status: 'proposed' }),
+              [proposedVersion()],
+              'provider-1'
+            ),
+            conversationById: activeConversation()
+          })
+        )
+      )
+    );
+    expect(contract.hasPaymentMethod).toBeNull();
   });
 
   it("uses the family's current zone, not an old version's, while they revise", async () => {

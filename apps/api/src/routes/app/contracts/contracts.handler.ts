@@ -1,4 +1,5 @@
 import type { SqlError } from '@effect/sql/SqlError';
+import { cardOnFile } from '@repo/billing';
 import {
   ContractRepo,
   ConversationRepo,
@@ -117,6 +118,11 @@ export class StartDateNotInFutureError extends Data.TaggedError('StartDateNotInF
  * after the contract is accepted. */
 export class ContractStartDatePassedError extends Data.TaggedError(
   'ContractStartDatePassedError'
+)<{}> {}
+
+/** Sending terms needs a card on file — contract billing charges it. */
+export class PaymentMethodRequiredError extends Data.TaggedError(
+  'PaymentMethodRequiredError'
 )<{}> {}
 
 /** Postgres unique-constraint violation (SQLSTATE 23505), possibly nested a
@@ -733,6 +739,14 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
       return yield* Effect.fail(new StartDateNotInFutureError());
     }
 
+    // Contract billing charges the family's card, so terms only go out once
+    // there is one on file. Checked last: every other problem with the draft
+    // is something to fix in the editor first.
+    const card = yield* cardOnFile(viewer.id).pipe((errors) => mapContractRepoError(errors));
+    if (card === null) {
+      return yield* Effect.fail(new PaymentMethodRequiredError());
+    }
+
     // The validated terms and the zone are written in the same guarded
     // statement as the status flip, so a concurrent draft save can't slip
     // unvalidated terms into the proposal (it is overwritten by what was
@@ -1103,6 +1117,11 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           : isFamily
             ? yield* familyTimeZone(row.familyUserId)
             : null;
+    // Only the family pays, so only the family is told whether a card is on
+    // file; for the provider it is null rather than a misleading false.
+    const hasPaymentMethod = isFamily
+      ? (yield* cardOnFile(viewer.id).pipe((errors) => mapContractRepoError(errors))) !== null
+      : null;
     const effective = effectiveEnd(row, accepted);
     // Why the proposal can't be accepted, for both sides: the receiver's
     // Accept is gone, and the proposer is told to send a later start date.
@@ -1146,15 +1165,21 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         timeZoneLabel: timeZone ? zoneLabel(timeZone) : null,
         earliestStartsOn: timeZone ? addDays(todayIn(timeZone), 1) : null,
         acceptBlockedReason,
+        hasPaymentMethod,
         endedByMe: row.endedByUserId === viewer.id,
         endNote: row.endNote,
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,
         actions: {
           canEditTerms: isFamily && preActiveEditable,
-          // Send stamps the family's zone; without an address it would refuse
-          // with FAMILY_LOCATION_REQUIRED, so it isn't offered.
+          // Send stamps the family's zone and needs a card on file; without
+          // either it would refuse (FAMILY_LOCATION_REQUIRED /
+          // PAYMENT_METHOD_REQUIRED), so it isn't offered.
           canSend:
-            isFamily && preActiveEditable && pending?.status === 'draft' && timeZone !== null,
+            isFamily &&
+            preActiveEditable &&
+            pending?.status === 'draft' &&
+            timeZone !== null &&
+            hasPaymentMethod === true,
           canWithdraw: isFamily && row.status === 'proposed',
           canAccept:
             decidable &&
@@ -1490,6 +1515,16 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
           }
         },
         409
+      );
+    case 'PaymentMethodRequiredError':
+      return c.json(
+        {
+          error: {
+            code: 'PAYMENT_METHOD_REQUIRED' as const,
+            message: "Add a card in Billing before sending — it's used for contract billing."
+          }
+        },
+        422
       );
     case 'SafetyVerificationRequiredError':
       return c.json({ error: safetyVerificationRequiredResponseBody }, 403);

@@ -46,6 +46,7 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
       services: Array<ContractServiceItem>;
       startsOn: string | null;
       endsOn: string | null;
+      endsAtMinutes?: number | null;
       sentAt?: Date;
     }) => Effect.Effect<ContractVersion, SqlError>;
     /** Guarded `where status = 'draft'`; resolves null when the version is no
@@ -56,6 +57,9 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
         services: Array<ContractServiceItem>;
         startsOn: string | null;
         endsOn: string | null;
+        endsAtMinutes: number | null;
+        /** Written at send; omitted on draft saves so it's left untouched. */
+        timeZone?: string | null;
       }
     ) => Effect.Effect<ContractVersion | null, SqlError>;
     /** Atomically: version draft → proposed AND contract → proposed. Resolves
@@ -256,6 +260,7 @@ export const ContractRepoLive = Layer.effect(
             services: input.services,
             startsOn: input.startsOn,
             endsOn: input.endsOn,
+            endsAtMinutes: input.endsAtMinutes ?? null,
             sentAt: input.sentAt ?? null
           })
           .returning()
@@ -266,7 +271,13 @@ export const ContractRepoLive = Layer.effect(
       updateVersionTerms: (versionId, input) =>
         db
           .update(contractVersion)
-          .set({ services: input.services, startsOn: input.startsOn, endsOn: input.endsOn })
+          .set({
+            services: input.services,
+            startsOn: input.startsOn,
+            endsOn: input.endsOn,
+            endsAtMinutes: input.endsAtMinutes,
+            ...(input.timeZone !== undefined ? { timeZone: input.timeZone } : {})
+          })
           .where(and(eq(contractVersion.id, versionId), eq(contractVersion.status, 'draft')))
           .returning()
           .pipe(
@@ -432,7 +443,7 @@ export const dummyContractVersion: ContractVersion = {
       listedRateCents: 2500,
       rateCents: 2600,
       currency: 'CAD',
-      // Tue & Thu 3:30–6:00 pm (NZ wall-clock minutes).
+      // Tue & Thu 3:30–6:00 pm (wall-clock minutes in the version's zone).
       sessions: [
         { weekday: 1, startMinutes: 930, endMinutes: 1080 },
         { weekday: 3, startMinutes: 930, endMinutes: 1080 }
@@ -442,6 +453,8 @@ export const dummyContractVersion: ContractVersion = {
   ],
   startsOn: '2026-08-04',
   endsOn: null,
+  endsAtMinutes: null,
+  timeZone: null,
   sentAt: null,
   decidedAt: null,
   declineReason: null,

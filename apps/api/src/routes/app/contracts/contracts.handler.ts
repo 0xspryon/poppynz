@@ -573,7 +573,8 @@ export const saveTermsProgram = (
     const terms = {
       services,
       startsOn: input.startsOn ?? null,
-      endsOn: input.endsOn ?? null
+      endsOn: input.endsOn ?? null,
+      endsAtMinutes: null
     };
 
     if (pending !== null) {
@@ -651,7 +652,8 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
       .updateVersionTerms(pending.id, {
         services: refreshed,
         startsOn: pending.startsOn,
-        endsOn: pending.endsOn
+        endsOn: pending.endsOn,
+        endsAtMinutes: pending.endsAtMinutes
       })
       .pipe((errors) => mapContractRepoError(errors));
     const sent = yield* contractRepo

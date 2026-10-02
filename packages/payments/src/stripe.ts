@@ -148,11 +148,6 @@ export const makeStripePayments = (options: {
 
     quote: (lineItems, policy) => Effect.succeed(quoteFromPolicy(lineItems, policy)),
 
-    // Deprecated one-step path: Stripe only supports the two-step flow.
-    // Removed in Task 5 with the port method.
-    authorise: () =>
-      Effect.fail(new PaymentDeclinedError({ reason: 'Stripe payments start with startPayment' })),
-
     startPayment: (input) =>
       call('startPayment', () =>
         client.paymentIntents.create(

@@ -1,4 +1,5 @@
 import type { SqlError } from '@effect/sql/SqlError';
+import { cardOnFile, ensureBillingCustomer, settlePayment, toCard } from '@repo/billing';
 import { credibledCheckTypeClub, credibledCheckTypeLabel, Credibled } from '@repo/credibled';
 import {
   CheckOrderRepo,
@@ -7,6 +8,7 @@ import {
   PaymentRepo,
   SafetyVerificationRepo,
   isSettledPayment,
+  type BillingCard,
   type CheckOrder,
   type CheckOrderClaimInput,
   type CheckOrderItem,
@@ -15,12 +17,18 @@ import {
   type SafetyVerificationRole
 } from '@repo/db';
 import { safetyVerificationConfig } from '@repo/env';
-import { Payments, type QuoteLineItem } from '@repo/payments';
-import { SafetyVerificationQueue } from '@repo/queue';
+import {
+  Payments,
+  type PaymentProviderError,
+  type QuoteLineItem,
+  type StartedPayment
+} from '@repo/payments';
+import { SafetyVerificationQueue, type SafetyVerificationQueueError } from '@repo/queue';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { scheduleFamilySearchReconcile } from '@/api/lib/family-search-jobs';
 import {
+  AuthService,
   authErrorToResponse,
   authenticate,
   handleNever,
@@ -44,6 +52,7 @@ import {
 import {
   safetyVerificationDecisionJsonError,
   safetyVerificationJsonError,
+  validateSafetyVerificationConfirmInput,
   validateSafetyVerificationDecisionInput,
   validateSafetyVerificationDocumentInput,
   validateSafetyVerificationItemInput,
@@ -88,6 +97,46 @@ function mapRepoError<A, R>(effect: Effect.Effect<A, SqlError | DBNotFoundError,
     })
   );
 }
+
+const PAYMENTS_UNAVAILABLE = 'Payments are temporarily unavailable. Please try again shortly.';
+
+/** The provider (or our record of the customer) could not be reached. */
+const mapPaymentServiceError = <A, R>(
+  effect: Effect.Effect<A, SqlError | PaymentProviderError, R>
+): Effect.Effect<A, SafetyVerificationRepoError | SafetyVerificationVendorError, R> =>
+  effect.pipe(
+    Effect.catchTags({
+      SqlError: (cause) => Effect.fail(new SafetyVerificationRepoError({ cause })),
+      PaymentProviderError: () =>
+        Effect.fail(new SafetyVerificationVendorError({ reason: PAYMENTS_UNAVAILABLE }))
+    })
+  );
+
+/** Everything the shared settle path can fail with, as route errors. */
+const mapSettleError = <A, R>(
+  effect: Effect.Effect<
+    A,
+    SqlError | DBNotFoundError | PaymentProviderError | SafetyVerificationQueueError,
+    R
+  >
+): Effect.Effect<
+  A,
+  | SafetyVerificationRepoError
+  | SafetyVerificationNotFoundError
+  | SafetyVerificationVendorError
+  | SafetyVerificationQueueingError,
+  R
+> =>
+  effect.pipe(
+    Effect.catchTags({
+      SqlError: (cause) => Effect.fail(new SafetyVerificationRepoError({ cause })),
+      DBNotFoundError: () => Effect.fail(new SafetyVerificationNotFoundError()),
+      PaymentProviderError: () =>
+        Effect.fail(new SafetyVerificationVendorError({ reason: PAYMENTS_UNAVAILABLE })),
+      SafetyVerificationQueueError: (error) =>
+        Effect.fail(new SafetyVerificationQueueingError({ cause: error.cause }))
+    })
+  );
 
 /** Admins are not screened — they have no applicant record and never will. */
 const applicantRole = (
@@ -232,7 +281,10 @@ export const getMySafetyVerificationRouteProgram = (headers: Headers) =>
       // only way to evidence one. The UI leans on this rather than hard-coding
       // the same fact in two places.
       canOrderThroughCredibled:
-        orderableCheckTypes.length > 0 && credibled.isConfigured(credibledAudienceForRole(role))
+        orderableCheckTypes.length > 0 && credibled.isConfigured(credibledAudienceForRole(role)),
+      // A payment was started and the payer never finished confirming it
+      // (tab closed, 3-D Secure abandoned): ordering again resumes it.
+      canResumePayment: openOrder?.status === 'payment_pending' && payment?.status === 'pending'
     };
   });
 
@@ -368,7 +420,7 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
     const payments = yield* Payments;
     const credibled = yield* Credibled;
     const typeRepo = yield* KycDocumentTypeRepo;
-    const queue = yield* SafetyVerificationQueue;
+    const authService = yield* AuthService;
     const policy = yield* policyConfig;
 
     const audience = credibledAudienceForRole(role);
@@ -416,55 +468,72 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
       );
     }
 
-    const now = new Date();
     const quote = yield* payments.quote(toLineItems(items, types), policy);
 
-    /** A settled charge attached to a claimed order: mark it paid and hand it
-     * to the worker. Guarded on the payment it was claimed with, so a revert
-     * racing this can never leave an order `paid` against a different row. */
-    const finish = (claimed: CheckOrder, settled: Payment) =>
-      Effect.gen(function* () {
-        const paid = yield* mapRepoError(
-          orders.advance(claimed.id, {
-            from: { status: 'payment_pending', paymentId: settled.id },
-            set: {
-              status: 'paid',
-              consentAt: claimed.consentAt ?? now,
-              consentPolicyVersion: claimed.consentPolicyVersion ?? policy.consentPolicyVersion
+    // Who keeps a card on file for later (contract billing) is a permission,
+    // not a role check: families hold billing:write, helpers pay one-off.
+    const keepsCard = yield* authService.userHasPermission(headers, { billing: ['write'] });
+
+    /** The payer still has to confirm in the browser (card form, 3-D Secure,
+     * or one click with the saved card). */
+    const paymentRequired = (
+      payment: Payment,
+      started: StartedPayment,
+      card: BillingCard | null
+    ) => ({
+      status: 'payment_required' as const,
+      paymentId: payment.id,
+      clientSecret: started.clientSecret,
+      provider: payments.provider,
+      // A family paying with a new card keeps it: the modal says so.
+      savesCard: keepsCard && card === null,
+      // Only when the intent really carries the saved card — the modal's
+      // one-click button confirms without collecting anything.
+      savedCard:
+        card !== null && started.paymentMethodReference === card.reference
+          ? {
+              brand: card.brand,
+              last4: card.last4,
+              expMonth: card.expMonth,
+              expYear: card.expYear
             }
-          })
-        );
-        if (paid === null) {
-          // The order moved under us AFTER money was taken. Never silent: the
-          // payment stays settled and flagged so somebody finds it.
-          yield* paymentRepo
-            .update(settled.id, {
-              lastError:
-                'charge settled but the order was no longer awaiting it — needs manual settlement'
-            })
-            .pipe(Effect.ignore);
-          return yield* Effect.fail(alreadyInProgress());
-        }
+          : null
+    });
 
-        // Placing the order happens in the worker so a Credibled outage is a
-        // retry rather than a lost payment. The queue dedupes on the order id.
-        yield* queue
-          .enqueueOrder({ orderId: paid.id })
-          .pipe(
-            Effect.catchTag('SafetyVerificationQueueError', (error) =>
-              Effect.fail(new SafetyVerificationQueueingError({ cause: error.cause }))
-            )
-          );
-
+    /** Money is taken and settle moved the order on: the existing summary. */
+    const paidResponse = (orderId: string, payment: Payment) =>
+      Effect.gen(function* () {
+        const order = yield* orders.findById(orderId).pipe((errors) => mapRepoError(errors));
         return {
-          verification: toApplicantSummary(
-            { verification: null, order: paid, payment: settled },
-            today()
-          )
+          status: 'paid' as const,
+          verification: toApplicantSummary({ verification: null, order, payment }, today())
         };
       });
 
-    /** Ask the provider for the money against a payment row, then finish. */
+    /** The provider says the payment finished (the mock settles at once):
+     * record it through the one settle path, then answer with what it did. */
+    const settleAndRespond = (
+      order: CheckOrder,
+      payment: Payment,
+      started: StartedPayment,
+      card: BillingCard | null
+    ) =>
+      Effect.gen(function* () {
+        const result = yield* settlePayment(payment.id).pipe((errors) => mapSettleError(errors));
+        if (isSettledPayment(result.payment)) {
+          return yield* paidResponse(order.id, result.payment);
+        }
+        if (result.payment.status === 'failed') {
+          return yield* Effect.fail(
+            new SafetyVerificationPaymentError({
+              reason: result.payment.lastError ?? 'The payment was declined.'
+            })
+          );
+        }
+        return paymentRequired(result.payment, started, card);
+      });
+
+    /** Ask the provider to start a payment against a payment row. */
     const charge = (claimed: CheckOrder, payment: Payment) =>
       Effect.gen(function* () {
         const declined = (reason: string) =>
@@ -485,10 +554,27 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
             return yield* Effect.fail(new SafetyVerificationPaymentError({ reason }));
           });
 
+        const customer = keepsCard
+          ? yield* ensureBillingCustomer({
+              id: userId,
+              email: userAndSession.user.email,
+              name: userAndSession.user.name
+            }).pipe((errors) => mapPaymentServiceError(errors))
+          : null;
+        const card = toCard(customer, payments.provider);
+
         // The payment row's id is the idempotency key: a retry against the
-        // same row is the same charge to the provider, never a second one.
-        const authorisation = yield* payments
-          .authorise({ userId, quote, idempotencyKey: payment.id })
+        // same row is the same intent at the provider, never a second one.
+        const started = yield* payments
+          .startPayment({
+            quote,
+            idempotencyKey: payment.id,
+            metadata: { payment_id: payment.id, order_id: claimed.id, kind: payment.kind },
+            customer: customer?.customerReference ?? null,
+            savedCard: card?.reference ?? null,
+            // A family's first card is kept for contract billing.
+            saveCard: keepsCard && card === null
+          })
           .pipe(
             Effect.catchTags({
               PaymentDeclinedError: (error) => declined(error.reason),
@@ -496,15 +582,13 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
             })
           );
 
-        const settled = yield* mapRepoError(
-          paymentRepo.update(payment.id, {
-            status: 'authorised',
-            providerReference: authorisation.reference,
-            authorisedAt: authorisation.authorisedAt,
-            lastError: null
-          })
-        );
-        return yield* finish(claimed, settled);
+        const recorded = yield* paymentRepo
+          .update(payment.id, { providerReference: started.reference, lastError: null })
+          .pipe((errors) => mapRepoError(errors));
+
+        return started.status === 'succeeded'
+          ? yield* settleAndRespond(claimed, recorded, started, card)
+          : paymentRequired(recorded, started, card);
       });
 
     /** A fresh payment row, and the order claimed for it. Compare-and-set:
@@ -548,28 +632,89 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
     }
 
     // An order left in `payment_pending` is a previous attempt that never
-    // settled. Its payment row says which kind, and each is recoverable —
+    // finished. Its payment row says which kind, and each is recoverable —
     // a stale claim must never lock the applicant out, and a charge that
     // landed must never be taken again:
-    //   - settled: the charge succeeded but the follow-up write didn't —
-    //     finish the job with the money already taken;
-    //   - pending: the provider was never answered — retry against the SAME
-    //     row and key, so the provider sees one charge, not two;
-    //   - failed (or gone): declined and the revert never landed — start over
-    //     with a fresh row, claiming from exactly the state we saw.
+    //   - settled: settle finishes the job with the money already taken;
+    //   - pending, provider never reached: start again with the SAME row and
+    //     key, so the provider sees one intent, not two;
+    //   - pending at the provider: resume that intent with a fresh client
+    //     secret — never a second intent;
+    //   - failed (or gone): start over with a fresh row, claiming from exactly
+    //     the state we saw.
     const previous = openOrder.paymentId
       ? yield* mapRepoError(orNull(paymentRepo.findById(openOrder.paymentId)))
       : null;
     if (previous !== null && isSettledPayment(previous)) {
-      return yield* finish(openOrder, previous);
+      const result = yield* settlePayment(previous.id).pipe((errors) => mapSettleError(errors));
+      return yield* paidResponse(openOrder.id, result.payment);
     }
     if (previous !== null && previous.status === 'pending') {
-      return yield* charge(openOrder, previous);
+      if (previous.providerReference === null) {
+        return yield* charge(openOrder, previous);
+      }
+      const resumed = yield* payments
+        .resumePayment(previous.providerReference)
+        .pipe((errors) => mapPaymentServiceError(errors));
+      if (resumed.status === 'requires_action') {
+        const card = keepsCard
+          ? yield* cardOnFile(userId).pipe((errors) => mapPaymentServiceError(errors))
+          : null;
+        return paymentRequired(previous, resumed, card);
+      }
+      // The provider already decided. Record it; a failure released the
+      // order, so this request starts a fresh payment for the same basket.
+      const result = yield* settlePayment(previous.id).pipe((errors) => mapSettleError(errors));
+      if (isSettledPayment(result.payment)) {
+        return yield* paidResponse(openOrder.id, result.payment);
+      }
+      if (result.payment.status === 'failed') {
+        return yield* claimWithNewPayment({ status: 'draft', paymentId: null });
+      }
+      return yield* Effect.fail(
+        new SafetyVerificationConflictError({
+          message: 'Your previous payment is still being processed. Check back in a few minutes.'
+        })
+      );
     }
     return yield* claimWithNewPayment({
       status: 'payment_pending',
       paymentId: openOrder.paymentId
     });
+  });
+
+/** Called by the payment modal once the browser has confirmed (or failed to
+ * confirm). Never trusts the browser: it settles from the provider's state. */
+export const confirmSafetyCheckPaymentRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function* () {
+    const rawBody = yield* parseJsonBody(c, safetyVerificationJsonError);
+    const input = yield* validateSafetyVerificationConfirmInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, {
+      safetyVerification: ['write']
+    })(authenticated);
+    yield* applicantRole(userAndSession);
+
+    const paymentRepo = yield* PaymentRepo;
+    const payment = yield* paymentRepo
+      .findById(input.paymentId)
+      .pipe((errors) => mapRepoError(errors));
+    // Owner only — somebody else's payment id reads as not found.
+    if (payment.userId !== userAndSession.user.id) {
+      return yield* Effect.fail(new SafetyVerificationNotFoundError());
+    }
+
+    const result = yield* settlePayment(payment.id).pipe((errors) => mapSettleError(errors));
+    if (isSettledPayment(result.payment)) {
+      return { status: 'paid' as const, message: null };
+    }
+    if (result.payment.status === 'failed') {
+      return {
+        status: 'failed' as const,
+        message: result.payment.lastError ?? 'The payment was declined.'
+      };
+    }
+    return { status: 'pending' as const, message: null };
   });
 
 export const submitSafetyDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
@@ -845,6 +990,7 @@ type SafetyVerificationRouteError =
   | Effect.Effect.Error<ReturnType<typeof addSafetyVerificationItemRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof removeSafetyVerificationItemRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof orderSafetyCheckRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof confirmSafetyCheckPaymentRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof submitSafetyDocumentRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof listSafetyVerificationsForReviewRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof decideSafetyVerificationRouteProgram>>
@@ -959,6 +1105,14 @@ export async function removeSafetyVerificationItemHandler(c: HonoContext<HonoEnv
 export async function orderSafetyCheckHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(orderSafetyCheckRouteProgram(c, c.req.raw.headers));
+  return exitToResponse(c, exit);
+}
+
+export async function confirmSafetyCheckPaymentHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(
+    confirmSafetyCheckPaymentRouteProgram(c, c.req.raw.headers)
+  );
   return exitToResponse(c, exit);
 }
 

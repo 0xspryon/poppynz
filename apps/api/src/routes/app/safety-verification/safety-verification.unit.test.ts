@@ -1,8 +1,10 @@
 import { makeCredibledTest, type CredibledCheckTypeValue } from '@repo/credibled';
 import {
   DBNotFoundError,
+  dummyBillingCustomer,
   makeCheckOrderRepoTest,
   makeFamilySearchOutboxRepoTest,
+  makeInMemoryBillingCustomerRepo,
   makeKycDocumentTypeRepoTest,
   makePaymentRepoTest,
   makeSafetyVerificationRepoTest,
@@ -17,6 +19,7 @@ import {
   type CheckOrderUpdateInput,
   type KycDocumentType,
   type Payment,
+  type PaymentAdvanceInput,
   type PaymentCreateInput,
   type PaymentUpdateInput,
   type SafetyVerification,
@@ -25,7 +28,14 @@ import {
   type Session,
   type User
 } from '@repo/db';
-import { makeMockPayments, makePaymentsTest, PaymentDeclinedError } from '@repo/payments';
+import {
+  makeMockPayments,
+  makePaymentsTest,
+  PaymentDeclinedError,
+  PaymentProviderError,
+  type ProviderPaymentStatus,
+  type StartPaymentInput
+} from '@repo/payments';
 import { makeFamilySearchQueueTest, makeSafetyVerificationQueueTest } from '@repo/queue';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
@@ -33,7 +43,9 @@ import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
 import {
   addSafetyVerificationItemRouteProgram,
+  confirmSafetyCheckPaymentRouteProgram,
   decideSafetyVerificationRouteProgram,
+  getMySafetyVerificationRouteProgram,
   orderSafetyCheckRouteProgram,
   submitSafetyDocumentRouteProgram
 } from './safety-verification.handler';
@@ -178,8 +190,12 @@ type Recorded = {
   orderUpdates: Array<CheckOrderUpdateInput>;
   claims: Array<CheckOrderClaimInput>;
   advances: Array<CheckOrderAdvanceInput>;
-  /** Idempotency keys handed to the provider — one per charge attempt. */
-  authorised: Array<string>;
+  /** What the provider was asked to start — one per charge attempt. */
+  started: Array<StartPaymentInput>;
+  /** Provider references resumed instead of started again. */
+  resumed: Array<string>;
+  cancelled: Array<string>;
+  paymentAdvances: Array<PaymentAdvanceInput>;
   itemsAdded: Array<CheckOrderItemCreateInput>;
   paymentsCreated: Array<PaymentCreateInput>;
   paymentUpdates: Array<PaymentUpdateInput>;
@@ -196,7 +212,10 @@ const record = (): Recorded => ({
   orderUpdates: [],
   claims: [],
   advances: [],
-  authorised: [],
+  started: [],
+  resumed: [],
+  cancelled: [],
+  paymentAdvances: [],
   itemsAdded: [],
   paymentsCreated: [],
   paymentUpdates: [],
@@ -224,6 +243,15 @@ const makeLayer = (
     /** A guarded transition finds the order already moved. */
     advanceLost?: boolean;
     declineCharge?: boolean;
+    /** Holds billing:write — keeps a card on file (families). */
+    keepsCard?: boolean;
+    billing?: ReturnType<typeof makeInMemoryBillingCustomerRepo>;
+    /** Overrides the mock's instant success when a payment starts. */
+    startedStatus?: ProviderPaymentStatus;
+    resumedStatus?: ProviderPaymentStatus;
+    /** What re-fetching the payment from the provider says. */
+    fetchedStatus?: ProviderPaymentStatus;
+    providerDown?: boolean;
     recorded?: Recorded;
   } = {}
 ) => {
@@ -231,16 +259,22 @@ const makeLayer = (
   const currentSession = session(currentUser.id);
   const recorded = options.recorded ?? record();
   const openOrder = options.openOrder ?? null;
-  // The payment row this request creates, so a later update sees the frozen
-  // amounts the way the real repository would.
-  let current: Payment | null = null;
+  // The order and payment rows as the request leaves them, so settle reads
+  // back what the request wrote, the way the real repositories would.
+  let currentOrder: CheckOrder | null = openOrder;
+  let current: Payment | null = options.paymentById ?? null;
   const mockPayments = makeMockPayments();
+  const providerError = (operation: 'getPayment' | 'resumePayment') =>
+    Effect.fail(new PaymentProviderError({ operation, cause: 'provider down' }));
 
   return Layer.mergeAll(
     makeAuthServiceTest({
       getSession: () =>
         Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
-      userHasPermission: () => Effect.succeed(options.hasPermission ?? true)
+      userHasPermission: (_headers, permissions) =>
+        Effect.succeed(
+          'billing' in permissions ? (options.keepsCard ?? false) : (options.hasPermission ?? true)
+        )
     }),
     makeUserRepoTest({
       findById: (id) =>
@@ -285,10 +319,12 @@ const makeLayer = (
     }),
     makeCheckOrderRepoTest({
       findById: (id) =>
-        openOrder && openOrder.id === id
-          ? Effect.succeed(openOrder)
+        currentOrder && currentOrder.id === id
+          ? Effect.succeed(currentOrder)
           : Effect.fail(new DBNotFoundError({ entity: 'checkOrder', value: id })),
       findOpen: () => Effect.succeed(openOrder),
+      findByPaymentId: (paymentId) =>
+        Effect.succeed(currentOrder?.paymentId === paymentId ? currentOrder : null),
       findByCredibledUuid: () => Effect.succeed(null),
       create: (input) => {
         recorded.ordersCreated.push(input);
@@ -300,23 +336,19 @@ const makeLayer = (
       },
       claimForPayment: (_id, input) => {
         recorded.claims.push(input);
-        return Effect.succeed(
-          options.claimLost
-            ? null
-            : order({
-                ...(openOrder ?? {}),
-                status: 'payment_pending',
-                paymentId: input.paymentId
-              } as Partial<CheckOrder>)
-        );
+        if (options.claimLost) return Effect.succeed(null);
+        currentOrder = order({
+          ...(currentOrder ?? {}),
+          status: 'payment_pending',
+          paymentId: input.paymentId
+        } as Partial<CheckOrder>);
+        return Effect.succeed(currentOrder);
       },
       advance: (_id, input) => {
         recorded.advances.push(input);
-        return Effect.succeed(
-          options.advanceLost
-            ? null
-            : order({ ...(openOrder ?? {}), ...input.set } as Partial<CheckOrder>)
-        );
+        if (options.advanceLost) return Effect.succeed(null);
+        currentOrder = order({ ...(currentOrder ?? {}), ...input.set } as Partial<CheckOrder>);
+        return Effect.succeed(currentOrder);
       },
       complete: () => Effect.succeed(null),
       listInFlight: () => Effect.succeed([]),
@@ -331,8 +363,8 @@ const makeLayer = (
     }),
     makePaymentRepoTest({
       findById: (id) =>
-        options.paymentById && options.paymentById.id === id
-          ? Effect.succeed(options.paymentById)
+        current && current.id === id
+          ? Effect.succeed(current)
           : Effect.fail(new DBNotFoundError({ entity: 'payment', value: id })),
       create: (input) => {
         recorded.paymentsCreated.push(input);
@@ -343,14 +375,75 @@ const makeLayer = (
         recorded.paymentUpdates.push(input);
         current = payment({ ...(current ?? {}), ...input } as Partial<Payment>);
         return Effect.succeed(current);
+      },
+      advance: (_id, input) => {
+        recorded.paymentAdvances.push(input);
+        const from = Array.isArray(input.from) ? input.from : [input.from];
+        if (current === null || !from.includes(current.status)) return Effect.succeed(null);
+        current = payment({ ...current, ...input.set } as Partial<Payment>);
+        return Effect.succeed(current);
       }
     }),
+    (options.billing ?? makeInMemoryBillingCustomerRepo([])).layer,
     makePaymentsTest({
-      authorise: (input) => {
-        recorded.authorised.push(input.idempotencyKey);
+      startPayment: (input) => {
+        recorded.started.push(input);
         return options.declineCharge
           ? Effect.fail(new PaymentDeclinedError({ reason: 'card declined' }))
-          : mockPayments.authorise(input);
+          : mockPayments
+              .startPayment(input)
+              .pipe(
+                Effect.map((started) =>
+                  options.startedStatus ? { ...started, status: options.startedStatus } : started
+                )
+              );
+      },
+      resumePayment: (reference) => {
+        recorded.resumed.push(reference);
+        return options.providerDown
+          ? providerError('resumePayment')
+          : Effect.succeed({
+              reference,
+              clientSecret: `secret_${reference}`,
+              status: options.resumedStatus ?? 'requires_action',
+              paymentMethodReference: null
+            });
+      },
+      // A payment this request started is the mock's own; one left by an
+      // earlier attempt (`paymentById`) reports the status the test asks for.
+      getPayment: (reference) => {
+        if (options.providerDown) return providerError('getPayment');
+        if (reference.startsWith('mock_pi_')) return mockPayments.getPayment(reference);
+        const status = options.fetchedStatus ?? 'succeeded';
+        return Effect.succeed({
+          reference,
+          status,
+          amountCents: current?.totalCents ?? 0,
+          currency: 'cad',
+          metadata: { payment_id: current?.id ?? '' },
+          customer: null,
+          savesCard: false,
+          failureReason: status === 'failed' ? 'Your card was declined.' : null,
+          receiptUrl: null,
+          refundedCents: 0,
+          paymentMethod: null
+        });
+      },
+      cancelPayment: (reference) => {
+        recorded.cancelled.push(reference);
+        return Effect.succeed({
+          reference,
+          status: 'canceled' as const,
+          amountCents: current?.totalCents ?? 0,
+          currency: 'cad',
+          metadata: { payment_id: current?.id ?? '' },
+          customer: null,
+          savesCard: false,
+          failureReason: null,
+          receiptUrl: null,
+          refundedCents: 0,
+          paymentMethod: null
+        });
       }
     }),
     makeCredibledTest({
@@ -700,14 +793,18 @@ describe('ordering a check', () => {
       })
     ]
   };
+  const family = user({ id: 'family-1', role: 'family', name: 'Fam Ily', email: 'f@example.com' });
 
-  it('charges the summed basket once and hands the order to the worker', async () => {
-    const recorded = record();
-    const result = await Effect.runPromise(
+  const placeOrder = (options: Parameters<typeof makeLayer>[0]) =>
+    Effect.runPromise(
       orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
-        Effect.provide(makeLayer({ ...basketReady, recorded }))
+        Effect.provide(makeLayer(options))
       )
     );
+
+  it('charges the summed basket once and, when the provider settles at once, hands the order to the worker', async () => {
+    const recorded = record();
+    const result = await placeOrder({ ...basketReady, recorded });
 
     // A payment row exists before the provider is asked, frozen at the quote:
     // 4500 + 2500 checks, + 500 fee, 0 tax.
@@ -719,35 +816,97 @@ describe('ordering a check', () => {
       feeCents: 500,
       totalCents: 7500
     });
-    // The order is claimed for that payment, then the charge is made and
-    // recorded against the same row.
     expect(recorded.claims[0]?.paymentId).toBe('payment-1');
-    expect(recorded.paymentUpdates[0]?.status).toBe('authorised');
-    expect(recorded.paymentUpdates[0]?.providerReference).toBeTruthy();
-    // Marked paid only if still claimed for THIS payment.
+    // The payment row is the idempotency key and the intent's metadata.
+    expect(recorded.started[0]).toMatchObject({
+      idempotencyKey: 'payment-1',
+      metadata: { payment_id: 'payment-1', order_id: 'order-1' }
+    });
+    expect(recorded.paymentUpdates[0]?.providerReference).toBe('mock_pi_payment-1');
+    // Settled through the shared path: captured, then the order is paid —
+    // only if still claimed for THIS payment.
+    expect(recorded.paymentAdvances[0]).toMatchObject({
+      from: 'pending',
+      set: { status: 'captured' }
+    });
     expect(recorded.advances[0]).toMatchObject({
       from: { status: 'payment_pending', paymentId: 'payment-1' },
       set: { status: 'paid' }
     });
     expect(recorded.enqueued).toEqual(['order-1']);
-    // No verdict yet — that comes when Credibled finishes.
     expect(recorded.verificationsCreated).toHaveLength(0);
-    expect(result.verification.status).toBe('payment_pending');
-    expect(result.verification.cost?.totalCents).toBe(7500);
+    expect(result).toMatchObject({
+      status: 'paid',
+      verification: { status: 'payment_pending', cost: { totalCents: 7500 } }
+    });
   });
 
-  it('uses the payment row as the idempotency key', async () => {
+  it('returns a client secret while the payer still has to confirm in the browser', async () => {
     const recorded = record();
-    await Effect.runPromise(
-      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
-        Effect.provide(makeLayer({ ...basketReady, recorded }))
-      )
-    );
-    // The mock derives its reference from the key it was given.
-    expect(recorded.paymentUpdates[0]?.providerReference).toBe('mock_auth_payment-1');
+    const result = await placeOrder({ ...basketReady, startedStatus: 'requires_action', recorded });
+
+    expect(result).toEqual({
+      status: 'payment_required',
+      paymentId: 'payment-1',
+      clientSecret: 'mock_secret_mock_pi_payment-1',
+      provider: 'mock',
+      savesCard: false,
+      savedCard: null
+    });
+    // Nothing is recorded as paid until settle sees the provider confirm.
+    expect(recorded.paymentAdvances).toHaveLength(0);
+    expect(recorded.advances).toHaveLength(0);
+    expect(recorded.enqueued).toHaveLength(0);
   });
 
-  it('releases the order and records the failure when the charge is declined', async () => {
+  it("creates a family's customer and asks for the first card to be kept", async () => {
+    const recorded = record();
+    const billing = makeInMemoryBillingCustomerRepo([]);
+    const result = await placeOrder({
+      ...basketReady,
+      user: family,
+      keepsCard: true,
+      billing,
+      startedStatus: 'requires_action',
+      recorded
+    });
+
+    expect(recorded.started[0]).toMatchObject({
+      customer: 'mock_cus_family-1',
+      savedCard: null,
+      saveCard: true
+    });
+    // The modal tells the family their new card will be kept.
+    expect(result).toMatchObject({ status: 'payment_required', savesCard: true });
+    expect(billing.rows.get('family-1')?.customerReference).toBe('mock_cus_family-1');
+  });
+
+  it('offers a family with a saved card one-click payment with it', async () => {
+    const recorded = record();
+    const result = await placeOrder({
+      ...basketReady,
+      user: family,
+      keepsCard: true,
+      billing: makeInMemoryBillingCustomerRepo([dummyBillingCustomer()]),
+      startedStatus: 'requires_action',
+      recorded
+    });
+
+    expect(recorded.started[0]).toMatchObject({ savedCard: 'mock_pm_saved', saveCard: false });
+    expect(result).toMatchObject({
+      status: 'payment_required',
+      savesCard: false,
+      savedCard: { brand: 'visa', last4: '4242', expMonth: 12, expYear: 2034 }
+    });
+  });
+
+  it('charges a helper one-off: no customer, nothing kept', async () => {
+    const recorded = record();
+    await placeOrder({ ...basketReady, keepsCard: false, recorded });
+    expect(recorded.started[0]).toMatchObject({ customer: null, savedCard: null, saveCard: false });
+  });
+
+  it('releases the order and records the failure when the provider refuses to start', async () => {
     const recorded = record();
     const exit = await Effect.runPromiseExit(
       orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
@@ -760,9 +919,6 @@ describe('ordering a check', () => {
       status: 'failed',
       lastError: 'card declined'
     });
-    // Back to a draft the applicant can retry with a fresh charge — but only
-    // if the order is still claimed for this payment, so the revert can never
-    // clobber a re-claim that got in first.
     expect(recorded.advances[0]).toMatchObject({
       from: { status: 'payment_pending', paymentId: 'payment-1' },
       set: { status: 'draft', paymentId: null }
@@ -771,8 +927,6 @@ describe('ordering a check', () => {
   });
 
   it('never charges twice when two requests race for the same draft', async () => {
-    // The compare-and-set claim is the guard: the loser's payment row never
-    // reaches the provider.
     const recorded = record();
     const exit = await Effect.runPromiseExit(
       orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
@@ -782,95 +936,126 @@ describe('ordering a check', () => {
 
     expect(failureTag(exit)).toBe('SafetyVerificationConflictError');
     expect(recorded.paymentUpdates[0]?.status).toBe('failed');
-    expect(recorded.authorised).toHaveLength(0);
+    expect(recorded.started).toHaveLength(0);
     expect(recorded.enqueued).toHaveLength(0);
   });
 
   it('flags a settled charge whose order moved before it could be marked paid', async () => {
-    // Money was taken; the order is no longer ours. Never silent.
     const recorded = record();
-    const exit = await Effect.runPromiseExit(
-      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
-        Effect.provide(makeLayer({ ...basketReady, advanceLost: true, recorded }))
-      )
-    );
+    await placeOrder({ ...basketReady, advanceLost: true, recorded });
 
-    expect(failureTag(exit)).toBe('SafetyVerificationConflictError');
     expect(recorded.paymentUpdates.at(-1)?.lastError).toMatch(/manual settlement/);
     expect(recorded.enqueued).toHaveLength(0);
   });
 
   it('finishes an order whose charge already landed instead of charging again', async () => {
-    // The follow-up write after a successful authorise failed last time. The
-    // money is taken; the only correct move is to complete the job.
     const recorded = record();
-    const result = await Effect.runPromise(
-      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
-        Effect.provide(
-          makeLayer({
-            openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
-            paymentById: payment({
-              id: 'payment-0',
-              status: 'authorised',
-              providerReference: 'mock_auth_payment-0',
-              totalCents: 7500
-            }),
-            items: basketReady.items,
-            recorded
-          })
-        )
-      )
-    );
+    const result = await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({
+        id: 'payment-0',
+        status: 'captured',
+        providerReference: 'mock_pi_payment-0',
+        totalCents: 7500
+      }),
+      items: basketReady.items,
+      recorded
+    });
 
     expect(recorded.paymentsCreated).toHaveLength(0);
-    expect(recorded.authorised).toHaveLength(0);
+    expect(recorded.started).toHaveLength(0);
     expect(recorded.advances[0]).toMatchObject({
       from: { status: 'payment_pending', paymentId: 'payment-0' },
       set: { status: 'paid' }
     });
     expect(recorded.enqueued).toEqual(['order-1']);
-    expect(result.verification.cost?.totalCents).toBe(7500);
+    expect(result).toMatchObject({ status: 'paid', verification: { cost: { totalCents: 7500 } } });
   });
 
-  it('retries a charge the provider never answered against the same row and key', async () => {
-    // A `pending` row that outlived its request: the provider sees a retry of
-    // ONE charge, keyed on the same payment id, never a second charge.
+  it('restarts a payment the provider never received against the same row and key', async () => {
     const recorded = record();
-    await Effect.runPromise(
-      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
-        Effect.provide(
-          makeLayer({
-            openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
-            paymentById: payment({ id: 'payment-0', status: 'pending' }),
-            items: basketReady.items,
-            recorded
-          })
-        )
-      )
-    );
+    await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({ id: 'payment-0', status: 'pending', providerReference: null }),
+      items: basketReady.items,
+      recorded
+    });
 
     expect(recorded.paymentsCreated).toHaveLength(0);
     expect(recorded.claims).toHaveLength(0);
-    expect(recorded.authorised).toEqual(['payment-0']);
+    expect(recorded.started.map((input) => input.idempotencyKey)).toEqual(['payment-0']);
+  });
+
+  it('resumes an unfinished payment with a fresh client secret — never a second intent', async () => {
+    const recorded = record();
+    const result = await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({ id: 'payment-0', status: 'pending', providerReference: 'pi_0' }),
+      items: basketReady.items,
+      recorded
+    });
+
+    expect(recorded.resumed).toEqual(['pi_0']);
+    expect(recorded.started).toHaveLength(0);
+    expect(recorded.paymentsCreated).toHaveLength(0);
+    expect(result).toMatchObject({
+      status: 'payment_required',
+      paymentId: 'payment-0',
+      clientSecret: 'secret_pi_0'
+    });
+  });
+
+  it('settles a resumed payment the provider already finished', async () => {
+    const recorded = record();
+    const result = await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({
+        id: 'payment-0',
+        status: 'pending',
+        providerReference: 'pi_0',
+        totalCents: 7500
+      }),
+      resumedStatus: 'succeeded',
+      fetchedStatus: 'succeeded',
+      items: basketReady.items,
+      recorded
+    });
+
+    expect(result).toMatchObject({ status: 'paid' });
     expect(recorded.enqueued).toEqual(['order-1']);
   });
 
-  it('resumes an order whose previous charge failed', async () => {
-    // A declined attempt whose revert never landed must not lock the
-    // applicant out.
+  it('starts a fresh payment when the resumed one had been declined', async () => {
     const recorded = record();
-    await Effect.runPromise(
-      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
-        Effect.provide(
-          makeLayer({
-            openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
-            paymentById: payment({ id: 'payment-0', status: 'failed' }),
-            items: basketReady.items,
-            recorded
-          })
-        )
-      )
-    );
+    await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({
+        id: 'payment-0',
+        status: 'pending',
+        providerReference: 'pi_0',
+        totalCents: 7500
+      }),
+      resumedStatus: 'failed',
+      fetchedStatus: 'failed',
+      items: basketReady.items,
+      recorded
+    });
+
+    // The declined intent is cancelled and its order released by settle;
+    // then the basket is claimed again for a new row.
+    expect(recorded.cancelled).toEqual(['pi_0']);
+    expect(recorded.claims[0]?.from).toEqual({ status: 'draft', paymentId: null });
+    expect(recorded.started[0]?.idempotencyKey).toBe('payment-1');
+  });
+
+  it('resumes an order whose previous charge failed', async () => {
+    const recorded = record();
+    await placeOrder({
+      openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+      paymentById: payment({ id: 'payment-0', status: 'failed' }),
+      items: basketReady.items,
+      recorded
+    });
 
     expect(recorded.claims[0]?.from).toEqual({ status: 'payment_pending', paymentId: 'payment-0' });
     expect(recorded.enqueued).toEqual(['order-1']);
@@ -923,6 +1108,84 @@ describe('ordering a check', () => {
       )
     );
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it('tells the page a started payment can be resumed', async () => {
+    const result = await Effect.runPromise(
+      getMySafetyVerificationRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+            paymentById: payment({ id: 'payment-0', status: 'pending', providerReference: 'pi_0' }),
+            items: basketReady.items
+          })
+        )
+      )
+    );
+    expect(result.canResumePayment).toBe(true);
+  });
+});
+
+describe('confirming a payment from the browser', () => {
+  const pendingPayment = {
+    openOrder: order({ status: 'payment_pending', paymentId: 'payment-0' }),
+    paymentById: payment({
+      id: 'payment-0',
+      status: 'pending',
+      providerReference: 'pi_0',
+      totalCents: 7500
+    })
+  };
+  const confirm = (
+    options: Parameters<typeof makeLayer>[0],
+    body: unknown = { paymentId: 'payment-0' }
+  ) =>
+    Effect.runPromiseExit(
+      confirmSafetyCheckPaymentRouteProgram(contextWithJson(body), new Headers()).pipe(
+        Effect.provide(makeLayer(options))
+      )
+    );
+
+  it('reports paid once the provider confirms, and moves the order on', async () => {
+    const recorded = record();
+    const exit = await confirm({ ...pendingPayment, fetchedStatus: 'succeeded', recorded });
+    expect(exit).toEqual(Exit.succeed({ status: 'paid', message: null }));
+    expect(recorded.enqueued).toEqual(['order-1']);
+  });
+
+  it("reports a decline with the provider's message and releases the order", async () => {
+    const recorded = record();
+    const exit = await confirm({ ...pendingPayment, fetchedStatus: 'failed', recorded });
+    expect(exit).toEqual(Exit.succeed({ status: 'failed', message: 'Your card was declined.' }));
+    expect(recorded.advances.at(-1)).toMatchObject({ set: { status: 'draft', paymentId: null } });
+  });
+
+  it('reports pending while 3-D Secure is still open', async () => {
+    const exit = await confirm({ ...pendingPayment, fetchedStatus: 'requires_action' });
+    expect(exit).toEqual(Exit.succeed({ status: 'pending', message: null }));
+  });
+
+  it("refuses somebody else's payment as not found", async () => {
+    const exit = await confirm({
+      ...pendingPayment,
+      paymentById: payment({ id: 'payment-0', userId: 'someone-else', providerReference: 'pi_0' })
+    });
+    expect(failureTag(exit)).toBe('SafetyVerificationNotFoundError');
+  });
+
+  it('turns an unreachable provider into an unavailable error', async () => {
+    const exit = await confirm({ ...pendingPayment, providerDown: true });
+    expect(failureTag(exit)).toBe('SafetyVerificationVendorError');
+  });
+
+  it('denies an applicant without the write permission', async () => {
+    const exit = await confirm({ ...pendingPayment, hasPermission: false });
+    expect(failureTag(exit)).toBe('ForbiddenError');
+  });
+
+  it('rejects a body without a payment id', async () => {
+    const exit = await confirm(pendingPayment, {});
+    expect(failureTag(exit)).toBe('RequestValidationError');
   });
 });
 

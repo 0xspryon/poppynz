@@ -6,7 +6,6 @@ import {
   Payments,
   quoteFromPolicy,
   type CardDetails,
-  type PaymentAuthorisation,
   type PaymentOperation,
   type PaymentRefund,
   type ProviderCardSetup,
@@ -44,7 +43,6 @@ export const makeMockPayments = (
   const byReference = new Map<string, ProviderPayment>();
   const refunds = new Map<string, PaymentRefund>();
   const setups = new Map<string, ProviderCardSetup>();
-  const authorisations = new Map<string, PaymentAuthorisation>();
 
   const unknown = (operation: PaymentOperation, reference: string) =>
     Effect.fail(
@@ -55,25 +53,6 @@ export const makeMockPayments = (
     provider: 'mock',
 
     quote: (lineItems, policy) => Effect.succeed(quoteFromPolicy(lineItems, policy)),
-
-    // Deprecated one-step path, kept only until Task 5 moves the order route
-    // to startPayment.
-    authorise: ({ idempotencyKey }) =>
-      Effect.gen(function* () {
-        if (options.failStart) {
-          return yield* Effect.fail(new PaymentDeclinedError({ reason: 'mock decline' }));
-        }
-        const existing = authorisations.get(idempotencyKey);
-        if (existing) {
-          return existing;
-        }
-        const authorisation: PaymentAuthorisation = {
-          reference: `mock_auth_${idempotencyKey}`,
-          authorisedAt: now()
-        };
-        authorisations.set(idempotencyKey, authorisation);
-        return authorisation;
-      }),
 
     startPayment: (input) =>
       Effect.gen(function* () {

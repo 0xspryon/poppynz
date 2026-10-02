@@ -29,6 +29,12 @@ export const safetyVerificationOrderSchema = Schema.Struct({
   consentAccepted: Schema.Literal(true)
 });
 
+/** The browser finished (or abandoned) confirming a payment. Only the id
+ * travels — what happened is re-fetched from the provider. */
+export const safetyVerificationConfirmSchema = Schema.Struct({
+  paymentId: trimmedNonEmptyString.pipe(Schema.maxLength(64))
+});
+
 /**
  * Submitting an existing vulnerable-sector document.
  *
@@ -74,6 +80,10 @@ export type SafetyVerificationItemInput = Schema.Schema.Type<typeof safetyVerifi
 
 export const validateSafetyVerificationOrderInput = validateInput(
   safetyVerificationOrderSchema,
+  safetyVerificationValidationError
+);
+export const validateSafetyVerificationConfirmInput = validateInput(
+  safetyVerificationConfirmSchema,
   safetyVerificationValidationError
 );
 export const validateSafetyVerificationDocumentInput = validateInput(

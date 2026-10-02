@@ -96,13 +96,6 @@ export type ProviderPayment = {
   readonly paymentMethod: CardDetails | null;
 };
 
-/** @deprecated The pre-Stripe one-step result. Removed in Task 5 together
- * with `authorise`'s last caller. */
-export type PaymentAuthorisation = {
-  readonly reference: string;
-  readonly authorisedAt: Date;
-};
-
 export type PaymentRefund = {
   readonly refundReference: string;
   readonly refundedAt: Date;
@@ -177,13 +170,6 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
     readonly provider: PaymentProvider;
     /** Itemises what somebody will pay before anything is charged. */
     quote: (lineItems: ReadonlyArray<QuoteLineItem>, policy: QuotePolicy) => Effect.Effect<Money>;
-    /** @deprecated Replaced by `startPayment`; removed in Task 5 with its last
-     * caller (the safety-verification order route). */
-    authorise: (input: {
-      userId: string;
-      quote: Money;
-      idempotencyKey: string;
-    }) => Effect.Effect<PaymentAuthorisation, PaymentDeclinedError | PaymentProviderError>;
     startPayment: (
       input: StartPaymentInput
     ) => Effect.Effect<StartedPayment, PaymentDeclinedError | PaymentProviderError>;

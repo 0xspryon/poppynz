@@ -12,6 +12,9 @@ export const appAc = createAccessControl({
   // ownership there is enforced at the route (findSubmittedByUserId), since a
   // permission can't express "but only yours".
   approvalRequest: ['read', 'write', 'review'],
+  // The card on file and payment history. Only families keep a card (it
+  // funds contract billing); helpers pay one-off and never hold this.
+  billing: ['read', 'write'],
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
@@ -38,6 +41,7 @@ export const appAc = createAccessControl({
 
 export const familyRole = appAc.newRole({
   profile: ['read', 'update'],
+  billing: ['read', 'write'],
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
   providerSearch: ['read'],

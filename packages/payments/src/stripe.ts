@@ -12,6 +12,7 @@ import {
   type ProviderPaymentStatus,
   type StartedPayment
 } from './port';
+import { makeStripeConnectOperations, type StripeConnectClient } from './stripe-connect';
 
 /**
  * Stripe adapter for the `Payments` port. The ONLY file in the monorepo that
@@ -34,7 +35,7 @@ export type StripeApi = {
   paymentMethods: Pick<Stripe['paymentMethods'], 'detach'>;
   refunds: Pick<Stripe['refunds'], 'create'>;
   webhooks: Pick<Stripe['webhooks'], 'constructEventAsync'>;
-};
+} & StripeConnectClient;
 
 export const makeStripeClient = (secretKey: string): StripeApi =>
   new Stripe(secretKey, {
@@ -257,6 +258,9 @@ export const makeStripePayments = (options: {
 
     removeCard: (cardReference) =>
       call('removeCard', () => client.paymentMethods.detach(cardReference)).pipe(Effect.asVoid),
+
+    // Helper payout accounts (Stripe Connect Express, piece 2b).
+    ...makeStripeConnectOperations(client),
 
     verifyWebhook: (rawBody, signatureHeader) =>
       Effect.gen(function* () {

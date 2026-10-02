@@ -26,6 +26,9 @@ import { makeMailerTest } from '../../../lib/mailer';
 import { EmptySigninServiceTest } from '../auth/signin/signin.handler';
 import { EmptySignupServiceTest } from '../auth/signup/signup.handler';
 
+const REQUEST_ID = '0198a3b0-0000-7000-8000-0000000000a1';
+const APPROVAL_ID = '0198a3b0-0000-7000-8000-0000000000b1';
+
 const makeUser = (overrides: Partial<User> = {}): User => ({
   id: 'provider-1',
   name: 'Provider User',
@@ -59,7 +62,7 @@ const makeSession = (overrides: Partial<Session> = {}): Session => ({
 });
 
 const makeApprovalRequest = (overrides: Partial<ApprovalRequest> = {}): ApprovalRequest => ({
-  id: 'request-1',
+  id: REQUEST_ID,
   userId: 'provider-1',
   status: 'submitted',
   reviewedBy: null,
@@ -74,7 +77,7 @@ const makeApprovalRequest = (overrides: Partial<ApprovalRequest> = {}): Approval
 });
 
 const makeApproval = (input: ApprovalCreateInput, overrides: Partial<Approval> = {}): Approval => ({
-  id: 'approval-1',
+  id: APPROVAL_ID,
   userId: input.userId,
   approvalRequestId: input.approvalRequestId,
   approvedBy: input.approvedBy,
@@ -317,7 +320,7 @@ describe('POST /approvals', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: 'provider-1',
-        approvalRequestId: 'request-1',
+        approvalRequestId: REQUEST_ID,
         expiresAt: '2027-01-01'
       })
     });
@@ -337,7 +340,7 @@ describe('POST /approvals', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: 'provider-1',
-        approvalRequestId: 'request-1',
+        approvalRequestId: REQUEST_ID,
         expiresAt: '2027-01-01'
       })
     });
@@ -352,7 +355,7 @@ describe('POST /approvals', () => {
     const res = await app.request('/api/v1/approvals', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userId: 'provider-1', approvalRequestId: 'request-1' })
+      body: JSON.stringify({ userId: 'provider-1', approvalRequestId: REQUEST_ID })
     });
 
     expect(res.status).toBe(400);
@@ -367,7 +370,7 @@ describe('POST /approvals', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: 'provider-1',
-        approvalRequestId: 'request-1',
+        approvalRequestId: REQUEST_ID,
         expiresAt: '2020-01-01'
       })
     });
@@ -403,7 +406,7 @@ describe('POST /approvals', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: 'provider-1',
-        approvalRequestId: 'request-1',
+        approvalRequestId: REQUEST_ID,
         expiresAt: '2027-01-01'
       })
     });
@@ -412,7 +415,7 @@ describe('POST /approvals', () => {
     expect(res.status).toBe(200);
     expect(body).toMatchObject({
       userId: 'provider-1',
-      approvalRequestId: 'request-1',
+      approvalRequestId: REQUEST_ID,
       approvedBy: 'admin-1'
     });
     expect(approvals).toHaveLength(1);
@@ -427,7 +430,7 @@ describe('POST /approvals', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         userId: 'provider-1',
-        approvalRequestId: 'request-1',
+        approvalRequestId: REQUEST_ID,
         expiresAt: '2027-01-01'
       })
     });

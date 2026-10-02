@@ -7,7 +7,7 @@ import {
   UserProfileRepo,
   UserRepo
 } from '@repo/db';
-import { Cause, Data, Effect, Exit, Option } from 'effect';
+import { Cause, Data, Effect, Exit, Option, Schema } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { isVerified, toDateOnly } from '@/api/lib/safety-verification';
 import {
@@ -47,6 +47,10 @@ export class ApprovalEligibilityError extends Data.TaggedError('ApprovalEligibil
   message: string;
 }> {}
 
+/** Approval and approval-request ids are UUIDs; anything else names nothing.
+ * Checked before the database, whose uuid cast would otherwise 500. */
+const isUuid = Schema.is(Schema.UUID);
+
 /** Re-indexes the side of the marketplace the applicant is listed on. */
 const scheduleSearchReconcile = (role: ApplicantRole, userId: string) =>
   role === 'family'
@@ -57,6 +61,9 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
   Effect.gen(function* () {
     const approvalRepo = yield* ApprovalRepo;
     const approvalRequestRepo = yield* ApprovalRequestRepo;
+    if (!isUuid(input.approvalRequestId)) {
+      return yield* Effect.fail(new ApprovalRequestNotFoundError({ id: input.approvalRequestId }));
+    }
     const approvalRequest = yield* approvalRequestRepo.findById(input.approvalRequestId).pipe(
       Effect.catchTags({
         SqlError: (cause) => Effect.fail(new ApprovalRepoError({ cause })),
@@ -195,6 +202,9 @@ export class ApprovalNotFoundError extends Data.TaggedError('ApprovalNotFoundErr
 export const revokeApprovalProgram = (id: string, reason: string) =>
   Effect.gen(function* () {
     const approvalRepo = yield* ApprovalRepo;
+    if (!isUuid(id)) {
+      return yield* Effect.fail(new ApprovalNotFoundError({ id }));
+    }
     const revoked = yield* approvalRepo.revoke(id, reason).pipe(
       Effect.catchTags({
         SqlError: (cause) => Effect.fail(new ApprovalRepoError({ cause })),

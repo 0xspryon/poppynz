@@ -9,7 +9,7 @@ import {
   UserRepo,
   VouchRepo
 } from '@repo/db';
-import { Cause, Data, Effect, Exit, Option } from 'effect';
+import { Cause, Data, Effect, Exit, Option, Schema } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
   authErrorToResponse,
@@ -179,10 +179,20 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
     };
   });
 
+const isUuid = Schema.is(Schema.UUID);
+
+/** A malformed id can't name an approval request: 404 (the same as an
+ * unknown one) without asking the database, which would 500 on the cast. */
+const requireApprovalRequestId = (id: string) =>
+  isUuid(id)
+    ? Effect.succeed(id)
+    : Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id }));
+
 export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string) =>
   Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { approvalRequest: ['read'] })(authenticated);
+    yield* requireApprovalRequestId(id);
     const requestRepo = yield* ApprovalRequestRepo;
     const profileRepo = yield* UserProfileRepo;
     const approvalRepo = yield* ApprovalRepo;
@@ -248,6 +258,7 @@ export const rejectAdminApprovalRequestRouteProgram = (
     const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['review'] })(
       authenticated
     );
+    yield* requireApprovalRequestId(id);
     const repo = yield* ApprovalRequestRepo;
     const request = yield* repo.reject(id, userAndSession.user.id, input.reason);
 
@@ -291,6 +302,7 @@ export const updateGeneralRemarksRouteProgram = (
     const userAndSession = yield* requirePermissions(headers, { approvalRequest: ['review'] })(
       authenticated
     );
+    yield* requireApprovalRequestId(id);
     const repo = yield* ApprovalRequestRepo;
     const request = yield* repo.updateGeneralRemarks(
       id,

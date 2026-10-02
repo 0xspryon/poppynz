@@ -61,14 +61,17 @@ const userAndSession: UserAndSession = {
   }
 };
 
+const REQUEST_ID = '0198a3b0-0000-7000-8000-0000000000a1';
+const APPROVAL_ID = '0198a3b0-0000-7000-8000-0000000000b1';
+
 const input = {
   userId: 'provider-1',
-  approvalRequestId: 'request-1',
+  approvalRequestId: REQUEST_ID,
   expiresAt: new Date('2027-01-01T00:00:00.000Z')
 };
 
 const makeApprovalRequest = (overrides: Partial<ApprovalRequest> = {}): ApprovalRequest => ({
-  id: 'request-1',
+  id: REQUEST_ID,
   userId: 'provider-1',
   status: 'submitted',
   reviewedBy: null,
@@ -86,7 +89,7 @@ const makeApproval = (
   approvalInput: ApprovalCreateInput,
   overrides: Partial<Approval> = {}
 ): Approval => ({
-  id: 'approval-1',
+  id: APPROVAL_ID,
   userId: approvalInput.userId,
   approvalRequestId: approvalInput.approvalRequestId,
   status: 'approved',
@@ -175,7 +178,7 @@ const makeLayer = (
               makeApproval(
                 {
                   userId: 'provider-1',
-                  approvalRequestId: 'request-1',
+                  approvalRequestId: REQUEST_ID,
                   status: 'rejected',
                   approvedBy: 'admin-1',
                   expiresAt: input.expiresAt
@@ -223,7 +226,7 @@ const makeLayer = (
       listByUserId: () => Effect.succeed([]),
       findById: (id) => {
         if (options.approvalRequestError) return Effect.fail(options.approvalRequestError);
-        return id === 'request-1'
+        return id === REQUEST_ID
           ? Effect.succeed(options.approvalRequest ?? makeApprovalRequest())
           : Effect.fail(new DBNotFoundError({ entity: 'approvalRequest', value: id }));
       },
@@ -344,22 +347,22 @@ describe('createApprovalProgram', () => {
     );
 
     expect(result).toEqual({
-      id: 'approval-1',
+      id: APPROVAL_ID,
       userId: 'provider-1',
-      approvalRequestId: 'request-1',
+      approvalRequestId: REQUEST_ID,
       approvedBy: 'admin-1',
       expiresAt: '2027-01-01T00:00:00.000Z'
     });
     expect(createdApprovals).toEqual([
       {
         userId: 'provider-1',
-        approvalRequestId: 'request-1',
+        approvalRequestId: REQUEST_ID,
         status: 'approved',
         approvedBy: 'admin-1',
         expiresAt: new Date('2027-01-01T00:00:00.000Z')
       }
     ]);
-    expect(markedApproved).toEqual([{ id: 'request-1', reviewedBy: 'admin-1' }]);
+    expect(markedApproved).toEqual([{ id: REQUEST_ID, reviewedBy: 'admin-1' }]);
   });
 
   it('re-indexes the helper side when a provider is approved', async () => {
@@ -382,7 +385,7 @@ describe('createApprovalProgram', () => {
       )
     );
 
-    expect(result.id).toBe('approval-1');
+    expect(result.id).toBe(APPROVAL_ID);
     expect(reconciled).toEqual([{ side: 'family', userId: 'provider-1' }]);
     expect(sentMails[0]?.mail).toMatchObject({ role: 'family' });
   });
@@ -414,7 +417,7 @@ describe('createApprovalProgram', () => {
       )
     );
 
-    expect(result.id).toBe('approval-1');
+    expect(result.id).toBe(APPROVAL_ID);
   });
 
   it('translates missing approval request to ApprovalRequestNotFoundError', async () => {
@@ -424,7 +427,7 @@ describe('createApprovalProgram', () => {
           makeLayer({
             approvalRequestError: new DBNotFoundError({
               entity: 'approvalRequest',
-              value: 'request-1'
+              value: REQUEST_ID
             })
           })
         ),
@@ -466,7 +469,7 @@ describe('createApprovalProgram', () => {
           makeLayer({
             markApprovedError: new DBNotFoundError({
               entity: 'approvalRequest',
-              value: 'request-1'
+              value: REQUEST_ID
             })
           })
         ),
@@ -483,7 +486,7 @@ describe('revokeApprovalProgram', () => {
     const sentMails: Array<{ kind: string; mail: unknown }> = [];
 
     const result = await Effect.runPromise(
-      revokeApprovalProgram('approval-1', 'Expired vulnerable sector check').pipe(
+      revokeApprovalProgram(APPROVAL_ID, 'Expired vulnerable sector check').pipe(
         Effect.provide(makeLayer({ revokeSucceeds: true, sentMails }))
       )
     );
@@ -504,11 +507,33 @@ describe('revokeApprovalProgram', () => {
 
   it('still revokes the approval when the revoked mail fails', async () => {
     const result = await Effect.runPromise(
-      revokeApprovalProgram('approval-1', 'Expired vulnerable sector check').pipe(
+      revokeApprovalProgram(APPROVAL_ID, 'Expired vulnerable sector check').pipe(
         Effect.provide(makeLayer({ revokeSucceeds: true, mailerFail: true }))
       )
     );
 
     expect(result.status).toBe('rejected');
+  });
+});
+
+describe('approval routes: malformed ids', () => {
+  it('answers a non-UUID approvalRequestId with ApprovalRequestNotFoundError before any lookup', async () => {
+    // If the repo were asked, this SqlError would surface as ApprovalRepoError (a 500).
+    const exit = await Effect.runPromiseExit(
+      createApprovalProgram(userAndSession, { ...input, approvalRequestId: 'not-a-uuid' }).pipe(
+        Effect.provide(makeLayer({ approvalRequestError: new SqlError({ message: 'cast' }) }))
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ApprovalRequestNotFoundError' });
+  });
+
+  it('answers a non-UUID approval id on revoke with ApprovalNotFoundError before any write', async () => {
+    // revokeSucceeds: the repo would succeed if it were reached.
+    const exit = await Effect.runPromiseExit(
+      revokeApprovalProgram('not-a-uuid', 'reason').pipe(
+        Effect.provide(makeLayer({ revokeSucceeds: true }))
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ApprovalNotFoundError' });
   });
 });

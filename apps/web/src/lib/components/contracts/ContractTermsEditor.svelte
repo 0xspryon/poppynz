@@ -18,6 +18,7 @@
 	import {
 		formatEndTime,
 		formatSessionRange,
+		MINUTES_PER_DAY,
 		minutesToHours,
 		serviceWeeklyCents,
 		weeklyMinutes,
@@ -86,8 +87,20 @@
 	// svelte-ignore state_referenced_locally
 	let endsAtValue = $state(initial?.endsAtMinutes ? String(initial.endsAtMinutes) : '');
 
-	/** 12:15 am … midnight, in the session picker's 15-minute steps. */
-	const END_TIME_OPTIONS = Array.from({ length: 96 }, (_, i) => (i + 1) * 15);
+	/** The session picker's step. */
+	const TIME_STEP_MINUTES = 15;
+	/** 12:15 am … midnight, in the session picker's steps. */
+	const END_TIME_OPTIONS = Array.from(
+		{ length: MINUTES_PER_DAY / TIME_STEP_MINUTES },
+		(_, i) => (i + 1) * TIME_STEP_MINUTES
+	);
+
+	// An end time only means something on an end date: however the date is
+	// emptied (the clear button or the native input), forget the time so it
+	// doesn't come back pre-selected with the next date.
+	$effect(() => {
+		if (!endsOn) endsAtValue = '';
+	});
 
 	let wizardOpen = $state(false);
 	let editingItem = $state<ServiceLineItem | null>(null);

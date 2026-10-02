@@ -32,7 +32,7 @@
 	import ContractTermsView from '$lib/components/contracts/ContractTermsView.svelte';
 	import WeekAtAGlance from '$lib/components/contracts/WeekAtAGlance.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
-	import { minutesToHours, weeklyMinutes } from '$lib/contract-sessions';
+	import { formatEndTime, minutesToHours, weeklyMinutes } from '$lib/contract-sessions';
 	import { centsToDollars } from '$lib/money';
 	import { formatDate, formatDateTime, formatDateWithWeekday } from '$lib/date';
 	import { notifications } from '$lib/notifications.svelte';
@@ -190,12 +190,12 @@
 		} else if (error.code === 'CONTRACT_STATE_INVALID') {
 			toast.error('This contract has moved on — reloading.');
 			void refresh(contractId);
-		} else if (error.code === 'START_DATE_REQUIRED') {
-			toast.error('Pick a start date before sending.');
-		} else if (error.code === 'START_DATE_NOT_IN_FUTURE') {
-			toast.error('The start date must be after today.');
-		} else if (error.code === 'FAMILY_LOCATION_REQUIRED') {
-			toast.error('Add your address to your profile before sending.');
+		} else if (
+			error.code === 'START_DATE_REQUIRED' ||
+			error.code === 'START_DATE_NOT_IN_FUTURE' ||
+			error.code === 'FAMILY_LOCATION_REQUIRED'
+		) {
+			toast.error(error.message);
 		} else {
 			toast.error("That didn't go through. Please try again.");
 		}
@@ -204,9 +204,9 @@
 	/** Decision/notice actions: a conflict means the contract moved on under
 	 * the viewer — "try again" would loop, so refetch and let the fresh action
 	 * flags redraw the page instead. */
-	const actionErrorToast = (error: { code: string }, fallback: string) => {
+	const actionErrorToast = (error: { code: string; message: string }, fallback: string) => {
 		if (error.code === 'CONTRACT_START_DATE_PASSED') {
-			toast.error('The start date has passed — ask for new terms with a later date.');
+			toast.error(error.message);
 			void refresh(contractId);
 			return;
 		}
@@ -586,7 +586,11 @@
 						Contact details are now shared and you get paid weekly on Poppynz.
 					{/if}
 					{#if contract.endsOn}
-						The contract runs until <strong>{formatDateWithWeekday(contract.endsOn)}</strong>.
+						The contract runs until <strong
+							>{formatDateWithWeekday(contract.endsOn)}{#if contract.endsAtMinutes}, until {formatEndTime(
+									contract.endsAtMinutes
+								)}{/if}</strong
+						>.
 					{/if}
 				</p>
 			</div>
@@ -605,8 +609,11 @@
 					{/if}
 					{#if contract.endsOn}
 						{contract.status === 'ended' ? 'The last working day was' : 'The last working day is'}
-						<strong>{formatDateWithWeekday(contract.endsOn)}</strong> — payments run until then and stop
-						after.
+						<strong
+							>{formatDateWithWeekday(contract.endsOn)}{#if contract.endsAtMinutes}, until {formatEndTime(
+									contract.endsAtMinutes
+								)}{/if}</strong
+						> — payments run until then and stop after.
 					{/if}
 					{#if contract.endNote && !contract.endedByMe}
 						Note: “{contract.endNote}”

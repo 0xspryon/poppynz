@@ -77,6 +77,31 @@ describe('ContractTermsEditor', () => {
 		);
 	});
 
+	it('forgets the end time when the end date is cleared through the date input', () => {
+		const app = mount(ContractTermsEditor, {
+			target: document.body,
+			props: { ...baseProps, onsend: vi.fn() }
+		});
+		flushSync();
+		const select = document.querySelector('#contract-ends-at') as HTMLSelectElement;
+		select.value = '720';
+		select.dispatchEvent(new Event('change'));
+		flushSync();
+
+		const endsInput = document.querySelector('#contract-ends') as HTMLInputElement;
+		endsInput.value = '';
+		endsInput.dispatchEvent(new Event('input'));
+		flushSync();
+		endsInput.value = '2026-12-18';
+		endsInput.dispatchEvent(new Event('input'));
+		flushSync();
+
+		const reopened = document.querySelector('#contract-ends-at') as HTMLSelectElement;
+		const shown = reopened.selectedOptions[0]?.textContent?.trim();
+		unmount(app);
+		expect(shown).toBe('Full scheduled day');
+	});
+
 	it('blocks sending and points to the profile while the family has no address', () => {
 		const app = mount(ContractTermsEditor, {
 			target: document.body,

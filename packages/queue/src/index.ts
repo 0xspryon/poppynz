@@ -55,7 +55,10 @@ export const safetyVerificationJobNames = {
    * this poll is the only recovery path for a dropped delivery. */
   reconcileStatuses: 'reconcile-safety-verification-statuses',
   /** Daily expiry sweep and pre-expiry reminders. */
-  sweepExpiries: 'sweep-safety-verification-expiries'
+  sweepExpiries: 'sweep-safety-verification-expiries',
+  /** Backstop for payments whose browser tab closed or whose Stripe webhook
+   * was lost: settles them, and cancels the ones abandoned for a day. */
+  recoverPayments: 'recover-pending-payments'
 } as const;
 
 /** One repeatable scheduler drives the daily run; upserted on worker boot. */
@@ -66,6 +69,8 @@ export const safetyVerificationReconcileSchedulerId = 'safety-verification-recon
 // Every 15 minutes. Credibled logs a failed webhook delivery but never retries
 // it, so this cadence bounds how long a completed check can sit unnoticed.
 export const safetyVerificationReconcileCronPattern = '*/15 * * * *';
+// Runs on the reconcile cadence above (every 15 minutes).
+export const paymentRecoverySchedulerId = 'payment-recovery';
 export const safetyVerificationExpirySchedulerId = 'safety-verification-expiry-daily';
 export const safetyVerificationExpiryCronPattern = '30 2 * * *';
 

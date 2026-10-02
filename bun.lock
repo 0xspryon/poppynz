@@ -113,6 +113,7 @@
       "dependencies": {
         "@hono/node-server": "^1.19.7",
         "@queuedash/api": "^3.19.0",
+        "@repo/billing": "*",
         "@repo/credibled": "*",
         "@repo/db": "*",
         "@repo/env": "*",

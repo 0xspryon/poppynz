@@ -10,6 +10,7 @@ import { PaymentsLive } from '@repo/payments';
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import {
   ApprovalRepoDefault,
+  BillingCustomerRepoDefault,
   CheckOrderRepoDefault,
   FamilySearchOutboxRepo,
   FamilySearchOutboxRepoDefault,
@@ -21,6 +22,7 @@ import {
 } from '@repo/db';
 import {
   FamilySearchQueueLive,
+  SafetyVerificationQueueLive,
   approvalExpiryCronPattern,
   approvalExpiryJobNames,
   approvalExpiryQueueDefinition,
@@ -29,6 +31,7 @@ import {
   familySearchQueueDefinition,
   familySearchReindexDeduplicationId,
   getRedisConnection,
+  paymentRecoverySchedulerId,
   providerSearchJobNames,
   providerSearchQueueDefinition,
   providerSearchReindexDeduplicationId,
@@ -43,6 +46,7 @@ import {
 } from '@repo/queue';
 import { processApprovalExpiryNotifications } from './approval-expiry-processor';
 import { processFamilySearchJob } from './family-search-processor';
+import { recoverPendingPayments } from './payment-recovery-processor';
 import { processProviderSearchJob } from './provider-search-processor';
 import { processSafetyVerificationExpiries } from './safety-verification-expiry-processor';
 import { placeCheckOrder, recoverUnplacedCheckOrders } from './safety-verification-order-processor';
@@ -57,10 +61,15 @@ const WorkerLive = Layer.mergeAll(
   SafetyVerificationRepoDefault,
   CheckOrderRepoDefault,
   PaymentRepoDefault,
+  // Settling a family's first payment saves its card.
+  BillingCustomerRepoDefault,
   UserRepoDefault,
   CredibledDefault,
   // Same PAYMENTS_PROVIDER switch as the API (default `mock`).
   PaymentsLive,
+  // A payment the recovery job settles hands its order to the place-order
+  // job, exactly as the API's settle does.
+  SafetyVerificationQueueLive,
   MailerLive,
   // The expiry sweep re-indexes a family whose verification lapsed.
   FamilySearchQueueLive,
@@ -114,6 +123,15 @@ const safetyVerificationWorker = new Worker(
       console.log(
         `safety-verification reconcile: ${summary.advanced} advanced, ` +
           `${summary.unreachable} unreachable, ${summary.failed} failed of ${summary.checked}`
+      );
+      return;
+    }
+
+    if (job.name === safetyVerificationJobNames.recoverPayments) {
+      const summary = await runtime.runPromise(recoverPendingPayments(new Date()));
+      console.log(
+        `payment recovery: ${summary.captured} captured, ${summary.failed} failed ` +
+          `(${summary.abandoned} abandoned), ${summary.errors} errors of ${summary.checked}`
       );
       return;
     }
@@ -178,6 +196,12 @@ const scheduleSafetyVerificationJobs = async () => {
     safetyVerificationReconcileSchedulerId,
     { pattern: safetyVerificationReconcileCronPattern },
     { name: safetyVerificationJobNames.reconcileStatuses, data: {} }
+  );
+  // Backstop for payments neither the browser nor a webhook settled.
+  await safetyVerificationQueue.upsertJobScheduler(
+    paymentRecoverySchedulerId,
+    { pattern: safetyVerificationReconcileCronPattern },
+    { name: safetyVerificationJobNames.recoverPayments, data: {} }
   );
   await safetyVerificationQueue.upsertJobScheduler(
     safetyVerificationExpirySchedulerId,

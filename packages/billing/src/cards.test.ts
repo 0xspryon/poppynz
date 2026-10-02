@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  BillingCustomerRepo,
   dummyBillingCustomer,
   makeInMemoryBillingCustomerRepo,
   type BillingCustomer
@@ -114,11 +115,63 @@ describe('applyCardSetup', () => {
     expect(world.billing.rows.get('family-1')?.cardReference).toBe('mock_pm_saved');
   });
 
-  it('applies for whichever user owns the customer when called from the webhook', async () => {
-    const world = makeWorld([stripeFamily()]);
+  it('fills an empty slot for whichever user owns the customer when called from the webhook', async () => {
+    const world = makeWorld([stripeFamily({ cardReference: null })]);
     const result = await Effect.runPromise(
       applyCardSetup('seti_1', null).pipe(Effect.provide(world.layer))
     );
     expect(result.outcome).toBe('saved');
+    expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_new');
+  });
+
+  it('re-confirms the card already on file from the webhook without detaching anything', async () => {
+    const world = makeWorld([stripeFamily({ cardReference: 'pm_new' })]);
+    const result = await Effect.runPromise(
+      applyCardSetup('seti_1', null).pipe(Effect.provide(world.layer))
+    );
+    expect(result).toMatchObject({ outcome: 'saved', card: { reference: 'pm_new' } });
+    expect(world.removed).toEqual([]);
+  });
+
+  it('never lets a late webhook replace (and detach) a newer card on file', async () => {
+    // S1 (card B) is retried by Stripe after the family already replaced B
+    // with C in the browser: C must stay on file and attached.
+    const world = makeWorld(
+      [stripeFamily({ cardReference: 'pm_c' })],
+      setup({
+        paymentMethod: {
+          reference: 'pm_b',
+          brand: 'visa',
+          last4: '1111',
+          expMonth: 1,
+          expYear: 2030
+        }
+      })
+    );
+    const result = await Effect.runPromise(
+      applyCardSetup('seti_1', null).pipe(Effect.provide(world.layer))
+    );
+    expect(result).toMatchObject({ outcome: 'kept', card: { reference: 'pm_c' } });
+    expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_c');
+    expect(world.removed).toEqual([]);
+  });
+
+  it('detaches nothing when a concurrent confirm replaced the card first', async () => {
+    // This confirm read pm_old, but another tab's confirm put pm_c on file
+    // before our write: the compare-and-set loses, and neither card is
+    // detached on the strength of the stale read.
+    const world = makeWorld([stripeFamily({ cardReference: 'pm_c' })]);
+    const inner = Effect.runSync(BillingCustomerRepo.pipe(Effect.provide(world.billing.layer)));
+    const stale = stripeFamily({ cardReference: 'pm_old' });
+    const layer = Layer.merge(
+      world.layer,
+      Layer.succeed(BillingCustomerRepo, { ...inner, findByUserId: () => Effect.succeed(stale) })
+    );
+    const result = await Effect.runPromise(
+      applyCardSetup('seti_1', 'family-1').pipe(Effect.provide(layer))
+    );
+    expect(result.outcome).toBe('kept');
+    expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_c');
+    expect(world.removed).toEqual([]);
   });
 });

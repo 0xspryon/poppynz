@@ -1,6 +1,6 @@
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
-import { and, eq, sql, type InferSelectModel } from 'drizzle-orm';
+import { and, eq, isNull, sql, type InferSelectModel } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DrizzleLive } from '../effect-db';
 import { billingCustomer } from '../schema';
@@ -35,8 +35,14 @@ export class BillingCustomerRepo extends Context.Tag('@repo/db/BillingCustomerRe
       provider: string;
       customerReference: string;
     }) => Effect.Effect<BillingCustomer, SqlError>;
-    /** Null when the user has no customer row. */
-    setCard: (userId: string, card: BillingCard) => Effect.Effect<BillingCustomer | null, SqlError>;
+    /** Compare-and-set on the card it replaces: lands only while the card on
+     * file is still `expected` (null: no card). Null when it lost that race,
+     * or when the user has no customer row. */
+    setCard: (
+      userId: string,
+      card: BillingCard,
+      expected: string | null
+    ) => Effect.Effect<BillingCustomer | null, SqlError>;
     clearCard: (userId: string) => Effect.Effect<BillingCustomer | null, SqlError>;
   }
 >() {}
@@ -98,7 +104,7 @@ export const BillingCustomerRepoLive = Layer.effect(
           return existing!;
         }),
 
-      setCard: (userId, card) =>
+      setCard: (userId, card, expected) =>
         db
           .update(billingCustomer)
           .set({
@@ -109,7 +115,14 @@ export const BillingCustomerRepoLive = Layer.effect(
             cardExpYear: card.expYear,
             updatedAt: new Date()
           })
-          .where(eq(billingCustomer.userId, userId))
+          .where(
+            and(
+              eq(billingCustomer.userId, userId),
+              expected === null
+                ? isNull(billingCustomer.cardReference)
+                : eq(billingCustomer.cardReference, expected)
+            )
+          )
           .returning()
           .pipe(Effect.map(firstOrNull)),
 
@@ -178,15 +191,17 @@ export const makeInMemoryBillingCustomerRepo = (
           rows.set(input.userId, row);
           return row;
         }),
-      setCard: (userId, card) =>
+      setCard: (userId, card, expected) =>
         Effect.sync(() =>
-          update(userId, {
-            cardReference: card.reference,
-            cardBrand: card.brand,
-            cardLast4: card.last4,
-            cardExpMonth: card.expMonth,
-            cardExpYear: card.expYear
-          })
+          (rows.get(userId)?.cardReference ?? null) !== expected
+            ? null
+            : update(userId, {
+                cardReference: card.reference,
+                cardBrand: card.brand,
+                cardLast4: card.last4,
+                cardExpMonth: card.expMonth,
+                cardExpYear: card.expYear
+              })
         ),
       clearCard: (userId) => Effect.sync(() => update(userId, cardless))
     })

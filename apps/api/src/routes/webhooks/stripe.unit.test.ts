@@ -74,6 +74,8 @@ const makeWorld = (
     seen?: StripeWebhookRecordResult;
     /** The payment table is down while the event is applied. */
     processingFails?: boolean;
+    /** The card already on file for family-1. */
+    cardOnFile?: string | null;
   } = {}
 ) => {
   let payment = options.payment === undefined ? paymentRow() : options.payment;
@@ -86,7 +88,11 @@ const makeWorld = (
     updates: [] as Array<Partial<Payment>>
   };
   const billing = makeInMemoryBillingCustomerRepo([
-    dummyBillingCustomer({ provider: 'stripe', customerReference: 'cus_1', cardReference: null })
+    dummyBillingCustomer({
+      provider: 'stripe',
+      customerReference: 'cus_1',
+      cardReference: options.cardOnFile ?? null
+    })
   ]);
 
   const layer = Layer.mergeAll(
@@ -323,6 +329,13 @@ describe('processStripeEvent', () => {
     const world = makeWorld();
     await run(world, event({ type: 'setup_intent.succeeded', objectId: 'seti_1' }));
     expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_new');
+  });
+
+  it('never lets a retried older setup replace the card the family has on file now', async () => {
+    const world = makeWorld({ cardOnFile: 'pm_newer' });
+    const note = await run(world, event({ type: 'setup_intent.succeeded', objectId: 'seti_1' }));
+    expect(note).toBe('card setup: kept');
+    expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_newer');
   });
 
   it('marks a fully refunded charge refunded', async () => {

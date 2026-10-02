@@ -98,7 +98,10 @@ const finishOrder = (payment: Payment, at: Date) =>
   });
 
 /** A family's first payment saves its card (`savesCard`). Only for the
- * customer the payment's own user holds — never someone else's. */
+ * customer the payment's own user holds — never someone else's — and only
+ * into an empty slot: the intent asked to save because no card was on file
+ * when it started, so a card on file now was added since and is newer. Safe
+ * to repeat (the same card is a no-op). */
 const rememberCard = (payment: Payment, fetched: ProviderPayment) =>
   Effect.gen(function* () {
     if (!fetched.savesCard || fetched.paymentMethod === null || fetched.customer === null) {
@@ -108,7 +111,7 @@ const rememberCard = (payment: Payment, fetched: ProviderPayment) =>
     const payments = yield* Payments;
     const owner = yield* repo.findByCustomerReference(payments.provider, fetched.customer);
     if (owner === null || owner.userId !== payment.userId) return;
-    yield* saveCard(owner.userId, fetched.paymentMethod);
+    yield* saveCard(owner.userId, fetched.paymentMethod, 'fill');
   }).pipe(
     // The charge is recorded; a card we failed to remember can be re-added
     // in Billing. Failing here would only make the webhook retry forever.
@@ -165,12 +168,18 @@ const capture = (row: Payment, fetched: ProviderPayment, at: Date) =>
       // (the webhook is already acknowledged, and neither the stale-pending
       // sweep nor the awaiting-placement sweep will ever look at a captured
       // payment again). Re-running it here is idempotent either way.
+      // The card is ours to remember too: the winner may have crashed
+      // before doing it, and only a caller holding the fetched intent can.
       const current = yield* paymentRepo.findById(row.id);
+      if (current.status === 'captured') yield* rememberCard(current, fetched);
       yield* runFollowUp(current, at);
       return { outcome: 'final' as const, payment: current };
     }
-    yield* finishOrder(captured, at);
+    // Before finishOrder: if handing the order on fails, the retry reaches
+    // this row through the final-status branch, which no longer has the
+    // fetched intent to save the card from.
     yield* rememberCard(captured, fetched);
+    yield* finishOrder(captured, at);
     return { outcome: 'captured' as const, payment: captured };
   });
 

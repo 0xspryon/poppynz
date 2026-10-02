@@ -13,7 +13,7 @@ import {
 } from '@repo/db';
 import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
 import { makePaymentsTest, type ProviderPayment } from '@repo/payments';
-import { makeSafetyVerificationQueueTest } from '@repo/queue';
+import { makeSafetyVerificationQueueTest, SafetyVerificationQueueError } from '@repo/queue';
 import { Effect, Layer } from 'effect';
 import { settlePayment, settlePaymentByReference } from './settle';
 
@@ -87,6 +87,10 @@ const makeWorld = (
     provider?: ProviderPayment;
     afterCancel?: ProviderPayment;
     billing?: Array<BillingCustomer>;
+    /** The queue refuses the order (Redis down): settle fails after the CAS. */
+    queueFails?: boolean;
+    /** Another caller moves the row to this status between our read and CAS. */
+    captureLostTo?: Payment['status'];
   } = {}
 ) => {
   let payment = options.payment ?? paymentRow();
@@ -111,6 +115,9 @@ const makeWorld = (
       update: (_id, input) => Effect.sync(() => (payment = { ...payment, ...input })),
       advance: (_id, input) =>
         Effect.sync(() => {
+          if (options.captureLostTo && payment.status === 'pending') {
+            payment = { ...payment, status: options.captureLostTo };
+          }
           const from = Array.isArray(input.from) ? input.from : [input.from];
           if (!from.includes(payment.status)) return null;
           payment = { ...payment, ...input.set };
@@ -156,10 +163,12 @@ const makeWorld = (
     billing.layer,
     makeSafetyVerificationQueueTest({
       enqueueOrder: ({ orderId }) =>
-        Effect.sync(() => {
-          calls.enqueued.push(orderId);
-          return { id: 'job-1', name: 'place' };
-        })
+        options.queueFails
+          ? Effect.fail(new SafetyVerificationQueueError({ cause: 'redis down' }))
+          : Effect.sync(() => {
+              calls.enqueued.push(orderId);
+              return { id: 'job-1', name: 'place' };
+            })
     }),
     makeNotificationHubTest({
       publish: (userId, input) => Effect.sync(() => void calls.notified.push({ userId, input })),
@@ -432,6 +441,17 @@ describe('settlePayment', () => {
   });
 });
 
+const emptyStripeFamily = () =>
+  dummyBillingCustomer({
+    provider: 'stripe',
+    customerReference: 'cus_1',
+    cardReference: null,
+    cardBrand: null,
+    cardLast4: null,
+    cardExpMonth: null,
+    cardExpYear: null
+  });
+
 describe('saving the card on a family’s first payment', () => {
   it('saves the paying card for the customer that owns the payment', async () => {
     const world = makeWorld({
@@ -455,20 +475,48 @@ describe('saving the card on a family’s first payment', () => {
     });
   });
 
-  it('replaces an older card and detaches it at the provider', async () => {
+  it('keeps a card the family added since the payment started, and detaches nothing', async () => {
+    // The payment asked to save its card because none was on file then; a
+    // late settle (recovery job, webhook retry) must not replace the card
+    // the family has added in Billing since.
     const world = makeWorld({
       provider: fetched({ savesCard: true, paymentMethod: card('pm_new') }),
       billing: [
         dummyBillingCustomer({
           provider: 'stripe',
           customerReference: 'cus_1',
-          cardReference: 'pm_old'
+          cardReference: 'pm_added_in_billing'
         })
       ]
     });
     await settle(world);
+    expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_added_in_billing');
+    expect(world.calls.removedCards).toEqual([]);
+  });
+
+  it('saves the card even when handing the order to the worker fails', async () => {
+    const world = makeWorld({
+      provider: fetched({ savesCard: true, paymentMethod: card('pm_new') }),
+      billing: [emptyStripeFamily()],
+      queueFails: true
+    });
+    await expect(settle(world)).rejects.toThrow();
+    expect(world.payment()).toMatchObject({ status: 'captured' });
     expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_new');
-    expect(world.calls.removedCards).toEqual(['pm_old']);
+  });
+
+  it('saves the card from the losing settle when the winner never got to it', async () => {
+    // Another caller captured the row between our read and our CAS, then
+    // crashed before its own follow-up: we still hold the fetched intent.
+    const world = makeWorld({
+      provider: fetched({ savesCard: true, paymentMethod: card('pm_new') }),
+      billing: [emptyStripeFamily()],
+      captureLostTo: 'captured'
+    });
+    const result = await settle(world);
+    expect(result.outcome).toBe('final');
+    expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_new');
+    expect(world.order()).toMatchObject({ status: 'paid' });
   });
 
   it('saves nothing for a one-off payment (a helper, or another card)', async () => {

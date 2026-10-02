@@ -52,24 +52,50 @@ export const ensureBillingCustomer = (user: { id: string; email: string; name: s
     });
   });
 
-/** Makes `card` the user's one card on file. The card it replaces is
- * detached at the gateway — best-effort: a card left attached is harmless,
- * failing a settled payment over it is not. Null when the user has no
- * customer row (helpers never do). */
-export const saveCard = (userId: string, card: CardDetails) =>
+/** How a card source may treat a different card already on file:
+ *  - `replace`: the payer's own explicit choice in the browser (Billing's
+ *    confirm) — it supersedes whatever is on file;
+ *  - `fill`: a background path (webhook, recovery job, a late settle) that
+ *    may be replaying something older than the card on file. It only fills an
+ *    empty slot or re-confirms the same card, so a stale source can never
+ *    replace — and detach — a newer card. */
+export type SaveCardMode = 'replace' | 'fill';
+
+export type SaveCardOutcome =
+  /** This call put the card on file. */
+  | 'saved'
+  /** It already was. */
+  | 'unchanged'
+  /** Another card stays on file: `fill` found the slot taken, or the
+   * compare-and-set lost to a concurrent write. Nothing was detached. */
+  | 'kept'
+  /** The user has no customer row (helpers never do). */
+  | 'no_customer';
+
+/** Makes `card` the user's one card on file. The write is compare-and-set on
+ * the card it replaces, and the replaced card is detached at the gateway only
+ * when that write won — best-effort: a card left attached is harmless,
+ * failing a settled payment over it is not. */
+export const saveCard = (userId: string, card: CardDetails, mode: SaveCardMode) =>
   Effect.gen(function* () {
     const repo = yield* BillingCustomerRepo;
     const payments = yield* Payments;
     const before = yield* repo.findByUserId(userId);
-    if (before === null) return null;
-    if (before.cardReference === card.reference) return before;
-    const after = yield* repo.setCard(userId, {
-      reference: card.reference,
-      brand: card.brand,
-      last4: card.last4,
-      expMonth: card.expMonth,
-      expYear: card.expYear
-    });
+    if (before === null) return 'no_customer' as SaveCardOutcome;
+    if (before.cardReference === card.reference) return 'unchanged' as SaveCardOutcome;
+    if (mode === 'fill' && before.cardReference !== null) return 'kept' as SaveCardOutcome;
+    const after = yield* repo.setCard(
+      userId,
+      {
+        reference: card.reference,
+        brand: card.brand,
+        last4: card.last4,
+        expMonth: card.expMonth,
+        expYear: card.expYear
+      },
+      before.cardReference
+    );
+    if (after === null) return 'kept' as SaveCardOutcome;
     if (before.cardReference !== null && before.provider === payments.provider) {
       yield* payments
         .removeCard(before.cardReference)
@@ -79,11 +105,14 @@ export const saveCard = (userId: string, card: CardDetails) =>
           )
         );
     }
-    return after;
+    return 'saved' as SaveCardOutcome;
   });
 
 export type CardSetupResult =
   | { outcome: 'saved'; card: BillingCard }
+  /** Another card stays on file (a late webhook, or a concurrent confirm
+   * won); `card` is the one on file now. */
+  | { outcome: 'kept'; card: BillingCard | null }
   /** Not a setup of ours, or of another user's customer. */
   | { outcome: 'not_found' }
   /** Ours, but not finished (or finished without a card). */
@@ -91,7 +120,9 @@ export type CardSetupResult =
 
 /** Applies a card setup the browser (or the webhook) says finished: re-fetch
  * it, check it belongs to `userId` when one is given, and make its card the
- * card on file. */
+ * card on file. Only the browser's confirm (`userId` given) replaces a card
+ * already on file; the webhook (`userId` null) can be a retry of an older
+ * setup, so it only fills an empty slot. */
 export const applyCardSetup = (reference: string, userId: string | null) =>
   Effect.gen(function* () {
     const repo = yield* BillingCustomerRepo;
@@ -102,15 +133,23 @@ export const applyCardSetup = (reference: string, userId: string | null) =>
         ? null
         : yield* repo.findByCustomerReference(payments.provider, setup.customer);
     if (owner === null || (userId !== null && owner.userId !== userId)) {
-      return { outcome: 'not_found' as const };
+      return { outcome: 'not_found' } as CardSetupResult;
     }
     if (setup.status !== 'succeeded' || setup.paymentMethod === null) {
-      return { outcome: 'incomplete' as const };
+      return { outcome: 'incomplete' } as CardSetupResult;
     }
-    yield* saveCard(owner.userId, setup.paymentMethod);
+    const saved = yield* saveCard(
+      owner.userId,
+      setup.paymentMethod,
+      userId === null ? 'fill' : 'replace'
+    );
+    if (saved === 'kept') {
+      const current = yield* repo.findByUserId(owner.userId);
+      return { outcome: 'kept', card: toCard(current, payments.provider) } as CardSetupResult;
+    }
     const { reference: cardReference, brand, last4, expMonth, expYear } = setup.paymentMethod;
     return {
-      outcome: 'saved' as const,
+      outcome: 'saved',
       card: { reference: cardReference, brand, last4, expMonth, expYear }
-    };
+    } as CardSetupResult;
   });

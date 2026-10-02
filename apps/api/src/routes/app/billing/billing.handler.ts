@@ -40,10 +40,14 @@ const mapRepoError = <A, R>(
   effect.pipe(Effect.catchTag('SqlError', (cause) => Effect.fail(new BillingRepoError({ cause }))));
 
 /** Display fields only — the card reference never leaves the server. */
-const toCardResponse = (card: BillingCard | null) =>
-  card === null
-    ? null
-    : { brand: card.brand, last4: card.last4, expMonth: card.expMonth, expYear: card.expYear };
+const toCardSummary = ({ brand, last4, expMonth, expYear }: BillingCard) => ({
+  brand,
+  last4,
+  expMonth,
+  expYear
+});
+
+const toCardResponse = (card: BillingCard | null) => (card === null ? null : toCardSummary(card));
 
 const paymentStatusLabel = {
   pending: 'pending',
@@ -128,10 +132,15 @@ export const confirmCardSetupRouteProgram = (c: HonoContext<HonoEnv>, headers: H
         return yield* Effect.fail(new BillingCardSetupNotFoundError());
       case 'incomplete':
         return yield* Effect.fail(new BillingCardSetupIncompleteError());
-      case 'saved': {
-        const { brand, last4, expMonth, expYear } = result.card;
-        return { card: { brand, last4, expMonth, expYear } };
-      }
+      case 'kept':
+        // A concurrent confirm put another card on file first: show that
+        // one, which is what billing will actually charge.
+        if (result.card === null) {
+          return yield* Effect.fail(new BillingCardSetupIncompleteError());
+        }
+        return { card: toCardSummary(result.card) };
+      case 'saved':
+        return { card: toCardSummary(result.card) };
     }
   });
 

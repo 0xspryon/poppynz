@@ -1,5 +1,6 @@
 import { SqlError } from '@effect/sql/SqlError';
 import {
+  BillingCustomerRepo,
   DBNotFoundError,
   dummyBillingCustomer,
   makeInMemoryBillingCustomerRepo,
@@ -235,6 +236,35 @@ describe('POST /billing/card/confirm', () => {
     );
     expect(billing.rows.get('family-1')?.cardReference).toBe('mock_pm_new');
     expect(removed).toEqual(['mock_pm_saved']);
+  });
+
+  it('answers with the card now on file when a concurrent confirm replaced it first', async () => {
+    // Read the old card, but another tab's confirm landed before our write:
+    // the compare-and-set loses, nothing is detached, and the browser is
+    // shown the card that really is on file.
+    const removed: Array<string> = [];
+    const winner = dummyBillingCustomer({
+      cardReference: 'mock_pm_other_tab',
+      cardBrand: 'visa',
+      cardLast4: '1881',
+      cardExpMonth: 7,
+      cardExpYear: 2033
+    });
+    const { layer, billing } = makeLayer({ billing: [winner], removed });
+    const inner = Effect.runSync(BillingCustomerRepo.pipe(Effect.provide(billing.layer)));
+    let reads = 0;
+    const staleFirstRead = Layer.succeed(BillingCustomerRepo, {
+      ...inner,
+      findByUserId: (userId) =>
+        (reads += 1) === 1 ? Effect.succeed(dummyBillingCustomer()) : inner.findByUserId(userId)
+    });
+    const exit = await confirm(Layer.merge(layer, staleFirstRead));
+
+    expect(exit).toEqual(
+      Exit.succeed({ card: { brand: 'visa', last4: '1881', expMonth: 7, expYear: 2033 } })
+    );
+    expect(billing.rows.get('family-1')?.cardReference).toBe('mock_pm_other_tab');
+    expect(removed).toEqual([]);
   });
 
   it("refuses a setup that belongs to another user's customer", async () => {

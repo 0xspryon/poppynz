@@ -24,6 +24,7 @@ import { makeMailerTest, type VouchRequestMail } from '@/api/lib/mailer';
 import {
   adminVouchActionProgram,
   adminVouchActionRouteProgram,
+  declineVouchProgram,
   declineVouchRouteProgram,
   listMyVouchesProgram,
   listVouchRequestsProgram,
@@ -501,6 +502,55 @@ describe('submitVouchProgram', () => {
   });
 });
 
+describe("voucher actions on someone else's vouch", () => {
+  const othersVouch = (status: Vouch['status']) => ({
+    ...dummyVouch,
+    voucherUserId: 'someone-else',
+    status
+  });
+
+  it('submit, decline and withdraw all answer VouchNotFoundError and never write', async () => {
+    const transitions: Array<VouchTransition> = [];
+    const exits = [
+      await Effect.runPromiseExit(
+        submitVouchProgram(asSession(voucher), dummyVouch.id, answers).pipe(
+          Effect.provide(
+            makeLayer({
+              vouch: othersVouch('pending'),
+              onTransition: (t) => transitions.push(t)
+            })
+          )
+        )
+      ),
+      await Effect.runPromiseExit(
+        declineVouchProgram(asSession(voucher), dummyVouch.id).pipe(
+          Effect.provide(
+            makeLayer({
+              vouch: othersVouch('pending'),
+              onTransition: (t) => transitions.push(t)
+            })
+          )
+        )
+      ),
+      await Effect.runPromiseExit(
+        withdrawVouchProgram(asSession(voucher), dummyVouch.id).pipe(
+          Effect.provide(
+            makeLayer({
+              vouch: othersVouch('accepted'),
+              approved: { [dummyVouch.applicantUserId]: false },
+              onTransition: (t) => transitions.push(t)
+            })
+          )
+        )
+      )
+    ];
+    for (const exit of exits) {
+      expect(failureOf(exit)).toMatchObject({ _tag: 'VouchNotFoundError' });
+    }
+    expect(transitions).toEqual([]);
+  });
+});
+
 describe('withdrawVouchProgram', () => {
   it('refuses once the applicant is approved', async () => {
     const exit = await Effect.runPromiseExit(
@@ -542,7 +592,14 @@ describe('adminVouchActionProgram', () => {
         dummyVouch.id,
         'flagged',
         'Same household as applicant'
-      ).pipe(Effect.provide(makeLayer({ onTransition: (t) => transitions.push(t) })))
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            vouch: { ...dummyVouch, status: 'accepted' },
+            onTransition: (t) => transitions.push(t)
+          })
+        )
+      )
     );
     expect(transitions[0]).toMatchObject({
       from: ['pending', 'accepted'],
@@ -550,13 +607,32 @@ describe('adminVouchActionProgram', () => {
     });
   });
 
-  it('fails with VouchStateError when the vouch already moved', async () => {
+  it('fails with VouchStateError on a vouch in a terminal state', async () => {
     const exit = await Effect.runPromiseExit(
       adminVouchActionProgram('admin-1', dummyVouch.id, 'revoked', 'x').pipe(
-        Effect.provide(makeLayer({ transitionResult: null }))
+        Effect.provide(
+          makeLayer({ vouch: { ...dummyVouch, status: 'declined' }, transitionResult: null })
+        )
       )
     );
     expect(failureOf(exit)).toMatchObject({ _tag: 'VouchStateError' });
+  });
+
+  it('fails with VouchNotFoundError for a vouch that does not exist', async () => {
+    const transitions: Array<VouchTransition> = [];
+    const exit = await Effect.runPromiseExit(
+      adminVouchActionProgram(
+        'admin-1',
+        '01928f3e-7b6a-7c1d-9e2f-0123456789ab',
+        'flagged',
+        'Same household'
+      ).pipe(
+        // No `vouch`: findById fails with DBNotFoundError.
+        Effect.provide(makeLayer({ onTransition: (t) => transitions.push(t) }))
+      )
+    );
+    expect(failureOf(exit)).toMatchObject({ _tag: 'VouchNotFoundError' });
+    expect(transitions).toEqual([]);
   });
 });
 

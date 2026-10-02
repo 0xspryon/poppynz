@@ -382,21 +382,27 @@ export const adminVouchActionProgram = (
   reason: string
 ) =>
   Effect.gen(function* () {
-    const updated = yield* VouchRepo.pipe(
-      Effect.flatMap((repo) =>
-        repo.transition({
-          id: vouchId,
-          from: ['pending', 'accepted'],
-          set: {
-            status: action,
-            revokedBy: adminUserId,
-            adminReason: reason,
-            decidedAt: new Date()
-          }
-        })
-      ),
-      Effect.mapError(repoError)
+    const vouchRepo = yield* VouchRepo;
+    // Load first so a vouch that doesn't exist is a 404, and only one that
+    // exists but already reached a terminal state is a 409.
+    const vouch = yield* vouchRepo.findById(vouchId).pipe(
+      Effect.catchTags({
+        DBNotFoundError: () => Effect.fail(new VouchNotFoundError()),
+        SqlError: (cause) => Effect.fail(repoError(cause))
+      })
     );
+    const updated = yield* vouchRepo
+      .transition({
+        id: vouch.id,
+        from: ['pending', 'accepted'],
+        set: {
+          status: action,
+          revokedBy: adminUserId,
+          adminReason: reason,
+          decidedAt: new Date()
+        }
+      })
+      .pipe(Effect.mapError(repoError));
     if (!updated) {
       return yield* Effect.fail(new VouchStateError());
     }

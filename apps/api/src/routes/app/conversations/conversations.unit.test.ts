@@ -961,6 +961,92 @@ describe('POST /conversations/:id/respond & /ignore', () => {
     );
     expect(getFailure(exit)).toMatchObject({ _tag: 'ConversationNotPendingError' });
   });
+
+  const pendingFromFamily = () =>
+    activeConversation({ status: 'pending', respondedAt: null, initiatorUserId: 'family-1' });
+
+  it('blocks a responder who has lost their approval', async () => {
+    const exit = await Effect.runPromiseExit(
+      respondToReachoutRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            counterpart: familyUser(),
+            providerApproved: false,
+            conversationById: pendingFromFamily(),
+            markRespondedResult: activeConversation()
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ApprovalRequiredError',
+      role: 'service-provider'
+    });
+  });
+
+  it('refuses to unlock a reach-out from someone who has lost their approval', async () => {
+    const exit = await Effect.runPromiseExit(
+      respondToReachoutRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            counterpart: familyUser(),
+            familyApproved: false,
+            conversationById: pendingFromFamily(),
+            markRespondedResult: activeConversation()
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'CounterpartNotApprovedError' });
+  });
+
+  it('refuses to unlock a reach-out from a banned person', async () => {
+    const exit = await Effect.runPromiseExit(
+      respondToReachoutRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            counterpart: familyUser({ banned: true, banExpires: null }),
+            conversationById: pendingFromFamily(),
+            markRespondedResult: activeConversation()
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'CounterpartNotApprovedError' });
+  });
+
+  it('lets a responder without approval still ignore the reach-out', async () => {
+    const result = await Effect.runPromise(
+      ignoreReachoutRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            counterpart: familyUser(),
+            providerApproved: false,
+            familyApproved: false,
+            conversationById: pendingFromFamily(),
+            markIgnoredResult: activeConversation({ status: 'ignored', ignoredAt: new Date() })
+          })
+        )
+      )
+    );
+    expect(result).toEqual({ id: CONVERSATION_ID, status: 'ignored' });
+  });
 });
 
 describe('POST /conversations/:id/messages', () => {
@@ -1016,5 +1102,42 @@ describe('POST /conversations/:id/messages', () => {
       )
     );
     expect(getFailure(exit)).toMatchObject({ _tag: 'ConversationLockedError' });
+  });
+
+  const sendTo = (layer: Parameters<typeof makeLayer>[0]) =>
+    Effect.runPromiseExit(
+      sendMessageRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID }, body: { body: 'hello' } }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer(layer)))
+    );
+
+  it('blocks a sender who has lost their approval, before storing anything', async () => {
+    const exit = await sendTo({ conversationById: activeConversation(), familyApproved: false });
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ApprovalRequiredError', role: 'family' });
+  });
+
+  it('blocks messaging a helper whose approval was revoked', async () => {
+    const published: Array<Published> = [];
+    const exit = await sendTo({
+      conversationById: activeConversation(),
+      providerApproved: false,
+      published
+    });
+    expect(getFailure(exit)).toMatchObject({ _tag: 'CounterpartNotApprovedError' });
+    expect(published).toEqual([]);
+  });
+
+  it('blocks messaging a banned counterpart', async () => {
+    const exit = await sendTo({
+      conversationById: activeConversation(),
+      counterpart: providerUser({ banned: true, banExpires: new Date(Date.now() + 86_400_000) })
+    });
+    expect(getFailure(exit)).toMatchObject({ _tag: 'CounterpartNotApprovedError' });
+  });
+
+  it('treats a counterpart whose account is gone as unavailable', async () => {
+    const exit = await sendTo({ conversationById: activeConversation(), counterpart: null });
+    expect(getFailure(exit)).toMatchObject({ _tag: 'CounterpartNotApprovedError' });
   });
 });

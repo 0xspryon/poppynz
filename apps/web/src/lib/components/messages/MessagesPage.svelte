@@ -164,6 +164,23 @@
 		void goto(withQuery(listHref, `c=${encodeURIComponent(id)}`), { noScroll: true });
 	}
 
+	/** Messaging needs both people to hold a live approval (and the viewer a
+	 * verified safety check). Those refusals explain themselves, so the toast
+	 * shows the API's own message; anything else gets the generic fallback. */
+	function standingErrorMessage(error: { code: string; message?: string }): string | null {
+		switch (error.code) {
+			case 'COUNTERPART_UNAVAILABLE':
+			case 'FAMILY_NOT_APPROVED':
+			case 'PROVIDER_NOT_APPROVED':
+			case 'APPROVAL_UNAVAILABLE':
+			case 'SAFETY_VERIFICATION_REQUIRED':
+			case 'SAFETY_VERIFICATION_UNAVAILABLE':
+				return error.message ?? null;
+			default:
+				return null;
+		}
+	}
+
 	async function handleSend(event: SubmitEvent) {
 		event.preventDefault();
 		const id = selectedId;
@@ -181,9 +198,10 @@
 			void refreshList();
 		} else {
 			toast.error(
-				result.error.code === 'CONVERSATION_LOCKED'
-					? 'This conversation is locked until the reach-out gets a response.'
-					: 'Your message could not be sent. Please try again.'
+				standingErrorMessage(result.error) ??
+					(result.error.code === 'CONVERSATION_LOCKED'
+						? 'This conversation is locked until the reach-out gets a response.'
+						: 'Your message could not be sent. Please try again.')
 			);
 		}
 	}
@@ -249,7 +267,7 @@
 			await refreshThread(id);
 			void refreshList();
 		} else {
-			toast.error('Responding failed. Please try again.');
+			toast.error(standingErrorMessage(result.error) ?? 'Responding failed. Please try again.');
 		}
 	}
 

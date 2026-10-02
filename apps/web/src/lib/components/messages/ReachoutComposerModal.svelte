@@ -94,6 +94,7 @@
 			// Codes below belong to sibling /conversations endpoints (they share
 			// one error union) or are transport-level — all generic here.
 			CONVERSATION_LOOKUP_FAILED: genericError,
+			COUNTERPART_UNAVAILABLE: genericError,
 			AUTH_PROVIDER_FAILED: genericError,
 			AUTH_ENTITY_LOOKUP_FAILED: genericError,
 			INTERNAL_SERVER_ERROR: genericError,

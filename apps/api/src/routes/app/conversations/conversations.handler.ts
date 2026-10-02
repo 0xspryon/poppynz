@@ -26,6 +26,7 @@ import {
 import {
   approvalGateUnavailableResponseBody,
   approvalRequiredResponseBody,
+  CounterpartNotApprovedError,
   requireCounterpartApproval,
   requireLiveApproval
 } from '@/api/lib/approval-gate';
@@ -248,8 +249,8 @@ export const createReachoutProgram = (
     // Mirrors the search gates: the permission says an applicant MAY contact
     // the other side, a live approval says they may do it RIGHT NOW, and the
     // safety verification underpins both. All three apply to families and
-    // helpers alike. Existing conversations are unaffected — revocation stops
-    // new contacts.
+    // helpers alike. Losing approval also stops messaging in existing
+    // conversations (see sendMessageProgram / respondToReachoutProgram).
     yield* requireVerifiedSafety(userAndSession);
     yield* requireLiveApproval(userAndSession);
 
@@ -442,6 +443,28 @@ export const getConversationProgram = (userAndSession: UserAndSession, conversat
     };
   });
 
+/**
+ * Both sides of a conversation must hold a live approval to keep talking: an
+ * approved family must not be able to keep messaging a helper whose approval
+ * was revoked (or who was banned). A counterpart whose account is gone counts
+ * as unavailable too.
+ */
+const requireConversationCounterpartApproval = (conversation: Conversation, viewerUserId: string) =>
+  Effect.gen(function* () {
+    const userRepo = yield* UserRepo;
+    const counterpartUserId =
+      conversation.familyUserId === viewerUserId
+        ? conversation.providerUserId
+        : conversation.familyUserId;
+    const counterpart = yield* userRepo.findById(counterpartUserId).pipe(
+      Effect.catchTags({
+        DBNotFoundError: () => Effect.fail(new CounterpartNotApprovedError()),
+        SqlError: (cause) => Effect.fail(new ConversationRepoError({ cause }))
+      })
+    );
+    yield* requireCounterpartApproval(counterpart);
+  });
+
 const loadParticipantConversation = (conversationId: string, viewerUserId: string) =>
   Effect.gen(function* () {
     const conversationRepo = yield* ConversationRepo;
@@ -468,6 +491,7 @@ export const respondToReachoutProgram = (userAndSession: UserAndSession, convers
     if (conversation.initiatorUserId === viewer.id) {
       return yield* Effect.fail(new NotConversationReceiverError());
     }
+    yield* requireConversationCounterpartApproval(conversation, viewer.id);
     // markResponded transitions pending AND ignored rows: responding to a
     // still-within-cool-down ignored reach-out is exactly how the ignorer
     // revives the conversation (expired ones already 404'd above).
@@ -524,6 +548,7 @@ export const sendMessageProgram = (
     if (conversation.status !== 'active') {
       return yield* Effect.fail(new ConversationLockedError());
     }
+    yield* requireConversationCounterpartApproval(conversation, viewer.id);
 
     const message = yield* conversationRepo
       .createMessage({ conversationId, senderUserId: viewer.id, body: input.body })
@@ -626,6 +651,10 @@ export const respondToReachoutRouteProgram = (c: HonoContext<HonoEnv>, headers: 
     const userAndSession = yield* requirePermissions(headers, { conversation: ['write'] })(
       authenticated
     );
+    // Messaging needs the same standing as reaching out: a live approval and
+    // a verified safety check (see createReachoutProgram).
+    yield* requireVerifiedSafety(userAndSession);
+    yield* requireLiveApproval(userAndSession);
     return yield* respondToReachoutProgram(userAndSession, conversationId);
   });
 
@@ -648,6 +677,10 @@ export const sendMessageRouteProgram = (c: HonoContext<HonoEnv>, headers: Header
     const userAndSession = yield* requirePermissions(headers, { conversation: ['write'] })(
       authenticated
     );
+    // Messaging needs the same standing as reaching out: a live approval and
+    // a verified safety check (see createReachoutProgram).
+    yield* requireVerifiedSafety(userAndSession);
+    yield* requireLiveApproval(userAndSession);
     return yield* sendMessageProgram(userAndSession, conversationId, input);
   });
 
@@ -672,9 +705,28 @@ export type ConversationRouteError =
   | Effect.Effect.Error<ReturnType<typeof sendMessageRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof markConversationReadRouteProgram>>;
 
+/** Which action hit the approval gate — reach-out and messaging word the
+ * 403 differently, the codes stay the same. */
+type ApprovalGatedAction = 'reachout' | 'message';
+
+const approvalRequiredMessage = (
+  role: 'family' | 'service-provider',
+  action: ApprovalGatedAction
+) => {
+  switch (action) {
+    case 'message':
+      return 'You need a current approval to send messages.';
+    case 'reachout':
+      return role === 'family'
+        ? 'You need a current approval before reaching out to helpers.'
+        : 'You need a current approval before reaching out to families.';
+  }
+};
+
 const conversationRouteErrorToResponse = (
   c: HonoContext<HonoEnv>,
-  error: ConversationRouteError
+  error: ConversationRouteError,
+  approvalAction: ApprovalGatedAction
 ) => {
   switch (error._tag) {
     case 'UnauthorizedError':
@@ -789,15 +841,23 @@ const conversationRouteErrorToResponse = (
         {
           error: approvalRequiredResponseBody(
             error.role,
-            error.role === 'family'
-              ? 'You need a current approval before reaching out to helpers.'
-              : 'You need a current approval before reaching out to families.'
+            approvalRequiredMessage(error.role, approvalAction)
           )
         },
         403
       );
     case 'ApprovalGateUnavailableError':
       return c.json({ error: approvalGateUnavailableResponseBody }, 503);
+    case 'CounterpartNotApprovedError':
+      return c.json(
+        {
+          error: {
+            code: 'COUNTERPART_UNAVAILABLE' as const,
+            message: "This person isn't available on Poppynz right now."
+          }
+        },
+        409
+      );
     default:
       return handleNever(c, error);
   }
@@ -811,14 +871,15 @@ const unexpectedErrorResponse = (c: HonoContext<HonoEnv>) =>
 
 const exitToResponse = <TData>(
   c: HonoContext<HonoEnv>,
-  exit: Exit.Exit<TData, ConversationRouteError>
+  exit: Exit.Exit<TData, ConversationRouteError>,
+  approvalAction: ApprovalGatedAction = 'reachout'
 ) =>
   Exit.match(exit, {
     onSuccess: (data) => c.json(data),
     onFailure: (cause) => {
       const failure = Cause.failureOption(cause);
       if (Option.isSome(failure)) {
-        return conversationRouteErrorToResponse(c, failure.value);
+        return conversationRouteErrorToResponse(c, failure.value, approvalAction);
       }
       return unexpectedErrorResponse(c);
     }
@@ -857,7 +918,7 @@ export async function getConversationHandler(c: HonoContext<HonoEnv>) {
 export async function respondToReachoutHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(respondToReachoutRouteProgram(c, c.req.raw.headers));
-  return exitToResponse(c, exit);
+  return exitToResponse(c, exit, 'message');
 }
 
 export async function ignoreReachoutHandler(c: HonoContext<HonoEnv>) {
@@ -869,7 +930,7 @@ export async function ignoreReachoutHandler(c: HonoContext<HonoEnv>) {
 export async function sendMessageHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(sendMessageRouteProgram(c, c.req.raw.headers));
-  return exitToResponse(c, exit);
+  return exitToResponse(c, exit, 'message');
 }
 
 export async function markConversationReadHandler(c: HonoContext<HonoEnv>) {

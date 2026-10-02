@@ -12,6 +12,7 @@
 	} from '$lib/api/vouches';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import VouchFormDialog from '$lib/components/vouches/VouchFormDialog.svelte';
+	import { initialsOf } from '$lib/initials';
 	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
 
@@ -122,7 +123,7 @@
 						<span
 							class="flex size-10 items-center justify-center rounded-full bg-base-400 text-[13px] font-bold text-secondary"
 						>
-							{entry.applicantName.slice(0, 2).toUpperCase()}
+							{initialsOf(entry.applicantName)}
 						</span>
 					{/if}
 					<div class="min-w-0 flex-1">

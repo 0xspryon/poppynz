@@ -74,6 +74,7 @@
 			icon: 'la-shield-alt'
 		},
 		{ href: resolve('/family/approval'), label: 'Approval', icon: 'la-user-shield' },
+		{ href: resolve('/family/billing'), label: 'Billing', icon: 'la-credit-card' },
 		{ href: resolve('/family/profile'), label: 'Profile', icon: 'la-user' },
 		{ href: resolve('/family/referrals'), label: 'Referrals', icon: 'la-user-plus' },
 		{ href: resolve('/family/vouches'), label: 'Vouch requests', icon: 'la-handshake' }

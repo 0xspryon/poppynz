@@ -3,6 +3,7 @@ import { PaymentRepo, StripeWebhookEventRepo } from '@repo/db';
 import { Payments, type PaymentWebhookEvent } from '@repo/payments';
 import { Cause, Effect, Exit } from 'effect';
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import type { BaseAppEnv, HonoContext } from '@/api/app-env';
 
 /**
@@ -139,10 +140,6 @@ export const stripeWebhookProgram = (rawBody: string, signature: string | null) 
   });
 
 const handle = async (c: HonoContext<BaseAppEnv>) => {
-  const declaredLength = Number.parseInt(c.req.header('content-length') ?? '0', 10);
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
-    return c.json({ error: 'payload too large' }, 413);
-  }
   // The raw text, unparsed: the signature covers these exact bytes.
   const raw = await c.req.text();
   const exit = await c
@@ -156,4 +153,14 @@ const handle = async (c: HonoContext<BaseAppEnv>) => {
   return c.json(exit.value.body, exit.value.status);
 };
 
-export const stripeWebhookRoute = new Hono<BaseAppEnv>().post('/', handle);
+export const stripeWebhookRoute = new Hono<BaseAppEnv>().post(
+  '/',
+  // Stops reading a request body (declared via Content-Length, or streamed
+  // with none — Transfer-Encoding: chunked) once it exceeds the limit,
+  // instead of buffering the whole thing first and checking afterwards.
+  bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: (c) => c.json({ error: 'payload too large' }, 413)
+  }),
+  handle
+);

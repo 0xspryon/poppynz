@@ -174,7 +174,7 @@ const makeWorld = (
       body
     });
 
-  return { post, layer, log, billing, payment: () => payment, order: () => order };
+  return { post, app, layer, log, billing, payment: () => payment, order: () => order };
 };
 
 describe('POST /webhooks/stripe', () => {
@@ -195,6 +195,73 @@ describe('POST /webhooks/stripe', () => {
     const world = makeWorld();
     const response = await world.post(GOOD_SIGNATURE, 'x'.repeat(600 * 1024));
     expect(response.status).toBe(413);
+  });
+
+  it('refuses a declared-oversized body without reading it all', async () => {
+    const world = makeWorld();
+    const chunk = new TextEncoder().encode('x'.repeat(1024));
+    const TOTAL_CHUNKS = 10_000; // ~10 MiB if ever fully drained.
+    let pulled = 0;
+    // A body backed by a stream, closing only once fully drained, so we can
+    // tell whether it was read at all: a plain string body is buffered by
+    // the Request constructor itself, which would hide a regression back to
+    // "read everything, then check the length".
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled >= TOTAL_CHUNKS) {
+          controller.close();
+          return;
+        }
+        pulled++;
+        controller.enqueue(chunk);
+      }
+    });
+    const request = new Request('http://localhost/webhooks/stripe', {
+      method: 'POST',
+      headers: { 'stripe-signature': GOOD_SIGNATURE, 'content-length': String(600 * 1024) },
+      body: stream,
+      duplex: 'half'
+    } as RequestInit);
+    const response = await world.app.request(request);
+    expect(response.status).toBe(413);
+    expect(world.log.recorded).toEqual([]);
+    // The declared Content-Length alone was enough to refuse it — at most a
+    // single probe read, nowhere near the full 10,000-chunk stream.
+    expect(pulled).toBeLessThanOrEqual(1);
+  });
+
+  it('refuses an oversized streamed body with no content-length, stopping mid-stream', async () => {
+    const world = makeWorld();
+    const chunk = new TextEncoder().encode('x'.repeat(1024));
+    const TOTAL_CHUNKS = 10_000; // ~10 MiB if ever fully drained — far past the 512 KiB limit.
+    let pulled = 0;
+    // Streamed with no Content-Length (chunked transfer), as Stripe or a
+    // malicious client could send. Never closes on its own past the limit,
+    // so a regression back to "buffer it all, then check" would make this
+    // test read every one of the 10,000 chunks instead of stopping early.
+    const stream = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pulled >= TOTAL_CHUNKS) {
+          controller.close();
+          return;
+        }
+        pulled++;
+        controller.enqueue(chunk);
+      }
+    });
+    const request = new Request('http://localhost/webhooks/stripe', {
+      method: 'POST',
+      headers: { 'stripe-signature': GOOD_SIGNATURE },
+      body: stream,
+      duplex: 'half'
+    } as RequestInit);
+    const response = await world.app.request(request);
+    expect(response.status).toBe(413);
+    expect(world.log.recorded).toEqual([]);
+    // Stopped partway through the 512 KiB limit (1 KiB chunks), nowhere near
+    // the full 10,000-chunk stream.
+    expect(pulled).toBeGreaterThan(0);
+    expect(pulled).toBeLessThan(1000);
   });
 
   it('settles a succeeded payment from the re-fetched intent and marks the event processed', async () => {

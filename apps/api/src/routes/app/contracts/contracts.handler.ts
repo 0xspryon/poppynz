@@ -97,8 +97,12 @@ export class ContractProposalExpiredError extends Data.TaggedError(
   'ContractProposalExpiredError'
 )<{}> {}
 
-/** Sending needs a start date — billing cycles are anchored to it. */
-export class StartDateRequiredError extends Data.TaggedError('StartDateRequiredError')<{}> {}
+/** Sending needs a start date — billing cycles are anchored to it. `action`
+ * picks the copy: the sender is told to pick one, the receiver of a (dev-data)
+ * proposal without one is told to ask for new terms. */
+export class StartDateRequiredError extends Data.TaggedError('StartDateRequiredError')<{
+  action: 'send' | 'accept';
+}> {}
 
 /** The contract's zone comes from the family's location; without an address
  * there is no zone to read dates and session times in. */
@@ -703,7 +707,7 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     }
 
     if (pending.startsOn === null) {
-      return yield* Effect.fail(new StartDateRequiredError());
+      return yield* Effect.fail(new StartDateRequiredError({ action: 'send' }));
     }
     // The zone is the family's, read now and frozen with the version at
     // acceptance — a later move never shifts a signed contract's dates.
@@ -798,7 +802,7 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
       return yield* Effect.fail(new ContractProposalExpiredError());
     }
     if (pending.startsOn === null) {
-      return yield* Effect.fail(new StartDateRequiredError());
+      return yield* Effect.fail(new StartDateRequiredError({ action: 'accept' }));
     }
     if (startDatePassed(pending)) {
       return yield* Effect.fail(new ContractStartDatePassedError());
@@ -935,6 +939,13 @@ export const endContractProgram = (
     if (!accepted?.timeZone) {
       return yield* Effect.fail(new ContractStateError());
     }
+    // Presented, not stored (matches the detail's `canEnd`): a contract already
+    // past its effective end in its zone reads as ended and can't be given
+    // notice, although its stored status may still say active.
+    const endBefore = effectiveEndsOn(contract, accepted);
+    if (endBefore !== null && endBefore < todayIn(accepted.timeZone)) {
+      return yield* Effect.fail(new ContractStateError());
+    }
 
     const note = input.note?.trim() ? input.note.trim() : null;
     const updated = yield* contractRepo
@@ -943,8 +954,11 @@ export const endContractProgram = (
     if (!updated) {
       return yield* Effect.fail(new ContractStateError());
     }
-    // Derived, not stored — the same computation every read applies.
-    const endsOn = noticeEndsOn(updated, accepted) ?? todayIn(accepted.timeZone);
+    // Derived, not stored — the same computation every read applies: the
+    // earlier of the notice period and the negotiated end (with its end time).
+    const effective = effectiveEnd(updated, accepted);
+    const endsOn = effective?.endsOn ?? todayIn(accepted.timeZone);
+    const endsAtMinutes = effective?.endsAtMinutes ?? null;
 
     const enderProfile = yield* loadProfileOrNull(viewer.id);
     const recipientUserId =
@@ -954,11 +968,12 @@ export const endContractProgram = (
       payload: {
         contractId,
         counterpartName: displayName(enderProfile, viewer.name),
-        endsOn
+        endsOn,
+        endsAtMinutes
       }
     });
 
-    return { id: contract.id, status: 'ending' as const, endsOn };
+    return { id: contract.id, status: 'ending' as const, endsOn, endsAtMinutes };
   });
 
 export const markContractSeenProgram = (userAndSession: UserAndSession, contractId: string) =>
@@ -1116,7 +1131,10 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,
         actions: {
           canEditTerms: isFamily && preActiveEditable,
-          canSend: isFamily && preActiveEditable && pending?.status === 'draft',
+          // Send stamps the family's zone; without an address it would refuse
+          // with FAMILY_LOCATION_REQUIRED, so it isn't offered.
+          canSend:
+            isFamily && preActiveEditable && pending?.status === 'draft' && timeZone !== null,
           canWithdraw: isFamily && row.status === 'proposed',
           canAccept:
             decidable &&
@@ -1403,15 +1421,25 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
         409
       );
     case 'StartDateRequiredError':
-      return c.json(
-        {
-          error: {
-            code: 'START_DATE_REQUIRED' as const,
-            message: 'Pick a start date before sending.'
-          }
-        },
-        422
-      );
+      return error.action === 'accept'
+        ? c.json(
+            {
+              error: {
+                code: 'START_DATE_REQUIRED' as const,
+                message: 'These terms have no start date — ask for new terms with a start date.'
+              }
+            },
+            422
+          )
+        : c.json(
+            {
+              error: {
+                code: 'START_DATE_REQUIRED' as const,
+                message: 'Pick a start date before sending.'
+              }
+            },
+            422
+          );
     case 'FamilyLocationRequiredError':
       return c.json(
         {

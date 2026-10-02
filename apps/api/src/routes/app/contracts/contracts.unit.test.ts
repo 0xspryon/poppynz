@@ -764,6 +764,41 @@ describe('PUT /contracts/:id/terms', () => {
     });
   });
 
+  it.each([
+    ['out of range', { endsOn: '2026-09-30', endsAtMinutes: 0 }],
+    ['not whole minutes', { endsOn: '2026-09-30', endsAtMinutes: 12.5 }],
+    ['without an end date', { endsOn: null, endsAtMinutes: 720 }]
+  ])('describes a bad last-day end time (%s) in the error message', async (_label, dates) => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: { ...termsBody, ...dates } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] }))
+      )
+    );
+    const failure = getFailure(exit);
+    expect(failure).toMatchObject({ _tag: 'RequestValidationError', code: 'INVALID_CONTRACT_TERMS' });
+    expect((failure as { message: string }).message).toMatch(/end time/i);
+  });
+
+  it('keeps the services message for a services problem', async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, services: [{ ...termsBody.services[0], sessions: [] }] }
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] }))
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      message: 'Each service needs a valid rate and at least one weekly session.'
+    });
+  });
+
   it('rejects an end date before the start date at validation', async () => {
     const exit = await Effect.runPromiseExit(
       saveTermsRouteProgram(
@@ -974,7 +1009,7 @@ describe('POST /contracts/:id/send', () => {
         )
       )
     );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'StartDateRequiredError' });
+    expect(getFailure(exit)).toMatchObject({ _tag: 'StartDateRequiredError', action: 'send' });
   });
 
   it('refuses to send while the family has no saved location', async () => {
@@ -1230,7 +1265,8 @@ describe('POST /contracts/:id/accept', () => {
         )
       )
     );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'StartDateRequiredError' });
+    // The accept-side copy is addressed to the provider, not the sender.
+    expect(getFailure(exit)).toMatchObject({ _tag: 'StartDateRequiredError', action: 'accept' });
   });
 
   it('allows accepting the evening before, although UTC is already on the start date', async () => {
@@ -1484,7 +1520,12 @@ describe('POST /contracts/:id/end', () => {
 
     // The notice date's calendar day in the contract zone, plus 14 days.
     const expectedEndsOn = addDays(todayIn(WPG), 14);
-    expect(result).toEqual({ id: CONTRACT_ID, status: 'ending', endsOn: expectedEndsOn });
+    expect(result).toEqual({
+      id: CONTRACT_ID,
+      status: 'ending',
+      endsOn: expectedEndsOn,
+      endsAtMinutes: null
+    });
     expect(endInputs[0]).toEqual({
       endedByUserId: 'family-1',
       endNote: 'Thanks for everything!'
@@ -1497,7 +1538,8 @@ describe('POST /contracts/:id/end', () => {
           payload: {
             contractId: CONTRACT_ID,
             counterpartName: 'Priya Tester',
-            endsOn: expectedEndsOn
+            endsOn: expectedEndsOn,
+            endsAtMinutes: null
           }
         }
       }
@@ -1521,6 +1563,125 @@ describe('POST /contracts/:id/end', () => {
     );
 
     expect(result).toMatchObject({ endsOn: '2026-11-07' });
+  });
+
+  it('gives the earlier negotiated end, with its end time, as the last working day', async () => {
+    // Notice on Oct 2 would run to Oct 16, but the signed terms end Oct 5 at noon.
+    freezeNow('2026-10-02T16:00:00Z');
+    const published: Array<Published> = [];
+    const layer = makeLayer({
+      contractById: baseContract({ status: 'active' }),
+      versions: [
+        proposedVersion({
+          status: 'accepted',
+          decidedAt: new Date(),
+          startsOn: '2026-09-01',
+          endsOn: '2026-10-05',
+          endsAtMinutes: 720
+        })
+      ],
+      published
+    });
+
+    const result = await Effect.runPromise(
+      endContractRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: {} }),
+        new Headers()
+      ).pipe(Effect.provide(layer))
+    );
+
+    expect(result).toEqual({
+      id: CONTRACT_ID,
+      status: 'ending',
+      endsOn: '2026-10-05',
+      endsAtMinutes: 720
+    });
+    expect(published[0].input).toMatchObject({
+      type: 'contract.ended',
+      payload: { endsOn: '2026-10-05', endsAtMinutes: 720 }
+    });
+  });
+
+  it('keeps the notice date when the negotiated end is later', async () => {
+    freezeNow('2026-10-02T16:00:00Z');
+    const layer = makeLayer({
+      contractById: baseContract({ status: 'active' }),
+      versions: [
+        proposedVersion({
+          status: 'accepted',
+          decidedAt: new Date(),
+          startsOn: '2026-09-01',
+          endsOn: '2026-12-11',
+          endsAtMinutes: 720
+        })
+      ]
+    });
+
+    const result = await Effect.runPromise(
+      endContractRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: {} }),
+        new Headers()
+      ).pipe(Effect.provide(layer))
+    );
+
+    expect(result).toMatchObject({ endsOn: '2026-10-16', endsAtMinutes: null });
+  });
+
+  it('refuses a contract that already presents as ended (past its negotiated end)', async () => {
+    // Oct 2 in Winnipeg; the signed terms ended Oct 1. Stored status is still active.
+    freezeNow('2026-10-02T16:00:00Z');
+    const calls: Array<string> = [];
+    const published: Array<Published> = [];
+    const exit = await Effect.runPromiseExit(
+      endContractRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: {} }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract({ status: 'active' }),
+            versions: [
+              proposedVersion({
+                status: 'accepted',
+                decidedAt: new Date(),
+                startsOn: '2026-09-01',
+                endsOn: '2026-10-01'
+              })
+            ],
+            calls,
+            published
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
+    expect(calls).toEqual([]);
+    expect(published).toEqual([]);
+  });
+
+  it('still allows notice on the negotiated last day itself', async () => {
+    freezeNow('2026-10-02T16:00:00Z');
+    const result = await Effect.runPromise(
+      endContractRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: {} }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract({ status: 'active' }),
+            versions: [
+              proposedVersion({
+                status: 'accepted',
+                decidedAt: new Date(),
+                startsOn: '2026-09-01',
+                endsOn: '2026-10-02'
+              })
+            ]
+          })
+        )
+      )
+    );
+    expect(result).toMatchObject({ status: 'ending', endsOn: '2026-10-02' });
   });
 
   it('fails when the contract is not active', async () => {
@@ -1764,6 +1925,8 @@ describe('GET /contracts/:id', () => {
     );
 
     expect(contract).toMatchObject({ timeZone: null, timeZoneLabel: null, earliestStartsOn: null });
+    // Send would refuse with FAMILY_LOCATION_REQUIRED, so it isn't offered.
+    expect(contract.actions).toMatchObject({ canEditTerms: true, canSend: false });
   });
 
   it("uses the family's current zone, not an old version's, while they revise", async () => {

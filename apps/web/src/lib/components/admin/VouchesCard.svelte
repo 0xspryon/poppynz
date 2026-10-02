@@ -57,9 +57,13 @@
 							{vouch.status}{vouch.counts ? ' · counts' : ''}
 						</span>
 					</div>
-					{#if !vouch.voucher.inGoodStanding}
+					<!-- Standing only matters while it can change the outcome: an accepted
+					     vouch stops counting, a pending one won't count once answered. -->
+					{#if !vouch.voucher.inGoodStanding && (vouch.status === 'accepted' || vouch.status === 'pending')}
 						<p class="mt-1 text-[12px] text-warning">
-							Voucher is no longer approved or is banned — not counted.
+							Voucher is no longer approved or is banned — {vouch.status === 'accepted'
+								? 'not counted'
+								: "won't count"}.
 						</p>
 					{/if}
 					<p class="mt-1 text-[12px] text-base-content-muted">

@@ -264,6 +264,16 @@ const startDatePassed = (version: ContractVersion) => {
   return today === null || today >= version.startsOn;
 };
 
+/** A sent, undecided proposal that can no longer be accepted by the passage
+ * of time: past the expiry window, or its start date has arrived in its zone.
+ * Either way it presents as expired (read-time only, never written back) and
+ * stops awaiting the receiver. The single source for the detail, list and
+ * chat pill so they can't disagree. */
+const proposalLapsed = (pending: ContractVersion | null, cutoff: Date) =>
+  pending !== null &&
+  pending.status === 'proposed' &&
+  (isExpired(pending, cutoff) || startDatePassed(pending));
+
 /** Last working day of the notice flow: the notice moment's calendar date in
  * the contract zone plus 14 calendar days — derived, never stored. */
 const noticeEndsOn = (contract: Contract, accepted: ContractVersion | null) =>
@@ -306,8 +316,8 @@ export type PresentedContractStatus =
 
 /** Read-time states: a running contract past its effective end date (notice
  * period or the negotiated end-date term) presents as ended, and an undecided
- * pre-active proposal past the expiry window presents as expired — neither is
- * ever written back. */
+ * pre-active proposal past the expiry window or its start date presents as
+ * expired — neither is ever written back. */
 export const presentedContractStatus = (
   contract: Contract,
   pending: ContractVersion | null,
@@ -326,7 +336,7 @@ export const presentedContractStatus = (
   ) {
     return 'ended';
   }
-  if (contract.status === 'proposed' && isExpired(pending, cutoff)) {
+  if (contract.status === 'proposed' && proposalLapsed(pending, cutoff)) {
     return 'expired';
   }
   return contract.status;
@@ -418,7 +428,7 @@ export const toContractListItem = (
     awaitingYou:
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
-      !isExpired(pending, cutoff),
+      !proposalLapsed(pending, cutoff),
     hasNews: hasNewsFor(row, viewerUserId),
     counterpart: counterpartResponse(row, viewerUserId),
     serviceNames: (termsSource?.services ?? []).map((service) => service.name),
@@ -450,7 +460,7 @@ export const toThreadContractSummary = (
     awaitingYou:
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
-      !isExpired(pending, cutoff),
+      !proposalLapsed(pending, cutoff),
     endsOn: effectiveEndsOn(contract, accepted),
     weeklyEstimateCents: termsSource ? weeklyEstimateCents(termsSource.services) : null
   };
@@ -1076,7 +1086,10 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
     // — that is what send will stamp, even if an older sent version carries
     // another zone. Otherwise the shown version's frozen zone.
     const shownVersion =
-      accepted ?? (pendingVisible ? pending : null) ?? visibleVersions[visibleVersions.length - 1] ?? null;
+      accepted ??
+      (pendingVisible ? pending : null) ??
+      visibleVersions[visibleVersions.length - 1] ??
+      null;
     const timeZone =
       isFamily && preActiveEditable
         ? yield* familyTimeZone(row.familyUserId)
@@ -1086,8 +1099,10 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
             ? yield* familyTimeZone(row.familyUserId)
             : null;
     const effective = effectiveEnd(row, accepted);
+    // Why the proposal can't be accepted, for both sides: the receiver's
+    // Accept is gone, and the proposer is told to send a later start date.
     const acceptBlockedReason =
-      decidable && pending !== null && startDatePassed(pending)
+      row.status === 'proposed' && pending?.status === 'proposed' && startDatePassed(pending)
         ? ('start_date_passed' as const)
         : null;
 
@@ -1138,7 +1153,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           canWithdraw: isFamily && row.status === 'proposed',
           canAccept:
             decidable &&
-            !isExpired(pending, cutoff) &&
+            !proposalLapsed(pending, cutoff) &&
             pending?.startsOn != null &&
             acceptBlockedReason === null,
           canDecline: decidable,

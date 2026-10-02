@@ -372,7 +372,9 @@
 
 	const chip = $derived.by((): { status: ChipStatus; label?: string } => {
 		if (!contract) return { status: 'empty' };
+		// An expired proposal can still be declined, but it no longer awaits you.
 		if (
+			contract.status === 'proposed' &&
 			contract.pendingVersion &&
 			!contract.pendingVersion.proposedByMe &&
 			contract.actions.canDecline
@@ -535,11 +537,20 @@
 			<div class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3">
 				<i class="las la-hourglass-end mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-neutral">
-					This proposal expired without a decision.
-					{#if contract.viewerSide === 'family'}
-						Withdraw it below to revise and send new terms.
+					{#if contract.acceptBlockedReason === 'start_date_passed'}
+						The start date arrived before this proposal was accepted.
+						{#if contract.viewerSide === 'family'}
+							Withdraw it below to revise and send new terms with a later start date.
+						{:else}
+							You can't accept it any more — {firstName} can send new terms with a later date.
+						{/if}
 					{:else}
-						{firstName} can send new terms from their side.
+						This proposal expired without a decision.
+						{#if contract.viewerSide === 'family'}
+							Withdraw it below to revise and send new terms.
+						{:else}
+							{firstName} can send new terms from their side.
+						{/if}
 					{/if}
 				</p>
 			</div>

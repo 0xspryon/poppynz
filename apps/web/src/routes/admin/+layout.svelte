@@ -48,7 +48,11 @@
 
 {#if authorized}
 	<div class="flex min-h-screen bg-base-200">
-		<aside class="hidden w-[250px] shrink-0 flex-col gap-1 bg-secondary p-5 lg:flex">
+		<!-- Sticky, viewport-tall column: the page scrolls on its own while the
+			 sidebar (and its sign-out block) stays in view. -->
+		<aside
+			class="sticky top-0 hidden h-dvh w-[250px] shrink-0 flex-col gap-1 bg-secondary p-5 lg:flex"
+		>
 			<SidebarNav kicker="Admin console" {items} {email} roleLabel="Administrator" />
 		</aside>
 

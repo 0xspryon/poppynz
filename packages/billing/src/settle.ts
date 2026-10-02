@@ -115,6 +115,41 @@ const rememberCard = (payment: Payment, fetched: ProviderPayment) =>
     Effect.catchAll((error) => Effect.logWarning(`could not save card for ${payment.id}`, error))
   );
 
+/** Back to the basket so the applicant can pay again with a fresh charge.
+ * Guarded on OUR payment so it can never clobber a re-claim — and safe to
+ * repeat: an order already moved past `payment_pending` (or re-claimed by a
+ * different payment) is left alone. Called both right after a payment lands
+ * `failed` and, later, whenever a row already `failed` is revisited and the
+ * revert never ran (a crash between the two writes, or a losing CAS on a
+ * concurrent `fail`). */
+const revertOrder = (payment: Payment) =>
+  Effect.gen(function* () {
+    const orders = yield* CheckOrderRepo;
+    const order = yield* orders.findByPaymentId(payment.id);
+    if (order === null) return;
+    const reverted = yield* orders.advance(order.id, {
+      from: { status: 'payment_pending', paymentId: payment.id },
+      set: { status: 'draft', paymentId: null }
+    });
+    if (reverted !== null) {
+      yield* publishNotificationBestEffort(reverted.userId, {
+        type: 'safety_verification.updated',
+        payload: { status: 'not_started' }
+      });
+    }
+  });
+
+/** Runs whichever payment's own follow-up belongs to the status it actually
+ * landed in — the one piece of recovery logic shared by a losing CAS (the
+ * row already moved under us) and by a row that was already final when
+ * `settleRow` started (a crash left the first write's follow-up unrun). */
+const runFollowUp = (payment: Payment, at: Date) =>
+  payment.status === 'captured' || payment.status === 'authorised'
+    ? finishOrder(payment, at)
+    : payment.status === 'failed'
+      ? revertOrder(payment)
+      : Effect.void;
+
 const capture = (row: Payment, fetched: ProviderPayment, at: Date) =>
   Effect.gen(function* () {
     const paymentRepo = yield* PaymentRepo;
@@ -123,7 +158,16 @@ const capture = (row: Payment, fetched: ProviderPayment, at: Date) =>
       set: { status: 'captured', capturedAt: at, receiptUrl: fetched.receiptUrl, lastError: null }
     });
     if (captured === null) {
-      return { outcome: 'final' as const, payment: yield* paymentRepo.findById(row.id) };
+      // Lost the CAS: something else already moved this row. If that
+      // something was itself a capture, its own follow-up is expected to
+      // have run finishOrder already — but a crash between the two writes
+      // would otherwise leave the order stuck in payment_pending forever
+      // (the webhook is already acknowledged, and neither the stale-pending
+      // sweep nor the awaiting-placement sweep will ever look at a captured
+      // payment again). Re-running it here is idempotent either way.
+      const current = yield* paymentRepo.findById(row.id);
+      yield* runFollowUp(current, at);
+      return { outcome: 'final' as const, payment: current };
     }
     yield* finishOrder(captured, at);
     yield* rememberCard(captured, fetched);
@@ -133,29 +177,22 @@ const capture = (row: Payment, fetched: ProviderPayment, at: Date) =>
 const fail = (row: Payment, reason: string) =>
   Effect.gen(function* () {
     const paymentRepo = yield* PaymentRepo;
-    const orders = yield* CheckOrderRepo;
     const failed = yield* paymentRepo.advance(row.id, {
       from: 'pending',
       set: { status: 'failed', lastError: reason }
     });
     if (failed === null) {
-      return { outcome: 'final' as const, payment: yield* paymentRepo.findById(row.id) };
-    }
-    // Back to the basket so the applicant can pay again with a fresh charge.
-    // Guarded on OUR payment so it can never clobber a re-claim.
-    const order = yield* orders.findByPaymentId(row.id);
-    if (order !== null) {
-      const reverted = yield* orders.advance(order.id, {
-        from: { status: 'payment_pending', paymentId: row.id },
-        set: { status: 'draft', paymentId: null }
-      });
-      if (reverted !== null) {
-        yield* publishNotificationBestEffort(reverted.userId, {
-          type: 'safety_verification.updated',
-          payload: { status: 'not_started' }
-        });
+      // Lost the CAS. Only run the revert ourselves if the row that won is
+      // ALSO failed (another caller's fail beat us to it, and its own revert
+      // may have crashed before running) — a row that was captured instead
+      // is the capturing caller's own follow-up to run, never ours to touch.
+      const current = yield* paymentRepo.findById(row.id);
+      if (current.status === 'failed') {
+        yield* revertOrder(current);
       }
+      return { outcome: 'final' as const, payment: current };
     }
+    yield* revertOrder(failed);
     return { outcome: 'failed' as const, payment: failed };
   });
 
@@ -165,11 +202,9 @@ const settleRow = (row: Payment, now: () => Date) =>
     const payments = yield* Payments;
 
     if (finalStatuses.includes(row.status)) {
-      // A capture whose follow-up never ran (crash between the two writes)
-      // is finished here; otherwise this is a no-op.
-      if (row.status === 'captured' || row.status === 'authorised') {
-        yield* finishOrder(row, now());
-      }
+      // Whichever follow-up never ran (a crash between the two writes) is
+      // finished here; otherwise this is a no-op (`refunded` has none).
+      yield* runFollowUp(row, now());
       return { outcome: 'final' as const, payment: row };
     }
     if (row.provider !== payments.provider) {

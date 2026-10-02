@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { SqlError } from '@effect/sql/SqlError';
 import {
   dummyBillingCustomer,
   makeCheckOrderRepoTest,
@@ -7,6 +8,7 @@ import {
   DBNotFoundError,
   type BillingCustomer,
   type CheckOrder,
+  type CheckOrderAdvanceInput,
   type Payment
 } from '@repo/db';
 import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
@@ -132,8 +134,16 @@ const makeWorld = (
     makePaymentsTest({
       provider: 'stripe',
       getPayment: () =>
-        Effect.sync(() => {
+        Effect.gen(function* () {
           calls.getPayment += 1;
+          // Three concurrent settles each start from their own (synchronous)
+          // read of the row, then all land here before any of them reaches
+          // the payment's CAS — yielding is what makes that genuinely
+          // concurrent rather than each caller running start-to-finish
+          // before the next one is even scheduled, so the losers really hit
+          // `advance`'s `from` guard instead of short-circuiting through the
+          // already-final branch at the top of `settleRow`.
+          yield* Effect.yieldNow();
           return options.provider ?? fetched();
         }),
       cancelPayment: (reference) =>
@@ -286,8 +296,132 @@ describe('settlePayment', () => {
     const results = await Promise.all([settle(world), settle(world), settle(world)]);
     const outcomes = results.map((result) => result.outcome).sort();
     expect(outcomes).toEqual(['captured', 'final', 'final']);
+    // All three really reached the provider and the payment's CAS — the
+    // losers' `final` came from losing `advance`, not from reading an
+    // already-captured row at the top of `settleRow` before the winner ever
+    // wrote it (the mock `getPayment` yields so the three genuinely
+    // interleave; this would fail if `advance` ignored `from`, because a
+    // caller would then succeed from a status it should have lost against).
+    expect(world.calls.getPayment).toBe(3);
     expect(world.calls.enqueued.filter((id) => id === 'order-1').length).toBeGreaterThanOrEqual(1);
     expect(world.order()?.status).toBe('paid');
+  });
+
+  describe('recovering a follow-up that crashed before it could run', () => {
+    /** A world whose first `CheckOrderRepo.advance` call blows up — as if the
+     * process died between recording the payment's new status and finishing
+     * the order — and behaves normally afterwards. */
+    const makeCrashingWorld = (provider: ProviderPayment) => {
+      let payment = paymentRow();
+      let order: CheckOrder | null = orderRow();
+      let orderAdvanceCalls = 0;
+      const calls = {
+        enqueued: [] as Array<string>,
+        notified: [] as Array<{ userId: string; input: NotificationInput }>
+      };
+
+      const layer = Layer.mergeAll(
+        makePaymentRepoTest({
+          findById: (id) =>
+            id === payment.id
+              ? Effect.succeed(payment)
+              : Effect.fail(new DBNotFoundError({ entity: 'payment', value: id })),
+          update: (_id, input) => Effect.sync(() => (payment = { ...payment, ...input })),
+          advance: (_id, input) =>
+            Effect.sync(() => {
+              const from = Array.isArray(input.from) ? input.from : [input.from];
+              if (!from.includes(payment.status)) return null;
+              payment = { ...payment, ...input.set };
+              return payment;
+            })
+        }),
+        makeCheckOrderRepoTest({
+          findByPaymentId: (paymentId) =>
+            Effect.succeed(order && order.paymentId === paymentId ? order : null),
+          advance: (_id, input: CheckOrderAdvanceInput) => {
+            orderAdvanceCalls += 1;
+            if (orderAdvanceCalls === 1) {
+              return Effect.fail(new SqlError({ cause: 'connection reset' }));
+            }
+            return Effect.sync(() => {
+              const from = Array.isArray(input.from.status)
+                ? input.from.status
+                : [input.from.status];
+              if (order === null || !from.includes(order.status)) return null;
+              if (input.from.paymentId !== undefined && order.paymentId !== input.from.paymentId) {
+                return null;
+              }
+              order = { ...order, ...input.set } as CheckOrder;
+              return order;
+            });
+          }
+        }),
+        makePaymentsTest({ provider: 'stripe', getPayment: () => Effect.succeed(provider) }),
+        makeInMemoryBillingCustomerRepo([]).layer,
+        makeSafetyVerificationQueueTest({
+          enqueueOrder: ({ orderId }) =>
+            Effect.sync(() => {
+              calls.enqueued.push(orderId);
+              return { id: 'job-1', name: 'place' };
+            })
+        }),
+        makeNotificationHubTest({
+          publish: (userId, input) =>
+            Effect.sync(() => void calls.notified.push({ userId, input })),
+          subscribe: () => Effect.die('not used')
+        })
+      );
+
+      return {
+        layer,
+        calls,
+        payment: () => payment,
+        order: () => order
+      };
+    };
+
+    it("finishes the order on a later call after the capturing call's own finishOrder crashed", async () => {
+      const world = makeCrashingWorld(fetched());
+
+      // The crash surfaces as a rejected settlePayment call, but the
+      // payment's own CAS had already landed before it — that write and the
+      // order's follow-up are not atomic with each other.
+      await expect(
+        Effect.runPromise(settlePayment('payment-1', () => NOW).pipe(Effect.provide(world.layer)))
+      ).rejects.toThrow();
+      expect(world.payment()).toMatchObject({ status: 'captured' });
+      expect(world.order()).toMatchObject({ status: 'payment_pending' });
+
+      // The webhook retrying, or the worker's recovery sweep, reaches the
+      // now-`captured` row through the final-status branch and finishes what
+      // the first call started.
+      const result = await Effect.runPromise(
+        settlePayment('payment-1', () => NOW).pipe(Effect.provide(world.layer))
+      );
+      expect(result.outcome).toBe('final');
+      expect(world.order()).toMatchObject({ status: 'paid' });
+      expect(world.calls.enqueued).toEqual(['order-1']);
+    });
+
+    it("reverts the order on a later call after the failing call's own revert crashed", async () => {
+      const world = makeCrashingWorld(fetched({ status: 'canceled' }));
+
+      await expect(
+        Effect.runPromise(settlePayment('payment-1', () => NOW).pipe(Effect.provide(world.layer)))
+      ).rejects.toThrow();
+      expect(world.payment()).toMatchObject({ status: 'failed' });
+      expect(world.order()).toMatchObject({ status: 'payment_pending' });
+
+      const result = await Effect.runPromise(
+        settlePayment('payment-1', () => NOW).pipe(Effect.provide(world.layer))
+      );
+      expect(result.outcome).toBe('final');
+      expect(world.order()).toMatchObject({ status: 'draft', paymentId: null });
+      expect(world.calls.notified[0]?.input).toEqual({
+        type: 'safety_verification.updated',
+        payload: { status: 'not_started' }
+      });
+    });
   });
 
   it('flags money taken for an order that no longer waits for it', async () => {

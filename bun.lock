@@ -143,6 +143,9 @@
         "@repo/queue": "*",
         "effect": "^3.21.2",
       },
+      "devDependencies": {
+        "@effect/sql": "^0.51.1",
+      },
     },
     "packages/calendar": {
       "name": "@repo/calendar",

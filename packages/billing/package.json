@@ -15,5 +15,8 @@
     "@repo/payments": "*",
     "@repo/queue": "*",
     "effect": "^3.21.2"
+  },
+  "devDependencies": {
+    "@effect/sql": "^0.51.1"
   }
 }

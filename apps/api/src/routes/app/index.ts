@@ -5,6 +5,7 @@ import type { HonoEnv } from '../../app-env';
 import { profileRoute } from './me/profile';
 import { onboardingRoute } from './me/onboarding';
 import { approvalRoute } from './approval/approval';
+import { billingRoute } from './billing/billing';
 import { uploadRoute } from './uploads/upload';
 import { servicesOfferedRoute } from './me/services-offered';
 import { servicesNeededRoute } from './me/services-needed';
@@ -57,6 +58,7 @@ export const appRoutes = new Hono<HonoEnv>()
   .route('/admin/user-searches', adminUserSearchesRoute)
   .route('/user-searches', userSearchesRoute)
   .route('/safety-verification', safetyVerificationRoute)
+  .route('/billing', billingRoute)
   .route('/admin/safety-verifications', adminSafetyVerificationsRoute)
   .route('/referrals', referralsRoute)
   .route('/vouches', vouchesRoute)

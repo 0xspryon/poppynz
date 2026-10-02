@@ -94,7 +94,6 @@ describe('admin vouch cards format dates like the rest of the admin page', () =>
 							anythingElse: null
 						},
 						attestedAt: '2026-10-02T12:00:00.000Z',
-						submittedIp: '203.0.113.7',
 						requestedAt: '2026-10-01T12:00:00.000Z',
 						decidedAt: '2026-10-02T12:00:00.000Z',
 						adminReason: null

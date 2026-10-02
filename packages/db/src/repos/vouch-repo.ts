@@ -57,16 +57,7 @@ export type VouchTransition = {
   /** When set, the row must belong to this voucher. */
   voucherUserId?: string;
   set: Partial<
-    Pick<
-      NewVouch,
-      | 'status'
-      | 'answers'
-      | 'attestedAt'
-      | 'submittedIp'
-      | 'decidedAt'
-      | 'revokedBy'
-      | 'adminReason'
-    >
+    Pick<NewVouch, 'status' | 'answers' | 'attestedAt' | 'decidedAt' | 'revokedBy' | 'adminReason'>
   >;
 };
 
@@ -311,7 +302,6 @@ export const dummyVouch: Vouch = {
   status: 'pending',
   answers: null,
   attestedAt: null,
-  submittedIp: null,
   expiresAt: new Date('2099-01-01T00:00:00.000Z'),
   decidedAt: null,
   revokedBy: null,

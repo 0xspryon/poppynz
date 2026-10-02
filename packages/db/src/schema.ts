@@ -264,7 +264,6 @@ export const vouch = appDb.table(
     status: vouchStatus('status').notNull().default('pending'),
     answers: jsonb('answers').$type<VouchAnswers>(),
     attestedAt: timestamp('attested_at'),
-    submittedIp: text('submitted_ip'),
     expiresAt: timestamp('expires_at').notNull(),
     decidedAt: timestamp('decided_at'),
     // Who revoked or flagged it: the voucher withdrawing, or an admin.

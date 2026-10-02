@@ -12,7 +12,6 @@ CREATE TABLE "app_db"."vouches" (
 	"status" "app_db"."vouch_status" DEFAULT 'pending' NOT NULL,
 	"answers" jsonb,
 	"attested_at" timestamp,
-	"submitted_ip" text,
 	"expires_at" timestamp NOT NULL,
 	"decided_at" timestamp,
 	"revoked_by" text,

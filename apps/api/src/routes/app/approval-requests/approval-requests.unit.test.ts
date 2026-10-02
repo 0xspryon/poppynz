@@ -827,6 +827,19 @@ describe('getAdminApprovalRequestRouteProgram — vouches', () => {
       status: 'accepted',
       counts: true
     });
+    // Exactly these fields — no source IP is captured or shown.
+    expect(Object.keys(result.vouches[0]).sort()).toEqual([
+      'adminReason',
+      'answers',
+      'attestedAt',
+      'counts',
+      'decidedAt',
+      'id',
+      'relationship',
+      'requestedAt',
+      'status',
+      'voucher'
+    ]);
   });
 
   it('returns no vouches for a family applicant', async () => {

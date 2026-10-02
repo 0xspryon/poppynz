@@ -85,8 +85,7 @@
 							{/if}
 						</dl>
 						<p class="mt-2 text-[11px] text-outline">
-							Attested {vouch.attestedAt ? formatDate(vouch.attestedAt) : '—'} · IP (client-reported)
-							{vouch.submittedIp ?? 'unknown'}
+							Attested {vouch.attestedAt ? formatDate(vouch.attestedAt) : '—'}
 						</p>
 					{/if}
 					{#if vouch.adminReason}

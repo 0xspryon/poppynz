@@ -433,10 +433,10 @@ describe('listVouchRequestsProgram', () => {
 });
 
 describe('submitVouchProgram', () => {
-  it('accepts with answers, attestation time and IP, only while pending', async () => {
+  it('accepts with answers and attestation time, only while pending', async () => {
     const transitions: Array<VouchTransition> = [];
     await Effect.runPromise(
-      submitVouchProgram(asSession(voucher), dummyVouch.id, answers, '203.0.113.9').pipe(
+      submitVouchProgram(asSession(voucher), dummyVouch.id, answers).pipe(
         Effect.provide(
           makeLayer({
             vouch: { ...dummyVouch, voucherUserId: voucher.id },
@@ -449,14 +449,21 @@ describe('submitVouchProgram', () => {
       from: ['pending'],
       notExpired: true,
       voucherUserId: voucher.id,
-      set: { status: 'accepted', submittedIp: '203.0.113.9' }
+      set: { status: 'accepted' }
     });
     expect(transitions[0].set.attestedAt).toBeInstanceOf(Date);
+    // No IP is captured (a separate change will add it properly).
+    expect(Object.keys(transitions[0].set)).toEqual([
+      'status',
+      'answers',
+      'attestedAt',
+      'decidedAt'
+    ]);
   });
 
   it('maps a lost race on the one-accepted-per-pair index to VouchStateError', async () => {
     const exit = await Effect.runPromiseExit(
-      submitVouchProgram(asSession(voucher), dummyVouch.id, answers, null).pipe(
+      submitVouchProgram(asSession(voucher), dummyVouch.id, answers).pipe(
         Effect.provide(
           makeLayer({
             vouch: { ...dummyVouch, voucherUserId: voucher.id },
@@ -472,7 +479,7 @@ describe('submitVouchProgram', () => {
 
   it('still reports other repo failures as VouchRepoError', async () => {
     const exit = await Effect.runPromiseExit(
-      submitVouchProgram(asSession(voucher), dummyVouch.id, answers, null).pipe(
+      submitVouchProgram(asSession(voucher), dummyVouch.id, answers).pipe(
         Effect.provide(
           makeLayer({
             vouch: { ...dummyVouch, voucherUserId: voucher.id },
@@ -486,7 +493,7 @@ describe('submitVouchProgram', () => {
 
   it("treats someone else's vouch as not found", async () => {
     const exit = await Effect.runPromiseExit(
-      submitVouchProgram(asSession(voucher), dummyVouch.id, answers, null).pipe(
+      submitVouchProgram(asSession(voucher), dummyVouch.id, answers).pipe(
         Effect.provide(makeLayer({ vouch: { ...dummyVouch, voucherUserId: 'someone-else' } }))
       )
     );

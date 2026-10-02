@@ -100,7 +100,6 @@ export const toAdminVouch = (vouch: VouchWithVoucher, now: Date) => ({
   counts: vouchCounts(vouch, now),
   answers: vouch.answers,
   attestedAt: vouch.attestedAt?.toISOString() ?? null,
-  submittedIp: vouch.submittedIp,
   requestedAt: vouch.createdAt.toISOString(),
   decidedAt: vouch.decidedAt?.toISOString() ?? null,
   adminReason: vouch.adminReason
@@ -284,8 +283,7 @@ const notifyApplicant = (applicantUserId: string) =>
 export const submitVouchProgram = (
   userAndSession: UserAndSession,
   vouchId: string,
-  input: VouchSubmitInput,
-  submittedIp: string | null
+  input: VouchSubmitInput
 ) =>
   Effect.gen(function* () {
     const vouch = yield* loadVoucherOwned(vouchId, userAndSession.user.id);
@@ -309,7 +307,6 @@ export const submitVouchProgram = (
               anythingElse: input.anythingElse ?? null
             },
             attestedAt: now,
-            submittedIp,
             decidedAt: now
           }
         })
@@ -425,12 +422,6 @@ const vouchIdParam = (c: HonoContext<HonoEnv>) => {
   return isUuid(id) ? Effect.succeed(id) : Effect.fail(new VouchNotFoundError());
 };
 
-/** First hop of the forwarded chain — same rule as the webhook log. */
-const sourceIpOf = (c: HonoContext<HonoEnv>): string | null => {
-  const forwarded = c.req.header('x-forwarded-for')?.split(',')[0]?.trim();
-  return forwarded || c.req.header('x-real-ip') || c.req.header('cf-connecting-ip') || null;
-};
-
 export const listMyVouchesRouteProgram = (headers: Headers) =>
   authed(headers, 'read').pipe(Effect.flatMap(listMyVouchesProgram));
 
@@ -451,7 +442,7 @@ export const submitVouchRouteProgram = (c: HonoContext<HonoEnv>, headers: Header
     const input = yield* validateVouchSubmitInput(yield* parseJsonBody(c, vouchJsonError));
     const userAndSession = yield* authed(headers, 'write');
     const vouchId = yield* vouchIdParam(c);
-    return yield* submitVouchProgram(userAndSession, vouchId, input, sourceIpOf(c));
+    return yield* submitVouchProgram(userAndSession, vouchId, input);
   });
 
 export const declineVouchRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>

@@ -11,7 +11,7 @@ import {
   type ContractVersion,
   type ContractWithContext
 } from '@repo/db';
-import { addDays, dateIn, todayIn } from '@repo/calendar';
+import { addDays, dateIn, todayIn, zoneLabel } from '@repo/calendar';
 import { zoneForLocation } from '@repo/calendar/lookup';
 import { contractConfig } from '@repo/env';
 import { publishNotificationBestEffort } from '@repo/notify';
@@ -108,6 +108,12 @@ export class FamilyLocationRequiredError extends Data.TaggedError(
 
 /** The start date must be later than today in the family's zone. */
 export class StartDateNotInFutureError extends Data.TaggedError('StartDateNotInFutureError')<{}> {}
+
+/** Acceptance is refused on or after the start date — cycle 1 must begin
+ * after the contract is accepted. */
+export class ContractStartDatePassedError extends Data.TaggedError(
+  'ContractStartDatePassedError'
+)<{}> {}
 
 /** Postgres unique-constraint violation (SQLSTATE 23505), possibly nested a
  * few `cause` levels deep depending on the driver wrapping. */
@@ -242,6 +248,13 @@ export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
  * family's, frozen at acceptance). Null only for a draft, which has no zone. */
 const contractToday = (version: ContractVersion): string | null =>
   version.timeZone ? todayIn(version.timeZone) : null;
+
+/** On or after the start date in the version's zone. A sent version without
+ * a start date or zone can't be accepted either (development data only). */
+const startDatePassed = (version: ContractVersion) => {
+  const today = contractToday(version);
+  return version.startsOn === null || today === null || today >= version.startsOn;
+};
 
 /** Last working day of the notice flow: the notice moment's calendar date in
  * the contract zone plus 14 calendar days — derived, never stored. */
@@ -779,6 +792,9 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     if (isExpired(pending, cutoff)) {
       return yield* Effect.fail(new ContractProposalExpiredError());
     }
+    if (startDatePassed(pending)) {
+      return yield* Effect.fail(new ContractStartDatePassedError());
+    }
     yield* requireContractCounterpart(pending.proposedByUserId);
 
     // Supersede + accept + activate run in one transaction — a concurrent
@@ -1032,6 +1048,22 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
     const pendingVisible =
       pending !== null && (pending.status !== 'draft' || pending.proposedByUserId === viewer.id);
 
+    // The zone dates are shown in: the shown version's frozen zone once sent;
+    // for the family's own draft, the zone their current location gives.
+    const shownVersion =
+      accepted ?? (pendingVisible ? pending : null) ?? visibleVersions[visibleVersions.length - 1] ?? null;
+    const timeZone =
+      shownVersion !== null && shownVersion.status !== 'draft' && shownVersion.timeZone
+        ? shownVersion.timeZone
+        : isFamily
+          ? yield* familyTimeZone(row.familyUserId)
+          : null;
+    const effective = effectiveEnd(row, accepted);
+    const acceptBlockedReason =
+      decidable && pending !== null && startDatePassed(pending)
+        ? ('start_date_passed' as const)
+        : null;
+
     return {
       contract: {
         id: row.id,
@@ -1062,6 +1094,11 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           declineReason: version.declineReason
         })),
         endsOn: effectiveEndsOn(row, accepted),
+        endsAtMinutes: effective?.endsAtMinutes ?? null,
+        timeZone,
+        timeZoneLabel: timeZone ? zoneLabel(timeZone) : null,
+        earliestStartsOn: timeZone ? addDays(todayIn(timeZone), 1) : null,
+        acceptBlockedReason,
         endedByMe: row.endedByUserId === viewer.id,
         endNote: row.endNote,
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,
@@ -1069,7 +1106,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           canEditTerms: isFamily && preActiveEditable,
           canSend: isFamily && preActiveEditable && pending?.status === 'draft',
           canWithdraw: isFamily && row.status === 'proposed',
-          canAccept: decidable && !isExpired(pending, cutoff),
+          canAccept: decidable && !isExpired(pending, cutoff) && acceptBlockedReason === null,
           canDecline: decidable,
           canRequestChanges: !isFamily && row.status === 'proposed' && isReceiverOfPending,
           // Presented, not stored: a contract already past its negotiated end
@@ -1379,6 +1416,16 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
           }
         },
         422
+      );
+    case 'ContractStartDatePassedError':
+      return c.json(
+        {
+          error: {
+            code: 'CONTRACT_START_DATE_PASSED' as const,
+            message: 'The start date has passed — ask the family for new terms with a later date.'
+          }
+        },
+        409
       );
     case 'SafetyVerificationRequiredError':
       return c.json({ error: safetyVerificationRequiredResponseBody }, 403);

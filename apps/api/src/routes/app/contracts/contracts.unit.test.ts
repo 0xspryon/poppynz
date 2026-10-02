@@ -1186,6 +1186,42 @@ describe('POST /contracts/:id/accept', () => {
     );
     expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
   });
+
+  it('refuses accepting on the start date in the contract zone', async () => {
+    freezeNow('2026-09-10T05:30:00Z'); // Sep 10, 00:30 in Winnipeg
+    const exit = await Effect.runPromiseExit(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'proposed' }),
+            versions: [
+              proposedVersion({ startsOn: '2026-09-10', sentAt: new Date('2026-09-08T12:00:00Z') })
+            ]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStartDatePassedError' });
+  });
+
+  it('allows accepting the evening before, although UTC is already on the start date', async () => {
+    freezeNow('2026-09-10T04:30:00Z'); // Sep 9, 23:30 in Winnipeg
+    const result = await Effect.runPromise(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'proposed' }),
+            versions: [
+              proposedVersion({ startsOn: '2026-09-10', sentAt: new Date('2026-09-08T12:00:00Z') })
+            ]
+          })
+        )
+      )
+    );
+    expect(result).toEqual({ id: CONTRACT_ID, status: 'active' });
+  });
 });
 
 describe('contract approval gates', () => {
@@ -1664,6 +1700,87 @@ describe('GET /contracts/:id', () => {
       )
     );
     expect(contract.status).toBe('active');
+  });
+
+  it("gives the family's draft its zone, label and earliest start date", async () => {
+    const layer = makeLayer({
+      contractWithContext: withContext(baseContract({ status: 'draft' }), [draftVersion()], 'family-1'),
+      conversationById: activeConversation()
+    });
+
+    const { contract } = await Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(contract).toMatchObject({
+      timeZone: WPG,
+      timeZoneLabel: 'Central Time',
+      earliestStartsOn: addDays(todayIn(WPG), 1),
+      acceptBlockedReason: null
+    });
+  });
+
+  it('leaves the zone empty for a family without a saved location', async () => {
+    const layer = makeLayer({
+      familyLocation: null,
+      contractWithContext: withContext(baseContract({ status: 'draft' }), [draftVersion()], 'family-1'),
+      conversationById: activeConversation()
+    });
+
+    const { contract } = await Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(contract).toMatchObject({ timeZone: null, timeZoneLabel: null, earliestStartsOn: null });
+  });
+
+  it('tells the provider why Accept is gone once the start date has arrived', async () => {
+    freezeNow('2026-09-10T05:30:00Z');
+    const pending = proposedVersion({
+      startsOn: '2026-09-10',
+      sentAt: new Date('2026-09-08T12:00:00Z')
+    });
+    const layer = makeLayer({
+      viewer: providerUser(),
+      contractWithContext: withContext(baseContract({ status: 'proposed' }), [pending], 'provider-1'),
+      conversationById: activeConversation()
+    });
+
+    const { contract } = await Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(contract.acceptBlockedReason).toBe('start_date_passed');
+    expect(contract.actions).toMatchObject({ canAccept: false, canDecline: true });
+    expect(contract.timeZone).toBe(WPG);
+  });
+
+  it('exposes the negotiated last-day end time with the effective end', async () => {
+    const accepted = proposedVersion({
+      status: 'accepted',
+      decidedAt: new Date(),
+      endsOn: '2099-12-11',
+      endsAtMinutes: 720
+    });
+    const layer = makeLayer({
+      contractWithContext: withContext(baseContract({ status: 'active' }), [accepted], 'family-1'),
+      conversationById: activeConversation()
+    });
+
+    const { contract } = await Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(contract).toMatchObject({ endsOn: '2099-12-11', endsAtMinutes: 720 });
+    expect(contract.acceptedVersion).toMatchObject({ endsAtMinutes: 720 });
   });
 });
 

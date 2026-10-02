@@ -5,6 +5,7 @@ import { apiClient, call, type ApiResult, type ErrorsOf, type UnexpectedError } 
 
 const getEndpoint = apiClient['safety-verification'].$get;
 const orderEndpoint = apiClient['safety-verification'].order.$post;
+const confirmPaymentEndpoint = apiClient['safety-verification'].order.confirm.$post;
 const addItemEndpoint = apiClient['safety-verification'].items.$post;
 const removeItemEndpoint = apiClient['safety-verification'].items[':itemId'].$delete;
 const documentEndpoint = apiClient['safety-verification'].document.$post;
@@ -24,6 +25,12 @@ export type AdminSafetyVerification = Extract<
 >['data']['verifications'][number];
 
 export type SafetyVerificationError = ErrorsOf<typeof getEndpoint>;
+
+export type OrderSafetyCheckResult = Extract<
+	Awaited<ReturnType<typeof orderSafetyCheck>>,
+	{ ok: true }
+>['data'];
+export type PaymentRequired = Extract<OrderSafetyCheckResult, { status: 'payment_required' }>;
 export type SafetyVerificationMutationError =
 	| ErrorsOf<typeof orderEndpoint>
 	| ErrorsOf<typeof addItemEndpoint>
@@ -48,6 +55,12 @@ export async function removeSafetyVerificationItem(itemId: string) {
 
 export async function orderSafetyCheck() {
 	return call(orderEndpoint({ json: { consentAccepted: true } }));
+}
+
+/** After the payment modal confirmed (or failed to): the server settles the
+ * payment from the provider's own state and says how it ended. */
+export async function confirmSafetyCheckPayment(paymentId: string) {
+	return call(confirmPaymentEndpoint({ json: { paymentId } }));
 }
 
 export interface SafetyDocumentSubmission {

@@ -21,6 +21,7 @@
 		"@repo/calendar": "*",
 		"@repo/credibled": "*",
 		"@repo/ui": "*",
+		"@stripe/stripe-js": "^10.0.0",
 		"@tailwindcss/vite": "^4.3.2",
 		"api": "*",
 		"dompurify": "^3.4.12",

@@ -778,7 +778,10 @@ describe('PUT /contracts/:id/terms', () => {
       )
     );
     const failure = getFailure(exit);
-    expect(failure).toMatchObject({ _tag: 'RequestValidationError', code: 'INVALID_CONTRACT_TERMS' });
+    expect(failure).toMatchObject({
+      _tag: 'RequestValidationError',
+      code: 'INVALID_CONTRACT_TERMS'
+    });
     expect((failure as { message: string }).message).toMatch(/end time/i);
   });
 

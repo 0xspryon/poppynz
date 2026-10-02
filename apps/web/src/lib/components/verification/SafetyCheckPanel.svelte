@@ -6,10 +6,13 @@
 	 * same page. */
 	import type { ResolvedPathname } from '$app/types';
 	import {
+		confirmSafetyCheckPayment,
 		orderSafetyCheck,
 		removeSafetyVerificationItem,
+		type PaymentRequired,
 		type SafetyVerificationState
 	} from '$lib/api/safety-verification';
+	import PaymentModal from '$lib/components/payments/PaymentModal.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { toast } from '$lib/toast.svelte';
 
@@ -41,6 +44,12 @@
 
 	let ordering = $state(false);
 	let removingId = $state<string | null>(null);
+
+	/** The payment the modal is confirming (Stripe only — the mock settles at once). */
+	let payment = $state<PaymentRequired | null>(null);
+
+	const SAVE_NOTICE =
+		'Your card will be saved for future Poppynz payments, such as contract billing. You can replace it in Billing.';
 
 	const basket = $derived(summary.basket);
 
@@ -106,22 +115,60 @@
 	const money = (cents: number) =>
 		new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(cents / 100);
 
+	/** Starts the payment — or resumes the one already started. */
 	async function order() {
 		if (ordering) return;
 		ordering = true;
 		const result = await orderSafetyCheck();
 		if (result.ok) {
-			toast.success('Payment received. We are setting up your check now.');
-			await onchanged();
+			if (result.data.status === 'paid') {
+				toast.success('Payment received. We are setting up your check now.');
+				await onchanged();
+			} else {
+				payment = result.data;
+				// The mock has no card form: there is nothing for the payer to do.
+				if (result.data.provider === 'mock') await paymentConfirmed();
+			}
 		} else {
 			toast.error(
 				result.error.code === 'SAFETY_VERIFICATION_UNAVAILABLE'
 					? 'Ordering is temporarily unavailable. Please try again shortly.'
-					: RETRY_MESSAGE,
+					: result.error.code === 'SAFETY_VERIFICATION_PAYMENT_FAILED'
+						? result.error.message
+						: RETRY_MESSAGE,
 				{ title: 'Check not ordered' }
 			);
 		}
 		ordering = false;
+	}
+
+	/** Stripe confirmed in the browser; the server decides from Stripe's own
+	 * record whether the money moved. */
+	async function paymentConfirmed() {
+		const current = payment;
+		if (!current) return;
+		const result = await confirmSafetyCheckPayment(current.paymentId);
+		payment = null;
+		if (!result.ok) {
+			toast.error(RETRY_MESSAGE, { title: 'Payment not confirmed' });
+		} else if (result.data.status === 'paid') {
+			toast.success('Payment received. We are setting up your check now.');
+		} else if (result.data.status === 'failed') {
+			toast.error(result.data.message ?? 'The payment was declined.', {
+				title: 'Payment declined'
+			});
+		} else {
+			toast.info('We are confirming your payment. This usually takes a moment.');
+		}
+		await onchanged();
+	}
+
+	/** Stripe refused the card. The server releases the order so the basket
+	 * can be paid again; the modal keeps Stripe's reason on screen. */
+	function paymentFailed() {
+		const current = payment;
+		if (!current) return;
+		void confirmSafetyCheckPayment(current.paymentId).then(() => onchanged());
 	}
 </script>
 
@@ -146,6 +193,13 @@
 	<p class="mt-2 text-sm text-base-content-muted">{statusHelp[status]}</p>
 	{#if status === 'not_started' && !showCredibled && showDocumentsButton}
 		{@render documentsLink('btn btn-primary btn-sm mt-3', documentsLabel)}
+	{/if}
+
+	{#if summary.canResumePayment}
+		<button type="button" class="btn btn-primary btn-sm mt-3" disabled={ordering} onclick={order}>
+			{#if ordering}<span class="loading loading-spinner loading-xs"></span>{/if}
+			Continue payment
+		</button>
 	{/if}
 
 	{#if summary.verification.applicationUrl}
@@ -271,4 +325,21 @@
 			{/if}
 		</div>
 	</div>
+{/if}
+
+{#if payment}
+	<PaymentModal
+		mode="payment"
+		clientSecret={payment.clientSecret}
+		title="Pay for your checks"
+		submitLabel="Pay {money(summary.quote.totalCents)}"
+		savedCard={payment.savedCard}
+		notice={payment.savesCard ? SAVE_NOTICE : null}
+		onconfirmed={paymentConfirmed}
+		onfailed={paymentFailed}
+		oncancel={() => {
+			payment = null;
+			void onchanged();
+		}}
+	/>
 {/if}

@@ -2,7 +2,7 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getStripe, stripe, paymentElement } = vi.hoisted(() => {
+const { getStripe, stripe, paymentElement, getUserLanguage } = vi.hoisted(() => {
 	const paymentElement = { mount: vi.fn() };
 	const elementsGroup = { create: vi.fn(() => paymentElement) };
 	const stripe = {
@@ -10,10 +10,20 @@ const { getStripe, stripe, paymentElement } = vi.hoisted(() => {
 		confirmPayment: vi.fn(),
 		confirmSetup: vi.fn()
 	};
-	return { getStripe: vi.fn(async () => stripe), stripe, paymentElement };
+	return {
+		getStripe: vi.fn(async () => stripe),
+		stripe,
+		paymentElement,
+		getUserLanguage: vi.fn(async () => 'en')
+	};
 });
 
 vi.mock('$lib/stripe', () => ({ getStripe }));
+vi.mock('$lib/user-language', () => ({
+	getUserLanguage,
+	toStripeLocale: (language: string | null) =>
+		language === 'en' || language === 'es' ? language : 'auto'
+}));
 
 import PaymentModal from './PaymentModal.svelte';
 
@@ -77,8 +87,22 @@ describe('PaymentModal', () => {
 		await settle();
 		unmount(app);
 
-		expect(stripe.elements).toHaveBeenCalledWith({ clientSecret: 'pi_1_secret' });
+		expect(stripe.elements).toHaveBeenCalledWith({ clientSecret: 'pi_1_secret', locale: 'en' });
 		expect(paymentElement.mount).toHaveBeenCalledOnce();
+	});
+
+	it("mounts the card form in the signed-in user's language", async () => {
+		getUserLanguage.mockResolvedValueOnce('es');
+		const app = mount(PaymentModal, {
+			target: document.body,
+			props: { ...baseProps, savedCard: { brand: 'visa', last4: '4242' }, onconfirmed: vi.fn() }
+		});
+		flushSync();
+		button('Use another card').click();
+		await settle();
+		unmount(app);
+
+		expect(stripe.elements).toHaveBeenCalledWith({ clientSecret: 'pi_1_secret', locale: 'es' });
 	});
 
 	it('confirms a new card through the Payment Element and shows the notice', async () => {
@@ -129,6 +153,50 @@ describe('PaymentModal', () => {
 		expect(onconfirmed).not.toHaveBeenCalled();
 	});
 
+	it('reports an intent that already settled elsewhere instead of showing the generic error', async () => {
+		stripe.confirmPayment.mockResolvedValue({
+			error: {
+				type: 'invalid_request_error',
+				code: 'payment_intent_unexpected_state',
+				message: 'The payment intent could not be confirmed because it has a status of succeeded.'
+			}
+		});
+		const onconfirmed = vi.fn(async () => {});
+		const onfailed = vi.fn();
+		const app = mount(PaymentModal, {
+			target: document.body,
+			props: { ...baseProps, onconfirmed, onfailed }
+		});
+		await settle();
+		button('Pay $75.00').click();
+		await settle();
+		unmount(app);
+
+		expect(onfailed).toHaveBeenCalledWith({ alreadySettled: true });
+		expect(onconfirmed).not.toHaveBeenCalled();
+	});
+
+	it('also treats a payment_intent already marked succeeded as already settled', async () => {
+		stripe.confirmPayment.mockResolvedValue({
+			error: {
+				type: 'card_error',
+				message: 'A processing error occurred.',
+				payment_intent: { status: 'succeeded' }
+			}
+		});
+		const onfailed = vi.fn();
+		const app = mount(PaymentModal, {
+			target: document.body,
+			props: { ...baseProps, onconfirmed: vi.fn(), onfailed }
+		});
+		await settle();
+		button('Pay $75.00').click();
+		await settle();
+		unmount(app);
+
+		expect(onfailed).toHaveBeenCalledWith({ alreadySettled: true });
+	});
+
 	it('keeps the form open on a validation error', async () => {
 		stripe.confirmPayment.mockResolvedValue({
 			error: { type: 'validation_error', message: 'Your card number is incomplete.' }
@@ -167,7 +235,7 @@ describe('PaymentModal', () => {
 		await settle();
 		unmount(app);
 
-		expect(stripe.elements).toHaveBeenCalledWith({ clientSecret: 'seti_1_secret' });
+		expect(stripe.elements).toHaveBeenCalledWith({ clientSecret: 'seti_1_secret', locale: 'en' });
 		expect(stripe.confirmSetup).toHaveBeenCalledWith({
 			elements: expect.anything(),
 			redirect: 'if_required'

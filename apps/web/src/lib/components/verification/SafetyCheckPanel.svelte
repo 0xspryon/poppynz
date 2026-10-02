@@ -5,6 +5,7 @@
 	 * (`documentsHref`) or run `ondocuments` when the checklist sits on the
 	 * same page. */
 	import type { ResolvedPathname } from '$app/types';
+	import { untrack } from 'svelte';
 	import {
 		confirmSafetyCheckPayment,
 		orderSafetyCheck,
@@ -64,6 +65,29 @@
 		}
 		removingId = null;
 	}
+
+	/** Reached only once a check has actually started, never by reverting
+	 * after a decline/abandonment (that lands back on `not_started`). Used to
+	 * recognize a payment that settled while its modal was still open. */
+	const SETTLED_STATUSES = new Set<SafetyVerificationState['verification']['status']>([
+		'invited',
+		'in_progress',
+		'review_required',
+		'verified'
+	]);
+
+	// A webhook, another tab, or the recovery job can settle the payment
+	// while this modal is open; the realtime refresh (wired up by the page)
+	// updates `summary` out from under it. Close it the same way a browser
+	// confirm would, rather than leave a stale "Pay $X" button that only
+	// gets Stripe's "already succeeded" error.
+	$effect(() => {
+		if (!SETTLED_STATUSES.has(summary.verification.status)) return;
+		const current = untrack(() => payment);
+		if (!current) return;
+		payment = null;
+		toast.success('Payment received. We are setting up your check now.');
+	});
 
 	const status = $derived(summary.verification.status);
 	const canStart = $derived(status === 'not_started');
@@ -164,11 +188,20 @@
 		await onchanged();
 	}
 
-	/** Stripe refused the card. The server releases the order so the basket
-	 * can be paid again; the modal keeps Stripe's reason on screen. */
-	function paymentFailed() {
+	/** Stripe refused the card, or — when `alreadySettled` — the intent had
+	 * already settled elsewhere (a webhook, another tab, the recovery job)
+	 * while this modal sat open. For a real decline, the server releases the
+	 * order so the basket can be paid again and the modal keeps Stripe's
+	 * reason on screen. For an already-settled intent, ask the server the
+	 * same way the browser's own confirm would — it is still the only source
+	 * of truth for whether the money moved. */
+	function paymentFailed(info?: { alreadySettled: boolean }) {
 		const current = payment;
 		if (!current) return;
+		if (info?.alreadySettled) {
+			void paymentConfirmed();
+			return;
+		}
 		void confirmSafetyCheckPayment(current.paymentId).then(() => onchanged());
 	}
 </script>

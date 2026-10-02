@@ -7,6 +7,7 @@
 	 * the caller asks through `onconfirmed` / `onfailed`. */
 	import type { Stripe, StripeElements, StripeError } from '@stripe/stripe-js';
 	import { getStripe } from '$lib/stripe';
+	import { getUserLanguage, toStripeLocale } from '$lib/user-language';
 	import { cardLabel } from '$lib/payment-cards';
 
 	interface Props {
@@ -23,9 +24,13 @@
 		/** Stripe confirmed. The caller settles through its confirm endpoint and
 		 * closes the modal. */
 		onconfirmed: () => Promise<void>;
-		/** Payment mode: Stripe refused the card. The caller settles (the server
-		 * releases the order); the modal stays open to show why. */
-		onfailed?: () => void;
+		/** Payment mode: Stripe refused the card, or — when `alreadySettled` —
+		 * the intent is no longer payable because it settled elsewhere (a
+		 * webhook, another tab, the recovery job) while this modal sat open.
+		 * The caller settles (the server releases the order, or recognizes the
+		 * existing success); the modal stays open to show why unless the
+		 * caller closes it itself. */
+		onfailed?: (info?: { alreadySettled: boolean }) => void;
 		oncancel: () => void;
 	}
 
@@ -57,25 +62,41 @@
 	$effect(() => {
 		if (useSavedCard || !elementHost || elements) return;
 		const host = elementHost;
-		void getStripe().then((loaded) => {
+		void Promise.all([getStripe(), getUserLanguage()]).then(([loaded, language]) => {
 			if (!loaded) {
 				message = 'Card payments are not available right now.';
 				return;
 			}
 			stripe = loaded;
-			const group = loaded.elements({ clientSecret });
+			const group = loaded.elements({ clientSecret, locale: toStripeLocale(language) });
 			group.create('payment', { layout: 'tabs' }).mount(host);
 			elements = group;
 		});
 	});
 
+	/** The intent is no longer payable because it already settled elsewhere
+	 * (a webhook, another tab, the recovery job) while this modal sat open —
+	 * not a declined card. */
+	function isAlreadySettled(error: StripeError): boolean {
+		return (
+			error.code === 'payment_intent_unexpected_state' ||
+			error.payment_intent?.status === 'succeeded'
+		);
+	}
+
 	function handleError(error: StripeError) {
-		message = error.message ?? 'Your card could not be used.';
 		// A card that was refused (not a typo in the form) ends this attempt.
 		if (mode === 'payment' && error.type !== 'validation_error') {
 			finished = true;
+			if (isAlreadySettled(error)) {
+				onfailed?.({ alreadySettled: true });
+				return;
+			}
+			message = error.message ?? 'Your card could not be used.';
 			onfailed?.();
+			return;
 		}
+		message = error.message ?? 'Your card could not be used.';
 	}
 
 	async function submit() {

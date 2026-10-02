@@ -2,16 +2,21 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { orderSafetyCheck, confirmSafetyCheckPayment, getStripe, toast } = vi.hoisted(() => ({
-	toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
-	orderSafetyCheck: vi.fn(),
-	confirmSafetyCheckPayment: vi.fn(),
-	getStripe: vi.fn(async () => ({
-		elements: () => ({ create: () => ({ mount: vi.fn() }) }),
-		confirmPayment: vi.fn(),
-		confirmSetup: vi.fn()
-	}))
-}));
+const { orderSafetyCheck, confirmSafetyCheckPayment, getStripe, toast, confirmPayment } =
+	vi.hoisted(() => {
+		const confirmPayment = vi.fn();
+		return {
+			toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
+			orderSafetyCheck: vi.fn(),
+			confirmSafetyCheckPayment: vi.fn(),
+			confirmPayment,
+			getStripe: vi.fn(async () => ({
+				elements: () => ({ create: () => ({ mount: vi.fn() }) }),
+				confirmPayment,
+				confirmSetup: vi.fn()
+			}))
+		};
+	});
 
 vi.mock('$lib/api/safety-verification', () => ({
 	orderSafetyCheck,
@@ -19,9 +24,14 @@ vi.mock('$lib/api/safety-verification', () => ({
 	removeSafetyVerificationItem: vi.fn()
 }));
 vi.mock('$lib/stripe', () => ({ getStripe }));
+vi.mock('$lib/user-language', () => ({
+	getUserLanguage: vi.fn(async () => null),
+	toStripeLocale: () => 'auto'
+}));
 vi.mock('$lib/toast.svelte', () => ({ toast }));
 
 import SafetyCheckPanel from './SafetyCheckPanel.svelte';
+import { reactiveProps } from './reactive-props.svelte';
 
 const verification = {
 	status: 'not_started',
@@ -76,6 +86,13 @@ const settle = async () => {
 
 const button = (label: string) =>
 	[...document.querySelectorAll('button')].find((candidate) =>
+		candidate.textContent?.includes(label)
+	) as HTMLButtonElement | undefined;
+
+/** Scoped to the payment modal — its "Pay $X" submit button text overlaps
+ * the basket's "Pay $X and start" button, which stays in the DOM behind it. */
+const dialogButton = (label: string) =>
+	[...document.querySelectorAll('[role="dialog"] button')].find((candidate) =>
 		candidate.textContent?.includes(label)
 	) as HTMLButtonElement | undefined;
 
@@ -184,5 +201,49 @@ describe('SafetyCheckPanel payment', () => {
 		unmount(app);
 
 		expect(resume).toBeDefined();
+	});
+
+	it('treats an intent that already settled elsewhere as paid, and closes the modal', async () => {
+		orderSafetyCheck.mockResolvedValue(paymentRequired());
+		confirmPayment.mockResolvedValueOnce({
+			error: {
+				type: 'invalid_request_error',
+				code: 'payment_intent_unexpected_state',
+				message: 'The payment intent could not be confirmed because it has a status of succeeded.'
+			}
+		});
+		confirmSafetyCheckPayment.mockResolvedValue({ ok: true, data: { status: 'paid' } });
+		const { app, onchanged } = await openPanel();
+		dialogButton('Pay $75.00')?.click();
+		await settle();
+		const dialog = document.querySelector('[role="dialog"]');
+		unmount(app);
+
+		expect(confirmSafetyCheckPayment).toHaveBeenCalledWith('payment-1');
+		expect(toast.success).toHaveBeenCalledWith('Payment received. We are setting up your check now.');
+		expect(dialog).toBeNull();
+		expect(onchanged).toHaveBeenCalled();
+	});
+
+	it('closes the modal when a realtime refresh shows the order already paid', async () => {
+		orderSafetyCheck.mockResolvedValue(paymentRequired());
+		const onchanged = vi.fn(async () => {});
+		const props = reactiveProps({ summary: summary(), onchanged });
+		const app = mount(SafetyCheckPanel, { target: document.body, props });
+		flushSync();
+		button('Pay $75.00 and start')?.click();
+		await settle();
+		const dialogWhileOpen = document.querySelector('[role="dialog"]');
+
+		// A webhook, another tab, or the recovery job settled it; the page's
+		// realtime refresh (not this test) would normally produce this summary.
+		props.summary = summary({ verification: { ...verification, status: 'invited' } });
+		flushSync();
+		const dialogAfterRefresh = document.querySelector('[role="dialog"]');
+		unmount(app);
+
+		expect(dialogWhileOpen).not.toBeNull();
+		expect(dialogAfterRefresh).toBeNull();
+		expect(toast.success).toHaveBeenCalledWith('Payment received. We are setting up your check now.');
 	});
 });

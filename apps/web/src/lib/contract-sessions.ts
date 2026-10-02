@@ -1,3 +1,5 @@
+import { addDays } from '@repo/calendar';
+
 /** Proposed weekly sessions (Flow F). Times are wall-clock minutes from
  * midnight in the contract's own time zone (the family's) — never UTC — so "3:30–6:00 pm" stays
  * 3:30–6:00 pm across DST changes. Weekday 0 = Monday … 6 = Sunday. */
@@ -38,6 +40,23 @@ export function formatMinutes(minutes: number): string {
  * end of that day, not 12:00 am at its start). */
 export const formatEndTime = (minutes: number): string =>
 	minutes >= MINUTES_PER_DAY ? 'midnight' : formatMinutes(minutes);
+
+export const END_NOTICE_DAYS = 14;
+
+/** The last working day if notice were given on `today` (a calendar date in
+ * the contract's zone): notice + 14 days, unless the signed terms end on or
+ * before that — then the negotiated end wins, with its last-day end time.
+ * Mirrors the API's `effectiveEnd`. */
+export function noticeLastDay(
+	today: string,
+	negotiated: { endsOn: string | null; endsAtMinutes: number | null } | null
+): { endsOn: string; endsAtMinutes: number | null } {
+	const notice = addDays(today, END_NOTICE_DAYS);
+	if (negotiated?.endsOn && negotiated.endsOn <= notice) {
+		return { endsOn: negotiated.endsOn, endsAtMinutes: negotiated.endsAtMinutes ?? null };
+	}
+	return { endsOn: notice, endsAtMinutes: null };
+}
 
 /** "3:30–6:00 pm" — the shared am/pm suffix is dropped from the start. */
 export function formatSessionRange(session: ContractSession): string {

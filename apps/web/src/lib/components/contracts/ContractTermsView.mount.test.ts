@@ -48,6 +48,18 @@ describe('ContractTermsView', () => {
 		expect(text).toContain("Times are in the family's local time (Central Time)");
 	});
 
+	it("speaks to the family as 'your local time'", () => {
+		const app = mount(ContractTermsView, {
+			target: document.body,
+			props: { terms: terms() as never, timeZoneLabel: 'Central Time', viewerIsFamily: true }
+		});
+		flushSync();
+		const text = document.body.textContent ?? '';
+		unmount(app);
+		expect(text).toContain('Times are in your local time (Central Time)');
+		expect(text).not.toContain("family's");
+	});
+
 	it('shows no end time for an end date without one', () => {
 		const app = mount(ContractTermsView, {
 			target: document.body,

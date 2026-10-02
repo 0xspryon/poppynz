@@ -438,9 +438,7 @@
 					<p class="text-xs text-base-content-muted">
 						You set the times — {counterpartFirstName} publishes no calendar. Repeats weekly{startsOn
 							? ` from ${formatDateWithWeekday(startsOn)}`
-							: ''} · times are in the family's local time{timeZoneLabel
-							? ` (${timeZoneLabel})`
-							: ''}.
+							: ''} · times are in your local time{timeZoneLabel ? ` (${timeZoneLabel})` : ''}.
 					</p>
 				</div>
 

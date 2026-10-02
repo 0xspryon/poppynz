@@ -22,13 +22,16 @@
 		heading?: string;
 		/** "Central Time" — the zone session times are read in. */
 		timeZoneLabel?: string | null;
+		/** The zone is the family's: they read "your local time". */
+		viewerIsFamily?: boolean;
 	}
 
 	let {
 		terms,
 		dimmed = false,
 		heading = 'Services & sessions',
-		timeZoneLabel = null
+		timeZoneLabel = null,
+		viewerIsFamily = false
 	}: Props = $props();
 </script>
 
@@ -40,7 +43,7 @@
 	</h3>
 	{#if timeZoneLabel}
 		<p class="-mt-1 mb-2 text-[11px] text-outline">
-			Times are in the family's local time ({timeZoneLabel}).
+			Times are in {viewerIsFamily ? 'your' : "the family's"} local time ({timeZoneLabel}).
 		</p>
 	{/if}
 	<ul>

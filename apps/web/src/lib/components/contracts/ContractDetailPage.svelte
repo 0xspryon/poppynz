@@ -23,7 +23,7 @@
 		type ContractTermsInput
 	} from '$lib/api/contracts';
 	import { getProvider } from '$lib/api/providers';
-	import { addDays, todayIn } from '@repo/calendar';
+	import { todayIn } from '@repo/calendar';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import ContractTermsEditor, {
@@ -32,7 +32,12 @@
 	import ContractTermsView from '$lib/components/contracts/ContractTermsView.svelte';
 	import WeekAtAGlance from '$lib/components/contracts/WeekAtAGlance.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
-	import { formatEndTime, minutesToHours, weeklyMinutes } from '$lib/contract-sessions';
+	import {
+		formatEndTime,
+		minutesToHours,
+		noticeLastDay,
+		weeklyMinutes
+	} from '$lib/contract-sessions';
 	import { centsToDollars } from '$lib/money';
 	import { formatDate, formatDateTime, formatDateWithWeekday } from '$lib/date';
 	import { notifications } from '$lib/notifications.svelte';
@@ -346,13 +351,16 @@
 	}
 
 	// Recomputed each time the dialog opens (reading endOpen): the notice day in
-	// the contract's zone plus 14 calendar days — the same rule the server
-	// applies, so a long-lived tab can't show a different date.
-	const noticeEndsOn = $derived(
-		endOpen && contract?.timeZone
-			? formatDateWithWeekday(addDays(todayIn(contract.timeZone), 14))
-			: ''
-	);
+	// the contract's zone plus 14 calendar days, or the signed terms' earlier
+	// end (with its end time) — the same rule the server applies, so a
+	// long-lived tab can't show a different date.
+	const noticeEndsOn = $derived.by(() => {
+		if (!endOpen || !contract?.timeZone) return '';
+		const lastDay = noticeLastDay(todayIn(contract.timeZone), contract.acceptedVersion);
+		return lastDay.endsAtMinutes
+			? `${formatDateWithWeekday(lastDay.endsOn)}, until ${formatEndTime(lastDay.endsAtMinutes)}`
+			: formatDateWithWeekday(lastDay.endsOn);
+	});
 
 	/** The latest version that was actually declined — `latestVersion` may
 	 * already be the family's fresh revision draft, which never carries the
@@ -587,9 +595,8 @@
 					{/if}
 					{#if contract.endsOn}
 						The contract runs until <strong
-							>{formatDateWithWeekday(contract.endsOn)}{#if contract.endsAtMinutes}, until {formatEndTime(
-									contract.endsAtMinutes
-								)}{/if}</strong
+							>{formatDateWithWeekday(contract.endsOn)}{#if contract.endsAtMinutes}
+								at {formatEndTime(contract.endsAtMinutes)}{/if}</strong
 						>.
 					{/if}
 				</p>
@@ -656,6 +663,7 @@
 							? `Proposed terms — v${displayTerms.version}`
 							: 'Services & sessions'}
 						timeZoneLabel={contract.timeZoneLabel}
+						viewerIsFamily={contract.viewerSide === 'family'}
 					/>
 				{/if}
 

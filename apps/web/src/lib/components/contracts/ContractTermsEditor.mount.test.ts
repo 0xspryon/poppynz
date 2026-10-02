@@ -77,6 +77,20 @@ describe('ContractTermsEditor', () => {
 		);
 	});
 
+	it('puts the last-day end time right after the end date in the summary line', () => {
+		const app = mount(ContractTermsEditor, {
+			target: document.body,
+			props: { ...baseProps, initial: { ...initial, endsAtMinutes: 720 } as never, onsend: vi.fn() }
+		});
+		flushSync();
+		const summary = [...document.querySelectorAll('p')].find((p) =>
+			p.textContent?.includes('until 12:00 pm')
+		);
+		const text = summary?.textContent?.replace(/\s+/g, ' ').trim();
+		unmount(app);
+		expect(text).toMatch(/Fri, Dec 11, 2026, until 12:00 pm$/);
+	});
+
 	it('forgets the end time when the end date is cleared through the date input', () => {
 		const app = mount(ContractTermsEditor, {
 			target: document.body,

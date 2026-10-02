@@ -309,8 +309,9 @@
 		<p class="mt-1 text-right text-[11px] text-outline">
 			{#if startsOn}{formatDateWithWeekday(startsOn)}{/if}
 			{#if startsOn && endsOn}&nbsp;→&nbsp;{/if}
-			{#if endsOn}{formatDateWithWeekday(endsOn)}{/if}
-			{#if endsOn && endsAtValue}, until {formatEndTime(Number(endsAtValue))}{/if}
+			{#if endsOn}{formatDateWithWeekday(endsOn)}{#if endsAtValue}, until {formatEndTime(
+						Number(endsAtValue)
+					)}{/if}{/if}
 		</p>
 	{/if}
 

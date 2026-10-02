@@ -11,6 +11,7 @@ import {
   type ContractVersion,
   type ContractWithContext
 } from '@repo/db';
+import { addDays, dateIn, todayIn } from '@repo/calendar';
 import { contractConfig } from '@repo/env';
 import { publishNotificationBestEffort } from '@repo/notify';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
@@ -214,31 +215,40 @@ export const serviceWeeklyCents = (item: ContractServiceItem) =>
 export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
   services.reduce((total, item) => total + serviceWeeklyCents(item), 0);
 
-/** All contract dates (session times, starts/ends, "today") are NZ wall-clock
- * — Pacific/Auckland — regardless of where the server runs. en-CA formats as
- * YYYY-MM-DD. */
-const nzIsoDate = (at: Date) =>
-  new Intl.DateTimeFormat('en-CA', { timeZone: 'Pacific/Auckland' }).format(at);
+/** Contract dates are calendar dates in the version's own zone (the
+ * family's, frozen at acceptance). Null only for a draft, which has no zone. */
+const contractToday = (version: ContractVersion): string | null =>
+  version.timeZone ? todayIn(version.timeZone) : null;
 
-const todayIsoDate = () => nzIsoDate(new Date());
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Last working day of the notice flow — derived, never stored. */
-const noticeEndsOn = (contract: Contract) =>
-  contract.endNoticedAt !== null
-    ? nzIsoDate(new Date(contract.endNoticedAt.getTime() + END_NOTICE_DAYS * DAY_MS))
+/** Last working day of the notice flow: the notice moment's calendar date in
+ * the contract zone plus 14 calendar days — derived, never stored. */
+const noticeEndsOn = (contract: Contract, accepted: ContractVersion | null) =>
+  contract.endNoticedAt !== null && accepted?.timeZone
+    ? addDays(dateIn(contract.endNoticedAt, accepted.timeZone), END_NOTICE_DAYS)
     : null;
 
-/** The date the contract actually stops working: the earlier of the notice
- * flow's last working day and the negotiated end-date term (if either). */
-export const effectiveEndsOn = (contract: Contract, accepted: ContractVersion | null) => {
-  const candidates = [noticeEndsOn(contract), accepted?.endsOn ?? null].filter(
-    (value): value is string => value !== null
-  );
-  if (candidates.length === 0) return null;
-  return candidates.sort()[0];
+/** The date the contract actually stops working — the earlier of the notice
+ * flow's last working day and the negotiated end-date term — and which one it
+ * was. Only a negotiated end carries a last-day end time; on a tie the
+ * negotiated end wins so its end time still applies. */
+export const effectiveEnd = (contract: Contract, accepted: ContractVersion | null) => {
+  const notice = noticeEndsOn(contract, accepted);
+  const negotiated = accepted?.endsOn ?? null;
+  if (negotiated !== null && (notice === null || negotiated <= notice)) {
+    return {
+      endsOn: negotiated,
+      source: 'negotiated' as const,
+      endsAtMinutes: accepted?.endsAtMinutes ?? null
+    };
+  }
+  if (notice !== null) {
+    return { endsOn: notice, source: 'notice' as const, endsAtMinutes: null };
+  }
+  return null;
 };
+
+export const effectiveEndsOn = (contract: Contract, accepted: ContractVersion | null) =>
+  effectiveEnd(contract, accepted)?.endsOn ?? null;
 
 export type PresentedContractStatus =
   | 'draft'
@@ -263,10 +273,12 @@ export const presentedContractStatus = (
   // Strictly past: the effective end date is the LAST WORKING day — the
   // contract is still running (payments running) for the whole of it.
   const endsOn = effectiveEndsOn(contract, accepted);
+  const today = accepted !== null ? contractToday(accepted) : null;
   if (
     (contract.status === 'ending' || contract.status === 'active') &&
     endsOn !== null &&
-    endsOn < todayIsoDate()
+    today !== null &&
+    endsOn < today
   ) {
     return 'ended';
   }
@@ -855,6 +867,14 @@ export const endContractProgram = (
     const viewer = userAndSession.user;
     const contract = yield* loadParticipantContract(contractId, viewer.id);
 
+    // The notice end date is read in the in-force terms' zone; an active
+    // contract without accepted terms is not a state ending can apply to.
+    const { versions } = yield* loadPendingVersion(contractId);
+    const accepted = acceptedOf(versions);
+    if (!accepted?.timeZone) {
+      return yield* Effect.fail(new ContractStateError());
+    }
+
     const note = input.note?.trim() ? input.note.trim() : null;
     const updated = yield* contractRepo
       .setEnding(contractId, { endedByUserId: viewer.id, endNote: note })
@@ -863,7 +883,7 @@ export const endContractProgram = (
       return yield* Effect.fail(new ContractStateError());
     }
     // Derived, not stored — the same computation every read applies.
-    const endsOn = noticeEndsOn(updated) ?? todayIsoDate();
+    const endsOn = noticeEndsOn(updated, accepted) ?? todayIn(accepted.timeZone);
 
     const enderProfile = yield* loadProfileOrNull(viewer.id);
     const recipientUserId =

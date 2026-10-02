@@ -12,6 +12,7 @@ import {
   type ContractWithContext
 } from '@repo/db';
 import { addDays, dateIn, todayIn } from '@repo/calendar';
+import { zoneForLocation } from '@repo/calendar/lookup';
 import { contractConfig } from '@repo/env';
 import { publishNotificationBestEffort } from '@repo/notify';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
@@ -96,6 +97,18 @@ export class ContractProposalExpiredError extends Data.TaggedError(
   'ContractProposalExpiredError'
 )<{}> {}
 
+/** Sending needs a start date — billing cycles are anchored to it. */
+export class StartDateRequiredError extends Data.TaggedError('StartDateRequiredError')<{}> {}
+
+/** The contract's zone comes from the family's location; without an address
+ * there is no zone to read dates and session times in. */
+export class FamilyLocationRequiredError extends Data.TaggedError(
+  'FamilyLocationRequiredError'
+)<{}> {}
+
+/** The start date must be later than today in the family's zone. */
+export class StartDateNotInFutureError extends Data.TaggedError('StartDateNotInFutureError')<{}> {}
+
 /** Postgres unique-constraint violation (SQLSTATE 23505), possibly nested a
  * few `cause` levels deep depending on the driver wrapping. */
 const isUniqueViolation = (error: SqlError): boolean => {
@@ -165,6 +178,16 @@ const loadProfileOrNull = (userId: string) =>
       DBNotFoundError: () => Effect.succeed(null),
       SqlError: (cause) => Effect.fail(new ContractRepoError({ cause }))
     })
+  );
+
+/** The family's zone from their saved coordinates, or null without them. */
+const familyTimeZone = (familyUserId: string) =>
+  loadProfileOrNull(familyUserId).pipe(
+    Effect.map((profile) =>
+      profile?.latitude != null && profile.longitude != null
+        ? zoneForLocation(profile.latitude, profile.longitude)
+        : null
+    )
   );
 
 type ContractSide = 'family' | 'provider';
@@ -662,12 +685,26 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
       return yield* Effect.fail(new RateBelowListedError({ violations }));
     }
 
+    if (pending.startsOn === null) {
+      return yield* Effect.fail(new StartDateRequiredError());
+    }
+    // The zone is the family's, read now and frozen with the version at
+    // acceptance — a later move never shifts a signed contract's dates.
+    const timeZone = yield* familyTimeZone(contract.familyUserId);
+    if (timeZone === null) {
+      return yield* Effect.fail(new FamilyLocationRequiredError());
+    }
+    if (pending.startsOn <= todayIn(timeZone)) {
+      return yield* Effect.fail(new StartDateNotInFutureError());
+    }
+
     yield* contractRepo
       .updateVersionTerms(pending.id, {
         services: refreshed,
         startsOn: pending.startsOn,
         endsOn: pending.endsOn,
-        endsAtMinutes: pending.endsAtMinutes
+        endsAtMinutes: pending.endsAtMinutes,
+        timeZone
       })
       .pipe((errors) => mapContractRepoError(errors));
     const sent = yield* contractRepo
@@ -1311,6 +1348,37 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
           }
         },
         409
+      );
+    case 'StartDateRequiredError':
+      return c.json(
+        {
+          error: {
+            code: 'START_DATE_REQUIRED' as const,
+            message: 'Pick a start date before sending.'
+          }
+        },
+        422
+      );
+    case 'FamilyLocationRequiredError':
+      return c.json(
+        {
+          error: {
+            code: 'FAMILY_LOCATION_REQUIRED' as const,
+            message:
+              'Add your address to your profile before sending — session times follow your local time zone.'
+          }
+        },
+        422
+      );
+    case 'StartDateNotInFutureError':
+      return c.json(
+        {
+          error: {
+            code: 'START_DATE_NOT_IN_FUTURE' as const,
+            message: 'The start date must be after today.'
+          }
+        },
+        422
       );
     case 'SafetyVerificationRequiredError':
       return c.json({ error: safetyVerificationRequiredResponseBody }, 403);

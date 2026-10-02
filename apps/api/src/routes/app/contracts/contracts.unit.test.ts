@@ -105,7 +105,8 @@ const session = (userId: string): Session => ({
 const profile = (
   userId: string,
   firstName: string,
-  phoneNumber: string | null
+  phoneNumber: string | null,
+  location: { latitude: number; longitude: number } | null = null
 ): SafeUserProfile => ({
   userId,
   email: `${firstName.toLowerCase()}@example.com`,
@@ -123,8 +124,8 @@ const profile = (
   stateProvince: null,
   shortBio: null,
   googlePlaceId: null,
-  latitude: null,
-  longitude: null
+  latitude: location?.latitude ?? null,
+  longitude: location?.longitude ?? null
 });
 
 const offeredService = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
@@ -251,6 +252,8 @@ const makeLayer = (
     onMarkSeen?: (contractId: string, side: string) => void;
     familyApproved?: boolean;
     providerApproved?: boolean;
+    /** The family's saved coordinates; null = no address yet. Defaults to Winnipeg. */
+    familyLocation?: { latitude: number; longitude: number } | null;
   } = {}
 ) => {
   const viewer = options.viewer ?? familyUser();
@@ -289,7 +292,14 @@ const makeLayer = (
       findByUserId: (userId) =>
         Effect.succeed(
           userId === 'family-1'
-            ? profile('family-1', 'Priya', null)
+            ? profile(
+                'family-1',
+                'Priya',
+                null,
+                options.familyLocation === undefined
+                  ? { latitude: 49.8951, longitude: -97.1384 }
+                  : options.familyLocation
+              )
             : profile('provider-1', 'Maria', '+1 416 555 0199')
         ),
       updateByUserId: () => Effect.die('not used'),
@@ -924,6 +934,79 @@ describe('POST /contracts/:id/send', () => {
       )
     );
     expect(getFailure(exit)).toMatchObject({ _tag: 'NotContractActorError' });
+  });
+
+  it("stamps the family's time zone on the version it sends", async () => {
+    const updates: Array<unknown> = [];
+    const layer = makeLayer({
+      contractById: baseContract(),
+      versions: [draftVersion()],
+      onUpdateTerms: (_versionId, input) => updates.push(input)
+    });
+
+    await Effect.runPromise(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+    expect(updates[0]).toMatchObject({ timeZone: WPG, startsOn: '2099-01-05' });
+  });
+
+  it('refuses to send without a start date', async () => {
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({ contractById: baseContract(), versions: [draftVersion({ startsOn: null })] })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'StartDateRequiredError' });
+  });
+
+  it('refuses to send while the family has no saved location', async () => {
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            familyLocation: null
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'FamilyLocationRequiredError' });
+  });
+
+  it("refuses a start date that is today in the family's zone", async () => {
+    freezeNow('2026-09-10T05:30:00Z'); // Sep 10, 00:30 in Winnipeg
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion({ startsOn: '2026-09-10' })]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'StartDateNotInFutureError' });
+  });
+
+  it("allows tomorrow in the family's zone even when UTC is already there", async () => {
+    freezeNow('2026-09-10T04:30:00Z'); // still Sep 9, 23:30 in Winnipeg
+    const result = await Effect.runPromise(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion({ startsOn: '2026-09-10' })]
+          })
+        )
+      )
+    );
+    expect(result).toMatchObject({ status: 'proposed' });
   });
 });
 

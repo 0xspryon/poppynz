@@ -18,10 +18,17 @@ happens in its own round. Nothing here is implemented yet.
 - **Foreign keys to `user.id` change from `onDelete: 'cascade'` to
   `restrict`** (see the list below), so the database refuses any hard delete
   that would take records with it.
-- **Deletion is refused while money is in flight.** That covers an active or
-  ending contract, a billing cycle not yet settled, a helper payout not yet
-  transferred, or an open check order or payment. The user sees why ("End your
-  contract first"), never a database error.
+- **Closure is a request, resolved before it completes** (founder,
+  2026-10-02). An account holder can always ask to close their account; it
+  completes only once open contracts and outstanding payment obligations are
+  resolved — an active or ending contract, a cycle not yet settled, a helper
+  transfer not yet made, an open check order or payment. The user sees what is
+  outstanding, never a database error.
+- **Retention follows the law** (founder): delete or anonymise personal
+  information where appropriate, and keep transaction, contract, tax, fraud
+  and dispute records only as long as legally required or permitted.
+  **Retention periods and access controls must be defined in the privacy
+  design before launch.**
 
 ## Open questions for the design round
 

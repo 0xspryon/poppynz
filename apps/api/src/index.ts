@@ -7,6 +7,7 @@ import { hasMalformedCallbackParam } from './lib/magic-link-guard';
 import { resolveUiOrigin } from './lib/ui-origin';
 import { appRoutes } from './routes/app/index';
 import { credibledWebhookRoute } from './routes/webhooks/credibled';
+import { stripeWebhookRoute } from './routes/webhooks/stripe';
 import { requestId } from 'hono/request-id';
 import { makeAppRuntime } from './managed-runtime';
 import { ensureInitialAppState } from './startup';
@@ -52,6 +53,9 @@ export const createApp = (
     // audience comes from the path because Credibled's payload identifies
     // neither the account nor the role.
     .route('/webhooks/credibled', credibledWebhookRoute)
+    // Same posture for Stripe: the signature over the raw body is the only
+    // authentication, and the handler re-fetches every object it acts on.
+    .route('/webhooks/stripe', stripeWebhookRoute)
     .route(API_BASE_PATH, appRoutes)
 
     .onError((error, c) => {

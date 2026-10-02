@@ -133,7 +133,8 @@
 			toast.error(
 				result.error.code === 'SAFETY_VERIFICATION_UNAVAILABLE'
 					? 'Ordering is temporarily unavailable. Please try again shortly.'
-					: result.error.code === 'SAFETY_VERIFICATION_PAYMENT_FAILED'
+					: result.error.code === 'SAFETY_VERIFICATION_PAYMENT_FAILED' ||
+						  result.error.code === 'SAFETY_VERIFICATION_CONFLICT'
 						? result.error.message
 						: RETRY_MESSAGE,
 				{ title: 'Check not ordered' }
@@ -332,7 +333,7 @@
 		mode="payment"
 		clientSecret={payment.clientSecret}
 		title="Pay for your checks"
-		submitLabel="Pay {money(summary.quote.totalCents)}"
+		submitLabel="Pay {money(payment.totalCents)}"
 		savedCard={payment.savedCard}
 		notice={payment.savesCard ? SAVE_NOTICE : null}
 		onconfirmed={paymentConfirmed}

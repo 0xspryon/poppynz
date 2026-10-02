@@ -2,7 +2,8 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { orderSafetyCheck, confirmSafetyCheckPayment, getStripe } = vi.hoisted(() => ({
+const { orderSafetyCheck, confirmSafetyCheckPayment, getStripe, toast } = vi.hoisted(() => ({
+	toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() },
 	orderSafetyCheck: vi.fn(),
 	confirmSafetyCheckPayment: vi.fn(),
 	getStripe: vi.fn(async () => ({
@@ -18,6 +19,7 @@ vi.mock('$lib/api/safety-verification', () => ({
 	removeSafetyVerificationItem: vi.fn()
 }));
 vi.mock('$lib/stripe', () => ({ getStripe }));
+vi.mock('$lib/toast.svelte', () => ({ toast }));
 
 import SafetyCheckPanel from './SafetyCheckPanel.svelte';
 
@@ -58,6 +60,7 @@ const paymentRequired = (overrides: Record<string, unknown> = {}) => ({
 		paymentId: 'payment-1',
 		clientSecret: 'pi_1_secret',
 		provider: 'stripe',
+		totalCents: 7500,
 		savesCard: false,
 		savedCard: null,
 		...overrides
@@ -128,6 +131,31 @@ describe('SafetyCheckPanel payment', () => {
 
 		expect(oneClick).toBe('Pay $75.00 with Visa •••• 4242');
 		expect(another).toBeDefined();
+	});
+
+	it("labels the modal with the payment's frozen total, not the live quote", async () => {
+		// A payment resumed after a price change still charges what its row
+		// froze; the live quote in the summary says $75.00.
+		orderSafetyCheck.mockResolvedValue(paymentRequired({ totalCents: 6400 }));
+		const { app } = await openPanel();
+		const pay = [...document.querySelectorAll('[role="dialog"] button')]
+			.map((candidate) => candidate.textContent?.replace(/\s+/g, ' ').trim())
+			.find((label) => label?.startsWith('Pay'));
+		unmount(app);
+
+		expect(pay).toBe('Pay $64.00');
+	});
+
+	it("shows the server's message when the order conflicts with a payment in progress", async () => {
+		const message = 'Your previous payment is still being processed. Check back in a few minutes.';
+		orderSafetyCheck.mockResolvedValue({
+			ok: false,
+			error: { code: 'SAFETY_VERIFICATION_CONFLICT', message }
+		});
+		const { app } = await openPanel();
+		unmount(app);
+
+		expect(toast.error).toHaveBeenCalledWith(message, { title: 'Check not ordered' });
 	});
 
 	it('shows no modal when the provider settled at once (the mock)', async () => {

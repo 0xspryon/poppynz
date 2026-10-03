@@ -6,14 +6,15 @@ import {
   type AppliedPayoutSnapshot
 } from '@repo/db';
 import { makePaymentsTest, PaymentProviderError } from '@repo/payments';
-import { Effect, Layer } from 'effect';
-import { describe, expect, it } from 'vitest';
+import { Effect, Exit, Layer } from 'effect';
+import { describe, expect, it, vi } from 'vitest';
 import {
   derivePayoutStatus,
   handleAccountUpdated,
   hasReadyPayoutAccount,
   isPaymentReady,
   isStale,
+  mapPayoutsProviderError,
   refreshPayoutAccount,
   requirementLabels
 } from './payouts';
@@ -315,5 +316,42 @@ describe('refreshPayoutAccount', () => {
     expect(rows.get('helper-1')?.status).toBe('restricted');
     // The caller sees the newer stored snapshot, not its own stale input.
     expect(result.status).toBe('restricted');
+  });
+});
+
+describe('mapPayoutsProviderError', () => {
+  it('logs the operation and the provider error message/type server-side (e2e bug B1)', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const program = Effect.fail(
+      new PaymentProviderError({
+        operation: 'createDashboardLink',
+        cause: {
+          message: 'Cannot create a login link for a Standard or Custom account not connected to it.',
+          type: 'invalid_request_error'
+        }
+      })
+    ).pipe((errors) => mapPayoutsProviderError(errors));
+
+    const exit = await Effect.runPromiseExit(program);
+
+    expect(Exit.isFailure(exit)).toBe(true);
+    const logged = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(logged).toContain('level=ERROR');
+    expect(logged).toContain('createDashboardLink');
+    expect(logged).toContain('Cannot create a login link');
+    expect(logged).toContain('invalid_request_error');
+  });
+
+  it('falls back to String(cause) when the provider error has no message', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const program = Effect.fail(
+      new PaymentProviderError({ operation: 'getPayoutAccount', cause: 'stripe down' })
+    ).pipe((errors) => mapPayoutsProviderError(errors));
+
+    await Effect.runPromiseExit(program);
+
+    const logged = logSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(logged).toContain('getPayoutAccount');
+    expect(logged).toContain('stripe down');
   });
 });

@@ -29,10 +29,34 @@ export const mapPayoutsRepoError = <A, R>(
 ): Effect.Effect<A, PayoutsRepoError, R> =>
   effect.pipe(Effect.mapError((cause) => new PayoutsRepoError({ cause })));
 
+/** A provider error's `cause` is `unknown` (whatever the SDK throws). Pull out
+ * only a message and, if present, a type — never the full object, which may
+ * carry request/response internals. */
+const describeProviderErrorCause = (cause: unknown): { message: string; type?: string } => {
+  if (cause && typeof cause === 'object') {
+    const record = cause as Record<string, unknown>;
+    const message = typeof record.message === 'string' ? record.message : String(cause);
+    const type = typeof record.type === 'string' ? record.type : undefined;
+    return type ? { message, type } : { message };
+  }
+  return { message: String(cause) };
+};
+
+/** The one choke point every payouts provider call goes through, so every
+ * `/payouts/*` route logs a failure here instead of answering 502 silently
+ * (piece 2b e2e bug B1). */
 export const mapPayoutsProviderError = <A, R>(
   effect: Effect.Effect<A, PaymentProviderError, R>
 ): Effect.Effect<A, PayoutsProviderError, R> =>
-  effect.pipe(Effect.mapError((cause) => new PayoutsProviderError({ cause })));
+  effect.pipe(
+    Effect.tapError((error) =>
+      Effect.logError(
+        `payouts: Stripe ${error.operation} failed`,
+        describeProviderErrorCause(error.cause)
+      )
+    ),
+    Effect.mapError((cause) => new PayoutsProviderError({ cause }))
+  );
 
 /** Config read collapses to the documented defaults rather than surfacing
  * ConfigError into every route program — same treatment as the contract window. */

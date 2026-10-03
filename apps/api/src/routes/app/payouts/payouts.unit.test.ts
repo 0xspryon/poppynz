@@ -79,8 +79,9 @@ const makeLayer = (
     dashboards: [],
     applied: []
   };
-  const providerFailure = (operation: 'createPayoutAccount' | 'getPayoutAccount') =>
-    Effect.fail(new PaymentProviderError({ operation, cause: 'stripe down' }));
+  const providerFailure = (
+    operation: 'createPayoutAccount' | 'getPayoutAccount' | 'createDashboardLink'
+  ) => Effect.fail(new PaymentProviderError({ operation, cause: 'stripe down' }));
   const { layer: repoLayer } = makeInMemoryPayoutAccountRepo(
     options.accounts ?? [],
     recorded.applied
@@ -119,7 +120,9 @@ const makeLayer = (
       },
       createDashboardLink: (reference) => {
         recorded.dashboards.push(reference);
-        return Effect.succeed({ url: `https://connect.stripe.com/express/${reference}` });
+        return options.providerFails
+          ? providerFailure('createDashboardLink')
+          : Effect.succeed({ url: `https://connect.stripe.com/express/${reference}` });
       }
     })
   );
@@ -370,6 +373,26 @@ describe('POST /payouts/dashboard', () => {
     await runtime.dispose();
     expect(response.status).toBe(409);
     expect(body).toMatchObject({ error: { code: 'NO_PAYOUT_ACCOUNT' } });
+  });
+
+  it('answers 502 with a neutral, accurate message when Stripe refuses (e2e bug B1)', async () => {
+    const runtime = ManagedRuntime.make(
+      makeLayer({ providerFails: true, accounts: [dummyPayoutAccount({ status: 'ready' })] })
+    );
+    const app = new Hono<HonoEnv>()
+      .use('*', async (c, next) => {
+        c.set('runtime', runtime as never);
+        await next();
+      })
+      .route('/payouts', payoutsRoute);
+    const response = await app.request('/payouts/dashboard', { method: 'POST' });
+    const body = await response.json();
+    await runtime.dispose();
+    expect(response.status).toBe(502);
+    expect(body).toMatchObject({ error: { code: 'PAYOUTS_PROVIDER_ERROR' } });
+    // Must not claim Stripe is unreachable when Stripe actually refused the request.
+    expect(body.error.message).not.toMatch(/reached/i);
+    expect(body.error.message).toMatch(/try again|contact support/i);
   });
 
   it('fails with ForbiddenError without the payouts permission', async () => {

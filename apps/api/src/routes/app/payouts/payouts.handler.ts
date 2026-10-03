@@ -149,7 +149,7 @@ const payoutsErrorToResponse = (c: HonoContext<HonoEnv>, error: PayoutsRouteErro
         {
           error: {
             code: 'PAYOUTS_PROVIDER_ERROR' as const,
-            message: "Stripe couldn't be reached. Please try again in a moment."
+            message: "Stripe couldn't complete this request — please try again or contact support."
           }
         },
         502

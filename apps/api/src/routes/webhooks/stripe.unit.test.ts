@@ -435,6 +435,33 @@ describe('account.updated (piece 2b)', () => {
     expect(world.log.fetchedAccounts).toEqual([]);
   });
 
+  it('records and acknowledges any other connected-account event without dispatching it', async () => {
+    // `stripe listen --forward-connect-to` forwards every Connect event; a
+    // connected account's setup_intent must not reach the platform card path.
+    const world = makeWorld({
+      verified: event({
+        eventId: 'evt_connect_seti',
+        type: 'setup_intent.succeeded',
+        objectId: 'seti_connected',
+        account: 'acct_123'
+      }),
+      payoutAccounts: [dummyPayoutAccount()]
+    });
+    const response = await world.post();
+    expect(response.status).toBe(200);
+    expect(world.log.recorded).toEqual(['evt_connect_seti']);
+    expect(world.log.processed).toEqual(['evt_connect_seti']);
+    expect(world.billing.rows.get('family-1')?.cardReference).toBeNull();
+    expect(
+      await Effect.runPromise(
+        processStripeEvent(
+          event({ type: 'payment_intent.succeeded', account: 'acct_123' })
+        ).pipe(Effect.provide(world.layer))
+      )
+    ).toBe('ignored: connected-account event');
+    expect(world.payment()?.status).toBe('pending');
+  });
+
   it('marks the event failed and answers 500 when Stripe cannot be reached', async () => {
     const world = makeWorld({
       verified: accountUpdated(),

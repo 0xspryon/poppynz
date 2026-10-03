@@ -75,6 +75,13 @@ const flagDispute = (event: PaymentWebhookEvent) =>
 /** Applies one verified event. Returns a short note for the log. */
 export const processStripeEvent = (event: PaymentWebhookEvent) =>
   Effect.gen(function* () {
+    // A connected account's own objects (its intents, setups, charges) are
+    // not the platform's: only `account.updated` is handled for them. The
+    // rest are recorded and acknowledged, never dispatched — `stripe listen
+    // --forward-connect-to` forwards every Connect event.
+    if (event.account !== null && event.type !== 'account.updated') {
+      return 'ignored: connected-account event';
+    }
     if (paymentIntentEvents.has(event.type)) {
       const result = yield* settlePaymentByReference(event.objectId);
       return `settle: ${result.outcome}`;

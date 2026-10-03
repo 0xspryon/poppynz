@@ -126,6 +126,13 @@
 				{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
 				View payouts in Stripe
 			</button>
+		{:else if payouts.status === 'restricted' && payouts.requirementsDue.length === 0}
+			<!-- Restricted with nothing due: Stripe is verifying what it has
+			     (pending_verification, under_review). Nothing for the helper to fix. -->
+			<h2 class="text-[15px] font-bold text-base-content">Stripe is reviewing your details</h2>
+			<p class="mt-1 text-sm text-base-content-muted">
+				There's nothing more to do for now. This page updates once Stripe has finished.
+			</p>
 		{:else if payouts.status === 'restricted'}
 			<h2 class="text-[15px] font-bold text-base-content">Stripe needs a few more details</h2>
 			<ul class="mt-2 list-disc pl-5 text-sm text-base-content">

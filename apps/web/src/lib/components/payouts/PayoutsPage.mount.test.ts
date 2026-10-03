@@ -90,6 +90,23 @@ describe('PayoutsPage', () => {
 		expect(found).toBe(true);
 	});
 
+	it('says Stripe is reviewing, with no empty list or fix button, when restricted with nothing due', async () => {
+		getPayouts.mockResolvedValue({
+			ok: true,
+			data: state({ hasAccount: true, status: 'restricted', requirementsDue: [] })
+		});
+		const app = mount(PayoutsPage, { target: document.body, props: { navigate: vi.fn() } });
+		await settle();
+		const text = document.body.textContent ?? '';
+		const lists = document.querySelectorAll('section ul').length;
+		const fix = button('Fix in Stripe') !== undefined;
+		unmount(app);
+		expect(text).toContain('Stripe is reviewing your details');
+		expect(text).not.toContain('Stripe needs a few more details');
+		expect(lists).toBe(0);
+		expect(fix).toBe(false);
+	});
+
 	it('shows a support message and no action when disabled', async () => {
 		getPayouts.mockResolvedValue({ ok: true, data: state({ hasAccount: true, status: 'disabled' }) });
 		const app = mount(PayoutsPage, { target: document.body, props: { navigate: vi.fn() } });

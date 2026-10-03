@@ -1,4 +1,6 @@
 <script lang="ts">
+	import type { Snippet } from 'svelte';
+
 	interface Props {
 		open: boolean;
 		title: string;
@@ -9,6 +11,8 @@
 		busy?: boolean;
 		onconfirm: () => void;
 		oncancel: () => void;
+		/** Optional extra content under the body (e.g. a reminder with a link). */
+		children?: Snippet;
 	}
 
 	let {
@@ -19,7 +23,8 @@
 		confirmClass = 'btn-error',
 		busy = false,
 		onconfirm,
-		oncancel
+		oncancel,
+		children
 	}: Props = $props();
 </script>
 
@@ -28,6 +33,9 @@
 		<div class="modal-box max-w-md border border-card-border">
 			<h3 class="font-display text-xl font-bold text-base-content">{title}</h3>
 			<p class="py-3 text-sm text-base-content-muted">{body}</p>
+			{#if children}
+				<div class="pb-1">{@render children()}</div>
+			{/if}
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
 					Cancel

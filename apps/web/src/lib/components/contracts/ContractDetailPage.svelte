@@ -25,6 +25,7 @@
 	import { getProvider } from '$lib/api/providers';
 	import { todayIn } from '@repo/calendar';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
+	import PayoutsReminder from '$lib/components/payouts/PayoutsReminder.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import ContractTermsEditor, {
 		type EditorService
@@ -856,7 +857,11 @@
 	{busy}
 	onconfirm={handleAccept}
 	oncancel={() => (acceptConfirmOpen = false)}
-/>
+>
+	{#if role === 'service-provider' && contract?.payoutsReady === false}
+		<PayoutsReminder />
+	{/if}
+</ConfirmDialog>
 
 <ConfirmDialog
 	open={withdrawConfirmOpen}

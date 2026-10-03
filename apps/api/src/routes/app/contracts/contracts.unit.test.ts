@@ -266,6 +266,9 @@ const makeLayer = (
     familyCard?: boolean;
     /** The helper's stored payout status; null/undefined = no payout account. */
     payoutAccountStatus?: PayoutAccountStatus | null;
+    /** Whose payout account that is. Defaults to the helper (provider-1); the
+     * stub finds it only for that user id. */
+    payoutAccountOwner?: string;
   } = {}
 ) => {
   const viewer = options.viewer ?? familyUser();
@@ -279,7 +282,8 @@ const makeLayer = (
     makePayoutAccountRepoTest({
       findByUserId: (userId) =>
         Effect.succeed(
-          options.payoutAccountStatus
+          options.payoutAccountStatus &&
+            userId === (options.payoutAccountOwner ?? providerUser().id)
             ? dummyPayoutAccount({
                 userId,
                 provider: 'mock',
@@ -2138,7 +2142,10 @@ describe('GET /contracts/:id', () => {
   });
 
   describe('payoutsReady (reminder only — never blocks accepting)', () => {
-    const helperLayer = (payoutAccountStatus?: PayoutAccountStatus | null) =>
+    const helperLayer = (
+      payoutAccountStatus?: PayoutAccountStatus | null,
+      payoutAccountOwner?: string
+    ) =>
       makeLayer({
         viewer: providerUser(),
         contractWithContext: withContext(
@@ -2147,7 +2154,8 @@ describe('GET /contracts/:id', () => {
           'provider-1'
         ),
         conversationById: activeConversation(),
-        payoutAccountStatus
+        payoutAccountStatus,
+        payoutAccountOwner
       });
 
     it('is false for a helper without a payout account, and Accept stays available', async () => {
@@ -2176,6 +2184,15 @@ describe('GET /contracts/:id', () => {
         )
       );
       expect(contract.payoutsReady).toBe(true);
+    });
+
+    it("reads the helper's own payout account, not anyone else's", async () => {
+      const { contract } = await Effect.runPromise(
+        getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(helperLayer('ready', 'someone-else'))
+        )
+      );
+      expect(contract.payoutsReady).toBe(false);
     });
 
     it('is null for the family viewer', async () => {

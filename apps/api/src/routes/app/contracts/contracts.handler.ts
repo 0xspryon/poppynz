@@ -38,6 +38,7 @@ import {
   CounterpartNotApprovedError
 } from '@/api/lib/approval-gate';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
+import { hasReadyPayoutAccount } from '@/api/lib/payouts';
 import {
   contractCreateJsonError,
   contractDeclineJsonError,
@@ -1122,6 +1123,10 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
     const hasPaymentMethod = isFamily
       ? (yield* cardOnFile(viewer.id).pipe((errors) => mapContractRepoError(errors))) !== null
       : null;
+    // The mirror for the helper (piece 2b): told whether payouts are ready,
+    // for the reminder at acceptance; null for the family. Stored snapshot
+    // only, and readiness never gates accepting — pieces 3 and 4 enforce it.
+    const payoutsReady = isFamily ? null : yield* hasReadyPayoutAccount(viewer.id);
     const effective = effectiveEnd(row, accepted);
     // Why the proposal can't be accepted, for both sides: the receiver's
     // Accept is gone, and the proposer is told to send a later start date.
@@ -1166,6 +1171,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         earliestStartsOn: timeZone ? addDays(todayIn(timeZone), 1) : null,
         acceptBlockedReason,
         hasPaymentMethod,
+        payoutsReady,
         endedByMe: row.endedByUserId === viewer.id,
         endNote: row.endNote,
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,

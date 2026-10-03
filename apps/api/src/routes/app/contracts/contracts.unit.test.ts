@@ -3,10 +3,12 @@ import {
   dummyBillingCustomer,
   dummyContract,
   dummyContractVersion,
+  dummyPayoutAccount,
   makeApprovalRepoTest,
   makeContractRepoTest,
   makeConversationRepoTest,
   makeInMemoryBillingCustomerRepo,
+  makePayoutAccountRepoTest,
   makeServiceOfferedRepoTest,
   makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
@@ -18,6 +20,7 @@ import {
   type ContractVersion,
   type ContractWithContext,
   type Conversation,
+  type PayoutAccountStatus,
   type SafeUserProfile,
   type ServiceOffered,
   type Session,
@@ -261,6 +264,8 @@ const makeLayer = (
     familyLocation?: { latitude: number; longitude: number } | null;
     /** Whether the family has a card on file. Defaults to true. */
     familyCard?: boolean;
+    /** The helper's stored payout status; null/undefined = no payout account. */
+    payoutAccountStatus?: PayoutAccountStatus | null;
   } = {}
 ) => {
   const viewer = options.viewer ?? familyUser();
@@ -271,6 +276,19 @@ const makeLayer = (
     makeInMemoryBillingCustomerRepo(options.familyCard === false ? [] : [dummyBillingCustomer()])
       .layer,
     makePaymentsTest({}),
+    makePayoutAccountRepoTest({
+      findByUserId: (userId) =>
+        Effect.succeed(
+          options.payoutAccountStatus
+            ? dummyPayoutAccount({
+                userId,
+                provider: 'mock',
+                accountReference: `mock_acct_${userId}`,
+                status: options.payoutAccountStatus
+              })
+            : null
+        )
+    }),
     // Safety verification now gates the bookable actions; these suites assert
     // other behaviour, so the applicant is verified unless a test says so.
     makeSafetyVerificationRepoTest({
@@ -2117,6 +2135,67 @@ describe('GET /contracts/:id', () => {
 
     expect(contract).toMatchObject({ endsOn: '2099-12-11', endsAtMinutes: 720 });
     expect(contract.acceptedVersion).toMatchObject({ endsAtMinutes: 720 });
+  });
+
+  describe('payoutsReady (reminder only — never blocks accepting)', () => {
+    const helperLayer = (payoutAccountStatus?: PayoutAccountStatus | null) =>
+      makeLayer({
+        viewer: providerUser(),
+        contractWithContext: withContext(
+          baseContract({ status: 'proposed' }),
+          [proposedVersion()],
+          'provider-1'
+        ),
+        conversationById: activeConversation(),
+        payoutAccountStatus
+      });
+
+    it('is false for a helper without a payout account, and Accept stays available', async () => {
+      const { contract } = await Effect.runPromise(
+        getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(helperLayer(null))
+        )
+      );
+      expect(contract.payoutsReady).toBe(false);
+      expect(contract.actions.canAccept).toBe(true);
+    });
+
+    it('is false while the payout account is still restricted', async () => {
+      const { contract } = await Effect.runPromise(
+        getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(helperLayer('restricted'))
+        )
+      );
+      expect(contract.payoutsReady).toBe(false);
+    });
+
+    it('is true once the payout account is ready', async () => {
+      const { contract } = await Effect.runPromise(
+        getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(helperLayer('ready'))
+        )
+      );
+      expect(contract.payoutsReady).toBe(true);
+    });
+
+    it('is null for the family viewer', async () => {
+      const { contract } = await Effect.runPromise(
+        getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(
+            makeLayer({
+              contractWithContext: withContext(
+                baseContract({ status: 'proposed' }),
+                [proposedVersion()],
+                'family-1'
+              ),
+              conversationById: activeConversation(),
+              payoutAccountStatus: 'ready'
+            })
+          )
+        )
+      );
+      expect(contract.payoutsReady).toBeNull();
+    });
   });
 });
 

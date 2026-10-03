@@ -49,7 +49,8 @@ const createReady = async (withCardPayments: boolean) => {
     },
     business_profile: {
       mcc: '8351',
-      product_description: 'Childcare booked through Poppynz (local e2e test account)'
+      product_description: 'Childcare booked through Poppynz (local e2e test account)',
+      url: 'https://poppynz.com'
     },
     individual: {
       first_name: 'Test',
@@ -58,6 +59,7 @@ const createReady = async (withCardPayments: boolean) => {
       phone: '0000000000',
       dob: { day: 1, month: 1, year: 1901 },
       id_number: '000000000',
+      relationship: { title: 'Helper' },
       address: {
         line1: 'address_full_match',
         city: 'Winnipeg',

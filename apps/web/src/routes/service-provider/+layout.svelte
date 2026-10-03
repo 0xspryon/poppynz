@@ -12,6 +12,7 @@
 	import TcGate from '$lib/components/TcGate.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
+	import { payoutsBadge } from '$lib/payouts-badge.svelte';
 	import { unread } from '$lib/unread.svelte';
 	import { onMount, type Snippet } from 'svelte';
 
@@ -53,13 +54,17 @@
 	}
 
 	$effect(() => {
-		if (authorized) void refreshBadge();
+		if (authorized) {
+			void refreshBadge();
+			void payoutsBadge.refresh();
+		}
 	});
 	afterNavigate(() => {
 		if (authorized) {
 			void refreshBadge();
 			void unread.refresh();
 			void contractsBadge.refresh();
+			void payoutsBadge.refresh();
 		}
 	});
 
@@ -113,6 +118,13 @@
 			label: 'Contracts',
 			icon: 'la-file-signature',
 			badge: contractsBadge.count,
+			group: 'Your Poppynz'
+		},
+		{
+			href: resolve('/service-provider/payouts'),
+			label: 'Payouts',
+			icon: 'la-wallet',
+			badge: payoutsBadge.needsSetup ? '!' : undefined,
 			group: 'Your Poppynz'
 		},
 		{

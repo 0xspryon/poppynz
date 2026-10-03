@@ -6,8 +6,9 @@
 		href: ResolvedPathname;
 		label: string;
 		icon: string;
-		/** Pink attention badge count (e.g. missing documents); hidden when falsy. */
-		badge?: number;
+		/** Pink attention badge: a count (e.g. missing documents) or a short
+		 * marker such as '!'; hidden when falsy. */
+		badge?: number | string;
 		/** Section heading shown above the first item of each run of the same
 		 * group (e.g. "Get started"); ungrouped items render without one. */
 		group?: string;

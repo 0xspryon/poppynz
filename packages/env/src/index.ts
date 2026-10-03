@@ -235,3 +235,18 @@ export const stripeConfig = Config.all({
   settleAfterMinutes: Config.integer('PAYMENTS_SETTLE_AFTER_MINUTES').pipe(Config.withDefault(10)),
   abandonAfterHours: Config.integer('PAYMENTS_ABANDON_AFTER_HOURS').pipe(Config.withDefault(24))
 });
+
+// Helper payout accounts (Stripe Connect, piece 2b).
+// APP_WEB_ORIGIN is the ONE web origin Stripe's hosted onboarding returns to;
+// TRUSTED_ORIGINS is a list, so it can't serve as a single return address.
+// A stored payout status older than PAYOUTS_REFRESH_AFTER_MINUTES is
+// re-fetched from the provider when read.
+export const payoutsConfig = Config.all({
+  appWebOrigin: Config.string('APP_WEB_ORIGIN').pipe(
+    Config.withDefault('https://app.poppynz.com'),
+    Config.map((origin) => origin.trim().replace(/\/+$/, ''))
+  ),
+  refreshAfterMinutes: Config.integer('PAYOUTS_REFRESH_AFTER_MINUTES').pipe(
+    Config.withDefault(60)
+  )
+});

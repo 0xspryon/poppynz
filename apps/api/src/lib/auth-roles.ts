@@ -23,6 +23,9 @@ export const appAc = createAccessControl({
   // submits their own — ownership is enforced at the route.
   kycDocument: ['read', 'write', 'review'],
   kycDocumentType: ['read', 'write'],
+  // A helper's own payout account (Stripe Connect). Ownership is implicit:
+  // every /payouts route acts on the session user only.
+  payouts: ['read', 'write'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
   referral: ['read', 'write'],
@@ -66,6 +69,7 @@ export const spRole = appAc.newRole({
   familySearch: ['read'],
   approvalRequest: ['write'],
   kycDocument: ['write'],
+  payouts: ['read', 'write'],
   referral: ['read', 'write'],
   safetyVerification: ['read', 'write'],
   serviceCatalogue: ['read'],

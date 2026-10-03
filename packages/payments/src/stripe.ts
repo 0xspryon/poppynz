@@ -13,6 +13,7 @@ import {
   type StartedPayment
 } from './port';
 import { makeStripeConnectOperations, type StripeConnectClient } from './stripe-connect';
+import { constructEventWithAnySecret } from './webhook-secrets';
 
 /**
  * Stripe adapter for the `Payments` port. The ONLY file in the monorepo that
@@ -136,8 +137,11 @@ export const makeStripePayments = (options: {
   client: StripeApi;
   /** Null when STRIPE_WEBHOOK_SECRET is unset: every delivery is then refused. */
   webhookSecret: string | null;
+  /** STRIPE_CONNECT_WEBHOOK_SECRET — the Connect endpoint's secret, tried
+   * after the platform one. Optional (local `stripe listen` uses one secret). */
+  connectWebhookSecret?: string | null;
 }): Context.Tag.Service<Payments> => {
-  const { client, webhookSecret } = options;
+  const { client, webhookSecret, connectWebhookSecret = null } = options;
 
   const retrieve = (operation: PaymentOperation, reference: string) =>
     call(operation, () =>
@@ -275,9 +279,14 @@ export const makeStripePayments = (options: {
           );
         }
         // The async variant: under Bun the SDK resolves to its web build, whose
-        // SubtleCrypto provider cannot verify synchronously.
+        // SubtleCrypto provider cannot verify synchronously. Platform secret
+        // first, then the Connect endpoint's (piece 2b).
         const event = yield* Effect.tryPromise({
-          try: () => client.webhooks.constructEventAsync(rawBody, signatureHeader, webhookSecret),
+          try: () =>
+            constructEventWithAnySecret(
+              (secret) => client.webhooks.constructEventAsync(rawBody, signatureHeader, secret),
+              connectWebhookSecret === null ? [webhookSecret] : [webhookSecret, connectWebhookSecret]
+            ),
           catch: (cause) =>
             new PaymentWebhookSignatureError({
               reason: cause instanceof Error ? cause.message : 'invalid signature'

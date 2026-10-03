@@ -1,17 +1,21 @@
 import { SqlError } from '@effect/sql/SqlError';
 import {
   dummyBillingCustomer,
+  dummyPayoutAccount,
   makeCheckOrderRepoTest,
   makeInMemoryBillingCustomerRepo,
+  makeInMemoryPayoutAccountRepo,
   makePaymentRepoTest,
   makeStripeWebhookEventRepoTest,
   type CheckOrder,
   type Payment,
+  type PayoutAccount,
   type StripeWebhookRecordResult
 } from '@repo/db';
 import { NoopNotificationHubTest } from '@repo/notify';
 import {
   makePaymentsTest,
+  PaymentProviderError,
   PaymentWebhookSignatureError,
   type PaymentWebhookEvent,
   type ProviderPayment
@@ -21,6 +25,7 @@ import { Effect, Layer, ManagedRuntime } from 'effect';
 import { Hono } from 'hono';
 import { describe, expect, it } from 'vitest';
 import type { BaseAppEnv } from '@/api/app-env';
+import { readySnapshot } from '@/api/lib/payouts.test-support';
 import { processStripeEvent, stripeWebhookRoute } from './stripe';
 
 // Public ingress with no session: the signature is the only authentication,
@@ -76,6 +81,10 @@ const makeWorld = (
     processingFails?: boolean;
     /** The card already on file for family-1. */
     cardOnFile?: string | null;
+    /** Helper payout accounts on file (piece 2b). */
+    payoutAccounts?: Array<PayoutAccount>;
+    /** Stripe can't be reached when a payout account is re-fetched. */
+    payoutProviderFails?: boolean;
   } = {}
 ) => {
   let payment = options.payment === undefined ? paymentRow() : options.payment;
@@ -85,7 +94,9 @@ const makeWorld = (
     processed: [] as Array<string>,
     failed: [] as Array<string>,
     enqueued: [] as Array<string>,
-    updates: [] as Array<Partial<Payment>>
+    updates: [] as Array<Partial<Payment>>,
+    /** Payout accounts re-fetched from the provider. */
+    fetchedAccounts: [] as Array<string>
   };
   const billing = makeInMemoryBillingCustomerRepo([
     dummyBillingCustomer({
@@ -94,6 +105,7 @@ const makeWorld = (
       cardReference: options.cardOnFile ?? null
     })
   ]);
+  const payouts = makeInMemoryPayoutAccountRepo(options.payoutAccounts ?? []);
 
   const layer = Layer.mergeAll(
     makePaymentsTest({
@@ -115,7 +127,13 @@ const makeWorld = (
             expMonth: 12,
             expYear: 2034
           }
-        })
+        }),
+      getPayoutAccount: (reference) => {
+        log.fetchedAccounts.push(reference);
+        return options.payoutProviderFails
+          ? Effect.fail(new PaymentProviderError({ operation: 'getPayoutAccount', cause: 'down' }))
+          : Effect.succeed(readySnapshot());
+      }
     }),
     makeStripeWebhookEventRepoTest({
       record: ({ eventId }) =>
@@ -155,6 +173,7 @@ const makeWorld = (
         })
     }),
     billing.layer,
+    payouts.layer,
     makeSafetyVerificationQueueTest({
       enqueueOrder: ({ orderId }) =>
         Effect.sync(() => {
@@ -180,7 +199,7 @@ const makeWorld = (
       body
     });
 
-  return { post, app, layer, log, billing, payment: () => payment, order: () => order };
+  return { post, app, layer, log, billing, payouts, payment: () => payment, order: () => order };
 };
 
 describe('POST /webhooks/stripe', () => {
@@ -370,5 +389,61 @@ describe('processStripeEvent', () => {
       event({ type: 'charge.dispute.created', objectId: 'dp_1', paymentReference: 'pi_1' })
     );
     expect(world.payment()?.lastError).toBe('card dispute opened');
+  });
+});
+
+describe('account.updated (piece 2b)', () => {
+  const accountUpdated = (overrides: Partial<PaymentWebhookEvent> = {}) =>
+    event({
+      eventId: 'evt_acct_1',
+      type: 'account.updated',
+      objectId: 'acct_123',
+      account: 'acct_123',
+      ...overrides
+    });
+
+  it('re-fetches a known account and stores the snapshot', async () => {
+    const world = makeWorld({ verified: accountUpdated(), payoutAccounts: [dummyPayoutAccount()] });
+    const response = await world.post();
+    expect(response.status).toBe(200);
+    expect(world.log.fetchedAccounts).toEqual(['acct_123']);
+    expect(world.payouts.rows.get('helper-1')?.status).toBe('ready');
+    expect(world.log.processed).toEqual(['evt_acct_1']);
+  });
+
+  it('records an unknown account and answers 200', async () => {
+    const world = makeWorld({
+      verified: accountUpdated({ eventId: 'evt_acct_2', objectId: 'acct_unknown', account: 'acct_unknown' }),
+      payoutAccounts: []
+    });
+    const response = await world.post();
+    expect(response.status).toBe(200);
+    expect(world.log.fetchedAccounts).toEqual([]);
+    expect(world.log.recorded).toEqual(['evt_acct_2']);
+    expect(world.log.processed).toEqual(['evt_acct_2']);
+  });
+
+  it('answers 200 to a duplicate delivery without re-fetching', async () => {
+    const world = makeWorld({
+      verified: accountUpdated(),
+      payoutAccounts: [dummyPayoutAccount()],
+      seen: 'processed'
+    });
+    const response = await world.post();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, duplicate: true });
+    expect(world.log.fetchedAccounts).toEqual([]);
+  });
+
+  it('marks the event failed and answers 500 when Stripe cannot be reached', async () => {
+    const world = makeWorld({
+      verified: accountUpdated(),
+      payoutAccounts: [dummyPayoutAccount()],
+      payoutProviderFails: true
+    });
+    const response = await world.post();
+    expect(response.status).toBe(500);
+    expect(world.log.failed).toEqual(['evt_acct_1']);
+    expect(world.log.processed).toEqual([]);
   });
 });

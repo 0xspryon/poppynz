@@ -232,6 +232,10 @@ export const stripeConfig = Config.all({
   ),
   secretKey: Config.option(Config.redacted('STRIPE_SECRET_KEY')),
   webhookSecret: Config.option(Config.redacted('STRIPE_WEBHOOK_SECRET')),
+  // The Connect endpoint's signing secret (account.updated on connected
+  // accounts). Optional: locally `stripe listen` signs both streams with
+  // STRIPE_WEBHOOK_SECRET.
+  connectWebhookSecret: Config.option(Config.redacted('STRIPE_CONNECT_WEBHOOK_SECRET')),
   settleAfterMinutes: Config.integer('PAYMENTS_SETTLE_AFTER_MINUTES').pipe(Config.withDefault(10)),
   abandonAfterHours: Config.integer('PAYMENTS_ABANDON_AFTER_HOURS').pipe(Config.withDefault(24))
 });

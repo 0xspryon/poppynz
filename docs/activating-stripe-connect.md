@@ -14,7 +14,12 @@ Connect is already enabled in **test mode**. As of 2 October 2026, the test acco
 ## Also needed when switching to live
 
 - Live API keys: `STRIPE_SECRET_KEY=sk_live_…` (API) and `PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_…` (web), set in the production environment only. Never commit them.
-- A live webhook endpoint in the dashboard pointing at `https://<api host>/webhooks/stripe`, subscribed to the events the code listens for, with its signing secret set as `STRIPE_WEBHOOK_SECRET` in production.
+- Two live webhook endpoints in the dashboard, both pointing at `https://<api host>/webhooks/stripe`:
+  - **Your account** events (payments, setup intents, refunds, disputes), with its signing secret as `STRIPE_WEBHOOK_SECRET`;
+  - **Connected accounts** events, subscribed to `account.updated`, with its signing secret as `STRIPE_CONNECT_WEBHOOK_SECRET`.
+  
+  Set both in the production environment only. Staging, on test keys, needs the same two endpoints in test mode.
+- `APP_WEB_ORIGIN=https://app.poppynz.com` (the default) — where Stripe's hosted onboarding returns helpers.
 - Business verification and the live platform profile completed, and Connect's terms of service accepted in Poppynz's name. This is an account-owner action.
 - The founder's launch checks from the umbrella spec (§3, §12): verify authorisation and capture windows, Connect capabilities and payout timing, partial capture and refunds, and dispute handling in test mode; and get the accountant's written sign-off before any taxable charge goes live.
 

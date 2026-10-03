@@ -46,6 +46,10 @@ export const PaymentsLive = Layer.effect(
         '[payments] STRIPE_WEBHOOK_SECRET is not set — every Stripe webhook will be refused'
       );
     }
-    return makeStripePayments({ client: makeStripeClient(secretKey), webhookSecret });
+    return makeStripePayments({
+      client: makeStripeClient(secretKey),
+      webhookSecret,
+      connectWebhookSecret: secretValue(config.connectWebhookSecret)
+    });
   })
 );

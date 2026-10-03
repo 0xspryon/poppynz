@@ -385,4 +385,33 @@ describe('verifyWebhook', () => {
     const exit = await Effect.runPromiseExit(unconfigured.verifyWebhook(payload, await sign()));
     expect(Exit.isFailure(exit)).toBe(true);
   });
+
+  it('accepts a Connect event signed with the Connect endpoint secret, keeping its account', async () => {
+    const connectPayload = JSON.stringify({
+      id: 'evt_2',
+      object: 'event',
+      type: 'account.updated',
+      account: 'acct_123',
+      data: { object: { id: 'acct_123', object: 'account' } }
+    });
+    const header = await Stripe.webhooks.generateTestHeaderStringAsync({
+      payload: connectPayload,
+      secret: 'whsec_connect'
+    });
+    const withConnect = makeStripePayments({
+      client: fakeStripe().client,
+      webhookSecret: WEBHOOK_SECRET,
+      connectWebhookSecret: 'whsec_connect'
+    });
+    expect(await Effect.runPromise(withConnect.verifyWebhook(connectPayload, header))).toEqual({
+      eventId: 'evt_2',
+      type: 'account.updated',
+      objectId: 'acct_123',
+      paymentReference: null,
+      account: 'acct_123'
+    });
+    // Without the Connect secret configured, the same delivery is refused.
+    const exit = await Effect.runPromiseExit(payments.verifyWebhook(connectPayload, header));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
 });

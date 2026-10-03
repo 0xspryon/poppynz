@@ -5,6 +5,7 @@ import { Cause, Effect, Exit } from 'effect';
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import type { BaseAppEnv, HonoContext } from '@/api/app-env';
+import { handleAccountUpdated } from '@/api/lib/payouts';
 
 /**
  * Stripe webhooks.
@@ -87,9 +88,14 @@ export const processStripeEvent = (event: PaymentWebhookEvent) =>
         return yield* recordRefund(event);
       case 'charge.dispute.created':
         return yield* flagDispute(event);
-      case 'account.updated':
-        // Connected accounts arrive with piece 2b (helper payout accounts).
-        return 'account.updated: not handled yet';
+      case 'account.updated': {
+        // Connect (piece 2b): a helper's payout account changed. A wake-up
+        // signal only — the account is re-fetched and stored; an account we
+        // don't know is acknowledged and ignored. The event's object IS the
+        // connected account, so objectId is its acct_ id.
+        const outcome = yield* handleAccountUpdated(event.objectId);
+        return `payout account: ${outcome}`;
+      }
       default:
         return 'ignored';
     }

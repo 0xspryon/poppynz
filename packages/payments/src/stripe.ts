@@ -133,6 +133,9 @@ const isUnexpectedState = (cause: unknown) =>
 /** Webhook payloads are routed by id only; this is the shape we read. */
 type RoutedObject = { id?: unknown; payment_intent?: unknown };
 
+const nonBlankSecret = (secret: string | null): string | null =>
+  secret === null || secret.trim() === '' ? null : secret;
+
 export const makeStripePayments = (options: {
   client: StripeApi;
   /** Null when STRIPE_WEBHOOK_SECRET is unset: every delivery is then refused. */
@@ -141,7 +144,12 @@ export const makeStripePayments = (options: {
    * after the platform one. Optional (local `stripe listen` uses one secret). */
   connectWebhookSecret?: string | null;
 }): Context.Tag.Service<Payments> => {
-  const { client, webhookSecret, connectWebhookSecret = null } = options;
+  const { client } = options;
+  // Blank or whitespace secrets count as unset: an HMAC check against an
+  // empty, publicly known key would let anyone forge a delivery. PaymentsLive
+  // already filters these; a direct caller (worker, script) might not.
+  const webhookSecret = nonBlankSecret(options.webhookSecret);
+  const connectWebhookSecret = nonBlankSecret(options.connectWebhookSecret ?? null);
 
   const retrieve = (operation: PaymentOperation, reference: string) =>
     call(operation, () =>

@@ -386,6 +386,32 @@ describe('verifyWebhook', () => {
     expect(Exit.isFailure(exit)).toBe(true);
   });
 
+  it('treats a blank secret as unset, so nobody can sign with a known empty key', async () => {
+    // A caller passing '' or whitespace must not get an HMAC check against
+    // that publicly known key (defence in depth: PaymentsLive also filters).
+    const blankSigned = (secret: string) =>
+      Stripe.webhooks.generateTestHeaderStringAsync({ payload, secret });
+    const blankPlatform = makeStripePayments({ client: fakeStripe().client, webhookSecret: ' ' });
+    const platformExit = await Effect.runPromiseExit(
+      blankPlatform.verifyWebhook(payload, await blankSigned(' '))
+    );
+    expect(Exit.isFailure(platformExit)).toBe(true);
+
+    const blankConnect = makeStripePayments({
+      client: fakeStripe().client,
+      webhookSecret: WEBHOOK_SECRET,
+      connectWebhookSecret: '  '
+    });
+    const connectExit = await Effect.runPromiseExit(
+      blankConnect.verifyWebhook(payload, await blankSigned('  '))
+    );
+    expect(Exit.isFailure(connectExit)).toBe(true);
+    // The platform secret still works alongside the ignored blank one.
+    expect(
+      Exit.isSuccess(await Effect.runPromiseExit(blankConnect.verifyWebhook(payload, await sign())))
+    ).toBe(true);
+  });
+
   it('accepts a Connect event signed with the Connect endpoint secret, keeping its account', async () => {
     const connectPayload = JSON.stringify({
       id: 'evt_2',

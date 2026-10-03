@@ -14,6 +14,7 @@ import {
   hasReadyPayoutAccount,
   isPaymentReady,
   isStale,
+  refreshPayoutAccount,
   requirementLabels
 } from './payouts';
 import { readySnapshot } from './payouts.test-support';
@@ -159,6 +160,40 @@ describe('isPaymentReady', () => {
     expect(ready).toBe(false);
   });
 
+  it('answers false for a stale stored ready when Stripe cannot confirm it', async () => {
+    // Stripe may have restricted the account since; an unconfirmed `ready`
+    // must never move money.
+    const fetched: Array<string> = [];
+    const { layer } = makeInMemoryPayoutAccountRepo([
+      dummyPayoutAccount({ status: 'ready', refreshedAt: minutesAgo(90 * 24) })
+    ]);
+    const ready = await Effect.runPromise(
+      isPaymentReady('helper-1').pipe(
+        Effect.provide(Layer.merge(layer, paymentsReturning(fetched, readySnapshot(), true)))
+      )
+    );
+    expect(ready).toBe(false);
+    expect(fetched).toEqual(['acct_123']);
+  });
+
+  it('answers false for a stale stored ready when the account vanished during the refresh', async () => {
+    const { layer, rows } = makeInMemoryPayoutAccountRepo([
+      dummyPayoutAccount({ status: 'ready', refreshedAt: minutesAgo(90) })
+    ]);
+    const vanishing = makePaymentsTest({
+      provider: 'stripe',
+      getPayoutAccount: () =>
+        Effect.sync(() => {
+          rows.delete('helper-1');
+          return readySnapshot();
+        })
+    });
+    const ready = await Effect.runPromise(
+      isPaymentReady('helper-1').pipe(Effect.provide(Layer.merge(layer, vanishing)))
+    );
+    expect(ready).toBe(false);
+  });
+
   it('answers false when the database fails', async () => {
     const failing = makePayoutAccountRepoTest({
       findByUserId: () => Effect.fail(new SqlError({ cause: 'db down' })),
@@ -253,5 +288,32 @@ describe('handleAccountUpdated', () => {
       )
     );
     expect(JSON.stringify(exit)).toContain('PayoutsProviderError');
+  });
+});
+
+describe('refreshPayoutAccount', () => {
+  it('never lets a refresh that finishes late overwrite a newer snapshot', async () => {
+    // GET /payouts starts fetching (Stripe still says ready); meanwhile the
+    // webhook's re-fetch stores `restricted`. The GET's write lands last.
+    const { layer, rows } = makeInMemoryPayoutAccountRepo([
+      dummyPayoutAccount({ status: 'ready', refreshedAt: minutesAgo(90) })
+    ]);
+    const slow = makePaymentsTest({
+      provider: 'stripe',
+      getPayoutAccount: () =>
+        Effect.gen(function* () {
+          yield* Effect.sleep('5 millis');
+          const row = rows.get('helper-1')!;
+          rows.set('helper-1', { ...row, status: 'restricted', refreshedAt: new Date() });
+          yield* Effect.sleep('5 millis');
+          return readySnapshot();
+        })
+    });
+    const result = await Effect.runPromise(
+      refreshPayoutAccount(rows.get('helper-1')!).pipe(Effect.provide(Layer.merge(layer, slow)))
+    );
+    expect(rows.get('helper-1')?.status).toBe('restricted');
+    // The caller sees the newer stored snapshot, not its own stale input.
+    expect(result.status).toBe('restricted');
   });
 });

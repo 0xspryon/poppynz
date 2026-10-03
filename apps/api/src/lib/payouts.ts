@@ -111,25 +111,30 @@ export const loadPayoutAccount = (userId: string) =>
     return account !== null && account.provider === payments.provider ? account : null;
   });
 
-/** Re-fetch from the provider and store. Never trusts a webhook body. A
- * compare-and-set on the reference it was fetched for: if the account on
- * file changed (or vanished) under us — `applySnapshot` returns null — we
- * no-op back to the stored row instead of failing. */
+/** Re-fetch from the provider and store. Never trusts a webhook body. The
+ * write is a compare-and-set on the reference it was fetched for AND on the
+ * fetch time (taken before the call): `applySnapshot` returns null when the
+ * account on file changed or vanished under us, or when a snapshot fetched
+ * later already landed. Then we return what is on file now (the newer
+ * snapshot), falling back to the row we were given — never an error. */
 export const refreshPayoutAccount = (account: PayoutAccount) =>
   Effect.gen(function* () {
     const payments = yield* Payments;
     const repo = yield* PayoutAccountRepo;
+    const fetchedAt = new Date();
     const snapshot = yield* payments
       .getPayoutAccount(account.accountReference)
       .pipe((errors) => mapPayoutsProviderError(errors));
     const updated = yield* repo
-      .applySnapshot(account.userId, account.accountReference, toSnapshotInput(snapshot, new Date()))
+      .applySnapshot(account.userId, account.accountReference, toSnapshotInput(snapshot, fetchedAt))
       .pipe((errors) => mapPayoutsRepoError(errors));
-    return updated ?? account;
+    if (updated) return updated;
+    return (yield* loadPayoutAccount(account.userId)) ?? account;
   });
 
 /** The stored account, re-fetched first when older than the refresh window.
- * A provider failure keeps (and returns) the stored state. */
+ * A provider failure keeps (and returns) the stored state — fine for showing
+ * the helper their page, never for deciding to move money. */
 export const currentPayoutAccount = (userId: string) =>
   Effect.gen(function* () {
     const account = yield* loadPayoutAccount(userId);
@@ -145,15 +150,23 @@ export const currentPayoutAccount = (userId: string) =>
     );
   });
 
-/** For pieces 3 and 4 (cycle start, transfers). Any failure answers false:
- * money never moves on an unknown status. */
+/** For pieces 3 and 4 (cycle start, transfers). Strict: true only when a
+ * snapshot inside the refresh window says `ready`. A stale row is re-fetched
+ * with NO stored fallback, and any failure — or a refresh that still leaves
+ * only stale data on file — answers false: money never moves on an
+ * unconfirmed status. */
 export const isPaymentReady = (
   userId: string
 ): Effect.Effect<boolean, never, Payments | PayoutAccountRepo> =>
-  currentPayoutAccount(userId).pipe(
-    Effect.map((account) => account?.status === 'ready'),
-    Effect.orElseSucceed(() => false)
-  );
+  Effect.gen(function* () {
+    const stored = yield* loadPayoutAccount(userId);
+    if (!stored) return false;
+    const { refreshAfterMinutes } = yield* payoutsPolicy;
+    const account = isStale(stored, new Date(), refreshAfterMinutes)
+      ? yield* refreshPayoutAccount(stored)
+      : stored;
+    return account.status === 'ready' && !isStale(account, new Date(), refreshAfterMinutes);
+  }).pipe(Effect.orElseSucceed(() => false));
 
 /** Stored snapshot only — cheap enough for every contract detail read. */
 export const hasReadyPayoutAccount = (

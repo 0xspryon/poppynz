@@ -19,7 +19,11 @@ const snapshot = () => ({
 describe('makeInMemoryPayoutAccountRepo applySnapshot', () => {
   it('applies a snapshot fetched for the account currently on file', async () => {
     const { layer, rows } = makeInMemoryPayoutAccountRepo([
-      dummyPayoutAccount({ userId: 'helper-1', accountReference: 'acct_A' })
+      dummyPayoutAccount({
+        userId: 'helper-1',
+        accountReference: 'acct_A',
+        refreshedAt: new Date('2026-10-01T00:00:00.000Z')
+      })
     ]);
     const repo = Effect.runSync(PayoutAccountRepo.pipe(Effect.provide(layer)));
     const result = await Effect.runPromise(repo.applySnapshot('helper-1', 'acct_A', snapshot()));
@@ -49,5 +53,34 @@ describe('makeInMemoryPayoutAccountRepo applySnapshot', () => {
     const result = await Effect.runPromise(repo.applySnapshot('helper-1', 'acct_A', snapshot()));
     expect(result).toBeNull();
     expect(rows.has('helper-1')).toBe(false);
+  });
+
+  it('applies a snapshot to a never-fetched row', async () => {
+    const { layer, rows } = makeInMemoryPayoutAccountRepo([
+      dummyPayoutAccount({ userId: 'helper-1', accountReference: 'acct_A', refreshedAt: null })
+    ]);
+    const repo = Effect.runSync(PayoutAccountRepo.pipe(Effect.provide(layer)));
+    await Effect.runPromise(repo.applySnapshot('helper-1', 'acct_A', snapshot()));
+    expect(rows.get('helper-1')).toMatchObject({ status: 'ready' });
+  });
+
+  it('is a no-op when a snapshot fetched later has already landed', async () => {
+    // A GET fetched `ready` at 00:00; the webhook re-fetched `restricted` at
+    // 00:01 and wrote first. The GET's late write must not roll the row back.
+    const { layer, rows } = makeInMemoryPayoutAccountRepo([
+      dummyPayoutAccount({
+        userId: 'helper-1',
+        accountReference: 'acct_A',
+        status: 'restricted',
+        refreshedAt: new Date('2026-10-02T00:01:00.000Z')
+      })
+    ]);
+    const repo = Effect.runSync(PayoutAccountRepo.pipe(Effect.provide(layer)));
+    const result = await Effect.runPromise(repo.applySnapshot('helper-1', 'acct_A', snapshot()));
+    expect(result).toBeNull();
+    expect(rows.get('helper-1')).toMatchObject({
+      status: 'restricted',
+      refreshedAt: new Date('2026-10-02T00:01:00.000Z')
+    });
   });
 });

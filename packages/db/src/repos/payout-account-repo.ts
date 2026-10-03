@@ -1,6 +1,6 @@
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
-import { and, eq, sql, type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
+import { and, eq, isNull, lte, or, sql, type InferInsertModel, type InferSelectModel } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
 import { payoutAccount } from '../schema';
@@ -11,7 +11,8 @@ export type PayoutAccountCreateInput = Pick<
   InferInsertModel<typeof payoutAccount>,
   'userId' | 'provider' | 'accountReference'
 >;
-/** One re-fetched provider snapshot plus the status the API derived from it. */
+/** One re-fetched provider snapshot plus the status the API derived from it.
+ * `refreshedAt` is when the fetch STARTED: writes are ordered by it. */
 export type PayoutAccountSnapshotInput = Pick<
   PayoutAccount,
   | 'status'
@@ -39,7 +40,9 @@ export class PayoutAccountRepo extends Context.Tag('@repo/db/PayoutAccountRepo')
      * `account_reference` still matches. Null when it lost that race — the
      * account on file changed (a provider switch replaced it) between the
      * re-fetch and this write — or when the user has no account row; callers
-     * treat that as a no-op rather than an error. */
+     * treat that as a no-op rather than an error. Also null when the row
+     * already holds a snapshot fetched after this one's `refreshedAt`:
+     * a refresh that finishes late never overwrites a newer snapshot. */
     applySnapshot: (
       userId: string,
       accountReference: string,
@@ -117,7 +120,11 @@ export const PayoutAccountRepoLive = Layer.effect(
           .where(
             and(
               eq(payoutAccount.userId, userId),
-              eq(payoutAccount.accountReference, accountReference)
+              eq(payoutAccount.accountReference, accountReference),
+              or(
+                isNull(payoutAccount.refreshedAt),
+                lte(payoutAccount.refreshedAt, snapshot.refreshedAt)
+              )
             )
           )
           .returning()
@@ -194,6 +201,12 @@ export const makeInMemoryPayoutAccountRepo = (
         Effect.sync(() => {
           const existing = rows.get(userId);
           if (!existing || existing.accountReference !== accountReference) return null;
+          if (
+            existing.refreshedAt !== null &&
+            existing.refreshedAt.getTime() > snapshot.refreshedAt.getTime()
+          ) {
+            return null;
+          }
           applied.push({ userId, snapshot });
           const row = { ...existing, ...snapshot, updatedAt: new Date() };
           rows.set(userId, row);

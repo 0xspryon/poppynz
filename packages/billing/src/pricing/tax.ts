@@ -104,7 +104,8 @@ export type TaxLine = {
   readonly taxCents: number;
   /** "HST (ON) 13%". */
   readonly label: string;
-  /** Poppynz's registration for the component, printed on receipts. */
+  /** Poppynz's registration for the component, printed on receipts; null
+   * while the number on file is a placeholder (receipts say "pending"). */
   readonly registrationNumber: string | null;
 };
 
@@ -130,6 +131,9 @@ export type TaxResolutionError =
 export type TaxResolution =
   | { readonly ok: true; readonly lines: ReadonlyArray<TaxLine>; readonly taxCents: number }
   | { readonly ok: false; readonly error: TaxResolutionError };
+
+/** The federal jurisdiction code (GST/HST registrations). */
+const FEDERAL = 'CA';
 
 export const inForce = (row: EffectiveDated, on: IsoDate): boolean =>
   row.effectiveFrom <= on && (row.effectiveTo === null || on < row.effectiveTo);
@@ -216,8 +220,14 @@ export const computeSupplyTax = (input: {
   const lines: Array<TaxLine> = [];
   let registeredComponents = 0;
   for (const component of treatment.components) {
+    // A federal registration (CA: GST/HST) covers every province; a
+    // provincial one (QC: QST) only its own.
     const registration = snapshot.registrations.find(
-      (row) => row.registered && row.components.includes(component) && inForce(row, on)
+      (row) =>
+        row.registered &&
+        (row.jurisdictionCode === FEDERAL || row.jurisdictionCode === province) &&
+        row.components.includes(component) &&
+        inForce(row, on)
     );
     if (!registration) continue;
     registeredComponents += 1;
@@ -233,7 +243,8 @@ export const computeSupplyTax = (input: {
       baseCents,
       taxCents: roundHalfUp(baseCents * rate.rateMillipercent, MILLIPERCENT_DENOMINATOR),
       label: taxLineLabel(component, province, rate.rateMillipercent),
-      registrationNumber: registration.registrationNumber
+      // A placeholder number is never printed: receipts say "pending".
+      registrationNumber: registration.isPlaceholder ? null : registration.registrationNumber
     });
   }
   if (registeredComponents > 0 && lines.length === 0) {

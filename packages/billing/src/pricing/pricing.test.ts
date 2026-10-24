@@ -133,8 +133,56 @@ describe('computeSupplyTax with the seeded configuration', () => {
       baseCents: 3000,
       taxCents: 390,
       label: 'HST (ON) 13%',
-      registrationNumber: 'PLACEHOLDER-000000000RT0001'
+      // The seeded number is a placeholder: never printed on a receipt.
+      registrationNumber: null
     });
+  });
+
+  it('prints the registration number once it is a real one', () => {
+    const base = seededSnapshot();
+    const snapshot: TaxSnapshot = {
+      ...base,
+      registrations: base.registrations.map((row) =>
+        row.program === 'gst_hst'
+          ? { ...row, registrationNumber: '123456789RT0001', isPlaceholder: false }
+          : row
+      )
+    };
+    const result = feeTax('ON', 3000, ON, snapshot);
+    expect(result.ok && result.lines[0]?.registrationNumber).toBe('123456789RT0001');
+  });
+
+  it('applies a provincial registration only in its own province', () => {
+    const base = seededSnapshot();
+    const snapshot: TaxSnapshot = {
+      ...base,
+      treatments: base.treatments.map((row) =>
+        row.supplyTypeCode === 'family_service_fee'
+          ? { ...row, components: [...row.components, 'pst'] }
+          : row
+      ),
+      registrations: [
+        ...base.registrations,
+        {
+          jurisdictionCode: 'BC',
+          program: 'pst',
+          components: ['pst'],
+          registrationNumber: 'PST-1234-5678',
+          registered: true,
+          isPlaceholder: false,
+          effectiveFrom: '2008-01-01',
+          effectiveTo: null
+        }
+      ]
+    };
+    const bc = feeTax('BC', 10000, ON, snapshot);
+    expect(bc.ok && bc.lines.map((line) => line.label)).toEqual(['GST (BC) 5%', 'PST (BC) 7%']);
+    // Saskatchewan has a PST rate too, but Poppynz's PST registration is BC's.
+    const sk = feeTax('SK', 10000, ON, snapshot);
+    expect(sk.ok && sk.lines.map((line) => line.label)).toEqual(['GST (SK) 5%']);
+    // And the QST registration (QC) never reaches Ontario.
+    const on = feeTax('ON', 10000, ON, snapshot);
+    expect(on.ok && on.lines.map((line) => line.component)).toEqual(['hst']);
   });
 
   it('adds nothing for exempt and out-of-scope supplies', () => {

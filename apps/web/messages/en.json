@@ -1687,6 +1687,7 @@
 	"nav_messages": "Messages",
 	"nav_not_authorized": "Not authorized",
 	"nav_not_authorized_back": "Back to your account",
+	"nav_not_authorized_body_accountant": "The admin console is for Poppynz administrators. You're signed in with an accountant account — the tax portal is under Accountant.",
 	"nav_not_authorized_body_family": "The admin console is for Poppynz administrators. You're signed in with a family account.",
 	"nav_not_authorized_body_helper": "The admin console is for Poppynz administrators. You're signed in with a helper account.",
 	"nav_open": "Open navigation",

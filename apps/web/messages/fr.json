@@ -1687,6 +1687,7 @@
 	"nav_messages": "Messages",
 	"nav_not_authorized": "Accès non autorisé",
 	"nav_not_authorized_back": "Retour à votre compte",
+	"nav_not_authorized_body_accountant": "La console d’administration est réservée aux administrateurs de Poppynz. Vous êtes connecté(e) avec un compte comptable — le portail fiscal se trouve dans l’espace Comptable.",
 	"nav_not_authorized_body_family": "La console d’administration est réservée aux administrateurs de Poppynz. Vous êtes connecté(e) avec un compte famille.",
 	"nav_not_authorized_body_helper": "La console d’administration est réservée aux administrateurs de Poppynz. Vous êtes connecté(e) avec un compte aidant(e).",
 	"nav_open": "Ouvrir la navigation",

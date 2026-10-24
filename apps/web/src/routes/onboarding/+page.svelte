@@ -5,18 +5,11 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { fetchSession } from '$lib/api/profile';
+	import { landingPathFor } from '$lib/role-landing';
 
 	onMount(async () => {
 		const session = await fetchSession();
-		if (session?.role === 'service-provider') {
-			await goto(resolve('/service-provider/dashboard'), { replaceState: true });
-		} else if (session?.role === 'admin') {
-			await goto(resolve('/admin'), { replaceState: true });
-		} else if (session?.role === 'family') {
-			await goto(resolve('/family/profile'), { replaceState: true });
-		} else {
-			await goto(resolve('/'), { replaceState: true });
-		}
+		await goto(resolve(landingPathFor(session?.role) ?? '/'), { replaceState: true });
 	});
 </script>
 

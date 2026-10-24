@@ -1,3 +1,4 @@
+import { landingPathFor } from '$lib/role-landing';
 import { browser } from '$app/environment';
 import { apiClient, call, type ApiResult, type ErrorsOf } from './client';
 
@@ -14,6 +15,7 @@ export interface PendingAuth {
 export type AuthDestination =
 	| '/'
 	| '/admin'
+	| '/accountant'
 	| '/auth/expired'
 	| '/service-provider/dashboard'
 	| '/family/profile';
@@ -112,14 +114,7 @@ export async function verifyMagicLink(token: string): Promise<VerifyResult> {
 	const { fetchSession } = await import('./profile');
 	const session = await fetchSession();
 	clearPendingAuth();
-	if (session?.role === 'admin') return { status: 'ok', destination: '/admin' };
-	if (session?.role === 'service-provider') {
-		return { status: 'ok', destination: '/service-provider/dashboard' };
-	}
-	if (session?.role === 'family') {
-		return { status: 'ok', destination: '/family/profile' };
-	}
-	return { status: 'ok', destination: '/' };
+	return { status: 'ok', destination: landingPathFor(session?.role) ?? '/' };
 }
 
 export async function signOut(): Promise<void> {

@@ -20,7 +20,7 @@
 	let authorized = $state(false);
 	/** Signed in, but not as an admin (UAT #10): say so instead of showing a
 	 * sign-in screen that suggests they are signed out. */
-	let notAuthorized = $state<'family' | 'service-provider' | null>(null);
+	let notAuthorized = $state<'family' | 'service-provider' | 'accountant' | null>(null);
 	let drawerOpen = $state(false);
 	/** The accountant area is shown by permission (tax read), not by role. */
 	let taxAccess = $state(false);
@@ -33,7 +33,11 @@
 				void getTaxAccess().then((result) => {
 					taxAccess = result.ok && (result.data.canRead || result.data.canReport);
 				});
-			} else if (session?.role === 'family' || session?.role === 'service-provider') {
+			} else if (
+				session?.role === 'family' ||
+				session?.role === 'service-provider' ||
+				session?.role === 'accountant'
+			) {
 				notAuthorized = session.role;
 			} else {
 				void goto(resolve('/auth/sign-in'));
@@ -83,13 +87,17 @@
 			<p class="mt-2 text-sm text-base-content-muted">
 				{notAuthorized === 'family'
 					? m.nav_not_authorized_body_family()
-					: m.nav_not_authorized_body_helper()}
+					: notAuthorized === 'accountant'
+						? m.nav_not_authorized_body_accountant()
+						: m.nav_not_authorized_body_helper()}
 			</p>
 			<a
 				class="btn mt-5 btn-primary"
 				href={notAuthorized === 'family'
 					? resolve('/family/find')
-					: resolve('/service-provider/dashboard')}
+					: notAuthorized === 'accountant'
+						? resolve('/accountant')
+						: resolve('/service-provider/dashboard')}
 			>
 				{m.nav_not_authorized_back()}
 			</a>

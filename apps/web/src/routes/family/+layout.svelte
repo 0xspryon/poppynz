@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { syncLocaleWithProfile } from '$lib/locale-sync';
 	import { fetchSession, getSession, type MockSession } from '$lib/api/profile';
+	import { landingPathFor } from '$lib/role-landing';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import ImpersonationBanner from '$lib/components/ImpersonationBanner.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
@@ -34,12 +35,8 @@
 			if (fresh?.role === 'family') {
 				authorized = true;
 				void syncLocaleWithProfile();
-			} else if (fresh?.role === 'admin') {
-				void goto(resolve('/admin'));
-			} else if (fresh?.role === 'service-provider') {
-				void goto(resolve('/service-provider/dashboard'));
 			} else {
-				void goto(resolve('/auth/sign-in'));
+				void goto(resolve(landingPathFor(fresh?.role) ?? '/auth/sign-in'));
 			}
 		});
 	});

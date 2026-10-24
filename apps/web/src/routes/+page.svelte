@@ -2,24 +2,17 @@
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { fetchSession, getSession } from '$lib/api/profile';
+	import { fetchSession } from '$lib/api/profile';
+	import { landingPathFor } from '$lib/role-landing';
 
 	// Until there's a public landing page the root only routes: signed-in
-	// admins and providers go to their consoles, everyone else enters the
-	// auth flow.
+	// users go to their own area, everyone else enters the auth flow. The
+	// session is read fresh, never from the cache — the magic link lands here,
+	// and a cached session from an earlier user would route to their area,
+	// whose guard then turned the new role away (U1).
 	onMount(async () => {
-		const session = getSession() ?? (await fetchSession());
-		if (session?.role === 'admin') {
-			await goto(resolve('/admin'), { replaceState: true });
-		} else if (session?.role === 'accountant') {
-			await goto(resolve('/accountant'), { replaceState: true });
-		} else if (session?.role === 'service-provider') {
-			await goto(resolve('/service-provider/dashboard'), { replaceState: true });
-		} else if (session?.role === 'family') {
-			await goto(resolve('/family/profile'), { replaceState: true });
-		} else {
-			await goto(resolve('/auth/sign-up'), { replaceState: true });
-		}
+		const session = await fetchSession();
+		await goto(resolve(landingPathFor(session?.role) ?? '/auth/sign-up'), { replaceState: true });
 	});
 </script>
 

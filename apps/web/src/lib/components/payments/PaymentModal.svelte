@@ -21,6 +21,9 @@
 		savedCard?: { brand: string; last4: string } | null;
 		/** Shown above the card form, e.g. that a new card will be kept. */
 		notice?: string | null;
+		/** The billing country the card form starts on (ISO code). Poppynz
+		 * bills in Canada, so never the visitor's IP country. */
+		defaultCountry?: string;
 		/** Stripe confirmed. The caller settles through its confirm endpoint and
 		 * closes the modal. */
 		onconfirmed: () => Promise<void>;
@@ -41,6 +44,7 @@
 		submitLabel,
 		savedCard = null,
 		notice = null,
+		defaultCountry = 'CA',
 		onconfirmed,
 		onfailed,
 		oncancel
@@ -69,7 +73,12 @@
 			}
 			stripe = loaded;
 			const group = loaded.elements({ clientSecret, locale: toStripeLocale(language) });
-			group.create('payment', { layout: 'tabs' }).mount(host);
+			group
+				.create('payment', {
+					layout: 'tabs',
+					defaultValues: { billingDetails: { address: { country: defaultCountry } } }
+				})
+				.mount(host);
 			elements = group;
 		});
 	});

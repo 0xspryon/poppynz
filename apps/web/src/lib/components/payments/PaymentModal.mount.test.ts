@@ -2,7 +2,7 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getStripe, stripe, paymentElement, getUserLanguage } = vi.hoisted(() => {
+const { getStripe, stripe, paymentElement, elementsGroup, getUserLanguage } = vi.hoisted(() => {
 	const paymentElement = { mount: vi.fn() };
 	const elementsGroup = { create: vi.fn(() => paymentElement) };
 	const stripe = {
@@ -14,6 +14,7 @@ const { getStripe, stripe, paymentElement, getUserLanguage } = vi.hoisted(() => 
 		getStripe: vi.fn(async () => stripe),
 		stripe,
 		paymentElement,
+		elementsGroup,
 		getUserLanguage: vi.fn(async () => 'en')
 	};
 });
@@ -241,5 +242,21 @@ describe('PaymentModal', () => {
 			redirect: 'if_required'
 		});
 		expect(onconfirmed).toHaveBeenCalledOnce();
+	});
+
+	it('defaults the billing country to Canada, never the IP country (B3)', async () => {
+		const app = mount(PaymentModal, {
+			target: document.body,
+			props: { ...baseProps, onconfirmed: vi.fn() }
+		});
+		await settle();
+		unmount(app);
+
+		expect(elementsGroup.create).toHaveBeenCalledWith(
+			'payment',
+			expect.objectContaining({
+				defaultValues: { billingDetails: { address: { country: 'CA' } } }
+			})
+		);
 	});
 });

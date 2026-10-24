@@ -44,7 +44,9 @@
 	});
 
 	async function addCard() {
-		if (starting) return;
+		// One setup at a time: a second click while the form is loading
+		// would confirm one intent and save another (B1).
+		if (starting || setup !== null) return;
 		starting = true;
 		const result = await startCardSetup();
 		starting = false;
@@ -60,8 +62,8 @@
 		if (result.data.provider === 'mock') await setupConfirmed();
 	}
 
-	async function setupConfirmed() {
-		const current = setup;
+	/** Confirms exactly the setup the card form was opened with. */
+	async function setupConfirmed(current = setup) {
 		if (!current) return;
 		const result = await confirmCardSetup(current.setupId);
 		setup = null;
@@ -82,6 +84,8 @@
 
 	const chip: Record<BillingPayment['status'], { status: ChipStatus; label: string }> = {
 		paid: { status: 'approved', label: 'Paid' },
+		// A hold Poppynz released: nothing was taken.
+		released: { status: 'empty', label: 'Not charged' },
 		refunded: { status: 'expired', label: 'Refunded' },
 		failed: { status: 'rejected', label: 'Failed' },
 		pending: { status: 'in-progress', label: 'Pending' },
@@ -90,6 +94,19 @@
 
 	const money = (cents: number, currency: string) =>
 		new Intl.NumberFormat('en-CA', { style: 'currency', currency }).format(cents / 100);
+
+	/** What saving the card does: nothing is charged — unless it resumes a
+	 * suspended contract, whose rest of the cycle is charged at once. */
+	const cardNotice = $derived.by(() => {
+		const charges = billing?.resumeCharges ?? [];
+		if (charges.length === 0) {
+			return 'Your card is kept for Poppynz payments such as contract billing. Nothing is charged now.';
+		}
+		const items = charges
+			.map((charge) => `${money(charge.amountCents, 'CAD')} for ${charge.dates}`)
+			.join(', ');
+		return `Your card is kept for Poppynz payments such as contract billing. Saving it resumes your suspended contract: ${items} is charged straight away.`;
+	});
 </script>
 
 <svelte:head>
@@ -120,7 +137,7 @@
 					<button
 						type="button"
 						class="btn btn-outline btn-sm"
-						disabled={starting}
+						disabled={starting || setup !== null}
 						onclick={addCard}
 					>
 						{#if starting}<span class="loading loading-spinner loading-xs"></span>{/if}
@@ -134,7 +151,7 @@
 				<button
 					type="button"
 					class="btn btn-primary btn-sm mt-3"
-					disabled={starting}
+					disabled={starting || setup !== null}
 					onclick={addCard}
 				>
 					{#if starting}<span class="loading loading-spinner loading-xs"></span>{/if}
@@ -198,13 +215,16 @@
 </div>
 
 {#if setup && billing?.provider !== 'mock'}
-	<PaymentModal
-		mode="setup"
-		clientSecret={setup.clientSecret}
-		title={billing?.card ? 'Replace your card' : 'Add a card'}
-		submitLabel="Save card"
-		notice="Your card is kept for Poppynz payments such as contract billing. Nothing is charged now."
-		onconfirmed={setupConfirmed}
-		oncancel={() => (setup = null)}
-	/>
+	{@const opened = setup}
+	{#key opened.clientSecret}
+		<PaymentModal
+			mode="setup"
+			clientSecret={opened.clientSecret}
+			title={billing?.card ? 'Replace your card' : 'Add a card'}
+			submitLabel="Save card"
+			notice={cardNotice}
+			onconfirmed={() => setupConfirmed(opened)}
+			oncancel={() => (setup = null)}
+		/>
+	{/key}
 {/if}

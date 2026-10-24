@@ -2,16 +2,22 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getBilling, startCardSetup, confirmCardSetup, getStripe } = vi.hoisted(() => ({
-	getBilling: vi.fn(),
-	startCardSetup: vi.fn(),
-	confirmCardSetup: vi.fn(),
-	getStripe: vi.fn(async () => ({
-		elements: () => ({ create: () => ({ mount: vi.fn() }) }),
-		confirmPayment: vi.fn(),
-		confirmSetup: vi.fn()
-	}))
-}));
+const { getBilling, startCardSetup, confirmCardSetup, getStripe, confirmSetup } = vi.hoisted(
+	() => {
+		const confirmSetup = vi.fn(async () => ({}));
+		return {
+			getBilling: vi.fn(),
+			startCardSetup: vi.fn(),
+			confirmCardSetup: vi.fn(),
+			confirmSetup,
+			getStripe: vi.fn(async () => ({
+				elements: () => ({ create: () => ({ mount: vi.fn() }) }),
+				confirmPayment: vi.fn(),
+				confirmSetup
+			}))
+		};
+	}
+);
 
 vi.mock('$lib/api/billing', () => ({ getBilling, startCardSetup, confirmCardSetup }));
 vi.mock('$lib/stripe', () => ({ getStripe }));
@@ -45,6 +51,7 @@ const billing = (overrides: Record<string, unknown> = {}) => ({
 			}
 		],
 		provider: 'stripe',
+		resumeCharges: [],
 		...overrides
 	}
 });
@@ -138,5 +145,83 @@ describe('family billing page', () => {
 		expect(dialog).toBeNull();
 		expect(confirmCardSetup).toHaveBeenCalledWith('mock_seti_1');
 		expect(getBilling).toHaveBeenCalledTimes(2);
+	});
+
+	it('never starts a second setup while the card form is open, and confirms the one shown (B1)', async () => {
+		getBilling.mockResolvedValue(billing());
+		startCardSetup.mockResolvedValue({
+			ok: true,
+			data: { setupId: 'seti_1', clientSecret: 'seti_1_secret', provider: 'stripe' }
+		});
+		confirmCardSetup.mockResolvedValue({
+			ok: true,
+			data: { card: { brand: 'visa', last4: '1881', expMonth: 7, expYear: 2033 } }
+		});
+		const app = mount(BillingPage, { target: document.body });
+		await settle();
+		button('Replace card')?.click();
+		button('Replace card')?.click();
+		await settle();
+		const replaceDisabled = button('Replace card')?.disabled;
+		button('Replace card')?.click();
+		await settle();
+		button('Save card')?.click();
+		await settle();
+		unmount(app);
+
+		expect(startCardSetup).toHaveBeenCalledTimes(1);
+		expect(replaceDisabled).toBe(true);
+		expect(confirmSetup).toHaveBeenCalledOnce();
+		expect(confirmCardSetup).toHaveBeenCalledWith('seti_1');
+	});
+
+	it('says what is charged at once when the new card resumes a suspended contract (B2)', async () => {
+		getBilling.mockResolvedValue(
+			billing({
+				resumeCharges: [
+					{ contractId: 'contract-1', dates: 'Mon, Nov 2 – Wed, Nov 4', amountCents: 6604 }
+				]
+			})
+		);
+		startCardSetup.mockResolvedValue({
+			ok: true,
+			data: { setupId: 'seti_1', clientSecret: 'seti_1_secret', provider: 'stripe' }
+		});
+		const app = mount(BillingPage, { target: document.body });
+		await settle();
+		button('Replace card')?.click();
+		await settle();
+		const text = document.querySelector('[role="dialog"]')?.textContent?.replace(/\s+/g, ' ') ?? '';
+		unmount(app);
+
+		expect(text).toContain('$66.04');
+		expect(text).toContain('Mon, Nov 2 – Wed, Nov 4');
+		expect(text).not.toContain('Nothing is charged now');
+	});
+
+	it('shows a released hold as not charged (L7)', async () => {
+		getBilling.mockResolvedValue(
+			billing({
+				payments: [
+					{
+						id: 'payment-2',
+						createdAt: '2026-11-02T12:00:00.000Z',
+						description: 'Care with Sam T. · Mon, Nov 2 – Wed, Nov 4',
+						totalCents: 13206,
+						currency: 'CAD',
+						taxLines: [],
+						status: 'released',
+						receiptUrl: null
+					}
+				]
+			})
+		);
+		const app = mount(BillingPage, { target: document.body });
+		await settle();
+		const text = document.body.textContent ?? '';
+		unmount(app);
+
+		expect(text).toContain('Not charged');
+		expect(text).not.toContain('Failed');
 	});
 });

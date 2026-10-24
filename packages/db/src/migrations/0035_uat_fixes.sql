@@ -19,8 +19,19 @@ ALTER TABLE "app_db"."services_offered" ADD CONSTRAINT "services_offered_reviewe
 CREATE INDEX "services_offered_review_status_idx" ON "app_db"."services_offered" USING btree ("review_status");--> statement-breakpoint
 -- Existing custom services were never reviewed (the staging $5.00 test
 -- service among them): they go to the queue rather than staying public.
+-- Services a live contract already names (any version of a contract that is
+-- not declined or ended) stay approved: the family agreed to them, and a
+-- pending service would make that contract's amendments and renewals fail.
 UPDATE "app_db"."services_offered" SET "review_status" = 'pending'
-  WHERE "catalogue_service_id" IS NULL AND "deleted_at" IS NULL;--> statement-breakpoint
+  WHERE "catalogue_service_id" IS NULL AND "deleted_at" IS NULL
+    AND NOT EXISTS (
+      SELECT 1
+        FROM "app_db"."contract_versions" cv
+        JOIN "app_db"."contracts" c ON c."id" = cv."contract_id"
+        CROSS JOIN LATERAL jsonb_array_elements(cv."services") AS item
+       WHERE c."status" NOT IN ('declined', 'ended')
+         AND item->>'serviceId' = "services_offered"."id"::text
+    );--> statement-breakpoint
 -- #27 per-document review with reviewer and time; #31 the issue date.
 ALTER TABLE "app_db"."kyc_documents" ADD COLUMN "issued_on" date;--> statement-breakpoint
 ALTER TABLE "app_db"."kyc_documents" ADD COLUMN "reviewed_by" text;--> statement-breakpoint

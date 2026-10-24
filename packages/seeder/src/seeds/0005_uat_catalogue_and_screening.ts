@@ -22,29 +22,58 @@ import type { Seed } from '../types';
 const PSW_SERVICE = 'Personal support (PSW)';
 const PSW_DOCUMENT = 'Personal Support Worker (PSW)';
 
+type DocumentTypeCandidate = { id: string; name: string };
+
+/**
+ * Document types have no stable key, and an admin may have renamed the PSW
+ * type by hand ("PSW Certificate", "Personal support worker"). Prefer the
+ * seeded name exactly, then a case-insensitive exact match, then a single
+ * type whose name mentions PSW / personal support worker. Ambiguity or no
+ * match returns null: the caller logs and skips rather than guessing.
+ */
+export const pickPswDocumentType = (
+  types: ReadonlyArray<DocumentTypeCandidate>
+): DocumentTypeCandidate | null => {
+  const exact = types.find((type) => type.name === PSW_DOCUMENT);
+  if (exact) return exact;
+  const normalized = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+  const insensitive = types.filter(
+    (type) => normalized(type.name) === normalized(PSW_DOCUMENT)
+  );
+  if (insensitive.length === 1) return insensitive[0] ?? null;
+  const mentions = types.filter((type) =>
+    /\bpsw\b|personal support worker/.test(normalized(type.name))
+  );
+  return mentions.length === 1 ? (mentions[0] ?? null) : null;
+};
+
 export const uatCatalogueAndScreening: Seed = {
   name: '0005_uat_catalogue_and_screening',
   run: async (db) => {
-    const [pswType] = await db
-      .select({ id: kycDocumentType.id })
+    const helperTypes = await db
+      .select({ id: kycDocumentType.id, name: kycDocumentType.name })
       .from(kycDocumentType)
       .where(
         and(
-          eq(kycDocumentType.name, PSW_DOCUMENT),
           eq(kycDocumentType.appliesToRole, 'service-provider'),
           isNull(kycDocumentType.deletedAt)
         )
-      )
-      .limit(1);
-    if (!pswType) {
-      throw new Error(`Document type "${PSW_DOCUMENT}" for helpers is missing — run 0001 first.`);
-    }
+      );
+    const pswType = pickPswDocumentType(helperTypes);
 
     const existing = await db
       .select({ id: serviceCatalogueItem.id })
       .from(serviceCatalogueItem)
       .where(and(eq(serviceCatalogueItem.name, PSW_SERVICE), isNull(serviceCatalogueItem.deletedAt)));
-    if (existing.length === 0) {
+    if (!pswType) {
+      // Never offer the PSW item without its credential gate: skip it and
+      // let an admin create it (with the required document) by hand.
+      console.warn(
+        `[seed 0005] No single helper document type matches "${PSW_DOCUMENT}" — ` +
+          `skipping the "${PSW_SERVICE}" catalogue item. Add it in the admin catalogue ` +
+          'with its required credential.'
+      );
+    } else if (existing.length === 0) {
       await db.insert(serviceCatalogueItem).values({
         name: PSW_SERVICE,
         category: 'Elderly Care',

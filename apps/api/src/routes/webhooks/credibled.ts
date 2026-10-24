@@ -45,9 +45,11 @@ import { publishNotificationBestEffort } from '@repo/notify';
  *      therefore return 2xx for anything we have durably handled or knowingly
  *      ignored, and reserve 5xx for "try the reconcile poller instead".
  *
- * Each Credibled account has its own webhook secret and the payload identifies
- * neither the account nor the audience, so the audience comes from the path —
- * one registered endpoint per Credibled dashboard.
+ * One endpoint serves both Credibled accounts. Each account has its own
+ * webhook secret and the payload identifies neither the account nor the
+ * audience, so the signer is found by trying every configured secret, and the
+ * audience comes from the order the check uuid resolves to. A delivery signed
+ * by one account may only move that account's orders.
  */
 
 /** Credibled payloads are small; anything large is not one of theirs. */
@@ -65,20 +67,31 @@ type CredibledWebhookPayload = CredibledWebhookResultFields & {
 const nonEmptyString = (value: unknown): string | null =>
   typeof value === 'string' && value.trim().length > 0 ? value : null;
 
-const secretFor = () =>
-  credibledConfig.pipe(
-    Effect.map((config) => {
-      const option = config.providerWebhookSecret;
-      return Option.match(option, {
-        onNone: () => null,
-        onSome: (secret) => {
-          const raw = Redacted.value(secret).trim();
-          return raw.length > 0 ? raw : null;
-        }
-      });
-    }),
-    Effect.orElseSucceed(() => null)
-  );
+type AudienceSecret = { audience: CredibledAudience; secret: string };
+
+const secretValue = (option: Option.Option<Redacted.Redacted<string>>) =>
+  Option.match(option, {
+    onNone: () => null,
+    onSome: (secret) => {
+      const raw = Redacted.value(secret).trim();
+      return raw.length > 0 ? raw : null;
+    }
+  });
+
+/** Every audience whose account has a webhook secret configured. */
+const configuredSecrets = credibledConfig.pipe(
+  Effect.map((config) =>
+    (
+      [
+        { audience: 'service-provider', secret: secretValue(config.providerWebhookSecret) },
+        { audience: 'family', secret: secretValue(config.familyWebhookSecret) }
+      ] as const
+    ).flatMap(({ audience, secret }): Array<AudienceSecret> =>
+      secret === null ? [] : [{ audience, secret }]
+    )
+  ),
+  Effect.orElseSucceed((): Array<AudienceSecret> => [])
+);
 
 const validityMonths = safetyVerificationConfig.pipe(
   Effect.map((policy) => policy.validityMonths),
@@ -103,7 +116,10 @@ const validityMonths = safetyVerificationConfig.pipe(
  * not_cleared or inconclusive, so the administrator sees the result without
  * opening the report and an adverse one heads the queue.
  */
-const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayload) =>
+export const applyCredibledWebhook = (
+  signedBy: ReadonlyArray<CredibledAudience>,
+  payload: CredibledWebhookPayload
+) =>
   Effect.gen(function* () {
     const uuid = typeof payload.uuid === 'string' ? payload.uuid : null;
     const applicationStatus =
@@ -126,13 +142,14 @@ const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayl
       return 'ignored: no matching order';
     }
 
-    // The audience is derived from which endpoint was called, and each
-    // endpoint verifies with its own account's secret. An order belonging to
-    // the other role therefore means a valid signature from the wrong account
-    // — refuse rather than cross the boundary.
-    const expectedAudience: CredibledAudience =
+    // The audience is the order's, and the delivery must be signed by that
+    // audience's account: a valid signature from the other account refuses
+    // rather than crosses the boundary. `signedBy` is empty only for an
+    // unverified delivery, which reaches here solely while enforcement is
+    // disabled for the staging run.
+    const orderAudience: CredibledAudience =
       order.role === 'family' ? 'family' : 'service-provider';
-    if (expectedAudience !== audience) {
+    if (signedBy.length > 0 && !signedBy.includes(orderAudience)) {
       return 'ignored: audience mismatch';
     }
 
@@ -206,13 +223,13 @@ const applyWebhook = (audience: CredibledAudience, payload: CredibledWebhookPayl
     return `applied: ${order.status} -> ${next}`;
   });
 
-const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv>) => {
+const handle = async (c: HonoContext<BaseAppEnv>) => {
   const runtime = c.get('runtime');
 
   const declaredLength = Number.parseInt(c.req.header('content-length') ?? '0', 10);
   if (Number.isFinite(declaredLength) && declaredLength > MAX_BODY_BYTES) {
     // Refused without buffering the body, so the log gets headers only.
-    const oversized = await logCredibledWebhookRequest(c, audience, null);
+    const oversized = await logCredibledWebhookRequest(c, null, null);
     await recordCredibledWebhookOutcome(oversized, 413, 'rejected: declared payload too large');
     return c.json({ error: 'payload too large' }, 413);
   }
@@ -220,7 +237,7 @@ const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv
   const raw = await c.req.text();
   // TEMPORARY: recorded here, ahead of every check below, so that a delivery
   // rejected for a bad signature or an unparseable body is still reviewable.
-  const logId = await logCredibledWebhookRequest(c, audience, raw);
+  const logId = await logCredibledWebhookRequest(c, null, raw);
 
   // String length counts UTF-16 units, which under-counts multibyte payloads.
   if (Buffer.byteLength(raw, 'utf8') > MAX_BODY_BYTES) {
@@ -240,7 +257,7 @@ const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv
     return c.json({ error: 'invalid json' }, 400);
   }
 
-  const secret = await runtime.runPromise(secretFor());
+  const secrets = await runtime.runPromise(configuredSecrets);
 
   // ==========================================================================
   // TEMPORARY — SIGNATURE ENFORCEMENT IS DISABLED FOR THE STAGING RUN.
@@ -254,41 +271,43 @@ const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv
   // RESTORE THE COMMENTED BLOCK BELOW AND DELETE THIS ONE BEFORE MERGING.
   // Until then this endpoint accepts unauthenticated input from anyone who
   // knows the URL: everything it can do is bounded by the forward-only
-  // transition check in applyWebhook, but it must not reach production.
+  // transition check in applyCredibledWebhook, but it must not reach production.
   // ==========================================================================
-  const signatureValid = secret
-    ? verifyCredibledSignature(payload, c.req.header('X-HMAC-Signature'), secret)
-    : null;
+  const signature = c.req.header('X-HMAC-Signature');
+  const signedBy = secrets
+    .filter(({ secret }) => verifyCredibledSignature(payload, signature, secret))
+    .map(({ audience }) => audience);
+  const signatureValid = secrets.length === 0 ? null : signedBy.length > 0;
   await recordCredibledWebhookSignature(
     logId,
     signatureValid,
-    secret === null
+    secrets.length === 0
       ? 'no webhook secret configured'
       : signatureValid
-        ? 'signature verified'
+        ? `signature verified (${signedBy.join(', ')})`
         : 'signature MISMATCH (would have been a 401)'
   );
   if (signatureValid !== true) {
     console.warn(
-      `[credibled:webhook:${audience}] processing an unverified delivery — ` +
-        `${secret === null ? 'no secret configured' : 'signature mismatch'}. ` +
+      '[credibled:webhook] processing an unverified delivery — ' +
+        `${secrets.length === 0 ? 'no secret configured' : 'signature mismatch'}. ` +
         'Signature enforcement is temporarily disabled for staging testing.'
     );
   }
 
   /* RESTORE ME — signature enforcement, disabled only for the staging run.
-  if (!secret) {
+  if (secrets.length === 0) {
     // Local development against the sandbox often has no webhook secret yet.
     // The bypass is opt-in, loud, and impossible to reach by accident: absent
     // the flag a missing secret is a deployment error, and 503 is the honest
     // answer rather than silently processing an unverifiable delivery.
     if (process.env.CREDIBLED_WEBHOOK_INSECURE === 'true') {
       console.warn(
-        `[credibled:webhook:${audience}] SIGNATURE VERIFICATION BYPASSED — ` +
+        '[credibled:webhook] SIGNATURE VERIFICATION BYPASSED — ' +
         'CREDIBLED_WEBHOOK_INSECURE is set. Never enable this outside local development.'
       );
     } else {
-      console.error(`[credibled:webhook] no webhook secret configured for ${audience}`);
+      console.error('[credibled:webhook] no webhook secret configured');
       await recordCredibledWebhookOutcome(logId, 503, 'rejected: no webhook secret configured');
       return c.json({ error: 'webhook not configured' }, 503);
     }
@@ -297,7 +316,7 @@ const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv
   // A configured secret is always enforced — the bypass only covers the case
   // where there is no secret at all, so setting the flag in an environment
   // that HAS one changes nothing.
-  if (secret && !verifyCredibledSignature(payload, c.req.header('X-HMAC-Signature'), secret)) {
+  if (secrets.length > 0 && signedBy.length === 0) {
     await recordCredibledWebhookOutcome(logId, 401, 'rejected: invalid signature');
     // Deliberately terse: a verbose reason here is a signing oracle.
     return c.json({ error: 'invalid signature' }, 401);
@@ -305,14 +324,14 @@ const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv
   */
 
   try {
-    const outcome = await runtime.runPromise(applyWebhook(audience, payload));
-    console.log(`[credibled:webhook:${audience}] ${outcome}`);
+    const outcome = await runtime.runPromise(applyCredibledWebhook(signedBy, payload));
+    console.log(`[credibled:webhook] ${outcome}`);
     await recordCredibledWebhookOutcome(logId, 200, outcome);
     return c.json({ received: true }, 200);
   } catch (error) {
     // A database failure is the one case worth a 5xx. Credibled won't retry,
     // but the reconcile poller will pick the check up on its next pass.
-    console.error(`[credibled:webhook:${audience}] failed to apply delivery`, error);
+    console.error('[credibled:webhook] failed to apply delivery', error);
     await recordCredibledWebhookOutcome(
       logId,
       500,
@@ -323,7 +342,7 @@ const handle = (audience: CredibledAudience) => async (c: HonoContext<BaseAppEnv
 };
 
 /**
- * TEMPORARY — catches deliveries that do not match either endpoint.
+ * TEMPORARY — catches deliveries that do not match the endpoint.
  *
  * A Credibled dashboard pointed at the wrong path, or sending a method we do
  * not expect, currently 404s and tells us nothing. During the staging run we
@@ -339,7 +358,7 @@ const handleUnmatched = async (c: HonoContext<BaseAppEnv>) => {
 };
 
 export const credibledWebhookRoute = new Hono<BaseAppEnv>()
-  .post('/service-provider', handle('service-provider'))
-  .post('/family', handle('family'))
-  // Registered last so the real endpoints above always win.
+  .post('/', handle)
+  // Registered last so the real endpoint above always wins. This also records
+  // deliveries still aimed at the retired per-audience paths.
   .all('/*', handleUnmatched);

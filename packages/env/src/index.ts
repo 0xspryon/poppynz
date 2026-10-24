@@ -156,8 +156,8 @@ export const mailConfig = Config.all({
 // an error message by accident; read them with `Redacted.value` at the call
 // site only. Each Credibled AUDIENCE (helpers, families) is a separate account
 // with its own key and its own webhook secret, and their webhook payload
-// identifies neither — which is why each audience gets its own webhook path
-// rather than one shared endpoint that would have to guess at the secret.
+// identifies neither — so the one shared webhook endpoint tries each secret
+// and takes the audience from the order the check belongs to.
 //
 // Without an API key the client stays in dev log-mode: orders are logged and
 // answered with a synthetic check id instead of being sent (and paid for).

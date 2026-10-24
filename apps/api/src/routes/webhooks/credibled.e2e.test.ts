@@ -13,7 +13,7 @@ import { Effect, Layer, ManagedRuntime } from 'effect';
 import { Hono } from 'hono';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { BaseAppEnv } from '@/api/app-env';
-import { credibledWebhookRoute } from './credibled';
+import { applyCredibledWebhook, credibledWebhookRoute } from './credibled';
 import { NoopNotificationHubTest } from '@repo/notify';
 
 // Public ingress with no session — every guarantee has to come from the
@@ -50,8 +50,7 @@ const record = (overrides: Partial<CheckOrder> = {}): CheckOrder =>
     ...overrides
   }) as CheckOrder;
 
-const makeApp = (
-  options: {
+type Options = {
     found?: CheckOrder | null;
     onUpdate?: (id: string, input: CheckOrderUpdateInput) => void;
     onComplete?: (id: string, input: CheckOrderCompletionInput) => void;
@@ -61,8 +60,9 @@ const makeApp = (
     /** A guarded non-completing transition found the order already moved. */
     advanceLosesRace?: boolean;
     updateFails?: boolean;
-  } = {}
-) => {
+};
+
+const makeRuntime = (options: Options = {}) => {
   const found = options.found === undefined ? record() : options.found;
   const runtime = ManagedRuntime.make(
     Layer.mergeAll(
@@ -115,7 +115,11 @@ const makeApp = (
       NoopNotificationHubTest
     )
   );
+  return runtime;
+};
 
+const makeApp = (options: Options = {}) => {
+  const runtime = makeRuntime(options);
   return new Hono<BaseAppEnv>()
     .use('*', async (c, next) => {
       c.set('runtime', runtime as never);
@@ -136,7 +140,7 @@ const post = (
   if (signature !== null) {
     headers['X-HMAC-Signature'] = signature;
   }
-  return app.request(options.path ?? '/webhooks/credibled/service-provider', {
+  return app.request(options.path ?? '/webhooks/credibled', {
     method: 'POST',
     headers,
     body
@@ -191,7 +195,7 @@ describe('credibled webhook — authenticity', () => {
 
   it('rejects malformed json before doing anything else', async () => {
     const app = makeApp();
-    const res = await app.request('/webhooks/credibled/service-provider', {
+    const res = await app.request('/webhooks/credibled', {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'X-HMAC-Signature': 'x'.repeat(64) },
       body: 'not json'
@@ -201,7 +205,7 @@ describe('credibled webhook — authenticity', () => {
 
   it('rejects an oversized body', async () => {
     const app = makeApp();
-    const res = await app.request('/webhooks/credibled/service-provider', {
+    const res = await app.request('/webhooks/credibled', {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -411,17 +415,41 @@ describe('credibled webhook — application', () => {
     expect(touched).toHaveLength(0);
   });
 
-  it('will not let one audience move the other audience’s order', async () => {
-    // A valid signature from the family account must not touch a helper's row.
-    const touched: Array<string> = [];
+  it('applies a family order through the same endpoint', async () => {
+    const completions: Array<string> = [];
     const res = await post(
       makeApp({
-        found: record({ role: 'service-provider' }),
-        onUpdate: (id) => touched.push(id),
-        onComplete: (id) => touched.push(id)
+        found: record({ role: 'family', userId: 'family-1' }),
+        onComplete: (id) => completions.push(id)
       }),
+      complete
+    );
+
+    expect(res.status).toBe(200);
+    expect(completions).toEqual(['order-1']);
+  });
+
+  it('will not let one audience move the other audience’s order', async () => {
+    // A valid signature from the family account must not touch a helper's
+    // row. Both accounts share a secret in config today, so the signer is
+    // given directly rather than derived from distinct secrets.
+    const touched: Array<string> = [];
+    const outcome = await makeRuntime({
+      found: record({ role: 'service-provider' }),
+      onUpdate: (id) => touched.push(id),
+      onComplete: (id) => touched.push(id)
+    }).runPromise(applyCredibledWebhook(['family'], complete));
+
+    expect(outcome).toBe('ignored: audience mismatch');
+    expect(touched).toHaveLength(0);
+  });
+
+  it('records a delivery aimed at a retired per-audience path without applying it', async () => {
+    const touched: Array<string> = [];
+    const res = await post(
+      makeApp({ onUpdate: (id) => touched.push(id), onComplete: (id) => touched.push(id) }),
       complete,
-      { path: '/webhooks/credibled/family' }
+      { path: '/webhooks/credibled/service-provider' }
     );
 
     expect(res.status).toBe(200);

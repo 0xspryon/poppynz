@@ -20,7 +20,9 @@ export const gender = appDb.enum('gender', ['male', 'female']);
 export const accessControlRole = appDb.enum('access_control_role', [
   'family',
   'service-provider',
-  'admin'
+  'admin',
+  // Poppynz's accountant: the tax portal only (migrations/0031_accountant_role).
+  'accountant'
 ]);
 export const approvalRequestStatus = appDb.enum('approval_request_status', [
   'submitted',
@@ -498,6 +500,9 @@ export const payment = appDb.table(
     description: text('description'),
     // What a hold-then-capture payment took; null until captured.
     capturedCents: integer('captured_cents'),
+    // A contract hold Poppynz released without capturing (see
+    // migrations/0030_billing_fixes): shown as "Not charged", never "failed".
+    releasedAt: timestamp('released_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()
@@ -535,6 +540,10 @@ export const billingCustomer = appDb.table(
     cardLast4: text('card_last4'),
     cardExpMonth: integer('card_exp_month'),
     cardExpYear: integer('card_exp_year'),
+    // The card setup most recently started for this user. The webhook may
+    // put that setup's card on file even over an existing card: it is the
+    // one the payer is confirming now, never a stale replay.
+    latestSetupReference: text('latest_setup_reference'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()

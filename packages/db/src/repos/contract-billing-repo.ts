@@ -8,6 +8,7 @@ import {
   inArray,
   isNull,
   lte,
+  sql,
   type InferInsertModel,
   type InferSelectModel
 } from 'drizzle-orm';
@@ -58,6 +59,9 @@ export type CycleAdvanceInput = {
   from: ReadonlyArray<ContractCycleStatus>;
   /** Also guards the cycle's current attempt when given. */
   paymentId?: string | null;
+  /** Also guards the attempt counter when given: two retries started from
+   * the same snapshot can't both claim the cycle (and share a key). */
+  attempts?: number;
   set: Patch<ContractCycle>;
 };
 
@@ -101,6 +105,13 @@ export class ContractBillingRepo extends Context.Tag('@repo/db/ContractBillingRe
     advanceCycle: (
       cycleId: string,
       input: CycleAdvanceInput
+    ) => Effect.Effect<ContractCycle | null, SqlError>;
+    /** Appends `notice` to the cycle's `notices_sent` in one atomic write,
+     * unless it is already there. Resolves the updated cycle, or null when
+     * the notice was already recorded (another caller sends it). */
+    appendCycleNotice: (
+      cycleId: string,
+      notice: string
     ) => Effect.Effect<ContractCycle | null, SqlError>;
     insertSessions: (rows: ReadonlyArray<SessionRecordInsert>) => Effect.Effect<void, SqlError>;
     listSessions: (
@@ -221,7 +232,23 @@ export const ContractBillingRepoLive = Layer.effect(
                 ? undefined
                 : input.paymentId === null
                   ? isNull(contractCycle.paymentId)
-                  : eq(contractCycle.paymentId, input.paymentId)
+                  : eq(contractCycle.paymentId, input.paymentId),
+              input.attempts === undefined ? undefined : eq(contractCycle.attempts, input.attempts)
+            )
+          )
+          .returning()
+          .pipe(Effect.map((rows) => rows[0] ?? null)),
+      appendCycleNotice: (cycleId, notice) =>
+        db
+          .update(contractCycle)
+          .set({
+            noticesSent: sql`${contractCycle.noticesSent} || ${JSON.stringify([notice])}::jsonb`,
+            updatedAt: new Date()
+          })
+          .where(
+            and(
+              eq(contractCycle.id, cycleId),
+              sql`NOT (${contractCycle.noticesSent} @> ${JSON.stringify([notice])}::jsonb)`
             )
           )
           .returning()
@@ -368,7 +395,17 @@ export const makeInMemoryContractBillingRepo = (
         const row = state.cycles[index];
         if (!row || !input.from.includes(row.status)) return null;
         if (input.paymentId !== undefined && row.paymentId !== input.paymentId) return null;
+        if (input.attempts !== undefined && row.attempts !== input.attempts) return null;
         const next = { ...row, ...input.set, updatedAt: now() } as ContractCycle;
+        state.cycles[index] = next;
+        return next;
+      }),
+    appendCycleNotice: (cycleId, notice) =>
+      Effect.sync(() => {
+        const index = state.cycles.findIndex((row) => row.id === cycleId);
+        const row = state.cycles[index];
+        if (!row || row.noticesSent.includes(notice)) return null;
+        const next = { ...row, noticesSent: [...row.noticesSent, notice], updatedAt: now() };
         state.cycles[index] = next;
         return next;
       }),

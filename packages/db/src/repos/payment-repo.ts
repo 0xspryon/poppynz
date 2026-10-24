@@ -261,6 +261,7 @@ export const makeInMemoryPaymentRepo = (initial: ReadonlyArray<Payment> = []) =>
           taxLines: [],
           description: null,
           capturedCents: null,
+          releasedAt: null,
           ...input,
           createdAt: now,
           updatedAt: now

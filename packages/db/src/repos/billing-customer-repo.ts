@@ -44,6 +44,12 @@ export class BillingCustomerRepo extends Context.Tag('@repo/db/BillingCustomerRe
       expected: string | null
     ) => Effect.Effect<BillingCustomer | null, SqlError>;
     clearCard: (userId: string) => Effect.Effect<BillingCustomer | null, SqlError>;
+    /** Records the card setup just started for the user (the one the payer
+     * is about to confirm). Null when the user has no customer row. */
+    setLatestSetup: (
+      userId: string,
+      setupReference: string
+    ) => Effect.Effect<BillingCustomer | null, SqlError>;
   }
 >() {}
 
@@ -93,6 +99,7 @@ export const BillingCustomerRepoLive = Layer.effect(
                 cardLast4: null,
                 cardExpMonth: null,
                 cardExpYear: null,
+                latestSetupReference: null,
                 updatedAt: new Date()
               },
               setWhere: sql`${billingCustomer.provider} <> ${input.provider}`
@@ -137,6 +144,14 @@ export const BillingCustomerRepoLive = Layer.effect(
             cardExpYear: null,
             updatedAt: new Date()
           })
+          .where(eq(billingCustomer.userId, userId))
+          .returning()
+          .pipe(Effect.map(firstOrNull)),
+
+      setLatestSetup: (userId, setupReference) =>
+        db
+          .update(billingCustomer)
+          .set({ latestSetupReference: setupReference, updatedAt: new Date() })
           .where(eq(billingCustomer.userId, userId))
           .returning()
           .pipe(Effect.map(firstOrNull))
@@ -185,6 +200,7 @@ export const makeInMemoryBillingCustomerRepo = (
           const row: BillingCustomer = {
             ...input,
             ...cardless,
+            latestSetupReference: null,
             createdAt: existing?.createdAt ?? new Date(),
             updatedAt: new Date()
           };
@@ -203,7 +219,9 @@ export const makeInMemoryBillingCustomerRepo = (
                 cardExpYear: card.expYear
               })
         ),
-      clearCard: (userId) => Effect.sync(() => update(userId, cardless))
+      clearCard: (userId) => Effect.sync(() => update(userId, cardless)),
+      setLatestSetup: (userId, setupReference) =>
+        Effect.sync(() => update(userId, { latestSetupReference: setupReference }))
     })
   };
 };
@@ -220,6 +238,7 @@ export const dummyBillingCustomer = (
   cardLast4: '4242',
   cardExpMonth: 12,
   cardExpYear: 2034,
+  latestSetupReference: null,
   createdAt: new Date('2026-10-01T00:00:00.000Z'),
   updatedAt: new Date('2026-10-01T00:00:00.000Z'),
   ...overrides

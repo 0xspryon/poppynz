@@ -542,27 +542,6 @@ const vouchErrorToResponse = (c: HonoContext<HonoEnv>, error: VouchRouteError) =
         },
         403
       );
-    case 'VoucherUnavailableError':
-      return c.json(
-        {
-          error: {
-            code: 'VOUCHER_UNAVAILABLE' as const,
-            message:
-              "We couldn't send a request to that email. Check it belongs to an approved Poppynz member."
-          }
-        },
-        422
-      );
-    case 'VouchAlreadyRequestedError':
-      return c.json(
-        {
-          error: {
-            code: 'VOUCH_ALREADY_REQUESTED' as const,
-            message: 'You already have an open request with this person.'
-          }
-        },
-        409
-      );
     case 'VouchNotFoundError':
       return c.json(
         {

@@ -46,6 +46,7 @@ import {
   endContractRouteProgram,
   getContractRouteProgram,
   listContractsRouteProgram,
+  quoteTermsRouteProgram,
   markContractSeenRouteProgram,
   requestChangesRouteProgram,
   saveTermsRouteProgram,
@@ -3017,5 +3018,88 @@ describe('contract list billing state (B5)', () => {
       billingStatus: 'suspended',
       billingSuspendedReason: 'card'
     });
+  });
+});
+
+describe('live quote for unsaved terms (B6)', () => {
+  const termsBody = {
+    services: [
+      {
+        serviceId: SERVICE_ID,
+        rateCents: 2600,
+        sessions: twoWeekdaySessions,
+        expectations: 'Reading practice.'
+      }
+    ],
+    startsOn: '2026-08-24',
+    endsOn: null
+  };
+  it('prices unsaved terms for the family without writing anything', async () => {
+    const updates: Array<unknown> = [];
+    const result = await Effect.runPromise(
+      quoteTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            onUpdateTerms: (versionId, input) => updates.push([versionId, input])
+          })
+        )
+      )
+    );
+    expect(result.weeklyEstimateCents).toBeGreaterThan(0);
+    expect(result.pricing).toHaveProperty('available');
+    expect(updates).toEqual([]);
+  });
+
+  it('applies the same floor as saving', async () => {
+    const exit = await Effect.runPromiseExit(
+      quoteTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 100 }] }
+        }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] })))
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'RateBelowListedError' });
+  });
+
+  it('is for the family only', async () => {
+    const exit = await Effect.runPromiseExit(
+      quoteTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'declined' }),
+            versions: [draftVersion()]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'NotContractActorError' });
+  });
+
+  it('rejects invalid terms and denies callers without contract read', async () => {
+    const invalid = await Effect.runPromiseExit(
+      quoteTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: { services: 'x' } }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ contractById: baseContract() })))
+    );
+    expect(getFailure(invalid)).toMatchObject({ _tag: 'RequestValidationError' });
+    const denied = await Effect.runPromiseExit(
+      quoteTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ contractById: baseContract(), hasPermission: false })))
+    );
+    expect(getFailure(denied)).toMatchObject({ _tag: 'ForbiddenError' });
   });
 });

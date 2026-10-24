@@ -414,7 +414,10 @@ type PricingInputs = {
 /** One week of the pattern, priced for the viewer's side only: the family
  * sees the service fee and its tax added, the helper sees the commission and
  * its tax deducted. Rounded per session by the one rule billing uses. */
-export const weeklyPricing = (version: ContractVersion, inputs: PricingInputs) => {
+export const weeklyPricing = (
+  version: Pick<ContractVersion, 'services' | 'startsOn'>,
+  inputs: PricingInputs
+) => {
   const serviceCents = weeklyServiceCents(version.services);
   const on =
     version.startsOn && (inputs.today === null || version.startsOn > inputs.today)
@@ -1527,6 +1530,53 @@ export const getContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Header
     return yield* getContractProgram(userAndSession, contractId);
   });
 
+/**
+ * B6: the draft editor's price box, live. Prices the family's UNSAVED terms
+ * exactly as a saved draft would be priced (same validation, floor and tax),
+ * without writing anything.
+ */
+export const quoteTermsProgram = (
+  userAndSession: UserAndSession,
+  contractId: string,
+  input: ContractTermsInput
+) =>
+  Effect.gen(function* () {
+    const viewer = userAndSession.user;
+    const contract = yield* loadParticipantContract(contractId, viewer.id);
+    if (sideOf(contract, viewer.id) !== 'family') {
+      return yield* Effect.fail(new NotContractActorError());
+    }
+    const services = yield* snapshotTerms(contract.providerUserId, input);
+    const policy = yield* contractBillingPolicy;
+    const snapshot = yield* loadTaxSnapshot.pipe((errors) => mapContractRepoError(errors));
+    const timeZone = yield* familyTimeZone(contract.familyUserId);
+    const pricing = weeklyPricing(
+      { services, startsOn: input.startsOn ?? null },
+      {
+        snapshot,
+        familyFeeBps: policy.familyCommissionBps,
+        providerCommissionBps: policy.providerCommissionBps,
+        familyProvince: yield* profileProvince(contract.familyUserId),
+        helperProvince: yield* profileProvince(contract.providerUserId),
+        side: 'family',
+        today: timeZone ? todayIn(timeZone) : null
+      }
+    );
+    return { pricing, weeklyEstimateCents: weeklyEstimateCents(services) };
+  });
+
+export const quoteTermsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function* () {
+    const contractId = yield* validateContractId(c.req.param('id'));
+    const rawBody = yield* parseJsonBody(c, contractTermsJsonError);
+    const input = yield* validateContractTermsInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['read'] })(
+      authenticated
+    );
+    return yield* quoteTermsProgram(userAndSession, contractId, input);
+  });
+
 export const saveTermsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const contractId = yield* validateContractId(c.req.param('id'));
@@ -1621,6 +1671,7 @@ export const markContractSeenRouteProgram = (c: HonoContext<HonoEnv>, headers: H
 export type ContractRouteError =
   | Effect.Effect.Error<ReturnType<typeof createContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof listContractsRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof quoteTermsRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof contractsBadgeCountRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof getContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof saveTermsRouteProgram>>
@@ -1906,6 +1957,12 @@ export async function getContractHandler(c: HonoContext<HonoEnv>) {
 export async function saveTermsHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(saveTermsRouteProgram(c, c.req.raw.headers));
+  return exitToResponse(c, exit);
+}
+
+export async function quoteTermsHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(quoteTermsRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 

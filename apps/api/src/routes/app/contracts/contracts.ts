@@ -9,6 +9,7 @@ import {
   getContractHandler,
   listContractsHandler,
   markContractSeenHandler,
+  quoteTermsHandler,
   requestChangesHandler,
   saveTermsHandler,
   sendContractHandler,
@@ -23,6 +24,7 @@ export const contractsRoute = new Hono<HonoEnv>()
   .get('/me/badge-count', (c) => contractsBadgeCountHandler(c))
   .get('/:id', (c) => getContractHandler(c))
   .put('/:id/terms', (c) => saveTermsHandler(c))
+  .post('/:id/quote', (c) => quoteTermsHandler(c))
   .post('/:id/send', (c) => sendContractHandler(c))
   .post('/:id/withdraw', (c) => withdrawContractHandler(c))
   .post('/:id/accept', (c) => acceptContractHandler(c))

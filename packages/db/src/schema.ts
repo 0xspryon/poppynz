@@ -533,6 +533,12 @@ export const payment = appDb.table(
     // A contract hold Poppynz released without capturing (see
     // migrations/0030_billing_fixes): shown as "Not charged", never "failed".
     releasedAt: timestamp('released_at'),
+    // An off-session attempt (contract billing) is frozen at creation: the
+    // card it charges and the idempotency key it is sent under, so a retry
+    // or a replay of that attempt is byte-for-byte the same request even
+    // after the family replaces the card (see migrations/0038).
+    cardReference: text('card_reference'),
+    chargeKey: text('charge_key'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()

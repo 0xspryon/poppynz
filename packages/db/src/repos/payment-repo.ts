@@ -26,7 +26,9 @@ export type PaymentCreateInput = Pick<
   PaymentInsert,
   'userId' | 'kind' | 'provider' | 'amountCents' | 'feeCents' | 'taxCents' | 'totalCents'
 > &
-  Partial<Pick<PaymentInsert, 'currency' | 'taxLines' | 'description'>>;
+  Partial<
+    Pick<PaymentInsert, 'currency' | 'taxLines' | 'description' | 'cardReference' | 'chargeKey'>
+  >;
 
 export type PaymentUpdateInput = Partial<
   Omit<Payment, 'id' | 'userId' | 'kind' | 'createdAt' | 'updatedAt'>
@@ -207,7 +209,12 @@ export const makePaymentRepoTest = (implementation: Partial<Context.Tag.Service<
 export const EmptyPaymentRepoTest = makePaymentRepoTest({});
 
 /** In-memory stand-in with the live repo's compare-and-set semantics. */
-export const makeInMemoryPaymentRepo = (initial: ReadonlyArray<Payment> = []) => {
+export const makeInMemoryPaymentRepo = (
+  initial: ReadonlyArray<Payment> = [],
+  /** The clock rows are stamped with (a simulated one in engine tests, so
+   * an attempt's age follows the simulated time). */
+  clock: () => Date = () => new Date()
+) => {
   const rows = new Map(initial.map((row) => [row.id, row]));
   let sequence = 0;
   const service: Context.Tag.Service<PaymentRepo> = {
@@ -246,7 +253,7 @@ export const makeInMemoryPaymentRepo = (initial: ReadonlyArray<Payment> = []) =>
       ),
     create: (input) =>
       Effect.sync(() => {
-        const now = new Date();
+        const now = clock();
         const row: Payment = {
           id: `payment-${++sequence}`,
           status: 'pending',
@@ -262,6 +269,8 @@ export const makeInMemoryPaymentRepo = (initial: ReadonlyArray<Payment> = []) =>
           description: null,
           capturedCents: null,
           releasedAt: null,
+          cardReference: null,
+          chargeKey: null,
           ...input,
           createdAt: now,
           updatedAt: now

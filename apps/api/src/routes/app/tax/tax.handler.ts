@@ -68,6 +68,12 @@ export class TaxUnknownJurisdictionError extends Data.TaggedError('TaxUnknownJur
   jurisdictionCode: string;
 }> {}
 
+/** A tax write from an impersonated session. The audit trail names who
+ * changed the configuration; an admin acting as the accountant would put the
+ * accountant's name on a change they never made, so such writes are refused
+ * (reads stay open, for support). */
+export class TaxImpersonatedWriteError extends Data.TaggedError('TaxImpersonatedWriteError')<{}> {}
+
 /** `to` is not after `from`, or the range is longer than the report allows. */
 export class TaxReportRangeError extends Data.TaggedError('TaxReportRangeError')<{}> {}
 
@@ -173,6 +179,10 @@ const writeAccess = (headers: Headers) =>
   authenticate(headers).pipe(
     Effect.flatMap((authenticated) =>
       requirePermissions(headers, { tax: ['write'] })(authenticated)
+    ),
+    Effect.filterOrFail(
+      (userAndSession) => !userAndSession.session.impersonatedBy,
+      () => new TaxImpersonatedWriteError()
     )
   );
 
@@ -410,6 +420,17 @@ const taxErrorToResponse = (c: HonoContext<HonoEnv>, error: TaxRouteError) => {
       return authErrorToResponse(c, error);
     case 'RequestValidationError':
       return requestValidationErrorToResponse(c, error);
+    case 'TaxImpersonatedWriteError':
+      return c.json(
+        {
+          error: {
+            code: 'TAX_WRITE_IMPERSONATED' as const,
+            message:
+              'Tax settings cannot be changed while impersonating. Sign in as yourself to make this change.'
+          }
+        },
+        403
+      );
     case 'TaxPastEffectiveDateError':
       return c.json(
         {

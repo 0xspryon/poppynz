@@ -58,6 +58,8 @@ const makeLayer = (
     taxRepo?: ReturnType<typeof makeSeededTaxConfigRepo>;
     sources?: Array<TaxCollectedSource>;
     reportFails?: boolean;
+    /** The admin impersonating the accountant, when the session is one. */
+    impersonatedBy?: string;
   } = {}
 ) => {
   const grants = new Set(options.grants ?? ALL);
@@ -82,7 +84,14 @@ const makeLayer = (
           : Effect.fail(new DBNotFoundError({ entity: 'user', value: id })),
       findByEmail: () => Effect.succeed(accountant)
     }),
-    makeSessionRepoTest({ findById: () => Effect.succeed(session) }),
+    makeSessionRepoTest({
+      findById: () =>
+        Effect.succeed(
+          options.impersonatedBy
+            ? ({ ...session, impersonatedBy: options.impersonatedBy } as Session)
+            : session
+        )
+    }),
     taxRepo.layer,
     options.reportFails
       ? makeTaxReportRepoTest({
@@ -353,6 +362,60 @@ describe('POST /tax/registrations', () => {
   it('is denied without tax write', async () => {
     const { layer } = makeLayer({ grants: ['tax:read'] });
     expect(failure(await post(layer, registration))?._tag).toBe('ForbiddenError');
+  });
+});
+
+describe('impersonated sessions (R10)', () => {
+  const writes = [
+    ['rate', (c: HonoContext<HonoEnv>) => supersedeTaxRateRouteProgram(c, new Headers(), NOW)],
+    [
+      'treatment',
+      (c: HonoContext<HonoEnv>) => supersedeTaxTreatmentRouteProgram(c, new Headers(), NOW)
+    ],
+    [
+      'registration',
+      (c: HonoContext<HonoEnv>) => supersedeTaxRegistrationRouteProgram(c, new Headers(), NOW)
+    ]
+  ] as const;
+  const inputs = {
+    rate: ontarioRate,
+    treatment: {
+      supplyTypeCode: 'family_service_fee',
+      treatment: 'exempt',
+      components: [],
+      placeOfSupply: 'contract_location',
+      effectiveFrom: '2027-01-01',
+      reason: 'test'
+    },
+    registration: {
+      jurisdictionCode: 'CA',
+      program: 'gst_hst',
+      components: ['gst', 'hst'],
+      registrationNumber: '123456789RT0001',
+      registered: true,
+      effectiveFrom: '2027-01-01',
+      reason: 'test'
+    }
+  };
+
+  for (const [name, program] of writes) {
+    it(`refuses a ${name} write from an admin impersonating the accountant`, async () => {
+      const { layer, taxRepo } = makeLayer({ impersonatedBy: 'admin-1' });
+      const exit = await Effect.runPromiseExit(
+        program(body(inputs[name])).pipe(Effect.provide(layer))
+      );
+      expect(failure(exit)?._tag).toBe('TaxImpersonatedWriteError');
+      // Nothing written, nothing audited under the accountant's name.
+      expect(taxRepo.state.audit).toEqual([]);
+    });
+  }
+
+  it('still lets an impersonating admin read the configuration', async () => {
+    const { layer } = makeLayer({ impersonatedBy: 'admin-1' });
+    const exit = await Effect.runPromiseExit(
+      getTaxConfigRouteProgram(new Headers(), NOW).pipe(Effect.provide(layer))
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
   });
 });
 

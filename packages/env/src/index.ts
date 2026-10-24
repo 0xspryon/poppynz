@@ -243,6 +243,21 @@ export const stripeConfig = Config.all({
 // TRUSTED_ORIGINS is a list, so it can't serve as a single return address.
 // A stored payout status older than PAYOUTS_REFRESH_AFTER_MINUTES is
 // re-fetched from the provider when read.
+// Contract billing (piece 3). The commissions are frozen on each contract at
+// acceptance; changing them only affects contracts accepted afterwards.
+// Sales tax is NOT configured here — it is database state (tax_* tables).
+export const contractBillingConfig = Config.all({
+  familyCommissionBps: Config.integer('CONTRACT_FAMILY_COMMISSION_BPS').pipe(
+    Config.withDefault(500)
+  ),
+  providerCommissionBps: Config.integer('CONTRACT_PROVIDER_COMMISSION_BPS').pipe(
+    Config.withDefault(1500)
+  ),
+  // How often a declined hold is retried during its grace period (it is also
+  // retried at once whenever the family replaces the card).
+  retryHours: Config.integer('CONTRACT_BILLING_RETRY_HOURS').pipe(Config.withDefault(12))
+});
+
 export const payoutsConfig = Config.all({
   appWebOrigin: Config.string('APP_WEB_ORIGIN').pipe(
     Config.withDefault('https://app.poppynz.com'),

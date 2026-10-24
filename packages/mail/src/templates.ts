@@ -497,3 +497,33 @@ export const approvalExpiringMail = (mail: {
     ].join('\n')
   };
 };
+
+export const contractBillingNoticeMail = (mail: {
+  name: string | null;
+  subject: string;
+  paragraphs: ReadonlyArray<string>;
+  link: string;
+  linkLabel: string;
+}): MailContent => ({
+  subject: mail.subject,
+  html: layout(
+    paragraph(escapeHtml(greeting(mail.name))) +
+      mail.paragraphs.map((text) => paragraph(escapeHtml(text))).join('') +
+      button(mail.link, mail.linkLabel)
+  ),
+  text: [
+    greeting(mail.name),
+    '',
+    ...mail.paragraphs.flatMap((text) => [text, '']),
+    `${mail.linkLabel}: ${mail.link}`
+  ].join('\n')
+});
+
+export const adminBillingAlertMail = (mail: {
+  subject: string;
+  lines: ReadonlyArray<string>;
+}): MailContent => ({
+  subject: `[Poppynz billing] ${mail.subject}`,
+  html: layout(mail.lines.map((line) => paragraph(escapeHtml(line))).join('')),
+  text: mail.lines.join('\n')
+});

@@ -5,6 +5,8 @@ import {
   accountBannedMail,
   accountUnbannedMail,
   adminApprovalRequestSubmittedMail,
+  adminBillingAlertMail,
+  contractBillingNoticeMail,
   approvalExpiringMail,
   safetyVerificationExpiringMail,
   safetyVerificationInviteMail,
@@ -133,6 +135,23 @@ export type AccountUnbannedMail = {
   link: string;
 };
 
+/** A contract-billing notice (piece 3). The copy is composed by the billing
+ * domain, which knows the amounts and dates; this layer only lays it out. */
+export type ContractBillingNoticeMail = {
+  email: string;
+  name: string | null;
+  subject: string;
+  paragraphs: ReadonlyArray<string>;
+  link: string;
+  linkLabel: string;
+};
+
+/** Recipients come from ADMIN_NOTIFICATION_EMAILS, not from the payload. */
+export type AdminBillingAlertMail = {
+  subject: string;
+  lines: ReadonlyArray<string>;
+};
+
 export class Mailer extends Context.Tag('@api/lib/Mailer')<
   Mailer,
   {
@@ -161,6 +180,10 @@ export class Mailer extends Context.Tag('@api/lib/Mailer')<
     ) => Effect.Effect<void, MailerError>;
     sendAccountBanned: (mail: AccountBannedMail) => Effect.Effect<void, MailerError>;
     sendAccountUnbanned: (mail: AccountUnbannedMail) => Effect.Effect<void, MailerError>;
+    sendContractBillingNotice: (
+      mail: ContractBillingNoticeMail
+    ) => Effect.Effect<void, MailerError>;
+    sendAdminBillingAlert: (mail: AdminBillingAlertMail) => Effect.Effect<void, MailerError>;
   }
 >() {}
 
@@ -288,7 +311,14 @@ export const makeMailer = (config: {
     sendSafetyVerificationExpiring: (mail) =>
       deliver([mail.email], safetyVerificationExpiringMail(mail)),
     sendAccountBanned: (mail) => deliver([mail.email], accountBannedMail(mail)),
-    sendAccountUnbanned: (mail) => deliver([mail.email], accountUnbannedMail(mail))
+    sendAccountUnbanned: (mail) => deliver([mail.email], accountUnbannedMail(mail)),
+    sendContractBillingNotice: (mail) => deliver([mail.email], contractBillingNoticeMail(mail)),
+    sendAdminBillingAlert: (mail) =>
+      config.adminNotificationEmails.length === 0
+        ? Effect.sync(() =>
+            console.warn(`[mail] admin billing alert with no recipients: ${mail.subject}`)
+          )
+        : deliver(config.adminNotificationEmails, adminBillingAlertMail(mail))
   };
 };
 
@@ -319,5 +349,7 @@ export const makeMailerTest = (implementation: Partial<Context.Tag.Service<Maile
     sendSafetyVerificationExpiring: () => Effect.void,
     sendAccountBanned: () => Effect.void,
     sendAccountUnbanned: () => Effect.void,
+    sendContractBillingNotice: () => Effect.void,
+    sendAdminBillingAlert: () => Effect.void,
     ...implementation
   });

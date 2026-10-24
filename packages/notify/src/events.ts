@@ -82,6 +82,21 @@ export type NotificationPayloads = {
       | 'verified'
       | 'rejected';
   };
+  /** Something changed in a contract's billing the viewer should see (a hold
+   * declined, a suspension, a resume, a cancellation). Thin on purpose: an
+   * open contract or billing page refetches. */
+  'contract.billing': {
+    contractId: string;
+    kind:
+      | 'readiness_reminder'
+      | 'cancelled_not_ready'
+      | 'hold_declined'
+      | 'payment_pending'
+      | 'suspended'
+      | 'resumed'
+      | 'helper_not_ready'
+      | 'charge_failed';
+  };
   /** Someone asked the viewer to vouch for them. */
   'vouch.requested': {
     vouchId: string;

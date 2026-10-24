@@ -15,6 +15,7 @@ interface ServerError {
 export type ApprovalBlocker =
 	| { kind: 'document_missing'; name: string }
 	| { kind: 'document_rejected'; name: string }
+	| { kind: 'document_expired'; name: string }
 	| { kind: 'document_unreviewed'; name: string }
 	| { kind: 'photo_missing' };
 
@@ -104,6 +105,8 @@ const blockerText = (blocker: ApprovalBlocker): string => {
 			return m.approval_blocker_document_missing({ name: blocker.name });
 		case 'document_rejected':
 			return m.approval_blocker_document_rejected({ name: blocker.name });
+		case 'document_expired':
+			return m.approval_blocker_document_expired({ name: blocker.name });
 		case 'document_unreviewed':
 			return m.approval_blocker_document_unreviewed({ name: blocker.name });
 	}

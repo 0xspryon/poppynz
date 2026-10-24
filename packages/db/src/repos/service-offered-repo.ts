@@ -4,7 +4,7 @@ import { and, asc, eq, inArray, type InferSelectModel, isNull } from 'drizzle-or
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
 import { kycDocument, serviceCatalogueItem, serviceOffered, user, userProfile } from '../schema';
-import { isServicePublishable } from '../service-publishability';
+import { isKycDocumentApproved, isServicePublishable } from '../service-publishability';
 
 export type ServiceOffered = InferSelectModel<typeof serviceOffered>;
 export type ServiceReviewStatus = ServiceOffered['reviewStatus'];
@@ -133,7 +133,12 @@ export const selectPublishableServices = (
             )
             .where(and(inArray(serviceOffered.userId, userIds), isNull(serviceOffered.deletedAt))),
           db
-            .select({ userId: kycDocument.userId, documentTypeId: kycDocument.documentTypeId })
+            .select({
+              userId: kycDocument.userId,
+              documentTypeId: kycDocument.documentTypeId,
+              status: kycDocument.status,
+              expiryDate: kycDocument.expiryDate
+            })
             .from(kycDocument)
             .where(
               and(
@@ -144,7 +149,16 @@ export const selectPublishableServices = (
             )
         ],
         { concurrency: 'unbounded' }
-      ).pipe(Effect.map(([rows, approved]) => filterPublishable(rows, approved)));
+      ).pipe(
+        // Expiry is applied here, at read time: an approved credential past
+        // its expiry date no longer unlocks the service it gates.
+        Effect.map(([rows, approved]) =>
+          filterPublishable(
+            rows,
+            approved.filter((doc) => isKycDocumentApproved(doc))
+          )
+        )
+      );
 
 export const ServiceOfferedRepoLive = Layer.effect(
   ServiceOfferedRepo,

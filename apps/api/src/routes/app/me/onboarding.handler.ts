@@ -122,7 +122,9 @@ export const getOnboardingProgram = (userAndSession: UserAndSession) =>
 
     const missingFields = profileMissingFields(profile);
     const requiredEntries = checklist.filter((entry) => !entry.isOptional);
-    const requiredSubmitted = requiredEntries.filter((entry) => entry.status !== 'missing').length;
+    const requiredSubmitted = requiredEntries.filter(
+      (entry) => entry.status !== 'missing' && entry.status !== 'expired'
+    ).length;
     const profileComplete = missingFields.length === 0;
     const servicesComplete = services.length > 0;
 
@@ -205,7 +207,9 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
       typeof profile.latitude === 'number' && typeof profile.longitude === 'number';
     const needsComplete = needs.length > 0;
     const requiredEntries = checklist.filter((entry) => !entry.isOptional);
-    const requiredSubmitted = requiredEntries.filter((entry) => entry.status !== 'missing').length;
+    const requiredSubmitted = requiredEntries.filter(
+      (entry) => entry.status !== 'missing' && entry.status !== 'expired'
+    ).length;
     const today = toDateOnly(new Date());
     const completed = (locationComplete ? 1 : 0) + (needsComplete ? 1 : 0) + requiredSubmitted;
     const total = 2 + requiredEntries.length;

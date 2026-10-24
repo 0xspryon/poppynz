@@ -33,6 +33,7 @@
 		if (status === 'approved') return 'approved';
 		if (status === 'rejected') return 'rejected';
 		if (status === 'missing') return 'missing';
+		if (status === 'expired') return 'expired';
 		return 'submitted';
 	}
 

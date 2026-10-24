@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import {
   CUSTOM_SERVICE_BASE_RATE_CENTS,
+  isKycDocumentApproved,
+  isKycDocumentExpired,
   isServicePublishable,
   offerFloorCents
 } from './service-publishability';
@@ -52,5 +54,26 @@ describe('offerFloorCents', () => {
 
   it('never exceeds the listed rate', () => {
     expect(offerFloorCents({ hourlyRateCents: 1500, catalogueBaseRateCents: 2000 })).toBe(1500);
+  });
+});
+
+describe('document expiry at read time (R9)', () => {
+  const now = new Date('2026-10-24T15:00:00.000Z');
+
+  it('counts a document as valid through its expiry day', () => {
+    expect(isKycDocumentExpired({ expiryDate: null }, now)).toBe(false);
+    expect(isKycDocumentExpired({ expiryDate: new Date('2026-10-24T00:00:00.000Z') }, now)).toBe(
+      false
+    );
+    expect(isKycDocumentExpired({ expiryDate: new Date('2026-10-23T00:00:00.000Z') }, now)).toBe(
+      true
+    );
+  });
+
+  it('treats an approved but expired document as not approved', () => {
+    const expiryDate = new Date('2026-10-01T00:00:00.000Z');
+    expect(isKycDocumentApproved({ status: 'approved', expiryDate }, now)).toBe(false);
+    expect(isKycDocumentApproved({ status: 'approved', expiryDate: null }, now)).toBe(true);
+    expect(isKycDocumentApproved({ status: 'submitted', expiryDate: null }, now)).toBe(false);
   });
 });

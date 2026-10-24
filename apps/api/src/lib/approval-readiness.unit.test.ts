@@ -3,7 +3,7 @@ import { approvalBlockers, describeBlocker, submissionBlockers } from './approva
 
 const entry = (
   name: string,
-  status: 'missing' | 'submitted' | 'approved' | 'rejected',
+  status: 'missing' | 'submitted' | 'approved' | 'rejected' | 'expired',
   isOptional = false
 ) => ({ documentTypeId: `${name}-id`, name, isOptional, status });
 
@@ -78,5 +78,18 @@ describe('describeBlocker', () => {
     expect(
       describeBlocker({ kind: 'document_unreviewed', documentTypeId: 'x', name: 'Government ID' })
     ).toContain('Government ID');
+  });
+
+  it('blocks approval and submission on an expired required document (R9)', () => {
+    const input = {
+      role: 'family' as const,
+      profile: { image: null },
+      checklist: [entry('First Aid', 'expired')]
+    };
+    expect(approvalBlockers(input).map((blocker) => blocker.kind)).toEqual(['document_expired']);
+    expect(submissionBlockers(input).map((blocker) => blocker.kind)).toEqual(['document_expired']);
+    expect(
+      describeBlocker({ kind: 'document_expired', documentTypeId: 'x', name: 'First Aid' })
+    ).toBe('First Aid has expired and needs a new upload');
   });
 });

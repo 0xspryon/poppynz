@@ -815,6 +815,30 @@ describe('admin per-document review (UAT #27)', () => {
     expect(getFailure(exit)._tag).toBe('KycValidationError');
   });
 
+  it('revokes an already approved document with a reason and re-indexes the helper (R9)', async () => {
+    const reviews: Array<{ id: string; status: string }> = [];
+    const reconciled: Array<string> = [];
+    const revoked = await Effect.runPromise(
+      reviewAdminKycDocumentRouteProgram(
+        contextWithJson({ decision: 'reject', reason: 'Certificate was withdrawn.' }),
+        new Headers(),
+        'kyc-document-1'
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: admin,
+            document: kycDocument({ status: 'approved' }),
+            reconciled,
+            onReview: (id, input) => reviews.push({ id, ...input })
+          })
+        )
+      )
+    );
+    expect(reviews[0]).toMatchObject({ id: 'kyc-document-1', status: 'rejected' });
+    expect(revoked).toMatchObject({ status: 'rejected', reason: 'Certificate was withdrawn.' });
+    expect(reconciled).toEqual(['provider-1']);
+  });
+
   it('rejects invalid input and unknown documents', async () => {
     const invalid = await Effect.runPromise(
       reviewAdminKycDocumentRouteProgram(

@@ -278,6 +278,7 @@
 			}
 		}
 	],
+	"admin_requests_blocker_document_expired": "{name} has expired and needs a new upload",
 	"admin_requests_blocker_document_missing": "{name} has not been submitted",
 	"admin_requests_blocker_document_rejected": "{name} was rejected and needs a new upload",
 	"admin_requests_blocker_document_unreviewed": "{name} has not been reviewed yet — approve or reject it first",
@@ -313,6 +314,7 @@
 	"admin_requests_doc_not_submitted": "Required — not submitted",
 	"admin_requests_doc_optional": "optional",
 	"admin_requests_doc_reject": "Reject",
+	"admin_requests_doc_revoke": "Revoke",
 	"admin_requests_docs_footnote": "Every required document needs its own approval before the account can be approved. Expiry dates can be corrected from the fullscreen viewer.",
 	"admin_requests_documents_heading": "Documents · {submitted} of {total} required",
 	"admin_requests_empty": "No applications yet.",
@@ -702,6 +704,7 @@
 	"admin_users_unban_title": "Unban {name}?",
 	"api_unexpected_network": "The request could not be sent.",
 	"api_unexpected_response": "The server sent an unexpected response.",
+	"approval_blocker_document_expired": "{name} has expired and needs a new upload",
 	"approval_blocker_document_missing": "{name} has not been submitted",
 	"approval_blocker_document_rejected": "{name} was rejected and needs a new upload",
 	"approval_blocker_document_unreviewed": "{name} has not been reviewed yet — approve or reject it first",
@@ -2227,6 +2230,7 @@
 	"verify_collecting_heading": "Checks Credibled is collecting",
 	"verify_continue_check": "Continue your check",
 	"verify_continue_payment": "Continue payment",
+	"verify_doc_expired_on": "· expired {date}",
 	"verify_doc_expires": "· expires {date}",
 	"verify_doc_optional_hint": "Optional — add it if it strengthens your profile",
 	"verify_doc_required_missing": "Required — not submitted yet",

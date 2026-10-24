@@ -1,4 +1,5 @@
 import {
+  isKycDocumentExpired,
   KycDocumentRepo,
   KycDocumentTypeRepo,
   SafetyVerificationRepo,
@@ -47,6 +48,16 @@ const safetyVerificationChecklistStatus = (
   }
 };
 
+/**
+ * An approved document past its expiry date presents as expired (R9): it no
+ * longer satisfies the requirement, and the applicant owes a fresh one.
+ * Applied at read time, so nothing has to sweep the stored status first.
+ */
+const documentChecklistStatus = (document: KycDocument, now: Date = new Date()) =>
+  document.status === 'approved' && isKycDocumentExpired(document, now)
+    ? ('expired' as const)
+    : document.status;
+
 export const buildDocumentChecklist = (
   types: Array<KycDocumentType>,
   docs: Array<KycDocument>,
@@ -79,7 +90,7 @@ export const buildDocumentChecklist = (
         status: isSafetyGate
           ? safetyVerificationChecklistStatus(verification, today)
           : document
-            ? document.status
+            ? documentChecklistStatus(document)
             : ('missing' as const),
         document: uploaded
           ? {
@@ -116,7 +127,9 @@ export const checklistWarnings = (
   role: SafetyVerificationRole = 'service-provider'
 ) => ({
   missingRequiredDocuments: checklist
-    .filter((entry) => !entry.isOptional && entry.status === 'missing')
+    .filter(
+      (entry) => !entry.isOptional && (entry.status === 'missing' || entry.status === 'expired')
+    )
     .map((entry) => ({ documentTypeId: entry.documentTypeId, name: entry.name })),
   missingServicesOffered: role === 'service-provider' && servicesCount === 0
 });

@@ -278,6 +278,7 @@
 			}
 		}
 	],
+	"admin_requests_blocker_document_expired": "Le document « {name} » est expiré et doit être téléversé de nouveau",
 	"admin_requests_blocker_document_missing": "Le document « {name} » n’a pas été soumis",
 	"admin_requests_blocker_document_rejected": "Le document « {name} » a été refusé et doit être téléversé de nouveau",
 	"admin_requests_blocker_document_unreviewed": "Le document « {name} » n’a pas encore été examiné — approuvez-le ou refusez-le d’abord",
@@ -313,6 +314,7 @@
 	"admin_requests_doc_not_submitted": "Obligatoire — non soumis",
 	"admin_requests_doc_optional": "facultatif",
 	"admin_requests_doc_reject": "Refuser",
+	"admin_requests_doc_revoke": "Révoquer",
 	"admin_requests_docs_footnote": "Chaque document obligatoire doit être approuvé individuellement avant que le compte puisse l’être. Les dates d’expiration peuvent être corrigées dans la visionneuse plein écran.",
 	"admin_requests_documents_heading": "Documents · {submitted} sur {total} obligatoires",
 	"admin_requests_empty": "Aucune demande pour l’instant.",
@@ -702,6 +704,7 @@
 	"admin_users_unban_title": "Réactiver {name}?",
 	"api_unexpected_network": "La requête n’a pas pu être envoyée.",
 	"api_unexpected_response": "Le serveur a envoyé une réponse inattendue.",
+	"approval_blocker_document_expired": "{name} est expiré et doit être téléversé de nouveau",
 	"approval_blocker_document_missing": "{name} n’a pas été soumis",
 	"approval_blocker_document_rejected": "{name} a été refusé et doit être téléversé de nouveau",
 	"approval_blocker_document_unreviewed": "{name} n’a pas encore été examiné — approuvez-le ou refusez-le d’abord",
@@ -2227,6 +2230,7 @@
 	"verify_collecting_heading": "Vérifications en cours d’obtention par Credibled",
 	"verify_continue_check": "Poursuivre votre vérification",
 	"verify_continue_payment": "Poursuivre le paiement",
+	"verify_doc_expired_on": "· expiré le {date}",
 	"verify_doc_expires": "· expire le {date}",
 	"verify_doc_optional_hint": "Facultatif — ajoutez-le s’il renforce votre profil",
 	"verify_doc_required_missing": "Obligatoire — pas encore soumis",

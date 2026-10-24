@@ -144,4 +144,20 @@ describe('the document checklist', () => {
       { documentTypeId: 'type-1', name: 'First Aid Certification' }
     ]);
   });
+
+  it('presents an approved document past its expiry date as expired (R9)', () => {
+    const lapsed = document({ status: 'approved', expiryDate: new Date('2020-01-01T00:00:00Z') });
+    const list = buildDocumentChecklist([type()], [lapsed], 'service-provider');
+    expect(entry(list, 'type-1').status).toBe('expired');
+    // Still shows the file, so the applicant knows which one to replace.
+    expect(entry(list, 'type-1').document).toMatchObject({ filename: 'first-aid.pdf' });
+    expect(checklistWarnings(list, 1).missingRequiredDocuments).toEqual([
+      { documentTypeId: 'type-1', name: 'First Aid Certification' }
+    ]);
+
+    const valid = document({ status: 'approved', expiryDate: new Date('2099-01-01T00:00:00Z') });
+    expect(
+      entry(buildDocumentChecklist([type()], [valid], 'service-provider'), 'type-1').status
+    ).toBe('approved');
+  });
 });

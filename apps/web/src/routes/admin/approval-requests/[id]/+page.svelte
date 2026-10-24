@@ -89,7 +89,9 @@
 	const optionalDocs = $derived(
 		detail?.documents.filter((doc) => doc.isOptional && doc.status !== 'missing') ?? []
 	);
-	const requiredSubmitted = $derived(requiredDocs.filter((doc) => doc.status !== 'missing').length);
+	const requiredSubmitted = $derived(
+		requiredDocs.filter((doc) => doc.status !== 'missing' && doc.status !== 'expired').length
+	);
 	const blockers = $derived(detail?.approvalBlockers ?? []);
 	const warningCount = $derived(
 		detail
@@ -318,6 +320,7 @@
 		if (status === 'approved') return 'approved';
 		if (status === 'rejected') return 'rejected';
 		if (status === 'missing') return 'missing';
+		if (status === 'expired') return 'expired';
 		return 'submitted';
 	}
 </script>
@@ -659,6 +662,18 @@
 										{m.admin_requests_doc_reject()}
 									</button>
 								{/if}
+							{:else if doc.document && !doc.isSafetyGate && (doc.status === 'approved' || doc.status === 'expired')}
+								<!-- An approved document can still be withdrawn (R9): the same
+								     rejection with a reason the applicant sees. -->
+								{@const ref = { id: doc.document.id, name: doc.name }}
+								<button
+									type="button"
+									class="btn btn-outline btn-error btn-xs"
+									disabled={reviewingIds.has(ref.id)}
+									onclick={() => (rejectingDoc = ref)}
+								>
+									{m.admin_requests_doc_revoke()}
+								</button>
 							{/if}
 						</div>
 					{/each}

@@ -755,6 +755,28 @@ describe('custom services and the credential gate (UAT #1, #18, #34)', () => {
     expect(result).toMatchObject({ catalogueServiceId: pswItem.id, reviewStatus: 'approved' });
   });
 
+  it('refuses the PSW service when the approved credential has expired (R9)', async () => {
+    const exit = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({
+          name: 'Personal support (PSW)',
+          hourlyRateCents: 2500,
+          catalogueServiceId: pswItem.id
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            catalogueItems: [pswItem],
+            kycDocuments: [kycDocument({ expiryDate: new Date('2020-01-01T00:00:00Z') })]
+          })
+        ),
+        Effect.exit
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('ServiceCredentialRequiredError');
+  });
+
   it('checks the credential when re-linking an existing service to the PSW item', async () => {
     const exit = await Effect.runPromise(
       updateServiceOfferedRouteProgram(

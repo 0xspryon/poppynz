@@ -1,6 +1,6 @@
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
-import { and, eq, type InferSelectModel, isNull } from 'drizzle-orm';
+import { and, eq, gte, type InferSelectModel, isNull, lt } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
 import { kycDocument, kycDocumentType } from '../schema';
@@ -40,6 +40,13 @@ export class KycDocumentRepo extends Context.Tag('@repo/db/KycDocumentRepo')<
       expiryDate: Date | null
     ) => Effect.Effect<KycDocument, SqlError | DBNotFoundError>;
     approveSubmittedByUserId: (userId: string) => Effect.Effect<Array<KycDocument>, SqlError>;
+    /** Helpers (distinct user ids) holding an approved, live document whose
+     * expiry date falls in [from, to) — the daily sweep re-indexes them so a
+     * lapsed credential's gated service leaves search (R9). */
+    listUserIdsWithApprovedExpiringBetween: (
+      from: Date,
+      to: Date
+    ) => Effect.Effect<Array<string>, SqlError>;
     /** Records an admin decision on one live document (UAT #27). */
     review: (
       id: string,
@@ -145,6 +152,19 @@ export const KycDocumentRepoLive = Layer.effect(
               return Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: id }));
             })
           ),
+      listUserIdsWithApprovedExpiringBetween: (from, to) =>
+        db
+          .selectDistinct({ userId: kycDocument.userId })
+          .from(kycDocument)
+          .where(
+            and(
+              eq(kycDocument.status, 'approved'),
+              isNull(kycDocument.deletedAt),
+              gte(kycDocument.expiryDate, from),
+              lt(kycDocument.expiryDate, to)
+            )
+          )
+          .pipe(Effect.map((rows) => rows.map((row) => row.userId))),
       approveSubmittedByUserId: (userId) =>
         db
           .update(kycDocument)
@@ -178,12 +198,15 @@ export const KycDocumentRepoDefault = KycDocumentRepoLive.pipe(Layer.provide(Dri
 
 type KycDocumentService = Context.Tag.Service<KycDocumentRepo>;
 
-/** `review` defaults to not-found so older tests compile unchanged. */
+/** `review` defaults to not-found and the expiry listing to empty so older
+ * tests compile unchanged. */
 export const makeKycDocumentRepoTest = (
-  implementation: Omit<KycDocumentService, 'review'> & Partial<Pick<KycDocumentService, 'review'>>
+  implementation: Omit<KycDocumentService, 'review' | 'listUserIdsWithApprovedExpiringBetween'> &
+    Partial<Pick<KycDocumentService, 'review' | 'listUserIdsWithApprovedExpiringBetween'>>
 ) =>
   Layer.succeed(KycDocumentRepo, {
     review: (id) => Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: id })),
+    listUserIdsWithApprovedExpiringBetween: () => Effect.succeed([]),
     ...implementation
   });
 

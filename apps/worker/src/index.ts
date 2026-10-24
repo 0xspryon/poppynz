@@ -16,6 +16,7 @@ import {
   CheckOrderRepoDefault,
   FamilySearchOutboxRepo,
   FamilySearchOutboxRepoDefault,
+  KycDocumentRepoDefault,
   PaymentRepoDefault,
   ProviderSearchOutboxRepo,
   ProviderSearchOutboxRepoDefault,
@@ -24,6 +25,7 @@ import {
 } from '@repo/db';
 import {
   FamilySearchQueueLive,
+  ProviderSearchQueueLive,
   SafetyVerificationQueueLive,
   approvalExpiryCronPattern,
   approvalExpiryJobNames,
@@ -55,6 +57,7 @@ import { processFamilySearchJob } from './family-search-processor';
 import { recoverPendingPayments } from './payment-recovery-processor';
 import { processProviderSearchJob } from './provider-search-processor';
 import { processSafetyVerificationExpiries } from './safety-verification-expiry-processor';
+import { reconcileExpiredKycDocuments } from './kyc-document-expiry-processor';
 import { placeCheckOrder, recoverUnplacedCheckOrders } from './safety-verification-order-processor';
 import { reconcileCheckOrderStatuses } from './safety-verification-status-processor';
 
@@ -79,8 +82,11 @@ const WorkerBaseLive = Layer.mergeAll(
   // job, exactly as the API's settle does.
   SafetyVerificationQueueLive,
   MailerLive,
-  // The expiry sweep re-indexes a family whose verification lapsed.
+  // The expiry sweep re-indexes a family whose verification lapsed, and a
+  // helper whose approved credential lapsed (R9).
   FamilySearchQueueLive,
+  ProviderSearchQueueLive,
+  KycDocumentRepoDefault,
   // Check-order transitions publish to the same Redis channels the API's SSE
   // stream subscribes to, so the applicant's page learns without a refresh.
   NotificationHubLive
@@ -155,6 +161,8 @@ const safetyVerificationWorker = new Worker(
         `safety-verification expiry sweep: ${summary.lapsed} lapsed, ` +
           `${summary.notified} notified, ${summary.failed} failed of ${summary.candidates}`
       );
+      const credentials = await runtime.runPromise(reconcileExpiredKycDocuments(new Date()));
+      console.log(`kyc document expiry sweep: ${credentials.reindexed} helper(s) re-indexed`);
       return;
     }
 

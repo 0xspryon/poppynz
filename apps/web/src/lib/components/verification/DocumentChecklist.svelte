@@ -56,7 +56,15 @@
 
 	const requiredDocs = $derived(documents.filter((doc) => !doc.isOptional));
 	const optionalDocs = $derived(documents.filter((doc) => doc.isOptional));
-	const requiredSubmitted = $derived(requiredDocs.filter((doc) => doc.status !== 'missing').length);
+	const requiredSubmitted = $derived(
+		requiredDocs.filter((doc) => !needsUpload(doc)).length
+	);
+
+	/** Nothing valid on file: never provided, or approved but past its expiry
+	 * date (R9) — either way the applicant owes a fresh document. */
+	function needsUpload(doc: OnboardingDocument) {
+		return doc.status === 'missing' || doc.status === 'expired';
+	}
 
 	async function addToCheckList(doc: OnboardingDocument) {
 		if (addingId) return;
@@ -78,7 +86,7 @@
 	}
 
 	function chipStatus(doc: OnboardingDocument): ChipStatus {
-		return doc.status === 'missing' ? 'missing' : doc.status;
+		return doc.status;
 	}
 
 	function openUpload(doc: OnboardingDocument) {
@@ -171,7 +179,7 @@
 {#snippet documentRow(doc: OnboardingDocument)}
 	<div
 		class="rounded-[10px] border bg-base-100 p-4
-			{doc.status === 'missing'
+			{needsUpload(doc)
 			? doc.isOptional
 				? 'border-dashed border-outline-variant'
 				: 'border-dashed border-warning-border'
@@ -182,7 +190,7 @@
 				class="flex size-10 shrink-0 items-center justify-center rounded-lg
 					{doc.status === 'approved'
 					? 'bg-success-content'
-					: doc.status === 'missing'
+					: needsUpload(doc)
 						? 'bg-base-300'
 						: 'bg-info-content'}"
 			>
@@ -190,7 +198,7 @@
 					class="las la-file-alt text-lg
 						{doc.status === 'approved'
 						? 'text-success'
-						: doc.status === 'missing'
+						: needsUpload(doc)
 							? 'text-outline'
 							: 'text-info'}"
 					aria-hidden="true"
@@ -220,7 +228,9 @@
 							{doc.document.filename}
 						{/if}
 						{#if doc.document.expiryDate}
-							{m.verify_doc_expires({ date: formatDate(doc.document.expiryDate) ?? '' })}
+							{doc.status === 'expired'
+								? m.verify_doc_expired_on({ date: formatDate(doc.document.expiryDate) ?? '' })
+								: m.verify_doc_expires({ date: formatDate(doc.document.expiryDate) ?? '' })}
 						{/if}
 					{:else if doc.isOptional}
 						{m.verify_doc_optional_hint()}
@@ -242,7 +252,7 @@
 				{/if}
 			</div>
 			<StatusChip status={chipStatus(doc)} />
-			{#if doc.status === 'missing'}
+			{#if needsUpload(doc)}
 				<!-- Uploading it yourself is free and instant, so it leads. -->
 				<button
 					type="button"

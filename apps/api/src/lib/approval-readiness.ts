@@ -16,6 +16,7 @@ import type { DocumentChecklistEntry } from './onboarding-checklist';
 export type ApprovalBlocker =
   | { kind: 'document_missing'; documentTypeId: string; name: string }
   | { kind: 'document_rejected'; documentTypeId: string; name: string }
+  | { kind: 'document_expired'; documentTypeId: string; name: string }
   | { kind: 'document_unreviewed'; documentTypeId: string; name: string }
   | { kind: 'photo_missing' };
 
@@ -41,6 +42,9 @@ export const approvalBlockers = (input: {
         break;
       case 'rejected':
         blockers.push({ kind: 'document_rejected', ...ref });
+        break;
+      case 'expired':
+        blockers.push({ kind: 'document_expired', ...ref });
         break;
       case 'submitted':
         blockers.push({ kind: 'document_unreviewed', ...ref });
@@ -72,6 +76,8 @@ export const describeBlocker = (blocker: ApprovalBlocker): string => {
       return `${blocker.name} has not been submitted`;
     case 'document_rejected':
       return `${blocker.name} was rejected and needs a new upload`;
+    case 'document_expired':
+      return `${blocker.name} has expired and needs a new upload`;
     case 'document_unreviewed':
       return `${blocker.name} has not been reviewed yet — approve or reject it first`;
   }

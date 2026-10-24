@@ -2,6 +2,7 @@ import type { SqlError } from '@effect/sql/SqlError';
 import {
   CUSTOM_SERVICE_BASE_RATE_CENTS,
   DBNotFoundError,
+  isKycDocumentApproved,
   KycDocumentRepo,
   KycDocumentTypeRepo,
   ServiceCatalogueRepo,
@@ -113,16 +114,17 @@ const ensureCustomRateMeetsFloor = (hourlyRateCents: number, currency: string) =
 
 /**
  * The credential gate: offering a catalogue service that names a required
- * document type needs that document APPROVED by an admin — submitted is not
- * enough. Repo failures stay SqlError (mapped to the repo 500 below).
+ * document type needs that document APPROVED by an admin and not expired —
+ * submitted is not enough. Repo failures stay SqlError (mapped to the repo 500 below).
  */
 const ensureCredentialApproved = (userId: string, item: ServiceCatalogueItem) =>
   Effect.gen(function* () {
     const requiredTypeId = item.requiredDocumentTypeId;
     if (requiredTypeId === null) return;
     const docs = yield* KycDocumentRepo.pipe(Effect.flatMap((repo) => repo.findByUserId(userId)));
+    // An approved credential past its expiry date no longer counts (R9).
     const approved = docs.some(
-      (doc) => doc.documentTypeId === requiredTypeId && doc.status === 'approved'
+      (doc) => doc.documentTypeId === requiredTypeId && isKycDocumentApproved(doc)
     );
     if (approved) return;
     const typeName = yield* KycDocumentTypeRepo.pipe(

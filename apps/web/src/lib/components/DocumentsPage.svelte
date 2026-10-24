@@ -84,7 +84,7 @@
 
 	const requiredDocs = $derived(documents?.filter((doc) => !doc.isOptional) ?? []);
 	const allRequiredIn = $derived(
-		requiredDocs.length > 0 && requiredDocs.every((doc) => doc.status !== 'missing')
+		requiredDocs.length > 0 && requiredDocs.every((doc) => doc.status !== 'missing' && doc.status !== 'expired')
 	);
 	// Invite the applicant onward the moment the last required document lands:
 	// nothing until then, nothing once they're approved or already in review.

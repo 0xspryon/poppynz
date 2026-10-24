@@ -54,6 +54,8 @@ export function describeApprovalBlocker(
 			return m.admin_requests_blocker_document_missing({ name });
 		case 'document_rejected':
 			return m.admin_requests_blocker_document_rejected({ name });
+		case 'document_expired':
+			return m.admin_requests_blocker_document_expired({ name });
 		case 'document_unreviewed':
 			return m.admin_requests_blocker_document_unreviewed({ name });
 		default:

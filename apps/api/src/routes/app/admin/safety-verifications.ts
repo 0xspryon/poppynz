@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '@/api/app-env';
 import {
   decideSafetyVerificationHandler,
+  getSafetyVerificationFileUrlHandler,
   getSafetyVerificationReportHandler,
   listSafetyVerificationsForReviewHandler
 } from '../safety-verification/safety-verification.handler';
@@ -11,4 +12,5 @@ import {
 export const adminSafetyVerificationsRoute = new Hono<HonoEnv>()
   .get('/', (c) => listSafetyVerificationsForReviewHandler(c))
   .post('/:id/decision', (c) => decideSafetyVerificationHandler(c))
-  .get('/:id/report', (c) => getSafetyVerificationReportHandler(c));
+  .get('/:id/report', (c) => getSafetyVerificationReportHandler(c))
+  .get('/:id/file-url', (c) => getSafetyVerificationFileUrlHandler(c));

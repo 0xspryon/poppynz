@@ -220,6 +220,8 @@ const activeConversation = (overrides: Partial<Conversation> = {}): Conversation
   ...overrides
 });
 
+const SIGNED = { signed: true };
+
 const makeContext = (options: { body?: unknown; params?: Record<string, string> } = {}) =>
   ({
     req: {
@@ -1012,7 +1014,7 @@ describe('POST /contracts/:id/send', () => {
   it('refuses to send without the family province — the service fee is taxed by it', async () => {
     const calls: Array<string> = [];
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             familyProvince: null,
@@ -1042,7 +1044,7 @@ describe('POST /contracts/:id/send', () => {
     });
 
     const result = await Effect.runPromise(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(layer)
       )
     );
@@ -1062,9 +1064,23 @@ describe('POST /contracts/:id/send', () => {
     ]);
   });
 
+  it('refuses to send without the explicit Sign & send confirmation (UAT #41)', async () => {
+    for (const body of [undefined, {}, { signed: false }]) {
+      const exit = await Effect.runPromiseExit(
+        sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body }), new Headers()).pipe(
+          Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] }))
+        )
+      );
+      expect(getFailure(exit)).toMatchObject({
+        _tag: 'RequestValidationError',
+        code: 'CONTRACT_SIGNATURE_REQUIRED'
+      });
+    }
+  });
+
   it('refuses an empty draft', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({ contractById: baseContract(), versions: [draftVersion({ services: [] })] })
         )
@@ -1075,7 +1091,7 @@ describe('POST /contracts/:id/send', () => {
 
   it("re-checks the floor against the provider's current listing at send time", async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1096,7 +1112,7 @@ describe('POST /contracts/:id/send', () => {
 
   it('fails without a pending draft', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(makeLayer({ contractById: baseContract(), versions: [] }))
       )
     );
@@ -1107,7 +1123,7 @@ describe('POST /contracts/:id/send', () => {
     // A declined contract is provider-visible; the family's revision draft is
     // not theirs to send. (A draft-only contract would 404 instead.)
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1123,7 +1139,7 @@ describe('POST /contracts/:id/send', () => {
   it('refuses to send without a card on file — contract billing charges it', async () => {
     const calls: Array<string> = [];
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1149,7 +1165,7 @@ describe('POST /contracts/:id/send', () => {
     });
 
     await Effect.runPromise(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(layer)
       )
     );
@@ -1166,7 +1182,7 @@ describe('POST /contracts/:id/send', () => {
 
   it('refuses to send without a start date', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({ contractById: baseContract(), versions: [draftVersion({ startsOn: null })] })
         )
@@ -1177,7 +1193,7 @@ describe('POST /contracts/:id/send', () => {
 
   it('refuses to send while the family has no saved location', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1193,7 +1209,7 @@ describe('POST /contracts/:id/send', () => {
   it("refuses a start date that is today in the family's zone", async () => {
     freezeNow('2026-09-10T05:30:00Z'); // Sep 10, 00:30 in Winnipeg
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1208,7 +1224,7 @@ describe('POST /contracts/:id/send', () => {
   it("allows tomorrow in the family's zone even when UTC is already there", async () => {
     freezeNow('2026-09-10T04:30:00Z'); // still Sep 9, 23:30 in Winnipeg
     const result = await Effect.runPromise(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1522,7 +1538,7 @@ describe('POST /contracts/:id/accept', () => {
 describe('contract approval gates', () => {
   it('blocks sending terms to a provider without a live approval', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1537,7 +1553,7 @@ describe('contract approval gates', () => {
 
   it('blocks a family without a live approval from sending terms', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -2929,7 +2945,7 @@ describe('authorization', () => {
     ],
     [
       'send',
-      () => sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers())
+      () => sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers())
     ],
     [
       'withdraw',
@@ -2974,4 +2990,32 @@ describe('authorization', () => {
       expect(getFailure(exit)).toMatchObject({ _tag: 'ForbiddenError' });
     }
   );
+});
+
+describe('contract list billing state (B5)', () => {
+  it('carries the billing status so a suspended contract is not shown as active', async () => {
+    const billing = makeInMemoryContractBillingRepo({
+      billing: [
+        dummyContractBilling({
+          contractId: CONTRACT_ID,
+          status: 'suspended',
+          suspendedReason: 'card'
+        })
+      ]
+    });
+    const result = await Effect.runPromise(
+      listContractsRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            billing,
+            contracts: [withContext(baseContract({ status: 'active' }), [], 'family-1')]
+          })
+        )
+      )
+    );
+    expect(result.contracts[0]).toMatchObject({
+      billingStatus: 'suspended',
+      billingSuspendedReason: 'card'
+    });
+  });
 });

@@ -68,7 +68,9 @@ import {
   validateContractEndInput,
   validateContractId,
   validateContractTermsInput,
-  type ContractTermsInput
+  type ContractTermsInput,
+  contractSendJsonError,
+  validateContractSendInput
 } from './contracts.validator';
 
 export class ContractRepoError extends Data.TaggedError('ContractRepoError')<{ cause: SqlError }> {}
@@ -548,6 +550,9 @@ const toTermsResponse = (
   weeklyEstimateCents: weeklyEstimateCents(version.services),
   currency: version.services[0]?.currency ?? 'CAD',
   sentAt: version.sentAt?.toISOString() ?? null,
+  // When the family signed with "Sign & send" (null for terms sent before
+  // signatures were recorded).
+  familySignedAt: version.familySignedAt?.toISOString() ?? null,
   expiresAt:
     version.status === 'proposed' && version.sentAt !== null
       ? new Date(version.sentAt.getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString()
@@ -1243,8 +1248,29 @@ export const listContractsProgram = (userAndSession: UserAndSession) =>
       .listForUser(viewer.id)
       .pipe((errors) => mapContractRepoError(errors));
     const visible = rows.filter((row) => !hiddenFromViewer(row, viewer.id));
+    // B5: a suspended contract must read "Suspended" in the list too, not
+    // "Active" — so active rows carry their billing state.
+    const billingRepo = yield* ContractBillingRepo;
+    const billingById = new Map(
+      yield* Effect.forEach(
+        visible.filter((row) => row.status === 'active' || row.status === 'ending'),
+        (row) =>
+          billingRepo.findBilling(row.id).pipe(
+            (errors) => mapContractRepoError(errors),
+            Effect.map((billing) => [row.id, billing] as const)
+          ),
+        { concurrency: 5 }
+      )
+    );
     return {
-      contracts: visible.map((row) => toContractListItem(row, viewer.id, cutoff))
+      contracts: visible.map((row) => {
+        const billing = billingById.get(row.id) ?? null;
+        return {
+          ...toContractListItem(row, viewer.id, cutoff),
+          billingStatus: billing?.status ?? null,
+          billingSuspendedReason: billing?.suspendedReason ?? null
+        };
+      })
     };
   });
 
@@ -1516,6 +1542,7 @@ export const saveTermsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers)
 export const sendContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const contractId = yield* validateContractId(c.req.param('id'));
+    yield* validateContractSendInput(yield* parseJsonBody(c, contractSendJsonError));
     const authenticated = yield* authenticate(headers);
     const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
       authenticated

@@ -127,6 +127,24 @@ export const validateContractTermsInput = (input: unknown) =>
 
 export const contractTermsJsonError = contractTermsValidationError;
 
+export const contractSendValidationError = {
+  code: 'CONTRACT_SIGNATURE_REQUIRED',
+  message: 'Confirm "Sign & send" to sign these terms before sending them.'
+} as const;
+
+/** Sending a proposal is the family's signature (UAT #41), so it has to be
+ * an explicit confirmation — never implied by the request itself. */
+export const contractSendSchema = Schema.Struct({
+  signed: Schema.Literal(true)
+});
+
+export const validateContractSendInput = validateInput(
+  contractSendSchema,
+  contractSendValidationError
+);
+
+export const contractSendJsonError = contractSendValidationError;
+
 export const contractDeclineValidationError = {
   code: 'INVALID_CONTRACT_DECLINE_INPUT',
   message: 'The decline reason is too long.'

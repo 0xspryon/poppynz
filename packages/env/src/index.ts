@@ -15,11 +15,11 @@ export const environmentConfig = Config.string('ENVIRONMENT').pipe(
     return isAppEnvironment(value)
       ? Either.right(value)
       : Either.left(
-          ConfigError.InvalidData(
-            [],
-            `ENVIRONMENT must be one of: ${appEnvironments.join(', ')} — got "${raw}"`
-          )
-        );
+        ConfigError.InvalidData(
+          [],
+          `ENVIRONMENT must be one of: ${appEnvironments.join(', ')} — got "${raw}"`
+        )
+      );
   })
 );
 
@@ -224,10 +224,9 @@ export const safetyVerificationConfig = Config.all({
 // re-fetched by the worker after PAYMENTS_SETTLE_AFTER_MINUTES and cancelled
 // after PAYMENTS_ABANDON_AFTER_HOURS, which returns its order to the basket.
 export const stripeConfig = Config.all({
-  provider: Config.literal(
-    'mock',
-    'stripe'
-  )('PAYMENTS_PROVIDER').pipe(Config.withDefault('mock' as const)),
+  provider: Config.literal('mock', 'stripe')('PAYMENTS_PROVIDER').pipe(
+    Config.withDefault('mock' as const)
+  ),
   secretKey: Config.option(Config.redacted('STRIPE_SECRET_KEY')),
   webhookSecret: Config.option(Config.redacted('STRIPE_WEBHOOK_SECRET')),
   // The Connect endpoint's signing secret (account.updated on connected
@@ -238,30 +237,45 @@ export const stripeConfig = Config.all({
   abandonAfterHours: Config.integer('PAYMENTS_ABANDON_AFTER_HOURS').pipe(Config.withDefault(24))
 });
 
+// Contract billing (piece 3). The commissions are frozen on each contract at
+// acceptance; changing them only affects contracts accepted afterwards.
+// Sales tax is NOT configured here — it is database state (tax_* tables).
+// A malformed value is a ConfigError, never a silent default: billing a
+// contract at the wrong commission is worse than not billing it.
+const basisPoints = (name: string, fallback: number) =>
+  Config.integer(name).pipe(
+    Config.withDefault(fallback),
+    Config.validate({
+      message: `${name} must be a whole number of basis points between 0 and 10000`,
+      validation: (value) => value >= 0 && value <= 10_000
+    })
+  );
+
+export const contractBillingConfig = Config.all({
+  familyCommissionBps: basisPoints('CONTRACT_FAMILY_COMMISSION_BPS', 500),
+  providerCommissionBps: basisPoints('CONTRACT_PROVIDER_COMMISSION_BPS', 1500),
+  // How often a declined hold is retried during its grace period (it is also
+  // retried at once whenever the family replaces the card).
+  retryHours: Config.integer('CONTRACT_BILLING_RETRY_HOURS').pipe(
+    Config.withDefault(12),
+    Config.validate({
+      message: 'CONTRACT_BILLING_RETRY_HOURS must be a whole number of hours, at least 1',
+      validation: (value) => value >= 1
+    })
+  )
+});
+
 // Helper payout accounts (Stripe Connect, piece 2b).
 // APP_WEB_ORIGIN is the ONE web origin Stripe's hosted onboarding returns to;
 // TRUSTED_ORIGINS is a list, so it can't serve as a single return address.
 // A stored payout status older than PAYOUTS_REFRESH_AFTER_MINUTES is
 // re-fetched from the provider when read.
-// Contract billing (piece 3). The commissions are frozen on each contract at
-// acceptance; changing them only affects contracts accepted afterwards.
-// Sales tax is NOT configured here — it is database state (tax_* tables).
-export const contractBillingConfig = Config.all({
-  familyCommissionBps: Config.integer('CONTRACT_FAMILY_COMMISSION_BPS').pipe(
-    Config.withDefault(500)
-  ),
-  providerCommissionBps: Config.integer('CONTRACT_PROVIDER_COMMISSION_BPS').pipe(
-    Config.withDefault(1500)
-  ),
-  // How often a declined hold is retried during its grace period (it is also
-  // retried at once whenever the family replaces the card).
-  retryHours: Config.integer('CONTRACT_BILLING_RETRY_HOURS').pipe(Config.withDefault(12))
-});
-
 export const payoutsConfig = Config.all({
   appWebOrigin: Config.string('APP_WEB_ORIGIN').pipe(
     Config.withDefault('https://app.poppynz.com'),
     Config.map((origin) => origin.trim().replace(/\/+$/, ''))
   ),
-  refreshAfterMinutes: Config.integer('PAYOUTS_REFRESH_AFTER_MINUTES').pipe(Config.withDefault(60))
+  refreshAfterMinutes: Config.integer('PAYOUTS_REFRESH_AFTER_MINUTES').pipe(
+    Config.withDefault(60)
+  )
 });

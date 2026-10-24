@@ -173,23 +173,45 @@ export const currentPayoutAccount = (userId: string) =>
     );
   });
 
-/** For pieces 3 and 4 (cycle start, transfers). Strict: true only when a
- * snapshot inside the refresh window says `ready`. A stale row is re-fetched
- * with NO stored fallback, and any failure — or a refresh that still leaves
- * only stale data on file — answers false: money never moves on an
- * unconfirmed status. */
-export const isPaymentReady = (
+/** What contract billing may conclude about a helper's payout account:
+ *  - `ready`: a snapshot inside the refresh window says ready;
+ *  - `not_ready`: the account is missing, or a confirmed (fresh) snapshot
+ *    says it is not ready;
+ *  - `unknown`: nothing fresh could be had — the refresh failed, or left
+ *    only stale data on file. Never a reason to move OR to release money:
+ *    the caller retries on its next tick. */
+export type PaymentReadiness = 'ready' | 'not_ready' | 'unknown';
+
+export const paymentReadiness = (
   userId: string
-): Effect.Effect<boolean, never, Payments | PayoutAccountRepo> =>
+): Effect.Effect<PaymentReadiness, never, Payments | PayoutAccountRepo> =>
   Effect.gen(function* () {
     const stored = yield* loadPayoutAccount(userId);
-    if (!stored) return false;
+    if (!stored) return 'not_ready' as const;
     const { refreshAfterMinutes } = yield* payoutsPolicy;
     const account = isStale(stored, new Date(), refreshAfterMinutes)
       ? yield* refreshPayoutAccount(stored)
       : stored;
-    return account.status === 'ready' && !isStale(account, new Date(), refreshAfterMinutes);
-  }).pipe(Effect.orElseSucceed(() => false));
+    if (isStale(account, new Date(), refreshAfterMinutes)) return 'unknown' as const;
+    return account.status === 'ready' ? ('ready' as const) : ('not_ready' as const);
+  }).pipe(
+    Effect.catchAll((error) =>
+      Effect.logWarning(`payout readiness of ${userId} unknown; retrying later`, error).pipe(
+        Effect.as('unknown' as const)
+      )
+    )
+  );
+
+/** For pieces 3 and 4 (cycle start, transfers). Strict: true only when a
+ * snapshot inside the refresh window says `ready`. A stale row is re-fetched
+ * with NO stored fallback, and any failure — or a refresh that still leaves
+ * only stale data on file — answers false: money never moves on an
+ * unconfirmed status. Contract billing uses `paymentReadiness`, which tells
+ * "not ready" apart from "could not tell". */
+export const isPaymentReady = (
+  userId: string
+): Effect.Effect<boolean, never, Payments | PayoutAccountRepo> =>
+  paymentReadiness(userId).pipe(Effect.map((readiness) => readiness === 'ready'));
 
 /** Stored snapshot only — cheap enough for every contract detail read. */
 export const hasReadyPayoutAccount = (

@@ -43,6 +43,8 @@ type NoticeContext = {
   contract: Contract;
   cycle?: Pick<ContractCycle, 'startsOn' | 'endsOn'> | null;
   amountCents?: number | null;
+  /** The helper's side of the amount (what they receive), when it differs. */
+  helperAmountCents?: number | null;
   /** readiness_reminder: days until the start date (0 = acceptance). */
   daysToStart?: number;
   startsOn?: string;
@@ -57,7 +59,11 @@ const copyFor = (
   counterpart: string
 ): Copy | null => {
   const dates = context.cycle ? cycleDates(context.cycle) : '';
-  const amount = context.amountCents != null ? dollars(context.amountCents) : '';
+  const cents =
+    party === 'helper' && context.helperAmountCents != null
+      ? context.helperAmountCents
+      : context.amountCents;
+  const amount = cents != null ? dollars(cents) : '';
   switch (kind) {
     case 'readiness_reminder':
       return party === 'helper'
@@ -214,7 +220,11 @@ export const sendBillingNotice = (
         payload: { contractId: context.contract.id, kind }
       });
       const copy = copyFor(kind, party, context, other.name);
-      if (!copy || !me.email) continue;
+      if (!copy) continue;
+      if (!me.email) {
+        yield* Effect.logWarning(`[billing] notice ${kind} to ${party} skipped: no email on file`);
+        continue;
+      }
       const card = copy.linkLabel === 'Update your card';
       const payouts = copy.linkLabel === 'Set up payouts' || copy.linkLabel === 'Fix payouts';
       const link = card
@@ -232,6 +242,9 @@ export const sendBillingNotice = (
           linkLabel: copy.linkLabel
         })
         .pipe(
+          // Logged on every runtime alike (api and worker), so a notice is
+          // traceable wherever the billing step ran.
+          Effect.tap(() => Effect.logInfo(`[billing] notice ${kind} sent to ${party} ${me.email}`)),
           Effect.catchAll((error) => Effect.logWarning(`billing notice ${kind} not sent`, error))
         );
     }

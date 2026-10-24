@@ -14,6 +14,7 @@ import {
   makeSeededTaxConfigRepo,
   makeUserProfileRepoTest,
   makeUserRepoTest,
+  PaymentRepo,
   type Contract,
   type ContractBilling,
   type ContractVersion,
@@ -27,7 +28,7 @@ import {
   Payments,
   type ProviderPayment
 } from '@repo/payments';
-import { Context, Effect, Layer } from 'effect';
+import { ConfigProvider, Context, Effect, Exit, Layer } from 'effect';
 import {
   retryFamilyBilling,
   runContractBilling,
@@ -103,6 +104,10 @@ type WorldOptions = {
   contract?: Partial<Contract>;
   /** Overrides on the mock provider (e.g. a re-fetch that says canceled). */
   payments?: Partial<Context.Tag.Service<typeof Payments>>;
+  /** Wraps the in-memory payment repo (e.g. to interleave two callers). */
+  paymentRepo?: (
+    service: Context.Tag.Service<typeof PaymentRepo>
+  ) => Context.Tag.Service<typeof PaymentRepo>;
 };
 
 const makeWorld = (options: WorldOptions = {}) => {
@@ -147,7 +152,9 @@ const makeWorld = (options: WorldOptions = {}) => {
 
   const layer = Layer.mergeAll(
     billingRepo.layer,
-    paymentRepo.layer,
+    options.paymentRepo
+      ? Layer.succeed(PaymentRepo, options.paymentRepo(paymentRepo.service))
+      : paymentRepo.layer,
     customers.layer,
     payouts.layer,
     makeSeededTaxConfigRepo().layer,
@@ -568,6 +575,8 @@ describe('pre-cycle recheck and system failures', () => {
     const world = makeWorld({
       payments: {
         chargeSavedCard: mock.chargeSavedCard,
+        // The surviving hold is cancelled at the same provider first.
+        cancelPayment: mock.cancelPayment,
         getPayment: (reference) =>
           mock
             .getPayment(reference)
@@ -624,5 +633,514 @@ describe('carry-over and the tick', () => {
     );
     expect(summary).toEqual({ contracts: 1, ran: 1, failed: 0 });
     expect((await world.cycles())[0]!.status).toBe('authorised');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fix round 2026-10-24: provider trouble never double-charges, strands a
+// cycle or loses money.
+
+const providerFails = (operation: PaymentProviderError['operation']) =>
+  Effect.fail(new PaymentProviderError({ operation, cause: 'timeout' }));
+
+const staleReadyAccount = () => ({ ...readyAccount(), refreshedAt: new Date(0) });
+
+const TUESDAY = new Date('2026-11-03T12:00:00.000Z');
+
+describe('captures (H1)', () => {
+  it('recognises a capture whose response was lost instead of charging a recovery', async () => {
+    const mock = makeMockPayments();
+    const world = makeWorld({
+      payments: {
+        ...mock,
+        capturePayment: (input) =>
+          mock.capturePayment(input).pipe(Effect.zipRight(providerFails('capturePayment')))
+      }
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect((await world.cycles())[0]).toMatchObject({
+      status: 'captured',
+      capturedCents: FAMILY_TOTAL
+    });
+    expect(world.payments.size).toBe(1);
+    expect(world.billingState.incidents).toEqual([]);
+  });
+
+  it('retries a transient capture error under the same key while the hold stands', async () => {
+    const mock = makeMockPayments();
+    let down = true;
+    const keys: Array<string> = [];
+    const world = makeWorld({
+      payments: {
+        ...mock,
+        capturePayment: (input) => {
+          keys.push(input.idempotencyKey);
+          return down ? providerFails('capturePayment') : mock.capturePayment(input);
+        }
+      }
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect((await world.cycles())[0]!.status).toBe('capturing');
+    // Care has started, yet the hold stands: never a system failure.
+    await world.step(at(CYCLE_1.captureAt, 20));
+    expect((await world.cycles())[0]!.status).toBe('capturing');
+    expect(world.billingState.incidents).toEqual([]);
+    down = false;
+    await world.step(at(CYCLE_1.captureAt, 35));
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured' });
+    expect(keys).toHaveLength(3);
+    expect(new Set(keys).size).toBe(1);
+    expect(world.payments.size).toBe(1);
+  });
+
+  it('cancels whatever is left of a refused hold before the one recovery charge', async () => {
+    const mock = makeMockPayments();
+    let lost = false;
+    const calls: Array<string> = [];
+    const world = makeWorld({
+      payments: {
+        ...mock,
+        chargeSavedCard: (input) => {
+          calls.push('charge');
+          return mock.chargeSavedCard(input);
+        },
+        cancelPayment: (reference) => {
+          calls.push('cancel');
+          return mock.cancelPayment(reference);
+        },
+        getPayment: (reference) =>
+          mock
+            .getPayment(reference)
+            .pipe(
+              Effect.map(
+                (payment): ProviderPayment =>
+                  lost && payment.status === 'authorised'
+                    ? { ...payment, status: 'canceled' }
+                    : payment
+              )
+            ),
+        capturePayment: () => providerFails('capturePayment')
+      }
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    lost = true;
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect(calls).toEqual(['charge', 'cancel', 'charge']);
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured', attempts: 2 });
+    expect(world.billingState.incidents).toHaveLength(1);
+  });
+});
+
+describe('payment readiness that cannot be confirmed (H2)', () => {
+  const payoutsUnreachable = (mock = makeMockPayments()) => ({
+    ...mock,
+    getPayoutAccount: () => providerFails('getPayoutAccount')
+  });
+
+  it('never releases a valid hold when the readiness refresh fails', async () => {
+    const mock = makeMockPayments();
+    let payoutsDown = false;
+    const world = makeWorld({
+      payments: {
+        ...mock,
+        getPayoutAccount: (reference) =>
+          payoutsDown ? providerFails('getPayoutAccount') : mock.getPayoutAccount(reference)
+      }
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    world.payouts.rows.set('helper-1', staleReadyAccount());
+    payoutsDown = true;
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect((await world.cycles())[0]!.status).toBe('authorised');
+    expect([...world.payments.values()][0]!.status).toBe('authorised');
+    expect(world.billing().status).toBe('scheduled');
+    expect(world.mailTo('helper-1')).toEqual([]);
+    expect(world.billingState.ledger).toEqual([]);
+    payoutsDown = false;
+    await world.step(at(CYCLE_1.captureAt, 20));
+    expect((await world.cycles())[0]!.status).toBe('captured');
+  });
+
+  it('places no hold and suspends nothing while readiness is unknown', async () => {
+    const world = makeWorld({ payments: payoutsUnreachable() });
+    world.payouts.rows.set('helper-1', staleReadyAccount());
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    await world.step(at(CYCLE_1.startsAt, 20));
+    expect((await world.cycles())[0]!.status).toBe('scheduled');
+    expect(world.payments.size).toBe(0);
+    expect(world.billing().status).toBe('scheduled');
+    expect(world.mails).toEqual([]);
+    // One admin alert, however many ticks.
+    expect(world.alerts.filter((subject) => subject.includes('readiness'))).toHaveLength(1);
+  });
+
+  it('never cancels at the readiness deadline on an unconfirmed status', async () => {
+    const world = makeWorld({
+      billing: { status: 'awaiting_payment_readiness', billableFrom: null },
+      payments: payoutsUnreachable()
+    });
+    world.payouts.rows.set('helper-1', { ...staleReadyAccount(), status: 'restricted' });
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect(world.billing().status).toBe('awaiting_payment_readiness');
+    expect(world.ended).toEqual([]);
+  });
+});
+
+describe('resume through provider trouble (M1, M7)', () => {
+  const suspendedWorld = (chargeDown: () => boolean) => {
+    const mock = makeMockPayments();
+    return makeWorld({
+      card: 'mock_pm_decline',
+      payments: {
+        ...mock,
+        chargeSavedCard: (input) =>
+          chargeDown() ? providerFails('chargeSavedCard') : mock.chargeSavedCard(input)
+      }
+    });
+  };
+
+  it('keeps a resume the provider never answered pending, then resumes with both notices', async () => {
+    let down = false;
+    const world = suspendedWorld(() => down);
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    expect(world.billing().status).toBe('suspended');
+    world.setCard('mock_pm_new');
+    down = true;
+    await world.run(retryFamilyBilling('family-1', TUESDAY).pipe(Effect.provide(world.layer)));
+    expect((await world.cycles())[0]).toMatchObject({
+      status: 'authorising',
+      chargeMode: 'resume'
+    });
+    await world.step(at(TUESDAY, 15));
+    // Never active without the money.
+    expect(world.billing().status).toBe('suspended');
+    down = false;
+    await world.step(at(TUESDAY, 30));
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured', chargeMode: 'resume' });
+    expect(world.billing().status).toBe('active');
+    const resumed = (prefix: string) =>
+      world.mails.find(
+        (mail) => mail.email.startsWith(prefix) && mail.subject === 'Your contract has resumed'
+      );
+    // The family sees what it paid; the helper what they receive (M7).
+    expect(resumed('family-1')?.paragraphs[0]).toContain('$66.04');
+    expect(resumed('helper-1')?.paragraphs[0]).toContain('$52.65');
+  });
+
+  it('gives up a resume quote once its first session has started, never charging elapsed care', async () => {
+    let down = false;
+    const world = suspendedWorld(() => down);
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    world.setCard('mock_pm_new');
+    down = true;
+    await world.run(retryFamilyBilling('family-1', TUESDAY).pipe(Effect.provide(world.layer)));
+    // Wednesday's session started at 15:30 EST (20:30Z).
+    await world.step(new Date('2026-11-04T20:40:00.000Z'));
+    expect((await world.cycles())[0]!.status).toBe('suspended');
+    expect(world.billing()).toMatchObject({
+      status: 'suspended',
+      suspendedReason: 'provider_unavailable'
+    });
+    down = false;
+    await world.step(new Date('2026-11-04T21:00:00.000Z'));
+    expect([...world.payments.values()].some((row) => row.status === 'captured')).toBe(false);
+    expect(world.billing().status).toBe('active');
+  });
+});
+
+describe('cycles never stuck in authorising (M2)', () => {
+  it('moves the cycle on when its attempt was failed without a provider answer', async () => {
+    const world = makeWorld({ providerDown: true });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    const [payment] = [...world.payments.values()];
+    // A crash right after the payment row was failed, before the cycle moved.
+    world.payments.set(payment!.id, {
+      ...payment!,
+      status: 'failed',
+      lastError: 'There is no card on file.'
+    });
+    await world.step(at(CYCLE_1.holdAt, 20));
+    expect((await world.cycles())[0]!.status).toBe('grace');
+  });
+
+  it('flags a provider answer that does not match the row, releases it and retries', async () => {
+    const mock = makeMockPayments();
+    const world = makeWorld({
+      payments: {
+        ...mock,
+        chargeSavedCard: (input) =>
+          mock
+            .chargeSavedCard(input)
+            .pipe(Effect.map((payment) => ({ ...payment, amountCents: payment.amountCents + 1 })))
+      }
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    expect((await world.cycles())[0]!.status).toBe('grace');
+    // Not the card's fault: the family is not asked to change it.
+    expect(world.mailTo('family-1')).toEqual([]);
+    expect(world.alerts.some((subject) => subject.includes('does not match'))).toBe(true);
+    const [payment] = [...world.payments.values()];
+    expect(payment!.status).toBe('failed');
+    const atProvider = await world.run(mock.getPayment(payment!.providerReference!));
+    expect(atProvider.status).toBe('canceled');
+  });
+});
+
+describe('concurrent retries (M3)', () => {
+  it('never reuses an attempt key when two retries start from one snapshot', async () => {
+    const mock = makeMockPayments();
+    const keys: Array<string> = [];
+    const world = makeWorld({
+      card: 'mock_pm_decline',
+      payments: {
+        ...mock,
+        chargeSavedCard: (input) => {
+          keys.push(input.idempotencyKey);
+          return mock.chargeSavedCard(input);
+        }
+      },
+      // Both callers read the cycle before either claims it.
+      paymentRepo: (service) => ({
+        ...service,
+        create: (input) => Effect.yieldNow().pipe(Effect.zipRight(service.create(input)))
+      })
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    const retry = retryFamilyBilling('family-1', at(CYCLE_1.holdAt, 90));
+    await world.run(
+      Effect.all([retry, retry], { concurrency: 'unbounded' }).pipe(Effect.provide(world.layer))
+    );
+    expect(keys.length).toBeGreaterThan(1);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe('lost charge responses (M4)', () => {
+  const lostResponses = (mock: ReturnType<typeof makeMockPayments>) => ({
+    chargeSavedCard: (input: Parameters<typeof mock.chargeSavedCard>[0]) =>
+      mock.chargeSavedCard(input).pipe(Effect.zipRight(providerFails('chargeSavedCard')))
+  });
+
+  it('finds a hold whose response was lost at the cycle start instead of orphaning it', async () => {
+    const mock = makeMockPayments();
+    const world = makeWorld({ payments: { ...mock, ...lostResponses(mock) } });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    expect((await world.cycles())[0]!.status).toBe('authorising');
+    await world.step(at(CYCLE_1.startsAt, 1));
+    expect((await world.cycles())[0]!.status).toBe('authorised');
+    const [held] = [...world.payments.values()];
+    expect(held!.status).toBe('authorised');
+    expect(held!.providerReference).toStartWith('mock_pi_');
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect((await world.cycles())[0]!.status).toBe('captured');
+  });
+
+  it('resolves an attempt it could not look up later, releasing the hold it finds', async () => {
+    const mock = makeMockPayments();
+    let searchDown = true;
+    const world = makeWorld({
+      payments: {
+        ...mock,
+        ...lostResponses(mock),
+        findPaymentByRowId: (id) =>
+          searchDown ? providerFails('findPaymentByRowId') : mock.findPaymentByRowId(id)
+      }
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    expect(world.billing()).toMatchObject({
+      status: 'suspended',
+      suspendedReason: 'provider_unavailable'
+    });
+    const [payment] = [...world.payments.values()];
+    expect(payment!.status).toBe('pending');
+    searchDown = false;
+    await world.step(at(CYCLE_1.startsAt, 20));
+    const resolved = world.payments.get(payment!.id)!;
+    expect(resolved.status).toBe('failed');
+    expect(resolved.providerReference).toStartWith('mock_pi_');
+    expect((await world.run(mock.getPayment(resolved.providerReference!))).status).toBe(
+      'canceled'
+    );
+  });
+});
+
+describe('recovery after a system failure (M5)', () => {
+  const lostHoldWorld = (options: { chargeDown?: () => boolean } = {}) => {
+    const mock = makeMockPayments();
+    let lost = false;
+    const keys: Array<string> = [];
+    const world = makeWorld({
+      payments: {
+        ...mock,
+        chargeSavedCard: (input) => {
+          keys.push(input.idempotencyKey);
+          return options.chargeDown?.()
+            ? providerFails('chargeSavedCard')
+            : mock.chargeSavedCard(input);
+        },
+        getPayment: (reference) =>
+          mock
+            .getPayment(reference)
+            .pipe(
+              Effect.map(
+                (payment): ProviderPayment =>
+                  lost && payment.status === 'authorised'
+                    ? { ...payment, status: 'canceled' }
+                    : payment
+              )
+            ),
+        capturePayment: () => providerFails('capturePayment')
+      }
+    });
+    return { world, keys, loseHold: () => (lost = true) };
+  };
+
+  it('retries a declined recovery charge on schedule and when the card is replaced', async () => {
+    const { world, loseHold } = lostHoldWorld();
+    await world.step(at(CYCLE_1.holdAt, 5));
+    loseHold();
+    world.setCard('mock_pm_decline');
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect((await world.cycles())[0]).toMatchObject({ status: 'capture_failed', attempts: 2 });
+    await world.step(at(CYCLE_1.captureAt, 60)); // not due yet
+    expect((await world.cycles())[0]!.attempts).toBe(2);
+    await world.step(at(CYCLE_1.captureAt, 12 * 60 + 5)); // automatic retry, declined
+    expect((await world.cycles())[0]).toMatchObject({ status: 'capture_failed', attempts: 3 });
+    world.setCard('mock_pm_new');
+    await world.run(
+      retryFamilyBilling('family-1', at(CYCLE_1.captureAt, 13 * 60)).pipe(
+        Effect.provide(world.layer)
+      )
+    );
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured', attempts: 4 });
+    expect(world.billingState.incidents).toHaveLength(1);
+  });
+
+  it('retries a recovery charge the provider never answered under the same key', async () => {
+    let down = false;
+    const { world, keys, loseHold } = lostHoldWorld({ chargeDown: () => down });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    loseHold();
+    down = true;
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect((await world.cycles())[0]!.status).toBe('capture_failed');
+    down = false;
+    await world.step(at(CYCLE_1.captureAt, 20));
+    expect((await world.cycles())[0]!.status).toBe('captured');
+    const recoveryKeys = keys.filter((key) => key.startsWith('recover-'));
+    expect(recoveryKeys).toHaveLength(2);
+    expect(new Set(recoveryKeys).size).toBe(1);
+  });
+});
+
+describe('reduced captures (M6)', () => {
+  it('writes what was captured onto the payment row', async () => {
+    const world = makeWorld();
+    await world.step(at(CYCLE_1.holdAt, 5));
+    // Wednesday's session is cancelled before the capture.
+    world.billingState.sessions = world.billingState.sessions.map((session) =>
+      session.date === '2026-11-04' ? { ...session, status: 'cancelled' } : session
+    );
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect((await world.cycles())[0]).toMatchObject({
+      status: 'captured',
+      serviceCents: 6250,
+      familyTotalCents: 6604,
+      capturedCents: 6604
+    });
+    const [payment] = [...world.payments.values()];
+    expect(payment).toMatchObject({
+      amountCents: 6250,
+      feeCents: 313,
+      taxCents: 41,
+      capturedCents: 6604,
+      totalCents: FAMILY_TOTAL
+    });
+    expect(payment!.taxLines.map((line) => [line.label, line.taxCents])).toEqual([
+      ['HST (ON) 13%', 41]
+    ]);
+  });
+});
+
+describe('carried amounts and absorbed resumes (L1, L2)', () => {
+  const oneMinute = {
+    services: [
+      {
+        serviceId: 'svc-1',
+        name: 'Childcare',
+        listedRateCents: 2500,
+        rateCents: 2500,
+        currency: 'CAD' as const,
+        sessions: [
+          { weekday: 0, startMinutes: 930, endMinutes: 931 },
+          { weekday: 2, startMinutes: 930, endMinutes: 931 }
+        ],
+        expectations: ''
+      }
+    ]
+  };
+
+  it('resumes a tiny remainder at Poppynz’s cost and lets its sessions complete', async () => {
+    const world = makeWorld({ card: 'mock_pm_decline', version: oneMinute });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    world.setCard('mock_pm_new');
+    await world.run(retryFamilyBilling('family-1', TUESDAY).pipe(Effect.provide(world.layer)));
+    const [cycle] = await world.cycles();
+    expect(cycle!.status).not.toBe('suspended');
+    expect(world.billing().status).toBe('active');
+    expect(world.billingState.ledger.map((entry) => entry.entryKey)).toContain(
+      `cycle:${cycle!.id}:resume_absorbed`
+    );
+    await world.step(new Date('2026-11-05T12:00:00.000Z'));
+    expect(
+      world
+        .sessions()
+        .filter((s) => s.date === '2026-11-04')
+        .map((s) => s.status)
+    ).toEqual(['completed']);
+  });
+
+  it('charges a carried-in amount with the resumed rest of the cycle', async () => {
+    const world = makeWorld({ card: 'mock_pm_decline' });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    world.billingState.cycles[0] = { ...world.billingState.cycles[0]!, carriedInCents: 1000 };
+    world.setCard('mock_pm_new');
+    await world.run(retryFamilyBilling('family-1', TUESDAY).pipe(Effect.provide(world.layer)));
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured', serviceCents: 7250 });
+  });
+
+  it('absorbs a carried-in amount whose cycle ended suspended', async () => {
+    const world = makeWorld({ card: 'mock_pm_decline' });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    world.billingState.cycles[0] = { ...world.billingState.cycles[0]!, carriedInCents: 1000 };
+    await world.step(new Date('2026-11-05T12:00:00.000Z'));
+    await world.step(new Date('2026-11-05T13:00:00.000Z'));
+    const absorbed = world.billingState.ledger.filter((entry) => entry.kind === 'carry_absorbed');
+    expect(absorbed.map((entry) => entry.amountCents)).toEqual([1000]);
+  });
+});
+
+describe('configuration (L6)', () => {
+  it('refuses to bill on a malformed setting instead of defaulting', async () => {
+    const world = makeWorld();
+    const exit = await Effect.runPromiseExit(
+      runContractBilling('contract-1', at(CYCLE_1.holdAt, 5)).pipe(
+        Effect.provide(world.layer),
+        Effect.withConfigProvider(
+          ConfigProvider.fromMap(new Map([['CONTRACT_PROVIDER_COMMISSION_BPS', 'fifteen']]))
+        )
+      )
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+    expect(world.payments.size).toBe(0);
   });
 });

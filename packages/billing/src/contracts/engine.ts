@@ -37,7 +37,7 @@ import { Payments, type PaymentProviderError, type ProviderPayment } from '@repo
 import { Effect, Either, Layer } from 'effect';
 import { CycleSettlement } from '../settle';
 import { toCard } from '../cards';
-import { isPaymentReady } from '../payouts';
+import { paymentReadiness } from '../payouts';
 import {
   MINIMUM_CHARGE_CENTS,
   quoteContractAmounts,
@@ -85,13 +85,27 @@ type Step<A> = Effect.Effect<A, BillingError, BillingDeps>;
 const HOUR_MS = 60 * 60 * 1000;
 const LATE_BOOKING_MS = 48 * HOUR_MS;
 
+/** The commissions and the retry interval. A malformed setting fails loudly
+ * (a defect, logged): billing at a wrong commission is worse than not
+ * billing until the setting is fixed. Unset settings take their defaults. */
 export const contractBillingPolicy = contractBillingConfig.pipe(
-  Effect.orElseSucceed(() => ({
-    familyCommissionBps: 500,
-    providerCommissionBps: 1500,
-    retryHours: 12
-  }))
+  Effect.tapError((error) =>
+    Effect.logError('[billing] contract billing settings are invalid', error)
+  ),
+  Effect.orDie
 );
+
+/** How many declined recovery charges are tried after a system failure
+ * before it is left to an admin (the incident is already open). */
+const MAX_RECOVERY_DECLINES = 3;
+
+/** Search is eventually consistent: an unanswered attempt is looked up only
+ * once it is older than this. */
+const LOOKUP_AFTER_MS = 2 * 60 * 1000;
+
+/** `payments.last_error` of an attempt the provider never answered and
+ * that was found not to exist (or was released). */
+const UNANSWERED = 'payment provider unavailable';
 
 /** Cycles whose money is still in motion. */
 const openCycleStatuses: ReadonlyArray<ContractCycleStatus> = [
@@ -101,6 +115,22 @@ const openCycleStatuses: ReadonlyArray<ContractCycleStatus> = [
   'grace',
   'capturing'
 ];
+
+/** Cycles whose sessions are paid for (by the family, by the next cycle's
+ * carry, or by Poppynz): they complete as they end. */
+const fundedCycleStatuses: ReadonlyArray<ContractCycleStatus> = [
+  'captured',
+  'capture_failed',
+  'empty',
+  'carried'
+];
+
+const recoveryDeclines = (cycle: ContractCycle) =>
+  cycle.noticesSent.filter((notice) => notice.startsWith('recovery_declined:')).length;
+
+/** A system failure whose recovery from the family is still being tried. */
+const recoveryPending = (cycle: ContractCycle) =>
+  cycle.status === 'capture_failed' && recoveryDeclines(cycle) < MAX_RECOVERY_DECLINES;
 
 export type BillingContext = {
   contract: Contract;
@@ -229,7 +259,7 @@ const releaseHold = (payment: Payment | null) =>
       );
     yield* paymentRepo.advance(payment.id, {
       from: ['pending', 'authorised'],
-      set: { status: 'failed', lastError: 'hold released' }
+      set: { status: 'failed', lastError: 'hold released', releasedAt: new Date() }
     });
   });
 
@@ -298,15 +328,10 @@ const applyEnd = (billing: ContractBilling, terms: ScheduleTerms) =>
 // ---------------------------------------------------------------------------
 // Suspension and notices
 
+/** Records a notice once, atomically: null when it was already recorded
+ * (by this or a concurrent caller), so it is sent exactly once. */
 const markNotice = (cycle: ContractCycle, notice: string) =>
-  ContractBillingRepo.pipe(
-    Effect.flatMap((repo) =>
-      repo.advanceCycle(cycle.id, {
-        from: [cycle.status],
-        set: { noticesSent: [...cycle.noticesSent, notice] }
-      })
-    )
-  );
+  ContractBillingRepo.pipe(Effect.flatMap((repo) => repo.appendCycleNotice(cycle.id, notice)));
 
 /** Unfunded at the cycle start (or the hold released for a helper who is no
  * longer payment-ready): the cycle and its sessions are suspended and never
@@ -362,6 +387,24 @@ const noticeHelperNotReady = (ctx: BillingContext, cycle: ContractCycle) =>
     ]);
   });
 
+/** The helper's payout status could not be confirmed (Stripe unreachable,
+ * or only stale data on file): nothing is held, captured, released,
+ * suspended or cancelled on it — the next tick asks again. Once the cycle
+ * has started this way an admin is told, once. */
+const readinessUnknown = (ctx: BillingContext, cycle: ContractCycle, now: Date) =>
+  Effect.gen(function* () {
+    yield* Effect.logWarning(
+      `[billing] payout readiness unknown for cycle ${cycle.id}; retrying next tick`
+    );
+    if (now < cycle.startsAt) return;
+    const marked = yield* markNotice(cycle, 'readiness_unknown');
+    if (!marked) return;
+    yield* alertAdmins(`Helper payout readiness unknown on contract ${ctx.contract.id}`, [
+      `Cycle ${cycle.index + 1} (${cycleDates(cycle)}) has started, but the helper's payout account status could not be confirmed with Stripe.`,
+      'Nothing was held, captured or released on an unconfirmed status; billing retries every tick.'
+    ]);
+  });
+
 // ---------------------------------------------------------------------------
 // Charging
 
@@ -396,11 +439,12 @@ const chargeAndSettle = (
     const customer = yield* customers.findByUserId(payment.userId);
     const card = toCard(customer, payments.provider);
     if (customer === null || card === null) {
-      yield* paymentRepo.advance(payment.id, {
-        from: 'pending',
-        set: { status: 'failed', lastError: 'There is no card on file.' }
-      });
-      return yield* declined(cycle, payment, 'There is no card on file.', now);
+      const failed =
+        (yield* paymentRepo.advance(payment.id, {
+          from: 'pending',
+          set: { status: 'failed', lastError: 'There is no card on file.' }
+        })) ?? payment;
+      return yield* declined(cycle, failed, 'There is no card on file.', now);
     }
     const result = yield* payments
       .chargeSavedCard({
@@ -437,8 +481,105 @@ const chargeAndSettle = (
     return 'settled' as const;
   });
 
+// ---------------------------------------------------------------------------
+// Attempts the provider never answered (M4)
+
+type Lookup =
+  | { kind: 'found'; payment: ProviderPayment }
+  | { kind: 'none' }
+  | { kind: 'unknown' };
+
+/** Is there an intent for this row at the provider? Asked before an
+ * unanswered attempt is given up, so a charge whose response was lost is
+ * never orphaned. */
+const lookUp = (payment: Payment): Step<Lookup> =>
+  Effect.gen(function* () {
+    const payments = yield* Payments;
+    const found = yield* payments.findPaymentByRowId(payment.id).pipe(Effect.either);
+    if (Either.isLeft(found)) {
+      yield* Effect.logWarning(`[billing] could not look up payment ${payment.id}`, found.left);
+      return { kind: 'unknown' } as Lookup;
+    }
+    return (found.right === null ? { kind: 'none' } : { kind: 'found', payment: found.right }) as Lookup;
+  });
+
+/** Ends an unanswered attempt that must not be used any more (a stale
+ * resume quote, a cycle that started unfunded): whatever the provider has
+ * for it is cancelled — or refunded, when it was taken — and the row is
+ * failed (or refunded). Resolves false while the provider can't be asked. */
+const releaseUnanswered = (payment: Payment, now: Date): Step<boolean> =>
+  Effect.gen(function* () {
+    const payments = yield* Payments;
+    const paymentRepo = yield* PaymentRepo;
+    const found = yield* lookUp(payment);
+    if (found.kind === 'unknown') {
+      yield* paymentRepo.update(payment.id, {
+        lastError: 'unanswered by the provider — looking it up'
+      });
+      return false;
+    }
+    if (found.kind === 'none') {
+      yield* paymentRepo.advance(payment.id, {
+        from: 'pending',
+        providerReference: null,
+        set: { status: 'failed', lastError: UNANSWERED }
+      });
+      return true;
+    }
+    const reference = found.payment.reference;
+    const after =
+      found.payment.status === 'succeeded'
+        ? found.payment
+        : yield* payments.cancelPayment(reference).pipe(Effect.either).pipe(
+            Effect.map((either) => (Either.isRight(either) ? either.right : null))
+          );
+    if (after === null) return false;
+    if (after.status === 'succeeded') {
+      const refund = yield* payments
+        .refund({ reference, reason: 'unanswered contract charge', idempotencyKey: `unanswered-${payment.id}` })
+        .pipe(Effect.either);
+      if (Either.isLeft(refund)) {
+        yield* paymentRepo.update(payment.id, {
+          providerReference: reference,
+          lastError: 'unanswered charge was taken; refund failed — retrying'
+        });
+        return false;
+      }
+      yield* paymentRepo.advance(payment.id, {
+        from: ['pending', 'authorised', 'captured'],
+        set: {
+          status: 'refunded',
+          providerReference: reference,
+          refundReference: refund.right.refundReference,
+          refundedAt: refund.right.refundedAt,
+          lastError: 'unanswered charge refunded'
+        }
+      });
+      return true;
+    }
+    yield* paymentRepo.advance(payment.id, {
+      from: ['pending', 'authorised'],
+      set: {
+        status: 'failed',
+        providerReference: reference,
+        lastError: UNANSWERED,
+        ...(found.payment.status === 'authorised' ? { releasedAt: now } : {})
+      }
+    });
+    return true;
+  });
+
+/** Not yet answered and old enough to look up. */
+const isUnanswered = (payment: Payment | null, now: Date): payment is Payment =>
+  payment !== null &&
+  payment.status === 'pending' &&
+  payment.providerReference === null &&
+  now.getTime() - payment.createdAt.getTime() >= LOOKUP_AFTER_MS;
+
 /** Starts a new attempt for a cycle: a payment row first (its breakdown is
- * frozen there), then the cycle claimed for it by compare-and-set. */
+ * frozen there), then the cycle claimed for it by compare-and-set on its
+ * status AND its attempt counter, so two callers holding the same snapshot
+ * (card confirm and webhook) can never share an attempt key. */
 const attempt = (
   ctx: BillingContext,
   cycle: ContractCycle,
@@ -451,6 +592,13 @@ const attempt = (
     const payments = yield* Payments;
     const paymentRepo = yield* PaymentRepo;
     const repo = yield* ContractBillingRepo;
+    // The previous attempt was never answered: settle what became of it
+    // before a new one can replace it on the cycle.
+    const previous = yield* findPayment(cycle.paymentId);
+    if (previous !== null && previous.status === 'pending' && previous.providerReference === null) {
+      if (!isUnanswered(previous, now)) return 'provider_error' as const;
+      if (!(yield* releaseUnanswered(previous, now))) return 'provider_error' as const;
+    }
     const description = yield* describeCycle(ctx, cycle, mode);
     const payment = yield* paymentRepo.create({
       userId: ctx.contract.familyUserId,
@@ -467,6 +615,7 @@ const attempt = (
     });
     const claimed = yield* repo.advanceCycle(cycle.id, {
       from,
+      attempts: cycle.attempts,
       set: {
         ...(cycle.status === 'capture_failed' ? {} : { status: 'authorising' as const }),
         chargeMode: mode,
@@ -499,8 +648,11 @@ const fund = (
   Effect.gen(function* () {
     const repo = yield* ContractBillingRepo;
     // Pre-cycle recheck and the readiness gate: no hold on the family's card
-    // while the helper can't be paid.
-    if (!(yield* isPaymentReady(ctx.contract.providerUserId))) {
+    // while the helper can't be paid — and nothing at all on a status that
+    // could not be confirmed.
+    const readiness = yield* paymentReadiness(ctx.contract.providerUserId);
+    if (readiness === 'unknown') return yield* readinessUnknown(ctx, cycle, now);
+    if (readiness === 'not_ready') {
       yield* noticeHelperNotReady(ctx, cycle);
       if (now >= cycle.startsAt) {
         yield* suspendCycle(ctx, cycle, 'helper_not_ready', from, now);
@@ -601,9 +753,13 @@ const carry = (
 const capture = (billing: ContractBilling, ctx: BillingContext, cycle: ContractCycle, now: Date) =>
   Effect.gen(function* () {
     const repo = yield* ContractBillingRepo;
+    const paymentRepo = yield* PaymentRepo;
     const payment = yield* findPayment(cycle.paymentId);
     if (payment === null || payment.providerReference === null) return;
-    if (!(yield* isPaymentReady(ctx.contract.providerUserId))) {
+    const readiness = yield* paymentReadiness(ctx.contract.providerUserId);
+    // A status that can't be confirmed never releases a valid hold.
+    if (readiness === 'unknown') return yield* readinessUnknown(ctx, cycle, now);
+    if (readiness === 'not_ready') {
       // The pre-cycle recheck failed: never capture money that can't reach
       // the helper. Suspended first, so the released hold can't be mistaken
       // for a system failure, then released.
@@ -644,54 +800,167 @@ const capture = (billing: ContractBilling, ctx: BillingContext, cycle: ContractC
       if (emptied) yield* releaseHold(payment);
       return;
     }
+    // Sessions removed since the hold reduce what is captured; a quote
+    // failure now captures the hold as quoted.
+    const requoted = amounts !== null && amounts.familyTotalCents <= held ? amounts : null;
     const claimed = yield* repo.advanceCycle(cycle.id, {
       from: ['authorised'],
-      set: {
-        status: 'capturing',
-        // Sessions removed since the hold reduce what is captured; a quote
-        // failure now captures the hold as quoted.
-        ...(amounts !== null && amounts.familyTotalCents <= held ? quoteColumns(amounts) : {})
-      }
+      set: { status: 'capturing', ...(requoted ? quoteColumns(requoted) : {}) }
     });
     if (!claimed) return;
+    if (requoted) {
+      // The payment row carries what is captured, so the payer's history
+      // and the tax collected add up (its total stays the authorised
+      // amount the provider holds; `captured_cents` is what was taken).
+      yield* paymentRepo.update(payment.id, {
+        amountCents: requoted.serviceCents,
+        feeCents: requoted.familyFeeCents,
+        taxCents: sum(requoted.serviceTaxLines) + sum(requoted.familyFeeTaxLines),
+        taxLines: [...requoted.serviceTaxLines, ...requoted.familyFeeTaxLines].map((line) => ({
+          ...line
+        }))
+      });
+    }
     yield* captureClaimed(ctx, claimed, payment, now);
   });
 
-const captureClaimed = (ctx: BillingContext, cycle: ContractCycle, payment: Payment, now: Date) =>
+/** Captures a claimed cycle under its one key (`capture-<cycleId>`). A
+ * provider error is not a refusal: the provider is asked what became of the
+ * hold — a lost response may have captured it — and while the hold stands
+ * the next tick retries under the same key. Only a hold that can no longer
+ * be captured is a system failure. */
+const captureClaimed = (
+  ctx: BillingContext,
+  cycle: ContractCycle,
+  payment: Payment,
+  now: Date
+): Step<void> =>
   Effect.gen(function* () {
     const payments = yield* Payments;
     const repo = yield* ContractBillingRepo;
     const paymentRepo = yield* PaymentRepo;
+    const reference = payment.providerReference!;
     const amount = Math.min(
       cycle.familyTotalCents ?? payment.totalCents,
       cycle.heldCents ?? payment.totalCents
     );
     const result = yield* payments
-      .capturePayment({
-        reference: payment.providerReference!,
-        amountCents: amount,
-        idempotencyKey: cycle.id
-      })
+      .capturePayment({ reference, amountCents: amount, idempotencyKey: cycle.id })
       .pipe(Effect.either);
-    if (Either.isLeft(result)) {
-      yield* Effect.logWarning(`[billing] capture failed for cycle ${cycle.id}`, result.left);
-      if (now < cycle.startsAt) {
-        yield* repo.advanceCycle(cycle.id, {
-          from: ['capturing'],
-          set: { lastError: 'capture failed at the provider — retrying' }
-        });
-        return;
-      }
-      // Represented as funded, yet the provider still refuses to capture
-      // once care has started: a system failure, handled as such.
-      const failed = yield* repo.advanceCycle(cycle.id, {
-        from: ['capturing'],
-        set: { status: 'capture_failed', lastError: 'capture kept failing at the provider' }
-      });
-      if (failed) yield* systemFailure(ctx, failed, 'capture kept failing at the provider', now);
+    if (Either.isRight(result)) {
+      yield* settleCycleRow(yield* paymentRepo.findById(payment.id), now, result.right);
       return;
     }
-    yield* settleCycleRow(yield* paymentRepo.findById(payment.id), now, result.right);
+    yield* Effect.logWarning(`[billing] capture failed for cycle ${cycle.id}`, result.left);
+    const retry = (lastError: string) =>
+      repo
+        .advanceCycle(cycle.id, { from: ['capturing'], set: { lastError } })
+        .pipe(Effect.asVoid);
+    const fetched = yield* payments.getPayment(reference).pipe(Effect.either);
+    if (Either.isLeft(fetched)) return yield* retry('capture failed at the provider — retrying');
+    const row = yield* paymentRepo.findById(payment.id);
+    switch (fetched.right.status) {
+      case 'succeeded':
+      case 'canceled':
+        // Captured after all (a lost response), or the hold is gone (the
+        // settle path records the system failure).
+        yield* settleCycleRow(row, now, fetched.right);
+        return;
+      case 'authorised':
+      case 'processing':
+        // The hold stands: same key on the next tick.
+        return yield* retry('capture failed at the provider — retrying');
+      default: {
+        // Refused for good: represented as funded, yet nothing can be
+        // captured — a system failure.
+        yield* paymentRepo.advance(payment.id, {
+          from: ['authorised'],
+          set: { status: 'failed', lastError: 'the provider refused to capture the hold' }
+        });
+        const failed = yield* repo.advanceCycle(cycle.id, {
+          from: ['capturing'],
+          set: { status: 'capture_failed', lastError: 'the provider refused to capture the hold' }
+        });
+        if (failed) yield* systemFailure(ctx, failed, 'the provider refused to capture the hold', now);
+      }
+    }
+  });
+
+/** Settles an attempt by re-fetching it; a provider that can't be reached
+ * leaves it for the next tick. */
+const settleQuietly = (payment: Payment, now: Date) =>
+  settleCycleRow(payment, now).pipe(
+    Effect.catchTag('PaymentProviderError', (error) =>
+      Effect.logWarning(`[billing] could not re-fetch payment ${payment.id}`, error).pipe(
+        Effect.as(null)
+      )
+    )
+  );
+
+/** An attempt that was never answered, at the cycle start: whatever the
+ * provider has for it is used (a hold or charge whose response was lost);
+ * without one the cycle is suspended — not the card's fault. When the
+ * provider can't even be asked, the cycle is suspended all the same and the
+ * attempt is looked up again on later ticks. */
+const giveUpAtStart = (ctx: BillingContext, cycle: ContractCycle, payment: Payment, now: Date) =>
+  Effect.gen(function* () {
+    const paymentRepo = yield* PaymentRepo;
+    const found = yield* lookUp(payment);
+    if (found.kind === 'found') {
+      const recorded =
+        (yield* paymentRepo.advance(payment.id, {
+          from: 'pending',
+          providerReference: null,
+          set: { providerReference: found.payment.reference }
+        })) ?? (yield* paymentRepo.findById(payment.id));
+      yield* settleCycleRow(recorded, now, found.payment);
+      return;
+    }
+    if (found.kind === 'none') {
+      yield* paymentRepo.advance(payment.id, {
+        from: 'pending',
+        providerReference: null,
+        set: { status: 'failed', lastError: UNANSWERED }
+      });
+    } else {
+      yield* paymentRepo.update(payment.id, {
+        lastError: 'unanswered by the provider — looking it up'
+      });
+    }
+    yield* suspendCycle(ctx, cycle, 'provider_unavailable', ['authorising'], now, UNANSWERED);
+  });
+
+/** A resume quote counts only for sessions that have not started: once its
+ * first session has, it is stale. */
+const resumeQuoteStale = (cycle: ContractCycle, now: Date) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    const from = cycle.resumeFrom ?? new Date(0);
+    const quoted = (yield* repo.listSessions(cycle.contractId, cycle.id)).filter(
+      (session) => session.status === 'suspended' && session.startsAt > from
+    );
+    return quoted.length === 0 || quoted.some((session) => session.startsAt <= now);
+  });
+
+/** A resume charge the provider never answered, whose quote went stale:
+ * whatever exists for it is released, the cycle goes back to suspended and
+ * the next tick re-quotes what is left (the provider was the cause, so the
+ * tick resumes by itself). */
+const giveUpResume = (cycle: ContractCycle, payment: Payment, now: Date) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    yield* releaseUnanswered(payment, now);
+    const back = yield* repo.advanceCycle(cycle.id, {
+      from: ['authorising'],
+      paymentId: payment.id,
+      set: { status: 'suspended', lastError: 'resume charge unanswered — re-quoting' }
+    });
+    if (back) {
+      yield* repo.advanceBilling(cycle.contractId, {
+        from: ['suspended'],
+        set: { suspendedReason: 'provider_unavailable' }
+      });
+    }
   });
 
 // ---------------------------------------------------------------------------
@@ -732,28 +1001,18 @@ const processCycle = (
         if (payment === null) return;
         if (payment.status === 'pending' && payment.providerReference === null) {
           // The provider never answered this attempt. Retry under the same
-          // key until the cycle starts; then it was never funded.
-          if (now >= cycle.startsAt && cycle.chargeMode !== 'resume') {
-            const paymentRepo = yield* PaymentRepo;
-            yield* paymentRepo.advance(payment.id, {
-              from: 'pending',
-              providerReference: null,
-              set: { status: 'failed', lastError: 'payment provider unavailable' }
-            });
-            return yield* suspendCycle(
-              ctx,
-              cycle,
-              'provider_unavailable',
-              ['authorising'],
-              now,
-              'payment provider unavailable'
-            );
+          // key while the quote still holds; then resolve it at the provider.
+          if (cycle.chargeMode === 'resume') {
+            if (yield* resumeQuoteStale(cycle, now)) return yield* giveUpResume(cycle, payment, now);
+          } else if (now >= cycle.startsAt) {
+            return yield* giveUpAtStart(ctx, cycle, payment, now);
           }
           yield* chargeAndSettle(cycle, payment, now);
           return;
         }
-        // Answered but not settled (a crash, or a webhook still on its way).
-        yield* settleCycleRow(payment, now);
+        // Answered but not settled (a crash, or a webhook still on its way),
+        // or failed without the cycle moving on.
+        yield* settleQuietly(payment, now);
         return;
       }
       case 'authorised':
@@ -763,12 +1022,33 @@ const processCycle = (
         const payment = yield* findPayment(cycle.paymentId);
         if (payment === null) return;
         // A capture that crashed or failed: what does the provider say now?
-        yield* settleCycleRow(payment, now);
+        yield* settleQuietly(payment, now);
         const current = (yield* (yield* ContractBillingRepo).listCycles(cycle.contractId)).find(
           (row) => row.id === cycle.id
         );
         if (current?.status !== 'capturing') return;
         return yield* captureClaimed(ctx, current, payment, now);
+      }
+      case 'capture_failed': {
+        if (!recoveryPending(cycle)) return;
+        // The recovery never started (a surviving hold could not be
+        // cancelled first): start it now.
+        if (cycle.chargeMode !== 'resume') return yield* recover(ctx, cycle, now);
+        const payment = yield* findPayment(cycle.paymentId);
+        if (payment === null) return;
+        if (payment.status === 'pending' && payment.providerReference === null) {
+          // Unanswered: the same key again, never a second charge.
+          yield* chargeAndSettle(cycle, payment, now);
+          return;
+        }
+        if (payment.status === 'pending' || payment.status === 'authorised') {
+          yield* settleQuietly(payment, now);
+          return;
+        }
+        if (payment.status !== 'failed') return;
+        const due = cycle.nextRetryAt ?? new Date(cycle.updatedAt.getTime() + retryHours * HOUR_MS);
+        if (now < due) return;
+        return yield* recover(ctx, cycle, now);
       }
       default:
         return;
@@ -777,7 +1057,8 @@ const processCycle = (
 
 /** A Poppynz/Stripe failure after the cycle was represented as funded
  * (umbrella §6): admin alerted at once, the incident documented, care goes
- * ahead and the helper's share stays owed; one recovery charge is tried. */
+ * ahead and the helper's share stays owed; recovery from the family is
+ * attempted. */
 const systemFailure = (
   ctx: BillingContext,
   cycle: ContractCycle,
@@ -798,7 +1079,46 @@ const systemFailure = (
       `Poppynz funds the helper's completed sessions (share ${((cycle.providerShareCents ?? 0) / 100).toFixed(2)} CAD) while recovery from the family is attempted.`,
       'Later cycles keep the normal charge gate: nothing new starts unfunded.'
     ]);
+    yield* recover(ctx, cycle, now);
+  });
+
+/** One recovery charge on the family's card for a cycle that lost its
+ * payment. Whatever is left of the original hold is cancelled first, so the
+ * family is never held twice for the same care — and if the provider says
+ * it was captured after all, that is recorded instead. */
+const recover = (ctx: BillingContext, cycle: ContractCycle, now: Date): Step<void> =>
+  Effect.gen(function* () {
     if (cycle.familyTotalCents === null) return;
+    if (cycle.chargeMode !== 'resume') {
+      const original = yield* findPayment(cycle.paymentId);
+      if (original !== null && original.providerReference !== null) {
+        const payments = yield* Payments;
+        const paymentRepo = yield* PaymentRepo;
+        const after = yield* payments.cancelPayment(original.providerReference).pipe(Effect.either);
+        if (Either.isLeft(after)) {
+          yield* Effect.logWarning(
+            `[billing] could not cancel the lost hold of cycle ${cycle.id}; recovery waits`,
+            after.left
+          );
+          return;
+        }
+        if (after.right.status === 'succeeded') {
+          const captured = yield* paymentRepo.advance(original.id, {
+            from: ['pending', 'authorised', 'failed'],
+            set: {
+              status: 'captured',
+              capturedAt: now,
+              capturedCents:
+                after.right.receivedCents > 0 ? after.right.receivedCents : original.totalCents,
+              receiptUrl: after.right.receiptUrl,
+              lastError: null
+            }
+          });
+          if (captured) yield* onCaptured(cycle, captured, now);
+          return;
+        }
+      }
+    }
     const amounts: ContractAmounts = {
       serviceCents: cycle.serviceCents ?? 0,
       serviceTaxLines: cycle.taxLines.filter(
@@ -881,6 +1201,24 @@ const cancelForReadiness = (billing: ContractBilling, ctx: BillingContext, now: 
 // ---------------------------------------------------------------------------
 // Resume (spec §4)
 
+/** What resuming a suspended contract would charge now: the current
+ * suspended cycle's sessions that have not started (plus what was carried
+ * into it). Null when nothing is left to charge in it. */
+const resumePlan = (billing: ContractBilling, now: Date) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    const current = (yield* repo.listCycles(billing.contractId))
+      .filter((cycle) => cycle.status === 'suspended' && cycle.endsAt > now)
+      .at(-1);
+    if (!current) return null;
+    const remaining = (yield* repo.listSessions(billing.contractId, current.id)).filter(
+      (session) => session.status === 'suspended' && session.startsAt > now
+    );
+    if (remaining.length === 0) return null;
+    const quote = yield* quoteFor(billing, current, valueOf(remaining) + current.carriedInCents);
+    return { current, remaining, quote };
+  });
+
 const resume = (
   billing: ContractBilling,
   ctx: BillingContext,
@@ -892,10 +1230,15 @@ const resume = (
     const reason = billing.suspendedReason;
     // A card problem waits for the family to fix the card.
     if (trigger === 'tick' && reason === 'card') return;
-    if (reason === 'helper_not_ready' && !(yield* isPaymentReady(ctx.contract.providerUserId))) {
+    const repo = yield* ContractBillingRepo;
+    const cycles = yield* repo.listCycles(billing.contractId);
+    // A resume charge is already under way (perhaps unanswered): it, not a
+    // second quote, decides whether the contract resumes.
+    if (cycles.some((cycle) => cycle.status === 'authorising' && cycle.chargeMode === 'resume')) {
       return;
     }
-    const repo = yield* ContractBillingRepo;
+    // Never charge for care the helper can't be paid for (or might not be).
+    if ((yield* paymentReadiness(ctx.contract.providerUserId)) !== 'ready') return;
     const today = todayIn(billing.timeZone, now);
     if (ctx.terms.endsOn !== null && ctx.terms.endsOn < today) {
       // The effective end has passed: nothing is charged.
@@ -905,15 +1248,8 @@ const resume = (
       });
       return;
     }
-    const current = (yield* repo.listCycles(billing.contractId))
-      .filter((cycle) => cycle.status === 'suspended' && cycle.endsAt > now)
-      .at(-1);
-    const remaining = current
-      ? (yield* repo.listSessions(billing.contractId, current.id)).filter(
-          (session) => session.status === 'suspended' && session.startsAt > now
-        )
-      : [];
-    if (!current || remaining.length === 0) {
+    const plan = yield* resumePlan(billing, now);
+    if (plan === null) {
       // Nothing left to charge in the current cycle; the next one follows
       // the normal schedule.
       yield* repo.advanceBilling(billing.contractId, {
@@ -922,10 +1258,16 @@ const resume = (
       });
       return;
     }
-    const quote = yield* quoteFor(billing, current, valueOf(remaining));
+    const { current, quote } = plan;
     if (!quote.ok) return;
     if (quote.amounts.familyTotalCents < MINIMUM_CHARGE_CENTS) {
-      // Too small to charge: resumed at Poppynz's cost.
+      // Too small to charge: resumed at Poppynz's cost. The cycle counts as
+      // paid (nothing to charge), so its sessions complete as they end.
+      const absorbed = yield* repo.advanceCycle(current.id, {
+        from: ['suspended'],
+        set: { status: 'empty', resumeFrom: now, ...quoteColumns(quote.amounts) }
+      });
+      if (!absorbed) return;
       yield* repo.setSessionStatus(
         {
           contractId: billing.contractId,
@@ -939,7 +1281,7 @@ const resume = (
         {
           contractId: billing.contractId,
           cycleId: current.id,
-          entryKey: `cycle:${current.id}:resume_absorbed:${now.toISOString()}`,
+          entryKey: `cycle:${current.id}:resume_absorbed`,
           kind: 'carry_absorbed',
           party: 'platform',
           amountCents: quote.amounts.familyTotalCents
@@ -952,6 +1294,26 @@ const resume = (
       return;
     }
     yield* attempt(ctx, current, 'resume', quote.amounts, ['suspended'], now);
+  });
+
+/** What replacing the card would charge at once on each of the family's
+ * card-suspended contracts (the card dialog says so before saving). */
+export const previewCardResumes = (userId: string, now: Date) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    const charges: Array<{ contractId: string; dates: string; amountCents: number }> = [];
+    for (const billing of yield* repo.listLiveBillingForFamily(userId)) {
+      if (billing.status !== 'suspended' || billing.suspendedReason !== 'card') continue;
+      const plan = yield* resumePlan(billing, now);
+      if (plan === null || !plan.quote.ok) continue;
+      if (plan.quote.amounts.familyTotalCents < MINIMUM_CHARGE_CENTS) continue;
+      charges.push({
+        contractId: billing.contractId,
+        dates: cycleDates(plan.current),
+        amountCents: plan.quote.amounts.familyTotalCents
+      });
+    }
+    return charges;
   });
 
 // ---------------------------------------------------------------------------
@@ -1067,7 +1429,9 @@ const onCaptured = (cycle: ContractCycle, payment: Payment, now: Date) =>
           yield* sendBillingNotice('resumed', ['family', 'helper'], {
             contract,
             cycle: current,
-            amountCents: current.capturedCents
+            amountCents: current.capturedCents,
+            // The helper is told what they receive, not what the family paid.
+            helperAmountCents: current.providerShareCents
           });
         }
       }
@@ -1083,8 +1447,28 @@ const onCaptured = (cycle: ContractCycle, payment: Payment, now: Date) =>
 const declined = (cycle: ContractCycle | null, payment: Payment, reason: string, now: Date) =>
   Effect.gen(function* () {
     if (cycle === null || cycle.paymentId !== payment.id) return 'declined' as const;
-    if (cycle.status !== 'authorising') return 'declined' as const;
     const repo = yield* ContractBillingRepo;
+    if (cycle.status === 'capture_failed' && cycle.chargeMode === 'resume') {
+      // A recovery charge after a system failure was declined: tried again
+      // on schedule and when the card is replaced, up to a limit.
+      const { retryHours } = yield* contractBillingPolicy;
+      const marked = yield* markNotice(cycle, `recovery_declined:${cycle.attempts}`);
+      if (marked) {
+        yield* repo.advanceCycle(cycle.id, {
+          from: ['capture_failed'],
+          paymentId: payment.id,
+          set: { nextRetryAt: new Date(now.getTime() + retryHours * HOUR_MS), lastError: reason }
+        });
+        yield* alertAdmins(`Recovery charge declined on contract ${cycle.contractId}`, [
+          `Cycle ${cycle.index + 1} (${cycleDates(cycle)}): ${reason}`,
+          recoveryDeclines(marked) < MAX_RECOVERY_DECLINES
+            ? `Retried in ${retryHours} h and whenever the family replaces the card.`
+            : 'No more automatic retries: settle it with the family.'
+        ]);
+      }
+      return 'declined' as const;
+    }
+    if (cycle.status !== 'authorising') return 'declined' as const;
     const billing = yield* repo.findBilling(cycle.contractId);
     const ctx = billing === null ? null : yield* loadContext(billing);
     if (billing === null || ctx === null) return 'declined' as const;
@@ -1144,6 +1528,91 @@ const declined = (cycle: ContractCycle | null, payment: Payment, reason: string,
     return 'declined' as const;
   });
 
+/** Puts a cycle whose attempt failed for a reason that is not the card's
+ * back where it can be retried: suspended (provider_unavailable) once the
+ * cycle has started or for a resume, otherwise a quiet grace period. */
+const providerSideFailure = (cycle: ContractCycle, payment: Payment, reason: string, now: Date) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    if (cycle.chargeMode === 'resume') {
+      const back = yield* repo.advanceCycle(cycle.id, {
+        from: ['authorising'],
+        paymentId: payment.id,
+        set: { status: 'suspended', lastError: reason }
+      });
+      if (back) {
+        yield* repo.advanceBilling(cycle.contractId, {
+          from: ['suspended'],
+          set: { suspendedReason: 'provider_unavailable' }
+        });
+      }
+      return;
+    }
+    if (now >= cycle.startsAt) {
+      const billing = yield* repo.findBilling(cycle.contractId);
+      const ctx = billing ? yield* loadContext(billing) : null;
+      if (ctx) {
+        yield* suspendCycle(ctx, cycle, 'provider_unavailable', ['authorising'], now, reason);
+      }
+      return;
+    }
+    const { retryHours } = yield* contractBillingPolicy;
+    yield* repo.advanceCycle(cycle.id, {
+      from: ['authorising'],
+      paymentId: payment.id,
+      set: {
+        status: 'grace',
+        nextRetryAt: new Date(now.getTime() + retryHours * HOUR_MS),
+        lastError: reason
+      }
+    });
+  });
+
+/** A failed attempt whose cycle never moved on (M2). */
+const failedAttempt = (cycle: ContractCycle, row: Payment, now: Date) =>
+  row.lastError === UNANSWERED ||
+  row.status === 'refunded' ||
+  row.lastError === 'superseded by a concurrent attempt'
+    ? providerSideFailure(cycle, row, row.lastError ?? UNANSWERED, now)
+    : declined(cycle, row, row.lastError ?? 'The card was declined.', now).pipe(Effect.asVoid);
+
+/** The provider's answer doesn't match the row: flagged for an admin, any
+ * hold it holds released, the attempt failed and the cycle retried — never
+ * blamed on the card. A charge already taken is left for the admin. */
+const mismatchedAttempt = (
+  cycle: ContractCycle,
+  row: Payment,
+  fetched: ProviderPayment,
+  reason: string,
+  now: Date
+) =>
+  Effect.gen(function* () {
+    const payments = yield* Payments;
+    const paymentRepo = yield* PaymentRepo;
+    if (fetched.status !== 'succeeded') {
+      yield* payments
+        .cancelPayment(fetched.reference)
+        .pipe(
+          Effect.catchAll((error) =>
+            Effect.logWarning(`[billing] could not release mismatched ${fetched.reference}`, error)
+          )
+        );
+    }
+    yield* alertAdmins(`Provider payment does not match payment ${row.id}`, [
+      `Contract ${cycle.contractId}, cycle ${cycle.index + 1} (${cycleDates(cycle)}): ${reason}.`,
+      fetched.status === 'succeeded'
+        ? 'The provider shows it as charged: check it and refund by hand.'
+        : 'Its hold was released; billing retries with a new attempt.'
+    ]);
+    const failed =
+      (yield* paymentRepo.advance(row.id, {
+        from: ['pending', 'authorised'],
+        set: { status: 'failed', lastError: reason }
+      })) ?? row;
+    yield* providerSideFailure(cycle, failed, reason, now);
+    return failed;
+  });
+
 /** The cycle branch of the one settle path. Re-fetches unless the caller just
  * got the provider's answer, checks it against the row, and applies it with
  * compare-and-set writes. Safe to repeat from any caller. */
@@ -1164,6 +1633,10 @@ export const settleCycleRow = (
       return { outcome: 'final' as CycleSettleOutcome, payment: row };
     }
     if (row.status === 'failed' || row.status === 'refunded') {
+      // A crash between failing the attempt and moving its cycle: finish it.
+      if (cycle !== null && cycle.paymentId === row.id && cycle.status === 'authorising') {
+        yield* failedAttempt(cycle, row, now);
+      }
       return { outcome: 'final' as CycleSettleOutcome, payment: row };
     }
     if (row.provider !== payments.provider) {
@@ -1183,9 +1656,14 @@ export const settleCycleRow = (
       fetched.amountCents !== row.totalCents ||
       fetched.currency.toLowerCase() !== row.currency.toLowerCase()
     ) {
-      const flagged = yield* paymentRepo.update(row.id, {
-        lastError: `provider payment ${fetched.reference} does not match this row`
-      });
+      const reason = `provider payment ${fetched.reference} does not match this row`;
+      const flagged = yield* paymentRepo.update(row.id, { lastError: reason });
+      if (cycle !== null && cycle.paymentId === row.id && cycle.status === 'authorising') {
+        return {
+          outcome: 'mismatch' as CycleSettleOutcome,
+          payment: yield* mismatchedAttempt(cycle, flagged, fetched, reason, now)
+        };
+      }
       return { outcome: 'mismatch' as CycleSettleOutcome, payment: flagged };
     }
 
@@ -1305,6 +1783,19 @@ export const newContractBilling = (input: {
     )
   );
 
+/** An attempt left unanswered on a cycle that has moved on (suspended or
+ * cancelled while the provider could not be asked): looked up again, and
+ * whatever exists for it released, so no hold or charge is orphaned. */
+const resolveStrandedAttempts = (contractId: string, now: Date) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    for (const cycle of yield* repo.listCycles(contractId)) {
+      if (cycle.status !== 'suspended' && cycle.status !== 'cancelled') continue;
+      const payment = yield* findPayment(cycle.paymentId);
+      if (isUnanswered(payment, now)) yield* releaseUnanswered(payment, now);
+    }
+  });
+
 /** One contract's billing step. */
 export const runContractBilling = (contractId: string, now: Date) =>
   Effect.gen(function* () {
@@ -1316,7 +1807,8 @@ export const runContractBilling = (contractId: string, now: Date) =>
     const today = todayIn(billing.timeZone, now);
 
     if (billing.status === 'awaiting_payment_readiness') {
-      if (yield* isPaymentReady(ctx.contract.providerUserId)) {
+      const readiness = yield* paymentReadiness(ctx.contract.providerUserId);
+      if (readiness === 'ready') {
         billing =
           (yield* repo.advanceBilling(contractId, {
             from: ['awaiting_payment_readiness'],
@@ -1325,14 +1817,18 @@ export const runContractBilling = (contractId: string, now: Date) =>
       } else {
         yield* materialise(billing, ctx.terms, today);
         yield* sendDueReminder(billing, ctx, today);
+        // Only a confirmed "not ready" cancels; an unknown status waits.
         const first = (yield* repo.listCycles(contractId))[0];
-        if (first && now >= first.captureAt) yield* cancelForReadiness(billing, ctx, now);
+        if (readiness === 'not_ready' && first && now >= first.captureAt) {
+          yield* cancelForReadiness(billing, ctx, now);
+        }
         return 'awaiting' as const;
       }
     }
 
     yield* materialise(billing, ctx.terms, today);
     yield* applyEnd(billing, ctx.terms);
+    yield* resolveStrandedAttempts(contractId, now);
     const afterEnd = (yield* repo.findBilling(contractId)) ?? billing;
     yield* resume(afterEnd, ctx, now, 'tick');
 
@@ -1349,24 +1845,43 @@ export const runContractBilling = (contractId: string, now: Date) =>
       ) {
         continue;
       }
-      if (!openCycleStatuses.includes(cycle.status)) continue;
+      if (!openCycleStatuses.includes(cycle.status) && !recoveryPending(cycle)) continue;
       yield* processCycle(current, ctx, cycle, now);
     }
 
     // Funded sessions complete as they end.
     for (const cycle of yield* repo.listCycles(contractId)) {
-      if (cycle.status === 'captured' || cycle.status === 'capture_failed') {
+      if (fundedCycleStatuses.includes(cycle.status)) {
         yield* repo.setSessionStatus(
           { contractId, cycleId: cycle.id, from: ['scheduled'], endedBy: now },
           'completed'
         );
+      }
+      // A carried-in amount whose cycle was never charged (cancelled, or
+      // suspended to its end) is absorbed by Poppynz, never lost.
+      if (
+        cycle.carriedInCents > 0 &&
+        (cycle.status === 'cancelled' || (cycle.status === 'suspended' && cycle.endsAt <= now))
+      ) {
+        yield* repo.appendLedger([
+          {
+            contractId,
+            cycleId: cycle.id,
+            entryKey: `cycle:${cycle.id}:carry_absorbed`,
+            kind: 'carry_absorbed',
+            party: 'platform',
+            amountCents: cycle.carriedInCents
+          }
+        ]);
       }
     }
 
     // Past the last day with nothing in motion: the schedule is done.
     if (ctx.terms.endsOn !== null && ctx.terms.endsOn < today) {
       const cycles = yield* repo.listCycles(contractId);
-      if (!cycles.some((cycle) => openCycleStatuses.includes(cycle.status))) {
+      if (
+        !cycles.some((cycle) => openCycleStatuses.includes(cycle.status) || recoveryPending(cycle))
+      ) {
         yield* repo.advanceBilling(contractId, {
           from: liveBillingStatuses,
           set: { status: 'ended', endedAt: now, suspendedReason: null }
@@ -1425,6 +1940,14 @@ export const retryFamilyBilling = (userId: string, now: Date) =>
         if (cycle.status === 'grace' && now < cycle.startsAt) {
           retried += 1;
           yield* fund(billing, ctx, cycle, ['grace'], now);
+        }
+        if (recoveryPending(cycle) && cycle.chargeMode === 'resume') {
+          // A declined recovery after a system failure: the new card, now.
+          const payment = yield* findPayment(cycle.paymentId);
+          if (payment?.status === 'failed') {
+            retried += 1;
+            yield* recover(ctx, cycle, now);
+          }
         }
       }
       const current = yield* repo.findBilling(billing.contractId);

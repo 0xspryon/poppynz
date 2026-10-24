@@ -8,10 +8,11 @@
 		type AdminUserSearchList
 	} from '$lib/api/admin-user-searches';
 	import Pagination from '$lib/components/Pagination.svelte';
-	import { centsToDollars } from '$lib/money';
+	import { formatNumber, intlLocale } from '$lib/locale';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 
 	const PER_PAGE = 20;
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 
 	let pageNumber = $state(1);
 	let loading = $state(true);
@@ -32,8 +33,8 @@
 			} else {
 				errorMessage =
 					result.error.code === 'FORBIDDEN' || result.error.code === 'UNAUTHORIZED'
-						? 'You need admin access to view user searches.'
-						: RETRY_MESSAGE;
+						? m.admin_searches_error_forbidden()
+						: m.common_error_generic();
 			}
 		});
 	});
@@ -48,7 +49,7 @@
 	}
 
 	function searchedText(search: AdminUserSearch): string {
-		return new Date(search.createdAt).toLocaleString('en-NZ', {
+		return new Date(search.createdAt).toLocaleString(intlLocale(), {
 			day: 'numeric',
 			month: 'short',
 			year: 'numeric',
@@ -57,13 +58,22 @@
 		});
 	}
 
-	const sortLabels: Record<string, string> = {
-		relevance: 'Relevance',
-		distance: 'Distance (nearest)',
-		price_asc: 'Price: low to high',
-		price_desc: 'Price: high to low',
-		newest: 'Newest'
-	};
+	function sortLabel(sort: string): string {
+		switch (sort) {
+			case 'relevance':
+				return m.admin_searches_sort_relevance();
+			case 'distance':
+				return m.admin_searches_sort_distance();
+			case 'price_asc':
+				return m.admin_searches_sort_price_asc();
+			case 'price_desc':
+				return m.admin_searches_sort_price_desc();
+			case 'newest':
+				return m.admin_searches_sort_newest();
+			default:
+				return sort;
+		}
+	}
 
 	/** "Mission, BC" from the location snapshot taken at search time. */
 	function locationLabel(search: AdminUserSearch): string {
@@ -78,40 +88,49 @@
 	function filterChips(search: AdminUserSearch): Array<string> {
 		const details = search.details;
 		const chips: Array<string> = [];
-		if (details.q) chips.push(`“${details.q}”`);
+		if (details.q) chips.push(m.admin_searches_chip_query({ query: details.q }));
 		if (details.service) chips.push(details.service);
-		if (details.city) chips.push(`in ${details.city}`);
-		if (details.radiusKm != null) chips.push(`within ${details.radiusKm} km`);
+		if (details.city) chips.push(m.admin_searches_chip_city({ city: details.city }));
+		if (details.radiusKm != null)
+			chips.push(m.admin_searches_chip_radius({ km: formatNumber(details.radiusKm) }));
 		if (details.minHourlyRateCents != null && details.maxHourlyRateCents != null) {
 			chips.push(
-				`$${centsToDollars(details.minHourlyRateCents)}–$${centsToDollars(details.maxHourlyRateCents)}/hr`
+				m.admin_searches_chip_rate_range({
+					min: formatMoney(details.minHourlyRateCents),
+					max: formatMoney(details.maxHourlyRateCents)
+				})
 			);
 		} else if (details.minHourlyRateCents != null) {
-			chips.push(`From $${centsToDollars(details.minHourlyRateCents)}/hr`);
+			chips.push(
+				m.admin_searches_chip_rate_from({ amount: formatMoney(details.minHourlyRateCents) })
+			);
 		} else if (details.maxHourlyRateCents != null) {
-			chips.push(`Up to $${centsToDollars(details.maxHourlyRateCents)}/hr`);
+			chips.push(
+				m.admin_searches_chip_rate_up_to({ amount: formatMoney(details.maxHourlyRateCents) })
+			);
 		}
-		if (details.sort) chips.push(`Sort: ${sortLabels[details.sort] ?? details.sort}`);
+		if (details.sort) chips.push(m.admin_searches_chip_sort({ label: sortLabel(details.sort) }));
 		return chips;
 	}
 </script>
 
 <svelte:head>
-	<title>User searches · Poppynz admin</title>
+	<title>{m.admin_searches_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-5xl">
 	<div class="flex flex-wrap items-start justify-between gap-4">
 		<div>
-			<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">User searches</h1>
+			<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">
+				{m.admin_searches_heading()}
+			</h1>
 			<p class="mt-1 text-sm text-base-content-muted">
-				Searches families asked for help with — reach out with suggestions.
+				{m.admin_searches_subheading()}
 			</p>
 		</div>
 		{#if !loading && !errorMessage}
 			<span class="text-sm text-base-content-muted">
-				{total}
-				{total === 1 ? 'search' : 'searches'}
+				{m.admin_searches_count({ count: total })}
 			</span>
 		{/if}
 	</div>
@@ -128,7 +147,7 @@
 				class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm
 					text-base-content-muted"
 			>
-				No searches submitted yet. When a family asks for help from the find page, it lands here.
+				{m.admin_searches_empty()}
 			</p>
 		{:else}
 			<div class="flex flex-col gap-2">
@@ -170,7 +189,7 @@
 							{#each filterChips(search) as chip (chip)}
 								<span class="badge border-none bg-base-400 text-secondary">{chip}</span>
 							{:else}
-								<span class="text-xs text-base-content-muted">No filters — a default search.</span>
+								<span class="text-xs text-base-content-muted">{m.admin_searches_no_filters()}</span>
 							{/each}
 						</div>
 					</div>
@@ -181,7 +200,7 @@
 				<Pagination
 					page={pageNumber}
 					{totalPages}
-					label="User search pages"
+					label={m.admin_searches_pagination_label()}
 					onselect={(next) => (pageNumber = next)}
 				/>
 			</div>

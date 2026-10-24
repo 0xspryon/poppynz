@@ -7,7 +7,8 @@
 		updateCatalogueItem,
 		type CatalogueItem
 	} from '$lib/api/service-catalogue';
-	import { centsToDollars } from '$lib/money';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { listDocumentTypes } from '$lib/api/document-types';
 	import CatalogueItemDialog, {
 		type CatalogueItemDraft
@@ -15,8 +16,6 @@
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 	let items: Array<CatalogueItem> = $state([]);
 	let loading = $state(true);
@@ -35,14 +34,17 @@
 
 	let credentialTypes = $state<Array<{ id: string; name: string }>>([]);
 
+	const credentialName = (id: string | null) =>
+		credentialTypes.find((type) => type.id === id)?.name ?? null;
+
 	const categories = $derived([...new Set(items.map((item) => item.category))].sort());
 
 	const errorText = (error: { code: string; message: string }) =>
 		error.code === 'FORBIDDEN'
-			? 'Your account is not authorized to manage the service catalogue.'
+			? m.admin_catalogue_error_forbidden()
 			: error.code === 'UNAUTHORIZED'
-				? 'Your session has expired — sign in again.'
-				: RETRY_MESSAGE;
+				? m.admin_catalogue_error_session()
+				: m.admin_catalogue_error_retry();
 
 	async function load() {
 		loading = true;
@@ -88,17 +90,20 @@
 			: await createCatalogueItem(draft);
 		if (result.ok) {
 			modalOpen = false;
-			toast.success(editing ? `${result.data.name} updated.` : `${result.data.name} created.`);
+			toast.success(
+				editing
+					? m.admin_catalogue_updated_toast({ name: result.data.name })
+					: m.admin_catalogue_created_toast({ name: result.data.name })
+			);
 			await load();
 		} else if (result.error.code === 'INVALID_SERVICE_CATALOGUE_INPUT') {
 			// Field validation stays next to the inputs inside the dialog.
-			modalError =
-				'Check the fields — name and category are required, and the base rate must be a positive amount.';
+			modalError = m.admin_catalogue_invalid_input();
 		} else if (result.error.code === 'SERVICE_CATALOGUE_CREDENTIAL_INVALID') {
-			modalError = result.error.message;
+			modalError = m.admin_catalogue_credential_invalid();
 		} else {
 			toast.error(errorText(result.error), {
-				title: editing ? 'Service not updated' : 'Service not created'
+				title: editing ? m.admin_catalogue_not_updated_title() : m.admin_catalogue_not_created_title()
 			});
 		}
 		saving = false;
@@ -113,12 +118,12 @@
 			items = items.map((candidate) => (candidate.id === item.id ? result.data : candidate));
 			toast.success(
 				result.data.isLive
-					? `${result.data.name} is now live for providers.`
-					: `${result.data.name} is now hidden from providers.`
+					? m.admin_catalogue_live_toast({ name: result.data.name })
+					: m.admin_catalogue_hidden_toast({ name: result.data.name })
 			);
 		} else {
 			input.checked = !value;
-			toast.error(errorText(result.error), { title: `${item.name} not updated` });
+			toast.error(errorText(result.error), { title: m.admin_catalogue_item_not_updated_title({ name: item.name }) });
 		}
 		busyIds.delete(item.id);
 	}
@@ -128,11 +133,13 @@
 		deleteBusy = true;
 		const result = await removeCatalogueItem(deleting.id);
 		if (result.ok) {
-			toast.success(`${deleting.name} deleted.`);
+			toast.success(m.admin_catalogue_deleted_toast({ name: deleting.name }));
 			deleting = null;
 			await load();
 		} else {
-			toast.error(errorText(result.error), { title: `${deleting.name} not deleted` });
+			toast.error(errorText(result.error), {
+				title: m.admin_catalogue_item_not_deleted_title({ name: deleting.name })
+			});
 			deleting = null;
 		}
 		deleteBusy = false;
@@ -140,22 +147,21 @@
 </script>
 
 <svelte:head>
-	<title>Service catalogue · Poppynz admin</title>
+	<title>{m.admin_catalogue_page_title()}</title>
 </svelte:head>
 
 <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
 	<div>
 		<h1 class="mb-1 font-display text-2xl font-bold text-base-content lg:text-3xl">
-			Service catalogue
+			{m.admin_catalogue_heading()}
 		</h1>
 		<p class="text-sm text-base-content-muted">
-			The base services providers pick from. Each base rate is a floor — providers can raise it,
-			never go below.
+			{m.admin_catalogue_intro()}
 		</p>
 	</div>
 	<button type="button" class="btn btn-primary" onclick={openCreate}>
 		<i class="las la-plus" aria-hidden="true"></i>
-		New service
+		{m.admin_catalogue_new()}
 	</button>
 </div>
 
@@ -176,9 +182,9 @@
 	</div>
 {:else if items.length === 0}
 	<div class="rounded-xl border border-card-border bg-base-100 p-10 text-center">
-		<p class="mb-1 font-semibold text-base-content">The catalogue is empty</p>
+		<p class="mb-1 font-semibold text-base-content">{m.admin_catalogue_empty_title()}</p>
 		<p class="text-sm text-base-content-muted">
-			Add the first base service so providers have something to pick from.
+			{m.admin_catalogue_empty_body()}
 		</p>
 	</div>
 {:else}
@@ -187,8 +193,9 @@
 		class="mb-2 hidden grid-cols-[1fr_170px_150px_130px_90px] gap-3.5 px-4 text-[10.5px]
 			font-semibold tracking-[0.08em] text-outline uppercase lg:grid"
 	>
-		<span>Service</span><span>Category</span><span>Base rate</span><span>Status</span>
-		<span class="text-right">Actions</span>
+		<span>{m.admin_catalogue_col_service()}</span><span>{m.admin_catalogue_col_category()}</span>
+		<span>{m.admin_catalogue_col_base_rate()}</span><span>{m.admin_catalogue_col_status()}</span>
+		<span class="text-right">{m.admin_catalogue_col_actions()}</span>
 	</div>
 	<div class="flex flex-col gap-2">
 		{#each items as item (item.id)}
@@ -203,15 +210,16 @@
 					{#if item.requiredDocumentTypeId}
 						<span class="text-[11px] text-outline">
 							<i class="las la-certificate" aria-hidden="true"></i>
-							Needs {credentialTypes.find((type) => type.id === item.requiredDocumentTypeId)?.name ??
-								'an approved credential'}
+							{credentialName(item.requiredDocumentTypeId)
+								? m.admin_catalogue_needs_credential({
+										credential: credentialName(item.requiredDocumentTypeId) ?? ''
+									})
+								: m.admin_catalogue_needs_any_credential()}
 						</span>
 					{/if}
 					<span class="text-sm font-semibold text-base-content lg:hidden">
-						${centsToDollars(item.baseHourlyRateCents)}<span
-							class="text-xs font-normal text-outline"
-						>
-							/hr</span
+						{formatMoney(item.baseHourlyRateCents)}<span class="text-xs font-normal text-outline"
+							>{m.admin_catalogue_per_hour_short()}</span
 						>
 					</span>
 				</div>
@@ -221,8 +229,8 @@
 					</span>
 				</div>
 				<div class="hidden text-sm font-semibold text-base-content lg:block">
-					${centsToDollars(item.baseHourlyRateCents)}
-					<span class="text-xs font-normal text-outline">/ hour</span>
+					{formatMoney(item.baseHourlyRateCents)}
+					<span class="text-xs font-normal text-outline">{m.admin_catalogue_per_hour_long()}</span>
 				</div>
 				<label class="flex items-center gap-2 py-1 lg:py-0">
 					<input
@@ -232,13 +240,15 @@
 						disabled={busy}
 						onchange={(event) => toggleLive(item, event.currentTarget)}
 					/>
-					<span class="text-xs text-base-content-muted">{item.isLive ? 'Live' : 'Hidden'}</span>
+					<span class="text-xs text-base-content-muted">{item.isLive
+							? m.admin_catalogue_live()
+							: m.admin_catalogue_hidden()}</span>
 				</label>
 				<div class="mt-2 flex justify-end gap-1.5 lg:mt-0">
 					<button
 						type="button"
 						class="btn btn-ghost btn-sm btn-square"
-						aria-label="Edit {item.name}"
+						aria-label={m.admin_catalogue_edit_aria({ name: item.name })}
 						onclick={() => openEdit(item)}
 					>
 						<i class="las la-pen text-base" aria-hidden="true"></i>
@@ -246,7 +256,7 @@
 					<button
 						type="button"
 						class="btn btn-ghost btn-sm btn-square"
-						aria-label="Delete {item.name}"
+						aria-label={m.admin_catalogue_delete_aria({ name: item.name })}
 						onclick={() => (deleting = item)}
 					>
 						<i class="las la-trash-alt text-base" aria-hidden="true"></i>
@@ -257,9 +267,7 @@
 	</div>
 
 	<p class="mt-4 max-w-2xl text-xs text-outline">
-		Rate changes apply to new provider listings only — providers already offering a service keep
-		their current rate until they edit it. Hidden services stay on existing provider profiles but
-		can't be newly added.
+		{m.admin_catalogue_footnote()}
 	</p>
 {/if}
 
@@ -276,8 +284,8 @@
 
 <ConfirmDialog
 	open={deleting !== null}
-	title="Delete {deleting?.name}?"
-	body="This is a soft delete — providers already offering this service keep it, but it disappears from the catalogue and can't be newly added."
+	title={m.admin_catalogue_delete_title({ name: deleting?.name ?? '' })}
+	body={m.admin_catalogue_delete_body()}
 	busy={deleteBusy}
 	onconfirm={confirmDelete}
 	oncancel={() => (deleting = null)}

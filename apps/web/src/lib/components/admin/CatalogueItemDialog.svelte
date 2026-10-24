@@ -2,7 +2,12 @@
 	/** Create/edit dialog for service-catalogue items (design 8e). Owns the
 	 * draft fields; emits a validated draft on save. */
 	import type { CatalogueItem } from '$lib/api/service-catalogue';
+	import { getLocale } from '$lib/locale';
 	import { centsToDollars, dollarsToCents } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
+
+	/** French writes the dollar sign after the amount. */
+	const symbolAfter = getLocale() === 'fr';
 
 	export interface CatalogueItemDraft {
 		name: string;
@@ -75,32 +80,32 @@
 	<div class="modal modal-open" role="dialog" aria-modal="true">
 		<form class="modal-box max-w-xl border border-card-border" onsubmit={submit}>
 			<h3 class="font-display text-xl font-bold text-base-content">
-				{editing ? 'Edit service' : 'New service'}
+				{editing ? m.admin_catalogue_edit_title() : m.admin_catalogue_new()}
 			</h3>
 			<p class="mt-1 mb-4 text-sm text-base-content-muted">
-				The base rate is the floor providers can raise but never undercut.
+				{m.admin_catalogue_dialog_intro()}
 			</p>
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Name · ≤120</legend>
+					<legend class="fieldset-legend">{m.admin_catalogue_name_legend()}</legend>
 					<input
 						type="text"
 						class="input w-full"
 						maxlength="120"
 						required
-						placeholder="Weekend babysitting"
+						placeholder={m.admin_catalogue_name_placeholder()}
 						bind:value={name}
 					/>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Category</legend>
+					<legend class="fieldset-legend">{m.admin_catalogue_category_legend()}</legend>
 					<input
 						type="text"
 						class="input w-full"
 						maxlength="80"
 						required
-						placeholder="Childcare"
+						placeholder={m.admin_catalogue_category_placeholder()}
 						list="catalogue-categories"
 						bind:value={category}
 					/>
@@ -111,37 +116,38 @@
 					</datalist>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Base rate / hour</legend>
+					<legend class="fieldset-legend">{m.admin_catalogue_rate_legend()}</legend>
 					<label class="input w-full {rate !== '' && rateCents === null ? 'input-error' : ''}">
-						<span class="text-outline">$</span>
+						{#if !symbolAfter}<span class="text-outline">$</span>{/if}
 						<input
 							type="text"
 							class="grow"
 							inputmode="decimal"
 							required
-							placeholder="19.00"
+							placeholder={m.admin_catalogue_rate_placeholder()}
 							bind:value={rate}
 						/>
+						{#if symbolAfter}<span class="text-outline">$</span>{/if}
 					</label>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Unit</legend>
+					<legend class="fieldset-legend">{m.admin_catalogue_unit_legend()}</legend>
 					<select class="select w-full" disabled>
-						<option>Per hour</option>
+						<option>{m.admin_catalogue_per_hour_option()}</option>
 					</select>
 				</fieldset>
 			</div>
 
 			<fieldset class="fieldset mt-3">
-				<legend class="fieldset-legend">Required credential</legend>
+				<legend class="fieldset-legend">{m.admin_catalogue_credential_legend()}</legend>
 				<select class="select w-full" bind:value={requiredDocumentTypeId}>
-					<option value="">None — any approved helper can offer it</option>
+					<option value="">{m.admin_catalogue_credential_none()}</option>
 					{#each credentialTypes as type (type.id)}
 						<option value={type.id}>{type.name}</option>
 					{/each}
 				</select>
 				<p class="label text-xs whitespace-normal">
-					A helper can only offer this service once an administrator has approved this document.
+					{m.admin_catalogue_credential_hint()}
 				</p>
 			</fieldset>
 
@@ -149,12 +155,14 @@
 				<label class="flex items-center gap-2.5">
 					<input type="checkbox" class="toggle toggle-primary" checked disabled />
 					<span class="text-sm font-medium text-base-content">
-						Rate is a floor — providers may raise it
+						{m.admin_catalogue_floor_toggle()}
 					</span>
 				</label>
 				<label class="flex items-center gap-2.5">
 					<input type="checkbox" class="toggle toggle-primary" bind:checked={isLive} />
-					<span class="text-sm font-medium text-base-content">Live in the provider catalogue</span>
+					<span class="text-sm font-medium text-base-content"
+						>{m.admin_catalogue_live_toggle()}</span
+					>
 				</label>
 			</div>
 
@@ -164,14 +172,15 @@
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button type="submit" class="btn btn-primary" disabled={busy || !canSave}>
 					{#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-					Save service
+					{m.admin_catalogue_save()}
 				</button>
 			</div>
 		</form>
-		<button type="button" class="modal-backdrop" onclick={oncancel} aria-label="Close"></button>
+		<button type="button" class="modal-backdrop" onclick={oncancel} aria-label={m.common_close()}
+		></button>
 	</div>
 {/if}

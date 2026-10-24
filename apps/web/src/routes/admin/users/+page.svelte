@@ -14,9 +14,14 @@
 	import BanUserDialog from '$lib/components/admin/BanUserDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import ImpersonateDialog from '$lib/components/admin/ImpersonateDialog.svelte';
+	import { intlLocale } from '$lib/locale';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	/** better-auth words its failures in English; show a localized message for
+	 * the operation instead (network vs. server). */
+	const failureText = (error: { status: number | null }) =>
+		error.status === null ? m.common_error_network() : m.common_error_generic();
 	type Filter = 'all' | 'providers' | 'families' | 'admins' | 'banned';
 
 	let data = $state<AdminUserList | null>(null);
@@ -43,8 +48,8 @@
 		} else {
 			errorMessage =
 				result.error.code === 'FORBIDDEN' || result.error.code === 'UNAUTHORIZED'
-					? 'You need admin access to view users.'
-					: RETRY_MESSAGE;
+					? m.admin_users_error_forbidden()
+					: m.common_error_generic();
 		}
 		loading = false;
 	}
@@ -53,11 +58,12 @@
 		void load();
 	});
 
-	const roleLabels: Record<string, string> = {
-		'service-provider': 'Provider',
-		family: 'Family',
-		admin: 'Admin'
-	};
+	function roleLabel(role: string): string {
+		if (role === 'service-provider') return m.admin_users_role_provider();
+		if (role === 'family') return m.admin_users_role_family();
+		if (role === 'admin') return m.admin_users_role_admin();
+		return role;
+	}
 
 	function initials(user: AdminUser): string {
 		const parts = user.name.split(' ').filter(Boolean);
@@ -66,7 +72,7 @@
 	}
 
 	function joinedText(user: AdminUser): string {
-		return new Date(user.createdAt).toLocaleDateString('en-NZ', {
+		return new Date(user.createdAt).toLocaleDateString(intlLocale(), {
 			day: 'numeric',
 			month: 'short',
 			year: 'numeric'
@@ -89,12 +95,38 @@
 	const filters = $derived.by((): Array<{ key: Filter; label: string }> => {
 		const users = data?.users ?? [];
 		const count = (predicate: (user: AdminUser) => boolean) => users.filter(predicate).length;
+		const label = (text: string, value: number) =>
+			m.admin_users_filter_count({ label: text, count: value });
 		return [
-			{ key: 'all', label: `All · ${users.length}` },
-			{ key: 'providers', label: `Providers · ${count((u) => u.role === 'service-provider')}` },
-			{ key: 'families', label: `Families · ${count((u) => u.role === 'family')}` },
-			{ key: 'admins', label: `Admins · ${count((u) => u.role === 'admin')}` },
-			{ key: 'banned', label: `Banned · ${count((u) => u.banned)}` }
+			{ key: 'all', label: label(m.admin_users_filter_all(), users.length) },
+			{
+				key: 'providers',
+				label: label(
+					m.admin_users_filter_providers(),
+					count((u) => u.role === 'service-provider')
+				)
+			},
+			{
+				key: 'families',
+				label: label(
+					m.admin_users_filter_families(),
+					count((u) => u.role === 'family')
+				)
+			},
+			{
+				key: 'admins',
+				label: label(
+					m.admin_users_filter_admins(),
+					count((u) => u.role === 'admin')
+				)
+			},
+			{
+				key: 'banned',
+				label: label(
+					m.admin_users_filter_banned(),
+					count((u) => u.banned)
+				)
+			}
 		];
 	});
 
@@ -109,8 +141,8 @@
 		impersonating = true;
 		const result = await impersonateUser(impersonateTarget.id);
 		if (!result.ok) {
-			toast.error(result.error.message || RETRY_MESSAGE, {
-				title: `Could not impersonate ${impersonateTarget.name}`
+			toast.error(failureText(result.error), {
+				title: m.admin_users_toast_impersonate_failed({ name: impersonateTarget.name })
 			});
 			impersonating = false;
 			impersonateTarget = null;
@@ -133,10 +165,10 @@
 		banning = true;
 		const result = await banUser(banTarget.id, reason);
 		if (result.ok) {
-			toast.success(`${banTarget.name} is banned.`);
+			toast.success(m.admin_users_toast_banned({ name: banTarget.name }));
 		} else {
-			toast.error(result.error.message || RETRY_MESSAGE, {
-				title: `Could not ban ${banTarget.name}`
+			toast.error(failureText(result.error), {
+				title: m.admin_users_toast_ban_failed({ name: banTarget.name })
 			});
 		}
 		banning = false;
@@ -149,10 +181,10 @@
 		unbanning = true;
 		const result = await unbanUser(unbanTarget.id);
 		if (result.ok) {
-			toast.success(`${unbanTarget.name} is unbanned.`);
+			toast.success(m.admin_users_toast_unbanned({ name: unbanTarget.name }));
 		} else {
-			toast.error(result.error.message || RETRY_MESSAGE, {
-				title: `Could not unban ${unbanTarget.name}`
+			toast.error(failureText(result.error), {
+				title: m.admin_users_toast_unban_failed({ name: unbanTarget.name })
 			});
 		}
 		unbanning = false;
@@ -162,20 +194,20 @@
 </script>
 
 <svelte:head>
-	<title>Users · Poppynz admin</title>
+	<title>{m.admin_users_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-5xl">
 	<div class="flex flex-wrap items-start justify-between gap-4">
 		<div>
-			<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Users</h1>
+			<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.admin_users_heading()}</h1>
 			<p class="mt-1 text-sm text-base-content-muted">
-				Every account on Poppynz — search, inspect, and troubleshoot.
+				{m.admin_users_subheading()}
 			</p>
 		</div>
 		<label class="input w-full sm:w-60">
 			<i class="las la-search text-base text-outline" aria-hidden="true"></i>
-			<input type="search" placeholder="Search name or email" bind:value={search} />
+			<input type="search" placeholder={m.admin_users_search_placeholder()} bind:value={search} />
 		</label>
 	</div>
 
@@ -204,18 +236,18 @@
 		<p
 			class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm text-base-content-muted"
 		>
-			No users match this view.
+			{m.admin_users_empty()}
 		</p>
 	{:else}
 		<div
 			class="hidden grid-cols-[minmax(200px,250px)_110px_100px_110px_1fr] gap-3.5 px-4 pb-2
 				text-[10.5px] font-semibold tracking-[0.08em] text-outline uppercase lg:grid"
 		>
-			<span>User</span>
-			<span>Role</span>
-			<span>Status</span>
-			<span>Joined</span>
-			<span class="text-right">Actions</span>
+			<span>{m.admin_users_col_user()}</span>
+			<span>{m.admin_users_col_role()}</span>
+			<span>{m.admin_users_col_status()}</span>
+			<span>{m.admin_users_col_joined()}</span>
+			<span class="text-right">{m.admin_users_col_actions()}</span>
 		</div>
 		<div class="flex flex-col gap-2">
 			{#each filtered as user (user.id)}
@@ -241,7 +273,7 @@
 							class="rounded-[5px] bg-base-400 px-2.5 py-1 text-[11px] font-semibold
 								whitespace-nowrap text-neutral"
 						>
-							{user.role ? (roleLabels[user.role] ?? user.role) : '—'}
+							{user.role ? roleLabel(user.role) : '—'}
 						</span>
 					</div>
 					<div class="mt-2 lg:mt-0">
@@ -251,14 +283,14 @@
 									whitespace-nowrap text-error"
 								title={user.banReason ?? undefined}
 							>
-								Banned
+								{m.admin_users_status_banned()}
 							</span>
 						{:else}
 							<span
 								class="rounded-[5px] bg-success-content px-2.5 py-1 text-[11px] font-semibold
 									whitespace-nowrap text-success"
 							>
-								Active
+								{m.admin_users_status_active()}
 							</span>
 						{/if}
 					</div>
@@ -273,7 +305,7 @@
 								onclick={() => (impersonateTarget = user)}
 							>
 								<i class="las la-eye text-sm" aria-hidden="true"></i>
-								Impersonate
+								{m.admin_users_impersonate()}
 							</button>
 						{/if}
 						{#if user.role !== 'admin'}
@@ -283,7 +315,7 @@
 									class="btn btn-sm btn-outline"
 									onclick={() => (unbanTarget = user)}
 								>
-									Unban
+									{m.admin_users_unban()}
 								</button>
 							{:else}
 								<button
@@ -291,7 +323,7 @@
 									class="btn btn-sm btn-outline btn-error"
 									onclick={() => (banTarget = user)}
 								>
-									Ban
+									{m.admin_users_ban()}
 								</button>
 							{/if}
 						{/if}
@@ -318,9 +350,9 @@
 
 <ConfirmDialog
 	open={unbanTarget !== null}
-	title="Unban {unbanTarget?.name}?"
-	body="They can sign in again immediately."
-	confirmLabel="Unban"
+	title={m.admin_users_unban_title({ name: unbanTarget?.name ?? '' })}
+	body={m.admin_users_unban_body()}
+	confirmLabel={m.admin_users_unban()}
 	confirmClass="btn-secondary"
 	busy={unbanning}
 	onconfirm={() => void confirmUnban()}

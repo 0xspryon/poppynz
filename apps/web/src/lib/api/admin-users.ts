@@ -1,6 +1,7 @@
 /** Admin user directory (12b) + ban/impersonation actions (12c/12d).
  * The listing comes from our API; ban/unban/impersonate go straight to the
  * better-auth admin plugin endpoints under /api/auth/admin/*. */
+import { m } from '$lib/paraglide/messages';
 import { apiClient, call, type ApiResult, type ErrorsOf, type UnexpectedError } from './client';
 
 const listEndpoint = apiClient.admin.users.$get;
@@ -33,7 +34,7 @@ async function authAdminPost<TData>(
 	} catch {
 		return {
 			ok: false,
-			error: { code: 'UNEXPECTED', message: 'The request could not be sent.', status: null }
+			error: { code: 'UNEXPECTED', message: m.admin_users_error_not_sent(), status: null }
 		};
 	}
 	let parsed: unknown = null;
@@ -46,7 +47,7 @@ async function authAdminPost<TData>(
 		const message =
 			typeof parsed === 'object' && parsed !== null && 'message' in parsed
 				? String((parsed as { message: unknown }).message)
-				: 'The server sent an unexpected response.';
+				: m.admin_users_error_unexpected_response();
 		return { ok: false, error: { code: 'UNEXPECTED', message, status: res.status } };
 	}
 	return { ok: true, data: parsed as TData };

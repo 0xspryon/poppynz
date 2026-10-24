@@ -10,11 +10,10 @@
 	} from '$lib/api/admin-services';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import { formatDate } from '$lib/date';
-	import { centsToDollars } from '$lib/money';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 	let services = $state<Array<ServiceForReview>>([]);
 	let baseRateCents = $state(0);
@@ -35,8 +34,8 @@
 		} else {
 			errorMessage =
 				result.error.code === 'FORBIDDEN'
-					? 'Your account is not authorized to review services.'
-					: RETRY_MESSAGE;
+					? m.admin_custom_error_forbidden()
+					: m.admin_custom_error_retry();
 		}
 		loading = false;
 	}
@@ -44,6 +43,8 @@
 	onMount(() => {
 		void load();
 	});
+
+	const perHour = (cents: number) => m.money_per_hour({ amount: formatMoney(cents) });
 
 	const helperName = (service: ServiceForReview) =>
 		[service.helper.firstName, service.helper.lastName].filter(Boolean).join(' ') ||
@@ -60,8 +61,8 @@
 		if (result.ok) {
 			toast.success(
 				decision === 'approve'
-					? `${service.name} approved — families can now see it.`
-					: `${service.name} rejected.`
+					? m.admin_custom_approved_toast({ name: service.name })
+					: m.admin_custom_rejected_toast({ name: service.name })
 			);
 			approving = null;
 			rejecting = null;
@@ -69,11 +70,17 @@
 			await load();
 		} else {
 			toast.error(
-				result.error.code === 'SERVICE_REVIEW_NOT_PENDING' ||
-					result.error.code === 'SERVICE_REVIEW_REASON_REQUIRED'
-					? result.error.message
-					: RETRY_MESSAGE,
-				{ title: `${service.name} not ${decision === 'approve' ? 'approved' : 'rejected'}` }
+				result.error.code === 'SERVICE_REVIEW_NOT_PENDING'
+					? m.admin_custom_not_pending()
+					: result.error.code === 'SERVICE_REVIEW_REASON_REQUIRED'
+						? m.admin_custom_reason_required()
+						: m.admin_custom_error_retry(),
+				{
+					title:
+						decision === 'approve'
+							? m.admin_custom_not_approved_title({ name: service.name })
+							: m.admin_custom_not_rejected_title({ name: service.name })
+				}
 			);
 			if (result.error.code === 'SERVICE_REVIEW_NOT_PENDING') await load();
 		}
@@ -81,13 +88,11 @@
 	}
 </script>
 
-<svelte:head><title>Custom services · Poppynz admin</title></svelte:head>
+<svelte:head><title>{m.admin_custom_page_title()}</title></svelte:head>
 
-<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Custom services</h1>
+<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.admin_custom_heading()}</h1>
 <p class="mt-1 mb-5 max-w-2xl text-sm text-base-content-muted">
-	Services helpers described themselves. Families see one only after you approve it. Reject anything
-	that is really personal care — that is the Personal support (PSW) service, which needs an approved
-	PSW credential. Custom services start at the ${centsToDollars(baseRateCents)}/hr base rate.
+	{m.admin_custom_intro({ rate: perHour(baseRateCents) })}
 </p>
 
 {#if loading}
@@ -98,8 +103,8 @@
 	<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
 {:else if services.length === 0}
 	<div class="rounded-xl border border-card-border bg-base-100 p-10 text-center">
-		<p class="mb-1 font-semibold text-base-content">Nothing to review</p>
-		<p class="text-sm text-base-content-muted">New custom services will appear here.</p>
+		<p class="mb-1 font-semibold text-base-content">{m.admin_custom_empty_title()}</p>
+		<p class="text-sm text-base-content-muted">{m.admin_custom_empty_body()}</p>
 	</div>
 {:else}
 	<div class="flex flex-col gap-2">
@@ -109,7 +114,7 @@
 				<div class="flex flex-wrap items-baseline justify-between gap-2">
 					<span class="text-sm font-semibold text-base-content">{service.name}</span>
 					<span class="font-display text-sm font-bold text-secondary">
-						${centsToDollars(service.hourlyRateCents)}/hr
+						{perHour(service.hourlyRateCents)}
 					</span>
 				</div>
 				{#if service.description}
@@ -118,7 +123,11 @@
 					</p>
 				{/if}
 				<p class="mt-1.5 text-xs text-base-content-muted">
-					{helperName(service)} · {service.helper.email} · submitted {formatDate(service.updatedAt)}
+					{m.admin_custom_submitted_meta({
+						helper: helperName(service),
+						email: service.helper.email,
+						date: formatDate(service.updatedAt)
+					})}
 				</p>
 				<div class="mt-3 flex flex-wrap gap-2">
 					<button
@@ -127,7 +136,7 @@
 						disabled={busy}
 						onclick={() => (approving = service)}
 					>
-						Approve…
+						{m.admin_custom_approve_ellipsis()}
 					</button>
 					<button
 						type="button"
@@ -135,7 +144,7 @@
 						disabled={busy}
 						onclick={() => (rejecting = service)}
 					>
-						Reject…
+						{m.admin_custom_reject_ellipsis()}
 					</button>
 				</div>
 			</div>
@@ -145,9 +154,9 @@
 
 <ConfirmDialog
 	open={approving !== null}
-	title="Approve {approving?.name}?"
-	body="Families will be able to find and book this service."
-	confirmLabel="Approve"
+	title={m.admin_custom_approve_title({ name: approving?.name ?? '' })}
+	body={m.admin_custom_approve_body()}
+	confirmLabel={m.admin_custom_approve()}
 	confirmClass="btn-primary"
 	busy={approving !== null && busyIds.has(approving.id)}
 	onconfirm={() => approving && void decide(approving, 'approve')}
@@ -155,20 +164,27 @@
 />
 
 {#if rejecting}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Reject service">
+	<div
+		class="modal modal-open"
+		role="dialog"
+		aria-modal="true"
+		aria-label={m.admin_custom_reject_aria()}
+	>
 		<div class="modal-box max-w-lg border border-card-border">
-			<h3 class="font-display text-xl font-bold text-base-content">Reject {rejecting.name}</h3>
-			<p class="mt-1 mb-4 text-sm text-base-content-muted">The helper sees this reason.</p>
+			<h3 class="font-display text-xl font-bold text-base-content">
+				{m.admin_custom_reject_heading({ name: rejecting.name })}
+			</h3>
+			<p class="mt-1 mb-4 text-sm text-base-content-muted">{m.admin_custom_reject_hint()}</p>
 			<textarea
 				class="textarea w-full"
 				rows="3"
 				maxlength="500"
 				bind:value={rejectReason}
-				placeholder="This describes personal care — add the Personal support (PSW) service instead."
+				placeholder={m.admin_custom_reject_placeholder()}
 			></textarea>
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={() => (rejecting = null)}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button
 					type="button"
@@ -176,14 +192,14 @@
 					disabled={rejectReason.trim().length === 0 || busyIds.has(rejecting.id)}
 					onclick={() => rejecting && void decide(rejecting, 'reject')}
 				>
-					Reject
+					{m.admin_custom_reject()}
 				</button>
 			</div>
 		</div>
 		<button
 			type="button"
 			class="modal-backdrop"
-			aria-label="Close"
+			aria-label={m.common_close()}
 			onclick={() => (rejecting = null)}
 		></button>
 	</div>

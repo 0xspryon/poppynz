@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	/** Impersonation confirm (design 12c) — better-auth rules spelled out up
 	 * front. Opens while `user` is set. */
 	interface Props {
@@ -12,12 +13,16 @@
 </script>
 
 {#if user}
-	<div class="modal modal-open" role="dialog" aria-label="Impersonate {user.name}">
+	<div
+		class="modal modal-open"
+		role="dialog"
+		aria-label={m.admin_users_impersonate_aria({ name: user.name })}
+	>
 		<div class="modal-box max-w-130">
-			<h2 class="text-lg font-bold">Impersonate {user.name}?</h2>
+			<h2 class="text-lg font-bold">{m.admin_users_impersonate_title({ name: user.name })}</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				You will be signed in as <b class="text-base-content">{user.name}</b> and see exactly what they
-				see. Anything you do happens on their real account.
+				{m.admin_users_impersonate_body_before()} <b class="text-base-content">{user.name}</b>
+				{m.admin_users_impersonate_body_after()}
 			</p>
 
 			<div class="mt-4 flex flex-col gap-2">
@@ -27,7 +32,9 @@
 				>
 					<i class="las la-clock text-base text-info" aria-hidden="true"></i>
 					<span class="text-[12.5px] text-info">
-						Session ends automatically after <b>1 hour</b>, or when you stop it.
+						{m.admin_users_impersonate_session_before()}
+						<b>{m.admin_users_impersonate_session_strong()}</b
+						>{m.admin_users_impersonate_session_after()}
 					</span>
 				</div>
 				<div
@@ -36,7 +43,9 @@
 				>
 					<i class="las la-file-alt text-base text-info" aria-hidden="true"></i>
 					<span class="text-[12.5px] text-info">
-						The session is stamped <b>impersonated by you</b> in the audit log.
+						{m.admin_users_impersonate_audit_before()}
+						<b>{m.admin_users_impersonate_audit_strong()}</b
+						>{m.admin_users_impersonate_audit_after()}
 					</span>
 				</div>
 				<div
@@ -45,14 +54,14 @@
 				>
 					<i class="las la-exclamation-circle text-base text-error" aria-hidden="true"></i>
 					<span class="text-[12.5px] text-error">
-						Use only to troubleshoot — the user is not notified.
+						{m.admin_users_impersonate_warning()}
 					</span>
 				</div>
 			</div>
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button type="button" class="btn btn-secondary" disabled={busy} onclick={onconfirm}>
 					{#if busy}
@@ -60,10 +69,11 @@
 					{:else}
 						<i class="las la-eye text-sm" aria-hidden="true"></i>
 					{/if}
-					Start impersonating
+					{m.admin_users_impersonate_start()}
 				</button>
 			</div>
 		</div>
-		<button type="button" class="modal-backdrop" aria-label="Close" onclick={oncancel}></button>
+		<button type="button" class="modal-backdrop" aria-label={m.common_close()} onclick={oncancel}
+		></button>
 	</div>
 {/if}

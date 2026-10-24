@@ -1,5 +1,6 @@
 /** Terms-and-conditions documents: public role lists (/tcs/:role), the current
  * user's pending/accept endpoints (/me/tcs), and admin CRUD (/admin/tcs). */
+import { m } from '$lib/paraglide/messages';
 import { apiClient, call, type ApiResult, type ErrorsOf } from './client';
 
 const publishedEndpoint = apiClient.tcs[':role'].$get;
@@ -17,6 +18,14 @@ const adminPublishEndpoint = apiClient.admin.tcs[':id'].publish.$post;
 /** Admins are never a T&C audience — "all" covers the non-admin profiles. */
 export type TcAudienceRole = 'family' | 'service-provider';
 export type TcAppliesToRole = 'all' | TcAudienceRole;
+
+/** "Everyone" / "Families" / "Service providers", localized. */
+export const tcAudienceLabel = (role: TcAppliesToRole): string =>
+	role === 'all'
+		? m.admin_tcs_audience_all()
+		: role === 'family'
+			? m.admin_tcs_audience_family()
+			: m.admin_tcs_audience_provider();
 
 /** Hand-written DTOs instead of the usual endpoint-derived aliases: resolving
  * two of the deep RPC payload types in one file makes svelte-check collapse

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		open: boolean;
@@ -19,7 +20,7 @@
 		open,
 		title,
 		body,
-		confirmLabel = 'Delete',
+		confirmLabel = m.common_delete(),
 		confirmClass = 'btn-error',
 		busy = false,
 		onconfirm,
@@ -38,7 +39,7 @@
 			{/if}
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button type="button" class="btn {confirmClass}" onclick={onconfirm} disabled={busy}>
 					{#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
@@ -46,6 +47,7 @@
 				</button>
 			</div>
 		</div>
-		<button type="button" class="modal-backdrop" onclick={oncancel} aria-label="Close"></button>
+		<button type="button" class="modal-backdrop" onclick={oncancel} aria-label={m.common_close()}
+		></button>
 	</div>
 {/if}

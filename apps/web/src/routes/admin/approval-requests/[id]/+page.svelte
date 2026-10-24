@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import {
 		approveRequest,
+		describeApprovalBlocker,
 		getApprovalRequest,
 		getKycDocumentFileUrl,
 		getSafetyDocumentFileUrl,
@@ -13,7 +14,7 @@
 		type ApprovalRequestDetail,
 		type KycFileView
 	} from '$lib/api/admin-approvals';
-	import { centsToDollars } from '$lib/money';
+	import { formatMoney } from '$lib/money';
 	import ApproveRequestDialog from '$lib/components/admin/ApproveRequestDialog.svelte';
 	import DocumentViewerDialog from '$lib/components/admin/DocumentViewerDialog.svelte';
 	import RejectRequestDialog from '$lib/components/admin/RejectRequestDialog.svelte';
@@ -22,10 +23,11 @@
 	import GeneralRemarksCard from '$lib/components/admin/GeneralRemarksCard.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { toast } from '$lib/toast.svelte';
-	import { formatCalendarDate } from '$lib/date';
+	import { formatCalendarDate, formatDate as formatInstant } from '$lib/date';
+	import { m } from '$lib/paraglide/messages';
 	import { SvelteSet } from 'svelte/reactivity';
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 
 	let detail = $state<ApprovalRequestDetail | null>(null);
 	let loading = $state(true);
@@ -62,7 +64,7 @@
 		} else {
 			errorMessage =
 				result.error.code === 'APPROVAL_REQUEST_NOT_FOUND'
-					? 'This approval request no longer exists.'
+					? m.admin_requests_error_not_found()
 					: RETRY_MESSAGE;
 		}
 		loading = false;
@@ -99,9 +101,9 @@
 		if (!detail) return '';
 		const parts = [
 			...detail.warnings.missingRequiredDocuments.map(
-				(doc) => `required document missing — ${doc.name.toLowerCase()}`
+				(doc) => m.admin_requests_warning_required_doc({ name: doc.name.toLowerCase() })
 			),
-			...(detail.warnings.missingServicesOffered ? ['no services listed'] : [])
+			...(detail.warnings.missingServicesOffered ? [m.admin_requests_warning_no_services()] : [])
 		];
 		return parts.join(' · ');
 	});
@@ -114,18 +116,52 @@
 	function waitingText(createdAt: string): string {
 		const ms = Date.now() - new Date(createdAt).getTime();
 		const hours = Math.floor(ms / (60 * 60 * 1000));
-		if (hours < 24) return `${Math.max(hours, 1)} ${hours <= 1 ? 'hour' : 'hours'}`;
+		if (hours < 24) return m.admin_requests_waiting_hours({ count: Math.max(hours, 1) });
 		const days = Math.floor(hours / 24);
-		return `${days} ${days === 1 ? 'day' : 'days'}`;
+		return m.admin_requests_waiting_days({ count: days });
 	}
 
 	function formatDate(iso: string | null): string {
 		if (!iso) return '—';
-		return new Date(iso).toLocaleDateString('en-CA', {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		});
+		return formatInstant(iso);
+	}
+
+	/** The account role as worded in the header line (raw role in English). */
+	function userRoleLabel(role: string | null | undefined): string {
+		if (role === 'family') return m.admin_requests_user_role_family();
+		if (role === 'service-provider') return m.admin_requests_user_role_service_provider();
+		if (role === 'admin') return m.admin_requests_user_role_admin();
+		return role ?? '—';
+	}
+
+	function genderLabel(gender: string | null | undefined): string {
+		if (gender === 'male') return m.admin_requests_gender_male();
+		if (gender === 'female') return m.admin_requests_gender_female();
+		return gender ?? '—';
+	}
+
+	/** Profile language by name; the retired 'es' and anything unknown read as English. */
+	function languageLabel(language: string | null | undefined): string {
+		return language === 'fr' ? m.admin_requests_language_fr() : m.admin_requests_language_en();
+	}
+
+	/** The server's eligibility refusal (APPROVAL_ELIGIBILITY_FAILED) is worded in
+	 * English; known reasons are matched and localized, the rest fall back. */
+	function eligibilityText(message: string): string {
+		switch (message) {
+			case 'Applicant profile was not found.':
+				return m.admin_requests_error_eligibility_profile();
+			case 'Only families and service providers are approved.':
+				return m.admin_requests_error_eligibility_role();
+			case 'Provider must save a location before approval.':
+				return m.admin_requests_error_eligibility_location();
+			case 'Provider must have at least one active service before approval.':
+				return m.admin_requests_error_eligibility_service();
+			case 'Applicant must complete Poppynz safety verification before approval.':
+				return m.admin_requests_error_eligibility_safety();
+			default:
+				return m.admin_requests_error_eligibility_generic();
+		}
 	}
 
 	function openApprove() {
@@ -135,13 +171,15 @@
 	function approveErrorText(error: ApprovalApproveError): string {
 		switch (error.code) {
 			case 'APPROVAL_ELIGIBILITY_FAILED':
+				return eligibilityText(error.message);
 			case 'APPROVAL_INCOMPLETE':
+				return m.admin_requests_error_incomplete();
 			case 'INVALID_APPROVAL_INPUT':
-				return error.message;
+				return m.admin_requests_error_approve_invalid();
 			case 'APPROVAL_REQUEST_MISMATCH':
-				return 'This request does not match the applicant.';
+				return m.admin_requests_error_mismatch();
 			case 'APPROVAL_REQUEST_NOT_FOUND':
-				return 'This approval request no longer exists.';
+				return m.admin_requests_error_not_found();
 			default:
 				return RETRY_MESSAGE;
 		}
@@ -159,10 +197,15 @@
 		});
 		if (result.ok) {
 			approveOpen = false;
-			toast.success(`${applicantName} is approved until ${formatDate(expires.toISOString())}.`);
+			toast.success(
+				m.admin_requests_toast_approved({
+					name: applicantName,
+					date: formatDate(expires.toISOString())
+				})
+			);
 			await load();
 		} else {
-			toast.error(approveErrorText(result.error), { title: 'Approval failed' });
+			toast.error(approveErrorText(result.error), { title: m.admin_requests_toast_approve_failed() });
 		}
 		approving = false;
 	}
@@ -173,14 +216,14 @@
 		const result = await rejectApprovalRequest(requestId, reason);
 		if (result.ok) {
 			rejectOpen = false;
-			toast.success(`${applicantName}'s application was rejected.`);
+			toast.success(m.admin_requests_toast_rejected({ name: applicantName }));
 			await load();
 		} else {
 			toast.error(
 				result.error.code === 'INVALID_APPROVAL_REQUEST_INPUT'
-					? result.error.message
+					? m.admin_requests_error_reject_invalid()
 					: RETRY_MESSAGE,
-				{ title: 'Rejection failed' }
+				{ title: m.admin_requests_toast_reject_failed() }
 			);
 		}
 		rejecting = false;
@@ -192,16 +235,16 @@
 		const result = await revokeApproval(detail.currentApproval.id, reason);
 		if (result.ok) {
 			revokeOpen = false;
-			toast.success(`${applicantName}'s approval was revoked.`);
+			toast.success(m.admin_requests_toast_revoked({ name: applicantName }));
 			await load();
 		} else {
 			toast.error(
 				result.error.code === 'INVALID_APPROVAL_INPUT'
-					? result.error.message
+					? m.admin_requests_error_revoke_invalid()
 					: result.error.code === 'APPROVAL_NOT_FOUND'
-						? 'No active approval was found — it may already be revoked or expired.'
+						? m.admin_requests_error_revoke_not_found()
 						: RETRY_MESSAGE,
-				{ title: 'Revocation failed' }
+				{ title: m.admin_requests_toast_revoke_failed() }
 			);
 		}
 		revoking = false;
@@ -216,14 +259,25 @@
 		reviewingIds.add(doc.id);
 		const result = await reviewKycDocument(doc.id, { decision, reason: reason ?? null });
 		if (result.ok) {
-			toast.success(`${doc.name} ${decision === 'approve' ? 'approved' : 'rejected'}.`);
+			toast.success(
+				decision === 'approve'
+					? m.admin_requests_toast_doc_approved({ name: doc.name })
+					: m.admin_requests_toast_doc_rejected({ name: doc.name })
+			);
 			rejectingDoc = null;
 			rejectDocReason = '';
 			await load();
 		} else {
 			toast.error(
-				result.error.code === 'INVALID_KYC_DOCUMENT' ? result.error.message : RETRY_MESSAGE,
-				{ title: `${doc.name} not ${decision === 'approve' ? 'approved' : 'rejected'}` }
+				result.error.code === 'INVALID_KYC_DOCUMENT' && decision === 'reject'
+					? m.admin_requests_error_doc_reject_reason()
+					: RETRY_MESSAGE,
+				{
+					title:
+						decision === 'approve'
+							? m.admin_requests_toast_doc_not_approved({ name: doc.name })
+							: m.admin_requests_toast_doc_not_rejected({ name: doc.name })
+				}
 			);
 		}
 		reviewingIds.delete(doc.id);
@@ -236,7 +290,7 @@
 		if (result.ok) {
 			window.open(result.data.url, '_blank', 'noopener');
 		} else {
-			toast.error(RETRY_MESSAGE, { title: 'Could not open document' });
+			toast.error(RETRY_MESSAGE, { title: m.admin_requests_toast_open_failed() });
 		}
 	}
 
@@ -248,9 +302,9 @@
 		} else {
 			toast.error(
 				result.error.code === 'KYC_DOCUMENT_FILE_MISSING'
-					? 'This document has no stored file.'
+					? m.admin_requests_doc_no_file()
 					: RETRY_MESSAGE,
-				{ title: 'Could not open document' }
+				{ title: m.admin_requests_toast_open_failed() }
 			);
 		}
 		viewerLoading = false;
@@ -269,13 +323,17 @@
 </script>
 
 <svelte:head>
-	<title>{applicantName || 'Review'} · Poppynz admin</title>
+	<title
+		>{m.admin_requests_detail_page_title({
+			name: applicantName || m.admin_requests_detail_review_fallback()
+		})}</title
+	>
 </svelte:head>
 
 <div class="mx-auto max-w-5xl">
 	<nav class="mb-4 flex items-center gap-2 text-[12.5px] font-medium text-outline">
 		<a href={resolve('/admin/approval-requests')} class="font-semibold text-primary">
-			Approval queue
+			{m.admin_requests_heading()}
 		</a>
 		<i class="las la-angle-right text-xs" aria-hidden="true"></i>
 		<span>{applicantName || '…'}</span>
@@ -302,11 +360,18 @@
 						<StatusChip status={detail.approvalRequest.status} />
 					</div>
 					<p class="mt-0.5 truncate text-[13px] text-base-content-muted">
-						{detail.user.email} · {detail.user.role} · submitted
-						{formatDate(detail.approvalRequest.createdAt)}
-						{#if detail.approvalRequest.status === 'submitted'}
-							· waiting {waitingText(detail.approvalRequest.createdAt)}
-						{/if}
+						{detail.approvalRequest.status === 'submitted'
+							? m.admin_requests_detail_meta_waiting({
+									email: detail.user.email,
+									role: userRoleLabel(detail.user.role),
+									date: formatDate(detail.approvalRequest.createdAt),
+									duration: waitingText(detail.approvalRequest.createdAt)
+								})
+							: m.admin_requests_detail_meta({
+									email: detail.user.email,
+									role: userRoleLabel(detail.user.role),
+									date: formatDate(detail.approvalRequest.createdAt)
+								})}
 					</p>
 				</div>
 			</div>
@@ -317,16 +382,16 @@
 						class="btn btn-outline btn-error"
 						onclick={() => (rejectOpen = true)}
 					>
-						Reject…
+						{m.admin_requests_reject_button()}
 					</button>
 					<button
 						type="button"
 						class="btn btn-primary"
 						onclick={openApprove}
 						disabled={blockers.length > 0}
-						title={blockers.length > 0 ? 'Resolve the items listed below first' : undefined}
+						title={blockers.length > 0 ? m.admin_requests_resolve_first() : undefined}
 					>
-						Approve…
+						{m.admin_requests_approve_button()}
 					</button>
 				</div>
 			{/if}
@@ -339,15 +404,17 @@
 			>
 				<i class="las la-user-shield text-lg text-success" aria-hidden="true"></i>
 				<span class="flex-1 text-[13px] font-medium text-success">
-					Currently approved — verified until {formatDate(detail.currentApproval.expiresAt)}
-					(granted {formatDate(detail.currentApproval.grantedAt)}).
+					{m.admin_requests_current_approval({
+						expires: formatDate(detail.currentApproval.expiresAt),
+						granted: formatDate(detail.currentApproval.grantedAt)
+					})}
 				</span>
 				<button
 					type="button"
 					class="btn btn-outline btn-sm btn-error"
 					onclick={() => (revokeOpen = true)}
 				>
-					Revoke approval…
+					{m.admin_requests_revoke_button()}
 				</button>
 			</div>
 		{/if}
@@ -357,7 +424,7 @@
 				class="mt-4 max-w-2xl rounded-md border border-error-content bg-error-content/40 px-3.5
 					py-2.5 text-[12.5px] leading-relaxed text-error"
 			>
-				<b>Rejected:</b>
+				<b>{m.admin_requests_rejected_label()}</b>
 				{detail.approvalRequest.reason}
 			</p>
 		{/if}
@@ -369,11 +436,11 @@
 				class="mt-4 rounded-[10px] border border-error-content bg-error-content/40 px-4 py-3"
 			>
 				<p class="text-[13px] font-semibold text-error">
-					This account can't be approved yet. It stays in the queue until:
+					{m.admin_requests_blockers_heading()}
 				</p>
 				<ul class="mt-1.5 list-disc pl-5 text-[12.5px] text-error">
 					{#each blockers as blocker (blocker.kind + ('documentTypeId' in blocker ? blocker.documentTypeId : ''))}
-						<li>{blocker.message}</li>
+						<li>{describeApprovalBlocker(blocker)}</li>
 					{/each}
 				</ul>
 			</div>
@@ -391,9 +458,7 @@
 					<i class="las la-exclamation text-sm" aria-hidden="true"></i>
 				</span>
 				<span class="text-[13px] font-medium text-warning">
-					{warningCount}
-					{warningCount === 1 ? 'warning' : 'warnings'}: {warningText}. The applicant was told this
-					may slow approval.
+					{m.admin_requests_warning_banner({ count: warningCount, text: warningText })}
 				</span>
 			</div>
 		{/if}
@@ -403,27 +468,27 @@
 				<!-- Profile -->
 				<div class="rounded-lg border border-card-border bg-base-100 p-5">
 					<div class="mb-3.5 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-						Profile
+						{m.admin_requests_profile_heading()}
 					</div>
 					<div class="grid grid-cols-[110px_1fr] gap-x-3 gap-y-2 text-[13px]">
-						<span class="text-outline">Name</span>
+						<span class="text-outline">{m.admin_requests_field_name()}</span>
 						<span class="font-medium text-base-content">{applicantName}</span>
-						<span class="text-outline">Gender</span>
-						<span class="font-medium text-base-content capitalize">
-							{detail.profile.gender ?? '—'}
+						<span class="text-outline">{m.admin_requests_field_gender()}</span>
+						<span class="font-medium text-base-content">
+							{genderLabel(detail.profile.gender)}
 						</span>
-						<span class="text-outline">Date of birth</span>
+						<span class="text-outline">{m.admin_requests_field_dob()}</span>
 						<span class="font-medium text-base-content">{detail.profile.dateOfBirth ?? '—'}</span>
-						<span class="text-outline">Phone</span>
+						<span class="text-outline">{m.admin_requests_field_phone()}</span>
 						<span class="font-medium text-base-content">{detail.profile.phoneNumber ?? '—'}</span>
-						<span class="text-outline">Location</span>
+						<span class="text-outline">{m.admin_requests_field_location()}</span>
 						<span class="font-medium text-base-content">{location ?? '—'}</span>
-						<span class="text-outline">Language</span>
-						<span class="font-medium text-base-content uppercase">{detail.profile.language}</span>
+						<span class="text-outline">{m.admin_requests_field_language()}</span>
+						<span class="font-medium text-base-content">{languageLabel(detail.profile.language)}</span>
 					</div>
 					{#if detail.profile.shortBio}
 						<div class="mt-3.5 border-t border-base-300 pt-3.5">
-							<span class="mb-1 block text-[11.5px] text-outline">Short bio</span>
+							<span class="mb-1 block text-[11.5px] text-outline">{m.admin_requests_field_short_bio()}</span>
 							<span class="text-[13px] leading-relaxed text-base-content">
 								{detail.profile.shortBio}
 							</span>
@@ -436,10 +501,10 @@
 				<div class="rounded-lg border border-card-border bg-base-100 p-5">
 					{#if detail.applicantRole === 'family'}
 						<div class="mb-2 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-							Services needed · {detail.servicesNeeded.length}
+							{m.admin_requests_services_needed({ count: detail.servicesNeeded.length })}
 						</div>
 						{#if detail.servicesNeeded.length === 0}
-							<p class="py-2 text-[13px] text-base-content-muted">No needs listed yet.</p>
+							<p class="py-2 text-[13px] text-base-content-muted">{m.admin_requests_no_needs()}</p>
 						{:else}
 							{#each detail.servicesNeeded as need, index (need.id)}
 								<div
@@ -457,10 +522,10 @@
 						{/if}
 					{:else}
 						<div class="mb-2 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-							Services · {detail.servicesOffered.length}
+							{m.admin_requests_services_offered({ count: detail.servicesOffered.length })}
 						</div>
 						{#if detail.servicesOffered.length === 0}
-							<p class="py-2 text-[13px] text-warning">No services listed.</p>
+							<p class="py-2 text-[13px] text-warning">{m.admin_requests_no_services()}</p>
 						{:else}
 							{#each detail.servicesOffered as service, index (service.id)}
 								<div
@@ -476,8 +541,8 @@
 										{/if}
 									</div>
 									<span class="shrink-0 font-display text-sm font-bold text-secondary">
-										${centsToDollars(service.hourlyRateCents)}<span
-											class="text-[11px] font-normal text-outline">/hr</span
+										{formatMoney(service.hourlyRateCents)}<span
+											class="text-[11px] font-normal text-outline">{m.admin_requests_rate_unit()}</span
 										>
 									</span>
 								</div>
@@ -501,7 +566,10 @@
 			<div class="self-start rounded-lg border border-card-border bg-base-100 p-5">
 				<div class="mb-3.5 flex flex-wrap items-center justify-between gap-2">
 					<span class="text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-						Documents · {requiredSubmitted} of {requiredDocs.length} required
+						{m.admin_requests_documents_heading({
+							submitted: requiredSubmitted,
+							total: requiredDocs.length
+						})}
 					</span>
 				</div>
 				<div class="flex flex-col gap-2.5">
@@ -529,7 +597,9 @@
 								>
 									{doc.name}
 									{#if doc.isOptional}
-										<span class="ml-1 text-[10.5px] font-medium text-outline">optional</span>
+										<span class="ml-1 text-[10.5px] font-medium text-outline"
+											>{m.admin_requests_doc_optional()}</span
+										>
 									{/if}
 								</div>
 								<div
@@ -538,15 +608,15 @@
 								>
 									{#if doc.document}
 										{#if doc.document.source === 'credibled'}
-											Collected by Credibled — see the safety verification for the report
+											{m.admin_requests_doc_credibled()}
 										{:else}
 											{doc.document.filename}
 										{/if}
 										{#if doc.document.expiryDate}
-											· expires {formatCalendarDate(doc.document.expiryDate)}
+											{m.admin_requests_doc_expires({ date: formatCalendarDate(doc.document.expiryDate) })}
 										{/if}
 									{:else}
-										Required — not submitted
+										{m.admin_requests_doc_not_submitted()}
 									{/if}
 								</div>
 							</div>
@@ -561,14 +631,14 @@
 											? openSafetyDocument(doc.document!.id)
 											: openViewer(doc.document!.id))}
 								>
-									View file
+									{m.admin_requests_view_file()}
 								</button>
 							{/if}
 							{#if doc.document && doc.status === 'submitted'}
 								{#if doc.isSafetyGate}
 									<!-- The gate's verdict is decided with the verification itself. -->
 									<a href={resolve('/admin/safety-verifications')} class="btn btn-ghost btn-xs">
-										Decide in Safety verifications
+										{m.admin_requests_decide_in_safety()}
 									</a>
 								{:else}
 									{@const ref = { id: doc.document.id, name: doc.name }}
@@ -578,7 +648,7 @@
 										disabled={reviewingIds.has(ref.id)}
 										onclick={() => void reviewDocument(ref, 'approve')}
 									>
-										Approve
+										{m.admin_requests_doc_approve()}
 									</button>
 									<button
 										type="button"
@@ -586,7 +656,7 @@
 										disabled={reviewingIds.has(ref.id)}
 										onclick={() => (rejectingDoc = ref)}
 									>
-										Reject
+										{m.admin_requests_doc_reject()}
 									</button>
 								{/if}
 							{/if}
@@ -597,8 +667,7 @@
 					class="mt-3.5 flex items-center gap-2 border-t border-base-300 pt-3.5 text-xs text-outline"
 				>
 					<i class="las la-info-circle text-sm" aria-hidden="true"></i>
-					Every required document needs its own approval before the account can be approved.
-					Expiry dates can be corrected from the fullscreen viewer.
+					{m.admin_requests_docs_footnote()}
 				</p>
 			</div>
 		</div>
@@ -608,7 +677,7 @@
 <ApproveRequestDialog
 	open={approveOpen && detail !== null}
 	{applicantName}
-	blockers={blockers.map((blocker) => blocker.message)}
+	blockers={blockers.map((blocker) => describeApprovalBlocker(blocker))}
 	{warningCount}
 	{warningText}
 	busy={approving}
@@ -639,22 +708,24 @@
 />
 
 {#if rejectingDoc}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Reject document">
+	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label={m.admin_requests_reject_doc_aria()}>
 		<div class="modal-box max-w-lg border border-card-border">
-			<h3 class="font-display text-xl font-bold text-base-content">Reject {rejectingDoc.name}</h3>
+			<h3 class="font-display text-xl font-bold text-base-content">
+				{m.admin_requests_reject_doc_title({ name: rejectingDoc.name })}
+			</h3>
 			<p class="mt-1 mb-4 text-sm text-base-content-muted">
-				The applicant sees this reason and uploads a new file.
+				{m.admin_requests_reject_doc_body()}
 			</p>
 			<textarea
 				class="textarea w-full"
 				rows="3"
 				maxlength="500"
 				bind:value={rejectDocReason}
-				placeholder="The photo is blurry — please upload a clearer one."
+				placeholder={m.admin_requests_reject_doc_placeholder()}
 			></textarea>
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={() => (rejectingDoc = null)}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button
 					type="button"
@@ -663,14 +734,14 @@
 					onclick={() =>
 						rejectingDoc && void reviewDocument(rejectingDoc, 'reject', rejectDocReason.trim())}
 				>
-					Reject
+					{m.admin_requests_doc_reject()}
 				</button>
 			</div>
 		</div>
 		<button
 			type="button"
 			class="modal-backdrop"
-			aria-label="Close"
+			aria-label={m.common_close()}
 			onclick={() => (rejectingDoc = null)}
 		></button>
 	</div>

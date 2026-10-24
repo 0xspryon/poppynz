@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	/** Revoke confirm: immediate loss of verified status, reason required and
 	 * shown to the applicant verbatim. Emits the trimmed reason. */
 	interface Props {
@@ -25,24 +26,24 @@
 </script>
 
 {#if open}
-	<div class="modal modal-open" role="dialog" aria-label="Revoke approval">
+	<div class="modal modal-open" role="dialog" aria-label={m.admin_requests_revoke_aria()}>
 		<form class="modal-box" onsubmit={submit}>
-			<h2 class="text-lg font-bold">Revoke {applicantName}'s approval</h2>
+			<h2 class="text-lg font-bold">{m.admin_requests_revoke_title({ name: applicantName })}</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				This takes effect immediately: the applicant loses verified status and is removed from
-				search results. The reason is <b>shown to the applicant verbatim</b>.
+				{m.admin_requests_revoke_body_before()}
+				<b>{m.admin_requests_revoke_body_strong()}</b>{m.admin_requests_revoke_body_after()}
 			</p>
 
 			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">Reason · required</legend>
+				<legend class="fieldset-legend">{m.admin_requests_reason_required()}</legend>
 				<textarea
 					class="textarea min-h-24 w-full"
 					maxlength="500"
 					bind:value={reason}
-					placeholder="e.g. Your police clearance was reported invalid. Please upload a valid one and resubmit."
+					placeholder={m.admin_requests_revoke_placeholder()}
 				></textarea>
 				<div class="flex justify-between text-xs text-outline">
-					<span>Say what's wrong and how they can regain approval.</span>
+					<span>{m.admin_requests_revoke_hint()}</span>
 					<span>{reason.length} / 500</span>
 				</div>
 			</fieldset>
@@ -53,13 +54,13 @@
 			>
 				<i class="las la-info-circle text-base text-info" aria-hidden="true"></i>
 				<span class="text-[12.5px] text-info">
-					Revocation isn't a ban — the applicant can fix the issue, resubmit, and be approved again.
+					{m.admin_requests_revoke_info()}
 				</span>
 			</div>
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button
 					type="submit"
@@ -69,10 +70,11 @@
 					{#if busy}
 						<span class="loading loading-spinner loading-sm"></span>
 					{/if}
-					Revoke approval
+					{m.admin_requests_revoke_submit()}
 				</button>
 			</div>
 		</form>
-		<button type="button" class="modal-backdrop" aria-label="Close" onclick={oncancel}></button>
+		<button type="button" class="modal-backdrop" aria-label={m.common_close()} onclick={oncancel}
+		></button>
 	</div>
 {/if}

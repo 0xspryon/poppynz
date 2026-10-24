@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { formatDate, toDateInputValue, todayInputValue } from '$lib/date';
+	import { m } from '$lib/paraglide/messages';
 	/** Approve dialog (design 8c): approvals expire, so an explicit expiry date
 	 * is required — presets fill the date input. Emits the chosen yyyy-mm-dd. */
 	interface Props {
@@ -55,17 +56,17 @@
 </script>
 
 {#if open}
-	<div class="modal modal-open" role="dialog" aria-label="Approve application">
+	<div class="modal modal-open" role="dialog" aria-label={m.admin_requests_approve_aria()}>
 		<form class="modal-box" onsubmit={submit}>
-			<h2 class="text-lg font-bold">Approve {applicantName}</h2>
+			<h2 class="text-lg font-bold">{m.admin_requests_approve_title({ name: applicantName })}</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				Approvals expire. Choose how long this approval is valid — you must set an explicit date.
+				{m.admin_requests_approve_intro()}
 			</p>
 
 			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">Valid for</legend>
+				<legend class="fieldset-legend">{m.admin_requests_approve_valid_for()}</legend>
 				<div class="flex gap-2">
-					{#each [{ key: '6m', label: '6 months' }, { key: '1y', label: '1 year' }, { key: '2y', label: '2 years' }, { key: 'custom', label: 'Custom' }] as entry (entry.key)}
+					{#each [{ key: '6m', label: m.admin_requests_approve_preset_6m() }, { key: '1y', label: m.admin_requests_approve_preset_1y() }, { key: '2y', label: m.admin_requests_approve_preset_2y() }, { key: 'custom', label: m.admin_requests_approve_preset_custom() }] as entry (entry.key)}
 						<button
 							type="button"
 							class="flex-1 rounded-md border-[1.5px] px-2 py-2.5 text-[13px] font-semibold
@@ -81,7 +82,7 @@
 			</fieldset>
 
 			<fieldset class="fieldset mt-3">
-				<legend class="fieldset-legend">Expiry date</legend>
+				<legend class="fieldset-legend">{m.admin_requests_approve_expiry_label()}</legend>
 				<input
 					type="date"
 					class="input w-full"
@@ -89,7 +90,7 @@
 					onchange={() => (preset = 'custom')}
 				/>
 				<p class="label text-xs">
-					Must be a future date. The applicant sees this date and can be re-approved later.
+					{m.admin_requests_approve_expiry_hint()}
 				</p>
 			</fieldset>
 
@@ -100,15 +101,14 @@
 				>
 					<i class="las la-exclamation-circle text-base text-warning" aria-hidden="true"></i>
 					<span class="text-[12.5px] leading-relaxed text-warning">
-						This application has {warningCount}
-						{warningCount === 1 ? 'warning' : 'warnings'} ({warningText}).
+						{m.admin_requests_approve_warning({ count: warningCount, text: warningText })}
 					</span>
 				</div>
 			{/if}
 
 			{#if blockers.length > 0}
 				<div class="mt-3 rounded-md border border-error-content bg-error-content/40 px-3.5 py-2.5">
-					<p class="text-[12.5px] font-semibold text-error">This account can't be approved yet:</p>
+					<p class="text-[12.5px] font-semibold text-error">{m.admin_requests_approve_blockers()}</p>
 					<ul class="mt-1 list-disc pl-5 text-[12.5px] text-error">
 						{#each blockers as blocker (blocker)}<li>{blocker}</li>{/each}
 					</ul>
@@ -117,16 +117,18 @@
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button type="submit" class="btn btn-primary" disabled={!dateValid || busy || blockers.length > 0}>
 					{#if busy}
 						<span class="loading loading-spinner loading-sm"></span>
 					{/if}
-					Approve{expiry ? ` until ${formatDate(expiry)}` : ''}
+					{expiry
+						? m.admin_requests_approve_submit_until({ date: formatDate(expiry) })
+						: m.admin_requests_approve_submit()}
 				</button>
 			</div>
 		</form>
-		<button type="button" class="modal-backdrop" aria-label="Close" onclick={oncancel}></button>
+		<button type="button" class="modal-backdrop" aria-label={m.common_close()} onclick={oncancel}></button>
 	</div>
 {/if}

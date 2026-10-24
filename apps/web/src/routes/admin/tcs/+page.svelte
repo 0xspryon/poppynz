@@ -5,14 +5,15 @@
 		createTcDocument,
 		listAdminTcs,
 		removeTcDocument,
+		tcAudienceLabel,
 		type AdminTcDocument,
 		type TcDocumentDraft
 	} from '$lib/api/tcs';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import TcDocumentDialog from '$lib/components/admin/TcDocumentDialog.svelte';
+	import { formatDate } from '$lib/date';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
-
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 	let items: Array<AdminTcDocument> = $state([]);
 	let loading = $state(true);
@@ -28,21 +29,15 @@
 
 	const errorText = (error: { code: string; message: string }) =>
 		error.code === 'FORBIDDEN'
-			? 'Your account is not authorized to manage terms and conditions.'
+			? m.admin_tcs_error_forbidden()
 			: error.code === 'UNAUTHORIZED'
-				? 'Your session has expired — sign in again.'
-				: RETRY_MESSAGE;
+				? m.admin_tcs_error_session()
+				: m.admin_tcs_error_retry();
 
 	const publishedVersion = (item: AdminTcDocument) =>
 		item.versions.find((version) => version.publishedAt !== null) ?? null;
 	const hasDraft = (item: AdminTcDocument) =>
 		item.versions.some((version) => version.publishedAt === null);
-
-	const AUDIENCE_LABEL: Record<AdminTcDocument['appliesToRole'], string> = {
-		all: 'Everyone',
-		family: 'Families',
-		'service-provider': 'Service providers'
-	};
 
 	async function load() {
 		loading = true;
@@ -66,18 +61,14 @@
 		const result = await createTcDocument(draft);
 		if (result.ok) {
 			modalOpen = false;
-			toast.success(`${result.data.title} created.`);
+			toast.success(m.admin_tcs_created_toast({ title: result.data.title }));
 			await load();
 		} else if (result.error.code === 'TC_SLUG_TAKEN') {
-			toast.error('A document with this slug already exists. Use a different slug.', {
-				title: 'Duplicate slug'
-			});
+			toast.error(m.admin_tcs_slug_taken(), { title: m.admin_tcs_slug_taken_title() });
 		} else if (result.error.code === 'INVALID_TC_INPUT') {
-			toast.error('Check the title and slug — lowercase letters, digits, _ and - only.', {
-				title: 'Invalid document details'
-			});
+			toast.error(m.admin_tcs_invalid_create(), { title: m.admin_tcs_invalid_title() });
 		} else {
-			toast.error(errorText(result.error), { title: 'Document not created' });
+			toast.error(errorText(result.error), { title: m.admin_tcs_not_created_title() });
 		}
 		saving = false;
 	}
@@ -87,11 +78,13 @@
 		deleteBusy = true;
 		const result = await removeTcDocument(deleting.id);
 		if (result.ok) {
-			toast.success(`${deleting.title} deleted.`);
+			toast.success(m.admin_tcs_deleted_toast({ title: deleting.title }));
 			deleting = null;
 			await load();
 		} else {
-			toast.error(errorText(result.error), { title: `${deleting.title} not deleted` });
+			toast.error(errorText(result.error), {
+				title: m.admin_tcs_item_not_deleted_title({ title: deleting.title })
+			});
 			deleting = null;
 		}
 		deleteBusy = false;
@@ -99,21 +92,21 @@
 </script>
 
 <svelte:head>
-	<title>Terms &amp; conditions · Poppynz admin</title>
+	<title>{m.admin_tcs_page_title()}</title>
 </svelte:head>
 
 <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
 	<div>
 		<h1 class="mb-1 font-display text-2xl font-bold text-base-content lg:text-3xl">
-			Terms &amp; conditions
+			{m.admin_tcs_heading()}
 		</h1>
 		<p class="text-sm text-base-content-muted">
-			Publishing a new version re-prompts every affected user to accept it.
+			{m.admin_tcs_intro()}
 		</p>
 	</div>
 	<button type="button" class="btn btn-primary" onclick={() => (modalOpen = true)}>
 		<i class="las la-plus" aria-hidden="true"></i>
-		New document
+		{m.admin_tcs_new()}
 	</button>
 </div>
 
@@ -134,9 +127,9 @@
 	</div>
 {:else if items.length === 0}
 	<div class="rounded-xl border border-card-border bg-base-100 p-10 text-center">
-		<p class="mb-1 font-semibold text-base-content">No documents yet</p>
+		<p class="mb-1 font-semibold text-base-content">{m.admin_tcs_empty_title()}</p>
 		<p class="text-sm text-base-content-muted">
-			Create the first document, then write and publish its content.
+			{m.admin_tcs_empty_body()}
 		</p>
 	</div>
 {:else}
@@ -144,8 +137,9 @@
 		class="mb-2 hidden grid-cols-[1fr_170px_130px_130px_90px] gap-3.5 px-4 text-[10.5px]
 			font-semibold tracking-[0.08em] text-outline uppercase lg:grid"
 	>
-		<span>Document</span><span>Applies to</span><span>Published</span><span>Draft</span>
-		<span class="text-right">Actions</span>
+		<span>{m.admin_tcs_col_document()}</span><span>{m.admin_tcs_col_applies_to()}</span>
+		<span>{m.admin_tcs_col_published()}</span><span>{m.admin_tcs_col_draft()}</span>
+		<span class="text-right">{m.admin_tcs_col_actions()}</span>
 	</div>
 	<div class="flex flex-col gap-2">
 		{#each items as item (item.id)}
@@ -165,21 +159,23 @@
 				</div>
 				<div class="py-1 lg:py-0">
 					<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info">
-						{AUDIENCE_LABEL[item.appliesToRole]}
+						{tcAudienceLabel(item.appliesToRole)}
 					</span>
 				</div>
 				<div class="py-1 text-xs text-base-content-muted lg:py-0">
 					{#if published}
-						v{published.version} ·
-						{new Date(published.publishedAt ?? '').toLocaleDateString()}
+						{m.admin_tcs_published_meta({
+							version: published.version,
+							date: formatDate(published.publishedAt ?? '')
+						})}
 					{:else}
-						<span class="text-warning">Never published</span>
+						<span class="text-warning">{m.admin_tcs_never_published()}</span>
 					{/if}
 				</div>
 				<div class="py-1 lg:py-0">
 					{#if hasDraft(item)}
 						<span class="badge badge-sm border-0 bg-warning/15 font-semibold text-warning">
-							Draft in progress
+							{m.admin_tcs_draft_in_progress()}
 						</span>
 					{:else}
 						<span class="text-xs text-base-content-muted">—</span>
@@ -188,7 +184,7 @@
 				<div class="mt-2 flex justify-end gap-1.5 lg:mt-0">
 					<a
 						class="btn btn-ghost btn-sm btn-square"
-						aria-label="Open {item.title}"
+						aria-label={m.admin_tcs_open_aria({ title: item.title })}
 						href="{resolve('/admin/tcs')}/{item.id}"
 					>
 						<i class="las la-pen text-base" aria-hidden="true"></i>
@@ -196,7 +192,7 @@
 					<button
 						type="button"
 						class="btn btn-ghost btn-sm btn-square"
-						aria-label="Delete {item.title}"
+						aria-label={m.admin_tcs_delete_aria({ title: item.title })}
 						onclick={() => (deleting = item)}
 					>
 						<i class="las la-trash-alt text-base" aria-hidden="true"></i>
@@ -217,9 +213,9 @@
 
 <ConfirmDialog
 	open={deleting !== null}
-	title="Delete document"
-	body="Delete “{deleting?.title}”? Users will no longer be asked to accept it; recorded acceptances are kept."
-	confirmLabel="Delete"
+	title={m.admin_tcs_delete_title()}
+	body={m.admin_tcs_delete_body({ title: deleting?.title ?? '' })}
+	confirmLabel={m.common_delete()}
 	busy={deleteBusy}
 	onconfirm={() => void confirmDelete()}
 	oncancel={() => (deleting = null)}

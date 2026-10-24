@@ -5,6 +5,7 @@
 		createTcDraft,
 		getAdminTc,
 		publishTcDraft,
+		tcAudienceLabel,
 		updateTcDocument,
 		updateTcDraft,
 		type AdminTcDocument,
@@ -15,9 +16,9 @@
 	import TcDocumentDialog from '$lib/components/admin/TcDocumentDialog.svelte';
 	import MarkdownView from '$lib/components/MarkdownView.svelte';
 	import TcModal from '$lib/components/TcModal.svelte';
+	import { formatDate } from '$lib/date';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
-
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 	const documentId = $derived(page.params.id ?? '');
 
@@ -63,18 +64,12 @@
 			draftCheckboxLabel.trim().length > 0
 	);
 
-	const AUDIENCE_LABEL: Record<AdminTcDocument['appliesToRole'], string> = {
-		all: 'Everyone',
-		family: 'Families',
-		'service-provider': 'Service providers'
-	};
-
 	const errorText = (error: { code: string; message: string }) =>
 		error.code === 'FORBIDDEN'
-			? 'Your account is not authorized to manage terms and conditions.'
+			? m.admin_tcs_error_forbidden()
 			: error.code === 'UNAUTHORIZED'
-				? 'Your session has expired — sign in again.'
-				: RETRY_MESSAGE;
+				? m.admin_tcs_error_session()
+				: m.admin_tcs_error_retry();
 
 	async function load() {
 		loading = true;
@@ -117,14 +112,12 @@
 		});
 		if (result.ok) {
 			detailsOpen = false;
-			toast.success(`${result.data.title} updated.`);
+			toast.success(m.admin_tcs_updated_toast({ title: result.data.title }));
 			await load();
 		} else if (result.error.code === 'INVALID_TC_INPUT') {
-			toast.error('Check the title — it must be 1–160 characters.', {
-				title: 'Invalid document details'
-			});
+			toast.error(m.admin_tcs_invalid_update(), { title: m.admin_tcs_invalid_title() });
 		} else {
-			toast.error(errorText(result.error), { title: 'Document not updated' });
+			toast.error(errorText(result.error), { title: m.admin_tcs_not_updated_title() });
 		}
 		detailsBusy = false;
 	}
@@ -141,14 +134,14 @@
 			? await updateTcDraft(doc.id, input)
 			: await createTcDraft(doc.id, input);
 		if (result.ok) {
-			toast.success(`Draft of v${result.data.version} saved.`);
+			toast.success(m.admin_tcs_draft_saved_toast({ version: result.data.version }));
 			await load();
 		} else if (result.error.code === 'INVALID_TC_INPUT') {
-			toast.error('The description, content, and checkbox label are all required.', {
-				title: 'Draft not saved'
+			toast.error(m.admin_tcs_draft_fields_required(), {
+				title: m.admin_tcs_draft_not_saved_title()
 			});
 		} else {
-			toast.error(errorText(result.error), { title: 'Draft not saved' });
+			toast.error(errorText(result.error), { title: m.admin_tcs_draft_not_saved_title() });
 		}
 		draftBusy = false;
 	}
@@ -159,20 +152,20 @@
 		const result = await publishTcDraft(doc.id);
 		publishConfirmOpen = false;
 		if (result.ok) {
-			toast.success(`Version ${result.data.version} published — users will be asked to accept it.`);
+			toast.success(m.admin_tcs_published_toast({ version: result.data.version }));
 			editorOpen = false;
 			await load();
 		} else if (result.error.code === 'TC_DRAFT_NOT_FOUND') {
-			toast.error('There is no saved draft to publish.', { title: 'Not published' });
+			toast.error(m.admin_tcs_no_draft(), { title: m.admin_tcs_not_published_title() });
 		} else {
-			toast.error(errorText(result.error), { title: 'Not published' });
+			toast.error(errorText(result.error), { title: m.admin_tcs_not_published_title() });
 		}
 		publishBusy = false;
 	}
 </script>
 
 <svelte:head>
-	<title>{doc?.title ?? 'Terms & conditions'} · Poppynz admin</title>
+	<title>{m.admin_tcs_doc_page_title({ title: doc?.title ?? m.admin_tcs_heading() })}</title>
 </svelte:head>
 
 {#if errorMessage}
@@ -198,29 +191,29 @@
 			</h1>
 			<p class="flex flex-wrap items-center gap-2 text-sm text-base-content-muted">
 				<a class="font-medium hover:text-base-content" href={resolve('/admin/tcs')}>
-					Terms &amp; conditions
+					{m.admin_tcs_heading()}
 				</a>
 				<span class="text-outline" aria-hidden="true">/</span>
 				<span class="font-mono text-[12px]">{doc.slug}</span>
 				<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info">
-					{AUDIENCE_LABEL[doc.appliesToRole]}
+					{tcAudienceLabel(doc.appliesToRole)}
 				</span>
 				{#if latestPublished}
-					<span>Currently at v{latestPublished.version}</span>
+					<span>{m.admin_tcs_currently_at({ version: latestPublished.version })}</span>
 				{:else}
-					<span class="text-warning">Never published</span>
+					<span class="text-warning">{m.admin_tcs_never_published()}</span>
 				{/if}
 			</p>
 		</div>
 		<div class="flex gap-2">
 			<button type="button" class="btn btn-ghost" onclick={() => (detailsOpen = true)}>
 				<i class="las la-cog" aria-hidden="true"></i>
-				Details
+				{m.admin_tcs_details()}
 			</button>
 			{#if !editorOpen}
 				<button type="button" class="btn btn-primary" onclick={openNewDraft}>
 					<i class="las la-pen" aria-hidden="true"></i>
-					New draft
+					{m.admin_tcs_new_draft()}
 				</button>
 			{/if}
 		</div>
@@ -230,7 +223,9 @@
 		<section class="mb-8 rounded-xl border border-card-border bg-base-100 p-5">
 			<div class="mb-4 flex flex-wrap items-center justify-between gap-3">
 				<h2 class="font-display text-lg font-bold text-base-content">
-					{serverDraft ? `Draft — v${serverDraft.version}` : 'New draft'}
+					{serverDraft
+						? m.admin_tcs_draft_heading({ version: serverDraft.version })
+						: m.admin_tcs_new_draft()}
 				</h2>
 				<div class="flex items-center gap-2">
 					<button
@@ -239,7 +234,7 @@
 						onclick={() => (showPreview = !showPreview)}
 					>
 						<i class="las {showPreview ? 'la-edit' : 'la-eye'}" aria-hidden="true"></i>
-						{showPreview ? 'Edit' : 'Preview'}
+						{showPreview ? m.common_edit() : m.admin_tcs_preview()}
 					</button>
 					<button
 						type="button"
@@ -248,44 +243,44 @@
 						onclick={() => void saveDraft()}
 					>
 						{#if draftBusy}<span class="loading loading-spinner loading-sm"></span>{/if}
-						Save draft
+						{m.admin_tcs_save_draft()}
 					</button>
 					<button
 						type="button"
 						class="btn btn-primary btn-sm"
 						disabled={draftBusy || serverDraft === null || draftDirty}
-						title={draftDirty && serverDraft !== null ? 'Save the draft first' : undefined}
+						title={draftDirty && serverDraft !== null ? m.admin_tcs_save_draft_first() : undefined}
 						onclick={() => (publishConfirmOpen = true)}
 					>
 						<i class="las la-paper-plane" aria-hidden="true"></i>
-						Publish
+						{m.admin_tcs_publish()}
 					</button>
 				</div>
 			</div>
 
 			<fieldset class="fieldset mb-3">
-				<legend class="fieldset-legend">What changed in this version · ≤500</legend>
+				<legend class="fieldset-legend">{m.admin_tcs_description_legend()}</legend>
 				<input
 					type="text"
 					class="input w-full"
 					maxlength="500"
-					placeholder="Clarified the cancellation window and updated fee examples"
+					placeholder={m.admin_tcs_description_placeholder()}
 					bind:value={draftDescription}
 				/>
 			</fieldset>
 
 			<fieldset class="fieldset mb-3">
-				<legend class="fieldset-legend">Mandatory checkbox label · ≤500</legend>
+				<legend class="fieldset-legend">{m.admin_tcs_checkbox_legend()}</legend>
 				<textarea
 					class="textarea min-h-20 w-full"
 					maxlength="500"
-					placeholder="I have read and agree to…"
+					placeholder={m.admin_tcs_checkbox_placeholder()}
 					bind:value={draftCheckboxLabel}
 				></textarea>
 			</fieldset>
 
 			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Content · markdown</legend>
+				<legend class="fieldset-legend">{m.admin_tcs_content_legend()}</legend>
 				{#if showPreview}
 					<div class="max-h-[32rem] overflow-y-auto rounded-lg border border-base-300 p-4">
 						<MarkdownView content={draftContent} />
@@ -298,7 +293,9 @@
 		</section>
 	{/if}
 
-	<h2 class="mb-3 font-display text-lg font-bold text-base-content">Version history</h2>
+	<h2 class="mb-3 font-display text-lg font-bold text-base-content">
+		{m.admin_tcs_version_history()}
+	</h2>
 	<div class="flex flex-col gap-2">
 		{#each doc.versions as version (version.id)}
 			<div
@@ -309,11 +306,11 @@
 				<div class="py-1 lg:py-0">
 					{#if version.publishedAt}
 						<span class="badge badge-sm border-0 bg-success-content font-semibold text-success">
-							Published {new Date(version.publishedAt).toLocaleDateString()}
+							{m.admin_tcs_published_on({ date: formatDate(version.publishedAt) })}
 						</span>
 					{:else}
 						<span class="badge badge-sm border-0 bg-warning/15 font-semibold text-warning">
-							Draft
+							{m.admin_tcs_draft()}
 						</span>
 					{/if}
 				</div>
@@ -323,7 +320,7 @@
 				</div>
 				<div class="mt-2 flex justify-end lg:mt-0">
 					<button type="button" class="btn btn-ghost btn-sm" onclick={() => (viewing = version)}>
-						View
+						{m.common_view()}
 					</button>
 				</div>
 			</div>
@@ -345,7 +342,7 @@
 	<TcModal
 		open
 		mode="view"
-		title="{doc?.title} — v{viewing.version}"
+		title={m.admin_tcs_version_title({ title: doc?.title ?? '', version: viewing.version })}
 		content={viewing.content}
 		onclose={() => (viewing = null)}
 	/>
@@ -353,9 +350,9 @@
 
 <ConfirmDialog
 	open={publishConfirmOpen}
-	title="Publish this version"
-	body="Publishing is permanent: the text is frozen as v{serverDraft?.version} and every affected user must accept it on their next visit."
-	confirmLabel="Publish"
+	title={m.admin_tcs_publish_title()}
+	body={m.admin_tcs_publish_body({ version: serverDraft?.version ?? '' })}
+	confirmLabel={m.admin_tcs_publish()}
 	confirmClass="btn-primary"
 	busy={publishBusy}
 	onconfirm={() => void publish()}

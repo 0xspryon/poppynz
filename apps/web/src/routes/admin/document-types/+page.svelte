@@ -15,10 +15,10 @@
 	} from '@repo/credibled/check-types';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import DocumentTypeDialog from '$lib/components/admin/DocumentTypeDialog.svelte';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
-
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
 
 	let items: Array<DocumentType> = $state([]);
 	let loading = $state(true);
@@ -37,10 +37,28 @@
 
 	const errorText = (error: { code: string; message: string }) =>
 		error.code === 'FORBIDDEN'
-			? 'Your account is not authorized to manage document types.'
+			? m.admin_doctypes_error_forbidden()
 			: error.code === 'UNAUTHORIZED'
-				? 'Your session has expired — sign in again.'
-				: RETRY_MESSAGE;
+				? m.admin_doctypes_error_session()
+				: m.admin_doctypes_error_retry();
+
+	/** The API's pricing invariant: a Credibled type needs a price, an
+	 * upload-only type must not carry one. */
+	const pricingErrorText = (checkType: string | null, costCents: number | null) =>
+		checkType !== null && costCents === null
+			? m.admin_doctypes_price_required()
+			: m.admin_doctypes_price_not_allowed();
+
+	/** A second safety gate for the role: name the type that already holds it. */
+	const gateConflictText = (draft: DocumentTypeDraft) => {
+		const holder = items.find(
+			(item) =>
+				item.isSafetyGate && item.appliesToRole === draft.appliesToRole && item.id !== editing?.id
+		);
+		return holder
+			? m.admin_doctypes_gate_conflict_named({ name: holder.name })
+			: m.admin_doctypes_gate_conflict();
+	};
 
 	async function load() {
 		loading = true;
@@ -79,21 +97,24 @@
 			: await createDocumentType(draft);
 		if (result.ok) {
 			modalOpen = false;
-			toast.success(editing ? `${result.data.name} updated.` : `${result.data.name} created.`);
+			toast.success(
+				editing
+					? m.admin_doctypes_updated_toast({ name: result.data.name })
+					: m.admin_doctypes_created_toast({ name: result.data.name })
+			);
 			await load();
 		} else if (result.error.code === 'INVALID_KYC_DOCUMENT_TYPE_INPUT') {
 			// Field validation stays next to the input inside the dialog.
-			modalError = 'Check the name — it must be 1–120 characters.';
-		} else if (
-			result.error.code === 'KYC_DOCUMENT_TYPE_CONFLICT' ||
-			result.error.code === 'INVALID_KYC_DOCUMENT'
-		) {
-			// A second safety gate for the role, or a pricing mismatch: the server
-			// says exactly what to change, and it belongs next to the toggles.
-			modalError = result.error.message;
+			modalError = m.admin_doctypes_invalid_name();
+		} else if (result.error.code === 'KYC_DOCUMENT_TYPE_CONFLICT') {
+			// A second safety gate for the role: it belongs next to the toggles.
+			modalError = gateConflictText(draft);
+		} else if (result.error.code === 'INVALID_KYC_DOCUMENT') {
+			// A pricing mismatch, also shown next to the fields.
+			modalError = pricingErrorText(draft.credibledCheckTypeValue, draft.credibledCostCents);
 		} else {
 			toast.error(errorText(result.error), {
-				title: editing ? 'Document type not updated' : 'Document type not created'
+				title: editing ? m.admin_doctypes_not_updated_title() : m.admin_doctypes_not_created_title()
 			});
 		}
 		saving = false;
@@ -116,12 +137,18 @@
 			const updated = result.data;
 			toast.success(
 				field === 'isOptional'
-					? `${updated.name} is now ${updated.isOptional ? 'optional' : 'required'}.`
-					: `${updated.name} ${updated.requiresExpiryDate ? 'now requires' : 'no longer requires'} an expiry date.`
+					? updated.isOptional
+						? m.admin_doctypes_now_optional({ name: updated.name })
+						: m.admin_doctypes_now_required({ name: updated.name })
+					: updated.requiresExpiryDate
+						? m.admin_doctypes_now_requires_expiry({ name: updated.name })
+						: m.admin_doctypes_no_longer_requires_expiry({ name: updated.name })
 			);
 		} else {
 			input.checked = !value;
-			toast.error(errorText(result.error), { title: `${item.name} not updated` });
+			toast.error(errorText(result.error), {
+				title: m.admin_doctypes_item_not_updated_title({ name: item.name })
+			});
 		}
 		busyIds.delete(item.id);
 	}
@@ -138,8 +165,11 @@
 			items = items.map((candidate) => (candidate.id === item.id ? result.data : candidate));
 			toast.success(
 				value
-					? `${result.data.name} is now collected via ${credibledCheckTypeLabel(value)}.`
-					: `${result.data.name} is now upload only.`
+					? m.admin_doctypes_now_collected_via({
+							name: result.data.name,
+							check: credibledCheckTypeLabel(value)
+						})
+					: m.admin_doctypes_now_upload_only({ name: result.data.name })
 			);
 		} else {
 			select.value = previous;
@@ -148,9 +178,9 @@
 				// the generic retry message, because retrying will not help.
 				// `INVALID_KYC_DOCUMENT` is what the pricing invariant returns.
 				result.error.code === 'INVALID_KYC_DOCUMENT'
-					? result.error.message
+					? pricingErrorText(value, item.credibledCostCents ?? null)
 					: errorText(result.error),
-				{ title: `${item.name} not updated` }
+				{ title: m.admin_doctypes_item_not_updated_title({ name: item.name }) }
 			);
 		}
 		busyIds.delete(item.id);
@@ -161,11 +191,13 @@
 		deleteBusy = true;
 		const result = await removeDocumentType(deleting.id);
 		if (result.ok) {
-			toast.success(`${deleting.name} deleted.`);
+			toast.success(m.admin_doctypes_deleted_toast({ name: deleting.name }));
 			deleting = null;
 			await load();
 		} else {
-			toast.error(errorText(result.error), { title: `${deleting.name} not deleted` });
+			toast.error(errorText(result.error), {
+				title: m.admin_doctypes_item_not_deleted_title({ name: deleting.name })
+			});
 			deleting = null;
 		}
 		deleteBusy = false;
@@ -173,21 +205,21 @@
 </script>
 
 <svelte:head>
-	<title>Document types · Poppynz admin</title>
+	<title>{m.admin_doctypes_page_title()}</title>
 </svelte:head>
 
 <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
 	<div>
 		<h1 class="mb-1 font-display text-2xl font-bold text-base-content lg:text-3xl">
-			Document types
+			{m.admin_doctypes_heading()}
 		</h1>
 		<p class="text-sm text-base-content-muted">
-			The checklist every provider sees during onboarding. Changes apply to new uploads immediately.
+			{m.admin_doctypes_intro()}
 		</p>
 	</div>
 	<button type="button" class="btn btn-primary" onclick={openCreate}>
 		<i class="las la-plus" aria-hidden="true"></i>
-		New type
+		{m.admin_doctypes_new()}
 	</button>
 </div>
 
@@ -208,9 +240,9 @@
 	</div>
 {:else if items.length === 0}
 	<div class="rounded-xl border border-card-border bg-base-100 p-10 text-center">
-		<p class="mb-1 font-semibold text-base-content">No document types yet</p>
+		<p class="mb-1 font-semibold text-base-content">{m.admin_doctypes_empty_title()}</p>
 		<p class="text-sm text-base-content-muted">
-			Create the first type — it appears on every provider's checklist immediately.
+			{m.admin_doctypes_empty_body()}
 		</p>
 	</div>
 {:else}
@@ -219,8 +251,11 @@
 		class="mb-2 hidden grid-cols-[1fr_140px_120px_110px_210px_90px] gap-3.5 px-4 text-[10.5px]
 			font-semibold tracking-[0.08em] text-outline uppercase lg:grid"
 	>
-		<span>Name</span><span>Applies to</span><span>Requirement</span><span>Expiry date</span>
-		<span>Credibled</span><span class="text-right">Actions</span>
+		<span>{m.admin_doctypes_col_name()}</span><span>{m.admin_doctypes_col_applies_to()}</span>
+		<span>{m.admin_doctypes_col_requirement()}</span><span>{m.admin_doctypes_col_expiry()}</span>
+		<span>{m.admin_doctypes_col_credibled()}</span><span class="text-right"
+			>{m.admin_doctypes_col_actions()}</span
+		>
 	</div>
 	<div class="flex flex-col gap-2">
 		{#each items as item (item.id)}
@@ -234,18 +269,20 @@
 					{#if item.isSafetyGate}
 						<span
 							class="badge badge-sm badge-primary ml-2 font-semibold"
-							title="Submitting this document starts safety verification"
+							title={m.admin_doctypes_gate_title()}
 						>
-							Safety gate
+							{m.admin_doctypes_safety_gate()}
 						</span>
 					{/if}
 					<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info lg:hidden">
-						{item.isOptional ? 'Optional' : 'Required'}
+						{item.isOptional ? m.common_optional() : m.common_required()}
 					</span>
 				</div>
 				<div class="hidden lg:block">
 					<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info">
-						{item.appliesToRole === 'family' ? 'Family' : 'Service provider'}
+						{item.appliesToRole === 'family'
+							? m.admin_doctypes_role_family()
+							: m.admin_doctypes_role_provider()}
 					</span>
 				</div>
 				<label class="flex items-center gap-2 py-1 lg:py-0">
@@ -257,7 +294,7 @@
 						onchange={(event) => toggleField(item, 'isOptional', event.currentTarget)}
 					/>
 					<span class="text-xs text-base-content-muted">
-						{item.isOptional ? 'Optional' : 'Required'}
+						{item.isOptional ? m.common_optional() : m.common_required()}
 					</span>
 				</label>
 				<label class="flex items-center gap-2 py-1 lg:py-0">
@@ -268,10 +305,10 @@
 						disabled={busy}
 						onchange={(event) => toggleField(item, 'requiresExpiryDate', event.currentTarget)}
 					/>
-					<span class="text-xs text-base-content-muted">Expiry</span>
+					<span class="text-xs text-base-content-muted">{m.admin_doctypes_expiry_short()}</span>
 				</label>
 				<label class="flex items-center gap-2 py-1 lg:py-0">
-					<span class="sr-only">Credibled check for {item.name}</span>
+					<span class="sr-only">{m.admin_doctypes_check_for({ name: item.name })}</span>
 					<select
 						class="select select-sm w-full max-w-full text-xs
 							{item.credibledCheckTypeValue
@@ -281,7 +318,7 @@
 						disabled={busy}
 						onchange={(event) => setCheckType(item, event.currentTarget)}
 					>
-						<option value="">Upload only</option>
+						<option value="">{m.admin_doctypes_upload_only()}</option>
 						{#each credibledCheckTypes as checkType (checkType.value)}
 							<option value={checkType.value}>{checkType.label}</option>
 						{/each}
@@ -289,8 +326,8 @@
 					{#if item.credibledCheckTypeValue}
 						<span class="text-xs whitespace-nowrap text-base-content-muted">
 							{item.credibledCostCents === null
-								? 'no price'
-								: `$${(item.credibledCostCents / 100).toFixed(2)}`}
+								? m.admin_doctypes_no_price()
+								: formatMoney(item.credibledCostCents)}
 						</span>
 					{/if}
 				</label>
@@ -298,7 +335,7 @@
 					<button
 						type="button"
 						class="btn btn-ghost btn-sm btn-square"
-						aria-label="Edit {item.name}"
+						aria-label={m.admin_doctypes_edit_aria({ name: item.name })}
 						onclick={() => openEdit(item)}
 					>
 						<i class="las la-pen text-base" aria-hidden="true"></i>
@@ -306,7 +343,7 @@
 					<button
 						type="button"
 						class="btn btn-ghost btn-sm btn-square"
-						aria-label="Delete {item.name}"
+						aria-label={m.admin_doctypes_delete_aria({ name: item.name })}
 						onclick={() => (deleting = item)}
 					>
 						<i class="las la-trash-alt text-base" aria-hidden="true"></i>
@@ -321,8 +358,7 @@
 			px-4 py-3 text-xs text-info"
 	>
 		<i class="las la-info-circle text-base" aria-hidden="true"></i>
-		Deleting a type is a soft delete — existing submitted documents keep their history. This list directly
-		shapes the provider's upload step.
+		{m.admin_doctypes_footnote()}
 	</p>
 {/if}
 
@@ -337,8 +373,8 @@
 
 <ConfirmDialog
 	open={deleting !== null}
-	title="Delete {deleting?.name}?"
-	body="This is a soft delete — documents already submitted for this type keep their history, but providers won't see it on their checklist anymore."
+	title={m.admin_doctypes_delete_title({ name: deleting?.name ?? '' })}
+	body={m.admin_doctypes_delete_body()}
 	busy={deleteBusy}
 	onconfirm={confirmDelete}
 	oncancel={() => (deleting = null)}

@@ -1,5 +1,6 @@
 /** Admin approval queue + review packet (screens 8a/8b/8c), backed by
  * /admin/approval-requests, /approvals and /admin/kyc-docs. */
+import { m } from '$lib/paraglide/messages';
 import { apiClient, call, type ApiResult, type ErrorsOf } from './client';
 
 const listEndpoint = apiClient.admin['approval-requests'].$get;
@@ -39,6 +40,26 @@ export type KycFileUrlError = ErrorsOf<typeof fileUrlEndpoint>;
 export type KycExpiryUpdateError = ErrorsOf<typeof expiryEndpoint>;
 export type KycReviewError = ErrorsOf<typeof reviewDocumentEndpoint>;
 export type ApprovalBlocker = ApprovalRequestDetail['approvalBlockers'][number];
+
+/** One localized line per approval blocker (UAT #25). The server also sends an
+ * English `message`; the web words it from `kind` so French admins read French. */
+export function describeApprovalBlocker(
+	blocker: Pick<ApprovalBlocker, 'kind'> & { name?: string }
+): string {
+	const name = blocker.name ?? '';
+	switch (blocker.kind) {
+		case 'photo_missing':
+			return m.admin_requests_blocker_photo_missing();
+		case 'document_missing':
+			return m.admin_requests_blocker_document_missing({ name });
+		case 'document_rejected':
+			return m.admin_requests_blocker_document_rejected({ name });
+		case 'document_unreviewed':
+			return m.admin_requests_blocker_document_unreviewed({ name });
+		default:
+			return name;
+	}
+}
 
 export async function listApprovalRequests() {
 	return call(listEndpoint());

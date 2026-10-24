@@ -2,13 +2,13 @@
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
 	import {
+		describeApprovalBlocker,
 		listApprovalRequests,
 		type ApprovalQueue,
 		type ApprovalQueueEntry
 	} from '$lib/api/admin-approvals';
 	import StatusChip from '$lib/components/StatusChip.svelte';
-
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	import { m } from '$lib/paraglide/messages';
 	type Filter = 'needs-action' | 'all' | 'approved' | 'rejected';
 	type RoleFilter = 'all' | 'family' | 'service-provider';
 
@@ -36,7 +36,7 @@
 	});
 
 	const roleLabel = (role: ApprovalQueueEntry['applicant']['role']) =>
-		role === 'family' ? 'Family' : 'Helper';
+		role === 'family' ? m.admin_requests_role_family() : m.admin_requests_role_helper();
 
 	async function load() {
 		errorMessage = '';
@@ -46,8 +46,8 @@
 		} else {
 			errorMessage =
 				result.error.code === 'FORBIDDEN' || result.error.code === 'UNAUTHORIZED'
-					? 'You need admin access to view the approval queue.'
-					: RETRY_MESSAGE;
+					? m.admin_requests_error_forbidden()
+					: m.common_error_generic();
 		}
 		loading = false;
 	}
@@ -70,9 +70,10 @@
 	function warningsText(entry: ApprovalQueueEntry): string | null {
 		const missing = entry.warnings.missingRequiredDocuments;
 		const parts: Array<string> = [];
-		if (missing.length === 1) parts.push(`${missing[0].name} missing`);
-		else if (missing.length > 1) parts.push(`${missing.length} required docs missing`);
-		if (entry.warnings.missingServicesOffered) parts.push('no services listed');
+		if (missing.length === 1) parts.push(m.admin_requests_warning_doc_missing({ name: missing[0].name }));
+		else if (missing.length > 1)
+			parts.push(m.admin_requests_warning_docs_missing({ count: missing.length }));
+		if (entry.warnings.missingServicesOffered) parts.push(m.admin_requests_warning_no_services());
 		return parts.length > 0 ? parts.join(' · ') : null;
 	}
 
@@ -80,10 +81,10 @@
 		if (entry.status !== 'submitted') return '—';
 		const ms = Date.now() - new Date(entry.createdAt).getTime();
 		const hours = Math.floor(ms / (60 * 60 * 1000));
-		if (hours < 1) return 'under an hour';
-		if (hours < 24) return `${hours} ${hours === 1 ? 'hour' : 'hours'}`;
+		if (hours < 1) return m.admin_requests_waiting_under_hour();
+		if (hours < 24) return m.admin_requests_waiting_hours({ count: hours });
 		const days = Math.floor(hours / 24);
-		return `${days} ${days === 1 ? 'day' : 'days'}`;
+		return m.admin_requests_waiting_days({ count: days });
 	}
 
 	const filtered = $derived.by(() => {
@@ -105,18 +106,23 @@
 
 	const filters = $derived.by((): Array<{ key: Filter; label: string }> => {
 		const counts = queue?.counts;
+		const withCount = (label: string, count: number | undefined) =>
+			count === undefined ? label : m.admin_requests_filter_count({ label, count });
 		return [
-			{ key: 'needs-action', label: `Needs action${counts ? ` · ${counts.submitted}` : ''}` },
-			{ key: 'all', label: `All${counts ? ` · ${counts.total}` : ''}` },
-			{ key: 'approved', label: `Approved${counts ? ` · ${counts.approved}` : ''}` },
-			{ key: 'rejected', label: `Rejected${counts ? ` · ${counts.rejected}` : ''}` }
+			{
+				key: 'needs-action',
+				label: withCount(m.admin_requests_filter_needs_action(), counts?.submitted)
+			},
+			{ key: 'all', label: withCount(m.admin_requests_filter_all(), counts?.total) },
+			{ key: 'approved', label: withCount(m.admin_requests_filter_approved(), counts?.approved) },
+			{ key: 'rejected', label: withCount(m.admin_requests_filter_rejected(), counts?.rejected) }
 		];
 	});
 
 	const roleFilters: Array<{ key: RoleFilter; label: string }> = [
-		{ key: 'all', label: 'Everyone' },
-		{ key: 'family', label: 'Families' },
-		{ key: 'service-provider', label: 'Helpers' }
+		{ key: 'all', label: m.admin_requests_role_filter_everyone() },
+		{ key: 'family', label: m.admin_requests_role_filter_families() },
+		{ key: 'service-provider', label: m.admin_requests_role_filter_helpers() }
 	];
 
 	const vouchFilters = $derived.by((): Array<{ key: VouchFilter; label: string }> => {
@@ -128,29 +134,47 @@
 		);
 		const count = (key: VouchFilter) => pool.filter((entry) => matchesVouchFilter(entry, key)).length;
 		return [
-			{ key: 'all', label: 'All' },
-			{ key: 'needs-chat', label: `Needs a chat · ${count('needs-chat')}` },
-			{ key: 'vouched', label: `Vouched · ${count('vouched')}` },
-			{ key: 'concerns', label: `Concerns · ${count('concerns')}` }
+			{ key: 'all', label: m.admin_requests_vouch_filter_all() },
+			{
+				key: 'needs-chat',
+				label: m.admin_requests_filter_count({
+					label: m.admin_requests_vouch_filter_needs_chat(),
+					count: count('needs-chat')
+				})
+			},
+			{
+				key: 'vouched',
+				label: m.admin_requests_filter_count({
+					label: m.admin_requests_vouch_filter_vouched(),
+					count: count('vouched')
+				})
+			},
+			{
+				key: 'concerns',
+				label: m.admin_requests_filter_count({
+					label: m.admin_requests_vouch_filter_concerns(),
+					count: count('concerns')
+				})
+			}
 		];
 	});
 </script>
 
 <svelte:head>
-	<title>Approval queue · Poppynz admin</title>
+	<title>{m.admin_requests_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-5xl">
 	<div class="flex flex-wrap items-start justify-between gap-4">
 		<div>
-			<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Approval queue</h1>
+			<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.admin_requests_heading()}</h1>
 			<p class="mt-1 text-sm text-base-content-muted">
-				Family and helper applications awaiting your decision.
+				{m.admin_requests_subheading()}
 			</p>
 		</div>
 		<label class="input w-full sm:w-60">
 			<i class="las la-search text-base text-outline" aria-hidden="true"></i>
-			<input type="search" placeholder="Search by name or email" bind:value={search} />
+			<input type="search" placeholder={m.admin_requests_search_placeholder()} bind:value={search} />
 		</label>
 	</div>
 
@@ -184,7 +208,9 @@
 
 	{#if roleFilter !== 'family'}
 		<div class="mb-4 -mt-2 flex flex-wrap items-center gap-1.5">
-			<span class="mr-1 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">Vouches</span>
+			<span class="mr-1 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase"
+				>{m.admin_requests_vouch_filter_label()}</span
+			>
 			{#each vouchFilters as entry (entry.key)}
 				<button
 					type="button"
@@ -211,19 +237,19 @@
 			class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm text-base-content-muted"
 		>
 			{search.trim() || filter !== 'all' || roleFilter !== 'all'
-				? 'No applications match this view.'
-				: 'No applications yet.'}
+				? m.admin_requests_empty_filtered()
+				: m.admin_requests_empty()}
 		</p>
 	{:else}
 		<div
 			class="hidden grid-cols-[minmax(200px,260px)_130px_1fr_110px_100px] gap-3.5 px-4 pb-2
 				text-[10.5px] font-semibold tracking-[0.08em] text-outline uppercase lg:grid"
 		>
-			<span>Applicant</span>
-			<span>Status</span>
-			<span>Warnings</span>
-			<span>Waiting</span>
-			<span class="text-right">Action</span>
+			<span>{m.admin_requests_col_applicant()}</span>
+			<span>{m.admin_requests_col_status()}</span>
+			<span>{m.admin_requests_col_warnings()}</span>
+			<span>{m.admin_requests_col_waiting()}</span>
+			<span class="text-right">{m.admin_requests_col_action()}</span>
 		</div>
 		<div class="flex flex-col gap-2">
 			{#each filtered as entry (entry.id)}
@@ -258,13 +284,13 @@
 											? 'bg-success-content text-success'
 											: 'bg-base-300 text-base-content-muted'}"
 									>
-										Vouches {entry.vouches.counting}/2
+										{m.admin_requests_vouches_badge({ count: entry.vouches.counting })}
 									</span>
 									{#if entry.vouches.hasConcern}
 										<span
 											class="rounded-[5px] bg-error-content px-2 py-0.5 text-[11px] font-semibold text-error"
 										>
-											Concern
+											{m.admin_requests_concern_badge()}
 										</span>
 									{/if}
 								</div>
@@ -279,14 +305,16 @@
 							<!-- Flagged, not approvable (UAT #25): says what blocks it. -->
 							<span class="flex items-center gap-1 font-semibold text-error">
 								<i class="las la-ban" aria-hidden="true"></i>
-								Can't approve: {entry.approvalBlockers.length === 1
-									? entry.approvalBlockers[0].message.toLowerCase()
-									: `${entry.approvalBlockers.length} items outstanding`}
+								{entry.approvalBlockers.length === 1
+									? m.admin_requests_cant_approve_one({
+											reason: describeApprovalBlocker(entry.approvalBlockers[0]).toLowerCase()
+										})
+									: m.admin_requests_cant_approve_many({ count: entry.approvalBlockers.length })}
 							</span>
 						{:else if warnings}
 							<span class="text-warning">{warnings}</span>
 						{:else}
-							<span class="text-base-content-muted">No warnings</span>
+							<span class="text-base-content-muted">{m.admin_requests_no_warnings()}</span>
 						{/if}
 					</div>
 					<div class="mt-1 text-xs text-base-content-muted lg:mt-0 lg:text-[12.5px]">
@@ -297,7 +325,7 @@
 							href={resolve('/admin/approval-requests/[id]', { id: entry.id })}
 							class="btn btn-sm {entry.status === 'submitted' ? 'btn-primary' : 'btn-outline'}"
 						>
-							{entry.status === 'submitted' ? 'Review' : 'View'}
+							{entry.status === 'submitted' ? m.admin_requests_review() : m.common_view()}
 						</a>
 					</div>
 				</div>

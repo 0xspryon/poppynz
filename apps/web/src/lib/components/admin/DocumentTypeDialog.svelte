@@ -3,6 +3,11 @@
 	 * emits it on save. */
 	import { credibledCheckTypes, type CredibledCheckTypeValue } from '@repo/credibled/check-types';
 	import type { DocumentType, DocumentTypeDraft } from '$lib/api/document-types';
+	import { getLocale } from '$lib/locale';
+	import { m } from '$lib/paraglide/messages';
+
+	/** French writes the dollar sign after the amount. */
+	const symbolAfter = getLocale() === 'fr';
 
 	interface Props {
 		open: boolean;
@@ -72,31 +77,29 @@
 	<div class="modal modal-open" role="dialog" aria-modal="true">
 		<form class="modal-box max-w-lg border border-card-border" onsubmit={submit}>
 			<h3 class="font-display text-xl font-bold text-base-content">
-				{editing ? 'Edit document type' : 'New document type'}
+				{editing ? m.admin_doctypes_edit_title() : m.admin_doctypes_new_title()}
 			</h3>
 			<p class="mt-1 mb-4 text-sm text-base-content-muted">
-				{editing
-					? 'Changes apply to new uploads immediately.'
-					: "Added to every applicant's checklist for that role immediately."}
+				{editing ? m.admin_doctypes_edit_intro() : m.admin_doctypes_new_intro()}
 			</p>
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_180px]">
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Name · ≤120</legend>
+					<legend class="fieldset-legend">{m.admin_doctypes_name_legend()}</legend>
 					<input
 						type="text"
 						class="input w-full"
 						maxlength="120"
 						required
-						placeholder="Vulnerable-sector check"
+						placeholder={m.admin_doctypes_name_placeholder()}
 						bind:value={draft.name}
 					/>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Applies to</legend>
+					<legend class="fieldset-legend">{m.admin_doctypes_col_applies_to()}</legend>
 					<select class="select w-full" bind:value={draft.appliesToRole}>
-						<option value="service-provider">Service provider</option>
-						<option value="family">Family</option>
+						<option value="service-provider">{m.admin_doctypes_role_provider()}</option>
+						<option value="family">{m.admin_doctypes_role_family()}</option>
 					</select>
 				</fieldset>
 			</div>
@@ -109,7 +112,7 @@
 						checked={!draft.isOptional}
 						onchange={(event) => (draft.isOptional = !event.currentTarget.checked)}
 					/>
-					<span class="text-sm font-medium text-base-content">Required</span>
+					<span class="text-sm font-medium text-base-content">{m.common_required()}</span>
 				</label>
 				<label class="flex items-center gap-2.5">
 					<input
@@ -117,22 +120,24 @@
 						class="toggle toggle-primary"
 						bind:checked={draft.requiresExpiryDate}
 					/>
-					<span class="text-sm font-medium text-base-content">Needs expiry date</span>
+					<span class="text-sm font-medium text-base-content"
+						>{m.admin_doctypes_needs_expiry()}</span
+					>
 				</label>
 				<label class="flex items-center gap-2.5">
 					<input type="checkbox" class="toggle toggle-primary" bind:checked={draft.isSafetyGate} />
-					<span class="text-sm font-medium text-base-content">Safety gate</span>
+					<span class="text-sm font-medium text-base-content">{m.admin_doctypes_safety_gate()}</span
+					>
 				</label>
 			</div>
 			{#if draft.isSafetyGate}
 				<p class="mt-1.5 text-xs text-base-content-muted">
-					Submitting this document starts the applicant's safety verification instead of an ordinary
-					document review. A role has exactly one.
+					{m.admin_doctypes_gate_hint()}
 				</p>
 			{/if}
 
 			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">Collect via Credibled</legend>
+				<legend class="fieldset-legend">{m.admin_doctypes_collect_via()}</legend>
 				<select
 					class="select w-full"
 					value={draft.credibledCheckTypeValue ?? ''}
@@ -140,23 +145,22 @@
 						(draft.credibledCheckTypeValue =
 							(event.currentTarget.value as CredibledCheckTypeValue) || null)}
 				>
-					<option value="">Upload only — the applicant provides the document</option>
+					<option value="">{m.admin_doctypes_upload_only_option()}</option>
 					{#each credibledCheckTypes as checkType (checkType.value)}
 						<option value={checkType.value}>{checkType.label}</option>
 					{/each}
 				</select>
 				<p class="mt-1.5 text-xs text-base-content-muted">
-					Pick the check Credibled runs for this document. Credibled does not offer
-					vulnerable-sector checks — leave those on upload only.
+					{m.admin_doctypes_collect_hint()}
 				</p>
 			</fieldset>
 
 			{@debug draft}
 			{#if draft.credibledCheckTypeValue}
 				<fieldset class="fieldset mt-3">
-					<legend class="fieldset-legend">Price · CAD, before tax</legend>
+					<legend class="fieldset-legend">{m.admin_doctypes_price_legend()}</legend>
 					<label class="input w-full">
-						<span class="text-base-content-muted">$</span>
+						{#if !symbolAfter}<span class="text-base-content-muted">$</span>{/if}
 						<input
 							type="number"
 							min="0"
@@ -165,10 +169,10 @@
 							placeholder="55.00"
 							bind:value={costDollars}
 						/>
+						{#if symbolAfter}<span class="text-base-content-muted">$</span>{/if}
 					</label>
 					<p class="mt-1.5 text-xs text-base-content-muted">
-						Credibled publishes no pricing, so this is set here. Applicants see it as a line item
-						before they pay.
+						{m.admin_doctypes_price_hint()}
 					</p>
 				</fieldset>
 			{/if}
@@ -179,14 +183,15 @@
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button type="submit" class="btn btn-primary" disabled={busy || !draft.name.trim()}>
 					{#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-					{editing ? 'Save changes' : 'Create type'}
+					{editing ? m.admin_doctypes_save_changes() : m.admin_doctypes_create()}
 				</button>
 			</div>
 		</form>
-		<button type="button" class="modal-backdrop" onclick={oncancel} aria-label="Close"></button>
+		<button type="button" class="modal-backdrop" onclick={oncancel} aria-label={m.common_close()}
+		></button>
 	</div>
 {/if}

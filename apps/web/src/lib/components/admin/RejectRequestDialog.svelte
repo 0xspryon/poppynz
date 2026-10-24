@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	/** Reject dialog (design 8c): reason required, shown to the applicant
 	 * verbatim. Emits the trimmed reason. */
 	interface Props {
@@ -24,24 +25,24 @@
 </script>
 
 {#if open}
-	<div class="modal modal-open" role="dialog" aria-label="Reject application">
+	<div class="modal modal-open" role="dialog" aria-label={m.admin_requests_reject_aria()}>
 		<form class="modal-box" onsubmit={submit}>
-			<h2 class="text-lg font-bold">Reject this application</h2>
+			<h2 class="text-lg font-bold">{m.admin_requests_reject_title()}</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				The reason is <b>shown to the applicant verbatim</b> — write something specific and actionable
-				so they can fix it and resubmit.
+				{m.admin_requests_reject_body_before()}
+				<b>{m.admin_requests_reject_body_strong()}</b>{m.admin_requests_reject_body_after()}
 			</p>
 
 			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">Reason · required</legend>
+				<legend class="fieldset-legend">{m.admin_requests_reason_required()}</legend>
 				<textarea
 					class="textarea min-h-24 w-full"
 					maxlength="500"
 					bind:value={reason}
-					placeholder="e.g. Your police clearance is older than 6 months. Please upload a recent one and resubmit."
+					placeholder={m.admin_requests_reject_placeholder()}
 				></textarea>
 				<div class="flex justify-between text-xs text-outline">
-					<span>Good reasons say what's wrong and how to fix it.</span>
+					<span>{m.admin_requests_reject_hint()}</span>
 					<span>{reason.length} / 500</span>
 				</div>
 			</fieldset>
@@ -52,13 +53,13 @@
 			>
 				<i class="las la-info-circle text-base text-info" aria-hidden="true"></i>
 				<span class="text-[12.5px] text-info">
-					Rejection isn't final — the applicant can fix the issues and submit again.
+					{m.admin_requests_reject_info()}
 				</span>
 			</div>
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button
 					type="submit"
@@ -68,10 +69,11 @@
 					{#if busy}
 						<span class="loading loading-spinner loading-sm"></span>
 					{/if}
-					Reject with reason
+					{m.admin_requests_reject_submit()}
 				</button>
 			</div>
 		</form>
-		<button type="button" class="modal-backdrop" aria-label="Close" onclick={oncancel}></button>
+		<button type="button" class="modal-backdrop" aria-label={m.common_close()} onclick={oncancel}
+		></button>
 	</div>
 {/if}

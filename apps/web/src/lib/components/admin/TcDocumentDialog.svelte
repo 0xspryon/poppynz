@@ -1,7 +1,13 @@
 <script lang="ts">
 	/** Create/edit dialog for a terms-and-conditions document's identity (slug,
 	 * title, audience). Version content is edited on the document page. */
-	import type { AdminTcDocument, TcAppliesToRole, TcDocumentDraft } from '$lib/api/tcs';
+	import {
+		tcAudienceLabel,
+		type AdminTcDocument,
+		type TcAppliesToRole,
+		type TcDocumentDraft
+	} from '$lib/api/tcs';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		open: boolean;
@@ -14,11 +20,7 @@
 
 	let { open, editing, busy = false, onsave, oncancel }: Props = $props();
 
-	const ROLES: Array<{ value: TcAppliesToRole; label: string }> = [
-		{ value: 'all', label: 'Everyone' },
-		{ value: 'family', label: 'Families' },
-		{ value: 'service-provider', label: 'Service providers' }
-	];
+	const ROLES: Array<TcAppliesToRole> = ['all', 'family', 'service-provider'];
 
 	let draft: TcDocumentDraft = $state({ slug: '', title: '', appliesToRole: 'all' });
 
@@ -45,29 +47,27 @@
 	<div class="modal modal-open" role="dialog" aria-modal="true">
 		<form class="modal-box max-w-lg border border-card-border" onsubmit={submit}>
 			<h3 class="font-display text-xl font-bold text-base-content">
-				{editing ? 'Edit document' : 'New document'}
+				{editing ? m.admin_tcs_edit_title() : m.admin_tcs_new()}
 			</h3>
 			<p class="mt-1 mb-4 text-sm text-base-content-muted">
-				{editing
-					? 'The slug is fixed — acceptances are keyed on it.'
-					: 'Create the document, then write and publish its first version.'}
+				{editing ? m.admin_tcs_edit_intro() : m.admin_tcs_new_intro()}
 			</p>
 
 			<fieldset class="fieldset">
-				<legend class="fieldset-legend">Title · ≤160</legend>
+				<legend class="fieldset-legend">{m.admin_tcs_title_legend()}</legend>
 				<input
 					type="text"
 					class="input w-full"
 					maxlength="160"
 					required
-					placeholder="Privacy Policy"
+					placeholder={m.admin_tcs_title_placeholder()}
 					bind:value={draft.title}
 				/>
 			</fieldset>
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_200px]">
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Slug · lowercase, _ or -</legend>
+					<legend class="fieldset-legend">{m.admin_tcs_slug_legend()}</legend>
 					<input
 						type="text"
 						class="input w-full font-mono"
@@ -79,10 +79,10 @@
 					/>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Applies to</legend>
+					<legend class="fieldset-legend">{m.admin_tcs_col_applies_to()}</legend>
 					<select class="select w-full" bind:value={draft.appliesToRole}>
-						{#each ROLES as role (role.value)}
-							<option value={role.value}>{role.label}</option>
+						{#each ROLES as role (role)}
+							<option value={role}>{tcAudienceLabel(role)}</option>
 						{/each}
 					</select>
 				</fieldset>
@@ -90,14 +90,15 @@
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button type="submit" class="btn btn-primary" disabled={busy || !canSave}>
 					{#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-					{editing ? 'Save changes' : 'Create document'}
+					{editing ? m.admin_tcs_save_changes() : m.admin_tcs_create()}
 				</button>
 			</div>
 		</form>
-		<button type="button" class="modal-backdrop" onclick={oncancel} aria-label="Close"></button>
+		<button type="button" class="modal-backdrop" onclick={oncancel} aria-label={m.common_close()}
+		></button>
 	</div>
 {/if}

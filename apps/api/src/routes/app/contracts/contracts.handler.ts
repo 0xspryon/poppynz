@@ -1,5 +1,5 @@
 import type { SqlError } from '@effect/sql/SqlError';
-import { cardOnFile } from '@repo/billing';
+import { cardOnFile, effectiveEnd, effectiveEndsOn } from '@repo/billing';
 import {
   ContractRepo,
   ConversationRepo,
@@ -12,7 +12,7 @@ import {
   type ContractVersion,
   type ContractWithContext
 } from '@repo/db';
-import { addDays, dateIn, todayIn, zoneLabel } from '@repo/calendar';
+import { addDays, todayIn, zoneLabel } from '@repo/calendar';
 import { zoneForLocation } from '@repo/calendar/lookup';
 import { contractConfig } from '@repo/env';
 import { publishNotificationBestEffort } from '@repo/notify';
@@ -162,11 +162,6 @@ function mapVersionInsertError<A, R>(
   );
 }
 
-/** The notice period is part of the agreed terms ("either side can end with 2
- * weeks' notice"), not an operational knob — hence a constant, unlike the
- * proposal expiry. */
-const END_NOTICE_DAYS = 14;
-
 /** Proposal expiry window. Config read collapses to the default rather than
  * surfacing ConfigError into every route program. */
 export const contractProposalContext = contractConfig.pipe(
@@ -281,35 +276,8 @@ const proposalLapsed = (pending: ContractVersion | null, cutoff: Date) =>
   pending.status === 'proposed' &&
   (isExpired(pending, cutoff) || startDatePassed(pending));
 
-/** Last working day of the notice flow: the notice moment's calendar date in
- * the contract zone plus 14 calendar days — derived, never stored. */
-const noticeEndsOn = (contract: Contract, accepted: ContractVersion | null) =>
-  contract.endNoticedAt !== null && accepted?.timeZone
-    ? addDays(dateIn(contract.endNoticedAt, accepted.timeZone), END_NOTICE_DAYS)
-    : null;
-
-/** The date the contract actually stops working — the earlier of the notice
- * flow's last working day and the negotiated end-date term — and which one it
- * was. Only a negotiated end carries a last-day end time; on a tie the
- * negotiated end wins so its end time still applies. */
-export const effectiveEnd = (contract: Contract, accepted: ContractVersion | null) => {
-  const notice = noticeEndsOn(contract, accepted);
-  const negotiated = accepted?.endsOn ?? null;
-  if (negotiated !== null && (notice === null || negotiated <= notice)) {
-    return {
-      endsOn: negotiated,
-      source: 'negotiated' as const,
-      endsAtMinutes: accepted?.endsAtMinutes ?? null
-    };
-  }
-  if (notice !== null) {
-    return { endsOn: notice, source: 'notice' as const, endsAtMinutes: null };
-  }
-  return null;
-};
-
-export const effectiveEndsOn = (contract: Contract, accepted: ContractVersion | null) =>
-  effectiveEnd(contract, accepted)?.endsOn ?? null;
+// When a contract stops working is shared with billing (@repo/billing).
+export { effectiveEnd, effectiveEndsOn };
 
 export type PresentedContractStatus =
   | 'draft'

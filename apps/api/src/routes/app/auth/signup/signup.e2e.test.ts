@@ -222,13 +222,13 @@ describe('POST /auth/sign-up', () => {
 
     const res = await app.request('/api/v1/auth/sign-up', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept-Language': 'es' },
+      headers: { 'Content-Type': 'application/json', 'Accept-Language': 'fr' },
       body: JSON.stringify({ email: 'Provider@Example.com', role: 'service-provider' })
     });
 
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
-    expect(createdLanguages).toEqual(['es']);
+    expect(createdLanguages).toEqual(['fr']);
   });
 
   it('returns a safe invalid input response', async () => {
@@ -346,7 +346,7 @@ describe('POST /auth/sign-up', () => {
 
     const res = await app.request('/api/v1/auth/sign-up', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept-Language': 'es' },
+      headers: { 'Content-Type': 'application/json', 'Accept-Language': 'fr' },
       body: JSON.stringify({ email: 'Provider@Example.com', role: 'service-provider' })
     });
 
@@ -376,7 +376,7 @@ describe('POST /auth/sign-up', () => {
     expect(profiles).toEqual([
       {
         userId: 'user-1',
-        language: 'es',
+        language: 'fr',
         firstName: null,
         lastName: null,
         gender: null,

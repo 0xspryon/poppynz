@@ -7,7 +7,8 @@
 	 * the caller asks through `onconfirmed` / `onfailed`. */
 	import type { Stripe, StripeElements, StripeError } from '@stripe/stripe-js';
 	import { getStripe } from '$lib/stripe';
-	import { getUserLanguage, toStripeLocale } from '$lib/user-language';
+	import { getLocale } from '$lib/paraglide/runtime';
+	import { toStripeLocale } from '$lib/user-language';
 	import { cardLabel } from '$lib/payment-cards';
 
 	interface Props {
@@ -66,13 +67,13 @@
 	$effect(() => {
 		if (useSavedCard || !elementHost || elements) return;
 		const host = elementHost;
-		void Promise.all([getStripe(), getUserLanguage()]).then(([loaded, language]) => {
+		void getStripe().then((loaded) => {
 			if (!loaded) {
 				message = 'Card payments are not available right now.';
 				return;
 			}
 			stripe = loaded;
-			const group = loaded.elements({ clientSecret, locale: toStripeLocale(language) });
+			const group = loaded.elements({ clientSecret, locale: toStripeLocale(getLocale()) });
 			group
 				.create('payment', {
 					layout: 'tabs',

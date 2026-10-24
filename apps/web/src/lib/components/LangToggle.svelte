@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { getLocale, locales, type Locale } from '$lib/locale';
+	import { switchLocale } from '$lib/locale-sync';
+	import { m } from '$lib/paraglide/messages';
+
 	interface Props {
 		/** 'dark' renders for navy backgrounds, 'light' for light surfaces. */
 		tone?: 'dark' | 'light';
@@ -6,10 +10,23 @@
 
 	let { tone = 'light' }: Props = $props();
 
-	// Visual-only for now — the Paraglide EN/FR wiring replaces this (UAT #3).
-	let lang: 'en' | 'fr' = $state('en');
+	// The page reloads in the new locale, so the active one never changes
+	// while this component is mounted.
+	const current = getLocale();
+	let switching = $state(false);
 
-	const options = ['en', 'fr'] as const;
+	const languageName = (locale: Locale) =>
+		locale === 'fr' ? m.lang_name_fr() : m.lang_name_en();
+
+	async function choose(locale: Locale) {
+		if (locale === current || switching) return;
+		switching = true;
+		try {
+			await switchLocale(locale);
+		} finally {
+			switching = false;
+		}
+	}
 </script>
 
 <span
@@ -18,21 +35,24 @@
 		? 'border border-secondary-content/30'
 		: 'border border-outline-variant bg-base-100'}"
 	role="group"
-	aria-label="Language"
+	aria-label={m.lang_toggle_label()}
 >
-	{#each options as option (option)}
+	{#each locales as option (option)}
 		<button
 			type="button"
+			lang={option}
 			class="cursor-pointer rounded-sm px-2.5 py-1 uppercase transition-colors
-				{lang === option
+				{current === option
 				? tone === 'dark'
 					? 'bg-base-100 text-secondary'
 					: 'bg-secondary text-secondary-content'
 				: tone === 'dark'
 					? 'text-secondary-content-muted'
 					: 'text-base-content-muted'}"
-			aria-pressed={lang === option}
-			onclick={() => (lang = option)}
+			aria-pressed={current === option}
+			aria-label={languageName(option)}
+			disabled={switching}
+			onclick={() => choose(option)}
 		>
 			{option}
 		</button>

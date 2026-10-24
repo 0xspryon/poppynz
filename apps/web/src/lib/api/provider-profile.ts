@@ -25,6 +25,7 @@ export type PlaceSuggestion = Extract<
 >['data']['suggestions'][number];
 
 export interface ProfileDraft {
+	language?: 'en' | 'fr';
 	firstName?: string | null;
 	lastName?: string | null;
 	gender?: 'male' | 'female' | null;

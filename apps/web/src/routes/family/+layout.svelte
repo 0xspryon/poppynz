@@ -2,6 +2,7 @@
 	import { browser } from '$app/environment';
 	import { afterNavigate, goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { syncLocaleWithProfile } from '$lib/locale-sync';
 	import { fetchSession, getSession, type MockSession } from '$lib/api/profile';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import ImpersonationBanner from '$lib/components/ImpersonationBanner.svelte';
@@ -31,6 +32,7 @@
 			session = fresh;
 			if (fresh?.role === 'family') {
 				authorized = true;
+				void syncLocaleWithProfile();
 			} else if (fresh?.role === 'admin') {
 				void goto(resolve('/admin'));
 			} else if (fresh?.role === 'service-provider') {

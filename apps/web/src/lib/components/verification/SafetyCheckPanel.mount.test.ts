@@ -24,10 +24,6 @@ vi.mock('$lib/api/safety-verification', () => ({
 	removeSafetyVerificationItem: vi.fn()
 }));
 vi.mock('$lib/stripe', () => ({ getStripe }));
-vi.mock('$lib/user-language', () => ({
-	getUserLanguage: vi.fn(async () => null),
-	toStripeLocale: () => 'auto'
-}));
 vi.mock('$lib/toast.svelte', () => ({ toast }));
 
 import SafetyCheckPanel from './SafetyCheckPanel.svelte';

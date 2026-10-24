@@ -1,5 +1,6 @@
 import { Schema } from 'effect';
 import { validateInput } from '@/api/lib/schema-validator';
+import { validLanguages } from '@/api/lib/constants';
 
 const profileUpdateValidationError = {
   code: 'INVALID_PROFILE_INPUT',
@@ -25,6 +26,7 @@ const dateOfBirth = Schema.Trim.pipe(
 );
 
 export const profileUpdateSchema = Schema.Struct({
+  language: Schema.optional(Schema.Literal(...validLanguages)),
   firstName: nullableOptionalNonEmptyString,
   lastName: nullableOptionalNonEmptyString,
   gender: Schema.optional(Schema.NullOr(Schema.Literal('male', 'female'))),

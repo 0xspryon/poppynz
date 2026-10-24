@@ -10,6 +10,7 @@ import { credibledWebhookRoute } from './routes/webhooks/credibled';
 import { stripeWebhookRoute } from './routes/webhooks/stripe';
 import { requestId } from 'hono/request-id';
 import { makeAppRuntime } from './managed-runtime';
+import { LOCALE_COOKIE_NAME, validLanguages } from './lib/constants';
 import { ensureInitialAppState } from './startup';
 import { API_BASE_PATH } from './hc';
 
@@ -24,9 +25,15 @@ export const createApp = (
     .use('*', requestId())
     .use(
       '*',
+      // The web app's language toggle stores the choice in Paraglide's
+      // cookie; the api shares the origin, so it reads the same cookie, then
+      // Accept-Language, then English.
       languageDetector({
-        supportedLanguages: ['en', 'es'],
-        fallbackLanguage: 'en'
+        supportedLanguages: [...validLanguages],
+        fallbackLanguage: 'en',
+        order: ['cookie', 'header'],
+        lookupCookie: LOCALE_COOKIE_NAME,
+        caches: false
       })
     )
 

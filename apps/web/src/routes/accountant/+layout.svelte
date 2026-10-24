@@ -5,6 +5,7 @@
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { syncLocaleWithProfile } from '$lib/locale-sync';
 	import { fetchSession, getSession } from '$lib/api/profile';
 	import { getTaxAccess, type TaxAccess } from '$lib/api/tax';
 	import BrandMark from '$lib/components/BrandMark.svelte';
@@ -31,6 +32,7 @@
 			const result = await getTaxAccess();
 			if (result.ok && (result.data.canRead || result.data.canReport)) {
 				access = result.data;
+				void syncLocaleWithProfile();
 			} else {
 				await goto(resolve('/'));
 			}

@@ -1,6 +1,8 @@
-/** Shared date formatting for contracts (and future callers). Date-only
+/** Shared date formatting, in the active locale (en-CA / fr-CA). Date-only
  * strings (YYYY-MM-DD) are parsed as local dates on purpose — `new Date(iso)`
  * would read them as UTC midnight and shift a day west of Greenwich. */
+import { intlLocale } from '$lib/locale';
+import { m } from '$lib/paraglide/messages';
 
 const parseLocal = (value: string): Date => {
 	const dateOnly = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
@@ -10,19 +12,19 @@ const parseLocal = (value: string): Date => {
 	return new Date(value);
 };
 
-/** "4 Aug 2026" */
+/** "Aug 4, 2026" / "4 août 2026" */
 export function formatDate(value: string): string {
-	return parseLocal(value).toLocaleDateString('en-CA', {
+	return parseLocal(value).toLocaleDateString(intlLocale(), {
 		day: 'numeric',
 		month: 'short',
 		year: 'numeric'
 	});
 }
 
-/** "Mon 4 Aug 2026" — start dates and last working days read better with the
+/** "Tue, Aug 4, 2026" / "mar. 4 août 2026" — start dates and last working days read better with the
  * weekday (16d/16i). */
 export function formatDateWithWeekday(value: string): string {
-	return parseLocal(value).toLocaleDateString('en-CA', {
+	return parseLocal(value).toLocaleDateString(intlLocale(), {
 		weekday: 'short',
 		day: 'numeric',
 		month: 'short',
@@ -30,20 +32,24 @@ export function formatDateWithWeekday(value: string): string {
 	});
 }
 
-/** "4 Aug 2026, 9:48 a.m." */
+/** "Aug 4, 2026, 9:48 a.m." / "4 août 2026, 9 h 48" */
 export function formatDateTime(value: string): string {
-	const date = parseLocal(value);
-	return `${formatDate(value)}, ${date.toLocaleTimeString('en-CA', { hour: 'numeric', minute: '2-digit' })}`;
+	return m.date_time_at({ date: formatDate(value), time: formatTime(value) });
 }
 
-/** "Today" / "Yesterday" / "4 Aug" / "4 Aug 2025" — list rows. */
+/** "9:48 a.m." / "9 h 48" */
+export function formatTime(value: string): string {
+	return parseLocal(value).toLocaleTimeString(intlLocale(), { hour: 'numeric', minute: '2-digit' });
+}
+
+/** "Today" / "Yesterday" / "Aug 4" / "Aug 4, 2025" (localized) — list rows. */
 export function relativeDayLabel(value: string, now: Date = new Date()): string {
 	const date = parseLocal(value);
 	const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
 	const dayDiff = Math.round((startOfDay(now) - startOfDay(date)) / (24 * 60 * 60 * 1000));
-	if (dayDiff === 0) return 'Today';
-	if (dayDiff === 1) return 'Yesterday';
-	return date.toLocaleDateString('en-CA', {
+	if (dayDiff === 0) return m.date_today();
+	if (dayDiff === 1) return m.date_yesterday();
+	return date.toLocaleDateString(intlLocale(), {
 		day: 'numeric',
 		month: 'short',
 		...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' })

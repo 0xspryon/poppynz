@@ -1,7 +1,9 @@
 export const validRoles = ['service-provider', 'family'] as const;
 export const validApprovalRequestStatuses = ['submitted', 'approved', 'rejected'] as const;
 export const validKycDocumentStatuses = ['submitted', 'approved', 'rejected'] as const;
-export const validLanguages = ['en', 'es'] as const;
+export const validLanguages = ['en', 'fr'] as const;
+/** Paraglide's locale cookie, written by the web app's EN/FR toggle. */
+export const LOCALE_COOKIE_NAME = 'PARAGLIDE_LOCALE';
 export const signupIntentTtlMs = 5 * 60 * 1000;
 export const referralInviteTtlMs = 14 * 24 * 60 * 60 * 1000;
 

@@ -2,7 +2,7 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getStripe, stripe, paymentElement, elementsGroup, getUserLanguage } = vi.hoisted(() => {
+const { getStripe, stripe, paymentElement, elementsGroup } = vi.hoisted(() => {
 	const paymentElement = { mount: vi.fn() };
 	const elementsGroup = { create: vi.fn(() => paymentElement) };
 	const stripe = {
@@ -14,16 +14,15 @@ const { getStripe, stripe, paymentElement, elementsGroup, getUserLanguage } = vi
 		getStripe: vi.fn(async () => stripe),
 		stripe,
 		paymentElement,
-		elementsGroup,
-		getUserLanguage: vi.fn(async () => 'en')
+		elementsGroup
 	};
 });
 
 vi.mock('$lib/stripe', () => ({ getStripe }));
-vi.mock('$lib/user-language', () => ({
-	getUserLanguage,
-	toStripeLocale: (language: string | null) =>
-		language === 'en' || language === 'es' ? language : 'auto'
+const locale = vi.hoisted(() => ({ current: 'en' as 'en' | 'fr' }));
+vi.mock('$lib/paraglide/runtime', async (importOriginal) => ({
+	...(await importOriginal<typeof import('$lib/paraglide/runtime')>()),
+	getLocale: () => locale.current
 }));
 
 import PaymentModal from './PaymentModal.svelte';
@@ -92,8 +91,8 @@ describe('PaymentModal', () => {
 		expect(paymentElement.mount).toHaveBeenCalledOnce();
 	});
 
-	it("mounts the card form in the signed-in user's language", async () => {
-		getUserLanguage.mockResolvedValueOnce('es');
+	it('mounts the card form in the active locale (Canadian French for fr)', async () => {
+		locale.current = 'fr';
 		const app = mount(PaymentModal, {
 			target: document.body,
 			props: { ...baseProps, savedCard: { brand: 'visa', last4: '4242' }, onconfirmed: vi.fn() }
@@ -102,8 +101,9 @@ describe('PaymentModal', () => {
 		button('Use another card').click();
 		await settle();
 		unmount(app);
+		locale.current = 'en';
 
-		expect(stripe.elements).toHaveBeenCalledWith({ clientSecret: 'pi_1_secret', locale: 'es' });
+		expect(stripe.elements).toHaveBeenCalledWith({ clientSecret: 'pi_1_secret', locale: 'fr-CA' });
 	});
 
 	it('confirms a new card through the Payment Element and shows the notice', async () => {

@@ -119,7 +119,7 @@ describe('requestSignupProgram', () => {
           role: 'service-provider'
         }),
         new Headers(),
-        'es'
+        'fr'
       ).pipe(
         Effect.provide(
           makeLayer({
@@ -140,7 +140,7 @@ describe('requestSignupProgram', () => {
     expect(createdIntents).toHaveLength(1);
     expect(createdIntents[0]?.email).toBe('provider@example.com');
     expect(createdIntents[0]?.role).toBe('service-provider');
-    expect(createdIntents[0]?.language).toBe('es');
+    expect(createdIntents[0]?.language).toBe('fr');
     expect(createdIntents[0]?.expiresAt.getTime()).toBeGreaterThanOrEqual(
       before + 5 * 60 * 1000 - 1_000
     );

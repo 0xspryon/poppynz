@@ -10,6 +10,7 @@ export type NewUserProfile = InferInsertModel<typeof userProfile>;
 export type UserProfileUpdate = Partial<
   Pick<
     UserProfile,
+    | 'language'
     | 'firstName'
     | 'lastName'
     | 'gender'

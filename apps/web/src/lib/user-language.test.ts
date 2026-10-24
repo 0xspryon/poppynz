@@ -17,13 +17,13 @@ describe('getUserLanguage', () => {
 				ok: false,
 				error: { code: 'UNAUTHORIZED', message: 'nope', status: 401 }
 			})
-			.mockResolvedValueOnce({ ok: true, data: { language: 'es' } });
+			.mockResolvedValueOnce({ ok: true, data: { language: 'fr' } });
 
 		// A session that isn't ready yet (or a network blip) must not pin the
 		// result forever: the caller falls back to Stripe's own locale guess,
 		// and the next call gets a fresh read.
 		await expect(getUserLanguage()).resolves.toBeNull();
-		await expect(getUserLanguage()).resolves.toBe('es');
+		await expect(getUserLanguage()).resolves.toBe('fr');
 		expect(getProfile).toHaveBeenCalledTimes(2);
 	});
 
@@ -35,11 +35,8 @@ describe('getUserLanguage', () => {
 });
 
 describe('toStripeLocale', () => {
-	it('passes en and es through, and falls back to auto otherwise', () => {
+	it('gives Stripe Canadian French for fr and English otherwise', () => {
+		expect(toStripeLocale('fr')).toBe('fr-CA');
 		expect(toStripeLocale('en')).toBe('en');
-		expect(toStripeLocale('es')).toBe('es');
-		expect(toStripeLocale('fr')).toBe('auto');
-		expect(toStripeLocale(null)).toBe('auto');
-		expect(toStripeLocale(undefined)).toBe('auto');
 	});
 });

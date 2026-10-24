@@ -101,7 +101,7 @@ export type AppRuntime = ManagedRuntime.ManagedRuntime<AppServices, never>;
 export type BaseAppEnv = {
   Variables: {
     runtime: AppRuntime;
-    language: 'en' | 'es';
+    language: 'en' | 'fr';
   };
 };
 

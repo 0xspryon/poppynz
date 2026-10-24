@@ -2,6 +2,7 @@
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
+	import { syncLocaleWithProfile } from '$lib/locale-sync';
 	import { fetchSession, getSession } from '$lib/api/profile';
 	import { getTaxAccess } from '$lib/api/tax';
 	import BrandMark from '$lib/components/BrandMark.svelte';
@@ -27,6 +28,7 @@
 		void fetchSession().then((session) => {
 			if (session?.role === 'admin') {
 				authorized = true;
+				void syncLocaleWithProfile();
 				void getTaxAccess().then((result) => {
 					taxAccess = result.ok && (result.data.canRead || result.data.canReport);
 				});

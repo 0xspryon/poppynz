@@ -1,5 +1,6 @@
 /** Provider KYC document upload (screen 11a): presign → PUT to storage →
  * record the submission, backed by /uploads/presigned-url and /kyc-docs. */
+import { m } from '$lib/paraglide/messages';
 import { apiClient, call, type ApiResult, type ErrorsOf, type UnexpectedError } from './client';
 
 const presignEndpoint = apiClient.uploads['presigned-url'].$post;
@@ -59,7 +60,7 @@ export async function uploadKycDocument(input: {
 				ok: false,
 				error: {
 					code: 'UNEXPECTED',
-					message: 'The file could not be uploaded to storage.',
+					message: m.documents_err_storage_upload_failed(),
 					status: uploadRes.status
 				}
 			};
@@ -67,7 +68,11 @@ export async function uploadKycDocument(input: {
 	} catch {
 		return {
 			ok: false,
-			error: { code: 'UNEXPECTED', message: 'The file upload could not be sent.', status: null }
+			error: {
+				code: 'UNEXPECTED',
+				message: m.documents_err_upload_not_sent(),
+				status: null
+			}
 		};
 	}
 

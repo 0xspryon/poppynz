@@ -10,7 +10,10 @@
 	} from '$lib/api/onboarding';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import { formatDate } from '$lib/date';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
+	import { approvalIncompleteText } from './error-messages';
 
 	interface Props {
 		role: 'family' | 'service-provider';
@@ -22,7 +25,7 @@
 
 	let { role, hub, history, vouchCount = null, onchanged }: Props = $props();
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 	const DAY_MS = 24 * 60 * 60 * 1000;
 	const RECOMMENDED_VOUCHES = 2;
 
@@ -39,29 +42,28 @@
 		void submit();
 	}
 
-	const verifiedLabel = $derived(role === 'family' ? 'Verified family' : 'Verified helper');
+	const verifiedLabel = $derived(
+		role === 'family' ? m.approval_verified_family() : m.approval_verified_provider()
+	);
 
 	async function submit() {
 		if (submitting) return;
 		submitting = true;
 		const result = await submitApprovalRequest();
 		if (result.ok) {
-			toast.success(
-				'Your application is with our review team — expect a decision within ~2 days.',
-				{
-					title: 'Submitted for review'
-				}
-			);
+			toast.success(m.approval_toast_submitted(), {
+				title: m.approval_toast_submitted_title()
+			});
 			await onchanged();
 		} else {
 			toast.error(
 				result.error.code === 'APPROVAL_REQUEST_ALREADY_SUBMITTED'
-					? 'Your application is already with our review team.'
+					? m.approval_toast_already_submitted()
 					: result.error.code === 'APPROVAL_REQUEST_INCOMPLETE'
 						? // UAT #12: say what is still needed before it can be submitted.
-							result.error.message
+							approvalIncompleteText(result.error.blockers)
 						: RETRY_MESSAGE,
-				{ title: 'Not submitted yet' }
+				{ title: m.approval_toast_not_submitted_title() }
 			);
 		}
 		submitting = false;
@@ -88,7 +90,7 @@
 			list.push({
 				key: `${request.id}-submitted`,
 				at: request.submittedAt,
-				title: index === 0 ? 'Application submitted' : 'Application resubmitted',
+				title: index === 0 ? m.approval_event_submitted() : m.approval_event_resubmitted(),
 				chip: 'submitted',
 				dot: 'bg-primary'
 			});
@@ -96,7 +98,7 @@
 				list.push({
 					key: `${request.id}-rejected`,
 					at: request.reviewedAt,
-					title: 'Application rejected',
+					title: m.approval_event_rejected(),
 					chip: 'rejected',
 					reason: request.reason ?? undefined,
 					dot: 'bg-error'
@@ -108,18 +110,18 @@
 			list.push({
 				key: `${approval.id}-granted`,
 				at: approval.grantedAt,
-				title: 'Approval granted',
+				title: m.approval_event_granted(),
 				chip: 'approved',
-				detail: `Reviewed by Poppynz admin · valid until ${formatDate(approval.expiresAt)}`,
+				detail: m.approval_event_granted_detail({ date: formatDate(approval.expiresAt) }),
 				dot: 'bg-success shadow-[0_0_0_4px] shadow-success-content'
 			});
 			if (approval.status === 'rejected' && approval.revokedAt) {
 				list.push({
 					key: `${approval.id}-revoked`,
 					at: approval.revokedAt,
-					title: 'Approval revoked',
+					title: m.approval_event_revoked(),
 					chip: 'rejected',
-					chipLabel: 'Revoked',
+					chipLabel: m.approval_chip_revoked(),
 					reason: approval.reason ?? undefined,
 					dot: 'bg-error'
 				});
@@ -127,9 +129,9 @@
 				list.push({
 					key: `${approval.id}-expired`,
 					at: approval.expiresAt,
-					title: 'Approval expired',
+					title: m.approval_event_expired(),
 					chip: 'expired',
-					detail: `Approval granted ${formatDate(approval.grantedAt)} ran its term.`,
+					detail: m.approval_event_expired_detail({ date: formatDate(approval.grantedAt) }),
 					dot: 'bg-outline-variant'
 				});
 			}
@@ -152,14 +154,6 @@
 			? Math.max(0, Math.floor((new Date(approval.expiresAt).getTime() - Date.now()) / DAY_MS))
 			: 0
 	);
-
-	function formatDate(iso: string): string {
-		return new Date(iso).toLocaleDateString('en-CA', {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		});
-	}
 </script>
 
 <!-- Current status hero -->
@@ -177,14 +171,16 @@
 				<StatusChip status="approved" />
 			</div>
 			<p class="mt-0.5 text-[13px] text-base-content-muted">
-				Current approval valid until
+				{m.approval_current_valid_until_before()}
 				<b class="text-base-content">{formatDate(approval.expiresAt)}</b>
-				· granted {formatDate(approval.grantedAt)} · we'll remind you before it expires.
+				{m.approval_current_valid_until_after({ date: formatDate(approval.grantedAt) })}
 			</p>
 		</div>
 		<div class="shrink-0 text-right">
 			<div class="font-display text-2xl font-bold text-success">{daysRemaining}</div>
-			<div class="text-xs text-outline">days remaining</div>
+			<div class="text-xs text-outline">
+				{m.approval_days_remaining({ count: daysRemaining })}
+			</div>
 		</div>
 	</div>
 {:else if latestRequest?.status === 'submitted'}
@@ -197,12 +193,13 @@
 		</span>
 		<div class="min-w-0 flex-1">
 			<div class="flex flex-wrap items-center gap-2.5">
-				<span class="font-display text-lg font-bold text-base-content">Under review</span>
+				<span class="font-display text-lg font-bold text-base-content"
+					>{m.approval_under_review()}</span
+				>
 				<StatusChip status="submitted" />
 			</div>
 			<p class="mt-0.5 text-[13px] text-base-content-muted">
-				Submitted {formatDate(latestRequest.submittedAt)} — an admin usually reviews within ~2 days. We'll
-				email you.
+				{m.approval_under_review_detail({ date: formatDate(latestRequest.submittedAt) })}
 			</p>
 		</div>
 	</div>
@@ -214,23 +211,20 @@
 			</span>
 			<div class="min-w-0 flex-1">
 				<div class="flex flex-wrap items-center gap-2.5">
-					<span class="font-display text-lg font-bold text-base-content"> Approval revoked </span>
-					<StatusChip status="rejected" label="Revoked" />
+					<span class="font-display text-lg font-bold text-base-content">
+						{m.approval_revoked_heading()}
+					</span>
+					<StatusChip status="rejected" label={m.approval_chip_revoked()} />
 				</div>
 				<p class="mt-0.5 text-[13px] text-base-content-muted">
-					Revocation isn't a ban — fix the issue below, then resubmit for review.
+					{m.approval_revoked_detail()}
 				</p>
 			</div>
-			<button
-				type="button"
-				class="btn btn-primary"
-				disabled={submitting}
-				onclick={requestSubmit}
-			>
+			<button type="button" class="btn btn-primary" disabled={submitting} onclick={requestSubmit}>
 				{#if submitting}
 					<span class="loading loading-spinner loading-sm"></span>
 				{/if}
-				Resubmit for review
+				{m.approval_resubmit()}
 			</button>
 		</div>
 		{#if revokedApproval.reason}
@@ -238,7 +232,7 @@
 				class="mt-4 max-w-2xl rounded-md border border-error-content bg-error-content/40 px-3.5
 					py-2.5 text-[12.5px] leading-relaxed text-error"
 			>
-				<b>Reason:</b>
+				<b>{m.approval_reason_label()}</b>
 				{revokedApproval.reason}
 			</p>
 		{/if}
@@ -252,24 +246,19 @@
 			<div class="min-w-0 flex-1">
 				<div class="flex flex-wrap items-center gap-2.5">
 					<span class="font-display text-lg font-bold text-base-content">
-						Application rejected
+						{m.approval_rejected_heading()}
 					</span>
 					<StatusChip status="rejected" />
 				</div>
 				<p class="mt-0.5 text-[13px] text-base-content-muted">
-					Rejection isn't final — fix the issue below and resubmit.
+					{m.approval_rejected_detail()}
 				</p>
 			</div>
-			<button
-				type="button"
-				class="btn btn-primary"
-				disabled={submitting}
-				onclick={requestSubmit}
-			>
+			<button type="button" class="btn btn-primary" disabled={submitting} onclick={requestSubmit}>
 				{#if submitting}
 					<span class="loading loading-spinner loading-sm"></span>
 				{/if}
-				Resubmit for review
+				{m.approval_resubmit()}
 			</button>
 		</div>
 		{#if latestRequest.reason}
@@ -277,7 +266,7 @@
 				class="mt-4 max-w-2xl rounded-md border border-error-content bg-error-content/40 px-3.5
 					py-2.5 text-[12.5px] leading-relaxed text-error"
 			>
-				<b>Reason:</b>
+				<b>{m.approval_reason_label()}</b>
 				{latestRequest.reason}
 			</p>
 		{/if}
@@ -291,22 +280,18 @@
 			<i class="las la-user-shield text-2xl text-outline" aria-hidden="true"></i>
 		</span>
 		<div class="min-w-0 flex-1">
-			<span class="font-display text-lg font-bold text-base-content">Not submitted yet</span>
+			<span class="font-display text-lg font-bold text-base-content"
+				>{m.approval_not_submitted_heading()}</span
+			>
 			<p class="mt-0.5 text-[13px] text-base-content-muted">
-				You can submit before everything is complete. We'll let you know if anything else is needed
-				before approval.
+				{m.approval_not_submitted_detail()}
 			</p>
 		</div>
-		<button
-			type="button"
-			class="btn btn-primary"
-			disabled={submitting}
-			onclick={requestSubmit}
-		>
+		<button type="button" class="btn btn-primary" disabled={submitting} onclick={requestSubmit}>
 			{#if submitting}
 				<span class="loading loading-spinner loading-sm"></span>
 			{/if}
-			Submit for review
+			{m.approval_submit()}
 		</button>
 	</div>
 {/if}
@@ -314,7 +299,7 @@
 <!-- History timeline -->
 {#if events.length > 0}
 	<div class="mb-3.5 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-		History
+		{m.approval_history_heading()}
 	</div>
 	<div class="rounded-lg border border-card-border bg-base-100 p-6 lg:p-7">
 		{#each events as event, index (event.key)}
@@ -343,7 +328,7 @@
 							class="mt-1.5 max-w-xl rounded-md border border-error-content bg-error-content/40
 								px-3.5 py-2.5 text-[12.5px] leading-relaxed text-error"
 						>
-							<b>Reason:</b>
+							<b>{m.approval_reason_label()}</b>
 							{event.reason}
 						</p>
 					{/if}
@@ -353,15 +338,15 @@
 	</div>
 {:else}
 	<p class="rounded-lg border border-card-border bg-base-100 p-6 text-sm text-base-content-muted">
-		No history yet — your submissions and decisions will appear here.
+		{m.approval_history_empty()}
 	</p>
 {/if}
 
 <ConfirmDialog
 	open={nudgeOpen}
-	title="Submit without two vouches?"
-	body={`You have ${vouchCount ?? 0} of ${RECOMMENDED_VOUCHES} recommended vouches. You can still submit — our team will email you to arrange a quick chat before deciding.`}
-	confirmLabel="Submit anyway"
+	title={m.approval_nudge_title()}
+	body={m.approval_nudge_body({ count: vouchCount ?? 0, total: RECOMMENDED_VOUCHES })}
+	confirmLabel={m.approval_nudge_confirm()}
 	confirmClass="btn-primary"
 	busy={submitting}
 	onconfirm={() => {

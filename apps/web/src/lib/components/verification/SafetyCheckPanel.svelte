@@ -16,7 +16,10 @@
 	} from '$lib/api/safety-verification';
 	import PaymentModal from '$lib/components/payments/PaymentModal.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
+	import { safetyVerificationErrorText } from './error-messages';
 
 	interface Props {
 		summary: SafetyVerificationState;
@@ -37,12 +40,12 @@
 		onchanged,
 		documentsHref,
 		ondocuments,
-		documentsLabel = 'Go to Documents',
-		documentsPlace = 'your Documents page',
+		documentsLabel = m.verify_documents_label_default(),
+		documentsPlace = m.verify_documents_place_default(),
 		showDocumentsButton = true
 	}: Props = $props();
 
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+	const RETRY_MESSAGE = m.verify_error_retry();
 
 	let ordering = $state(false);
 	let removingId = $state<string | null>(null);
@@ -50,8 +53,7 @@
 	/** The payment the modal is confirming (Stripe only — the mock settles at once). */
 	let payment = $state<PaymentRequired | null>(null);
 
-	const SAVE_NOTICE =
-		'Your card will be saved for future Poppynz payments, such as contract billing. You can replace it in Billing.';
+	const SAVE_NOTICE = m.verify_save_card_notice();
 
 	const basket = $derived(summary.basket);
 
@@ -62,7 +64,7 @@
 		if (result.ok) {
 			await onchanged();
 		} else {
-			toast.error(RETRY_MESSAGE, { title: 'Not removed' });
+			toast.error(RETRY_MESSAGE, { title: m.verify_toast_not_removed_title() });
 		}
 		removingId = null;
 	}
@@ -87,7 +89,7 @@
 		const current = untrack(() => payment);
 		if (!current) return;
 		payment = null;
-		toast.success('Payment received. We are setting up your check now.');
+		toast.success(m.verify_toast_payment_received());
 	});
 
 	const status = $derived(summary.verification.status);
@@ -112,36 +114,32 @@
 
 	/** Deliberately never says "verified" for a submitted document. */
 	const statusLabel: Record<string, string> = {
-		not_started: 'Not started',
-		payment_pending: 'Payment in progress',
-		invited: 'Waiting on you',
-		in_progress: 'In progress',
-		review_required: 'Submitted for review',
-		verified: 'Verified',
-		rejected: 'Not approved',
-		expired: 'Expired'
+		not_started: m.verify_status_not_started(),
+		payment_pending: m.verify_status_payment_pending(),
+		invited: m.verify_status_invited(),
+		in_progress: m.verify_status_in_progress(),
+		review_required: m.verify_status_review_required(),
+		verified: m.verify_status_verified(),
+		rejected: m.verify_status_rejected(),
+		expired: m.verify_status_expired()
 	};
 
 	const statusHelp: Record<string, string> = $derived({
 		// UAT #15: once something is on the list, stop asking to add documents.
 		not_started:
 			basket.length > 0
-				? 'Your check list is ready — review it below, then pay to start your check.'
+				? m.verify_help_list_ready()
 				: summary.orderableCheckTypes.length > 0
-					? `Add documents from ${documentsPlace}, then pay for them together here.`
-					: `Upload your safety document from ${documentsPlace} to get started.`,
-		payment_pending: 'We are confirming your payment. This usually takes a moment.',
-		invited: 'We emailed you a secure link to finish your check — you can also continue below.',
-		in_progress: 'Your check is being processed. We will let you know when it is done.',
-		review_required:
-			'A Poppynz administrator is reviewing your submission. Submitted is not the same as verified — we will confirm once the review is complete.',
-		verified: 'You are verified and can use Poppynz normally.',
-		rejected: 'Your verification was not approved.',
-		expired: 'Your verification has lapsed. Renew it to keep using Poppynz.'
+					? m.verify_help_add_documents({ place: documentsPlace })
+					: m.verify_help_upload_document({ place: documentsPlace }),
+		payment_pending: m.verify_help_payment_pending(),
+		invited: m.verify_help_invited(),
+		in_progress: m.verify_help_in_progress(),
+		review_required: m.verify_help_review_required(),
+		verified: m.verify_help_verified(),
+		rejected: m.verify_help_rejected(),
+		expired: m.verify_help_expired()
 	});
-
-	const money = (cents: number) =>
-		new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(cents / 100);
 
 	/** One row per tax label ("HST (ON) 13%"): the checks and the admin fee are
 	 * separate supplies taxed alike, shown as one line. */
@@ -162,7 +160,7 @@
 		const result = await orderSafetyCheck();
 		if (result.ok) {
 			if (result.data.status === 'paid') {
-				toast.success('Payment received. We are setting up your check now.');
+				toast.success(m.verify_toast_payment_received());
 				await onchanged();
 			} else {
 				payment = result.data;
@@ -172,14 +170,14 @@
 		} else {
 			toast.error(
 				result.error.code === 'SAFETY_VERIFICATION_UNAVAILABLE'
-					? 'Ordering is temporarily unavailable. Please try again shortly.'
+					? m.verify_toast_ordering_unavailable()
 					: result.error.code === 'SAFETY_VERIFICATION_PAYMENT_FAILED' ||
 						  result.error.code === 'SAFETY_VERIFICATION_CONFLICT' ||
 						  result.error.code === 'TAX_PROVINCE_REQUIRED' ||
 						  result.error.code === 'TAX_CONFIGURATION_INCOMPLETE'
-						? result.error.message
+						? safetyVerificationErrorText(result.error)
 						: RETRY_MESSAGE,
-				{ title: 'Check not ordered' }
+				{ title: m.verify_toast_not_ordered_title() }
 			);
 		}
 		ordering = false;
@@ -193,15 +191,17 @@
 		const result = await confirmSafetyCheckPayment(current.paymentId);
 		payment = null;
 		if (!result.ok) {
-			toast.error(RETRY_MESSAGE, { title: 'Payment not confirmed' });
+			toast.error(RETRY_MESSAGE, { title: m.verify_toast_payment_not_confirmed_title() });
 		} else if (result.data.status === 'paid') {
-			toast.success('Payment received. We are setting up your check now.');
+			toast.success(m.verify_toast_payment_received());
 		} else if (result.data.status === 'failed') {
-			toast.error(result.data.message ?? 'The payment was declined.', {
-				title: 'Payment declined'
+			// The server's reason is the provider's own (English) wording, or an
+			// internal note — the payment modal already showed the card's reason.
+			toast.error(m.verify_toast_payment_declined(), {
+				title: m.verify_toast_payment_declined_title()
 			});
 		} else {
-			toast.info('We are confirming your payment. This usually takes a moment.');
+			toast.info(m.verify_toast_payment_confirming());
 		}
 		await onchanged();
 	}
@@ -234,11 +234,11 @@
 
 <div class="rounded-xl border border-card-border bg-base-100 p-5">
 	<div class="flex flex-wrap items-center gap-3">
-		<span class="text-sm font-semibold text-base-content">Your status</span>
+		<span class="text-sm font-semibold text-base-content">{m.verify_your_status()}</span>
 		<StatusChip status={chip[status] ?? 'missing'} label={statusLabel[status]} />
 		{#if summary.verification.expiresOn && status === 'verified'}
 			<span class="text-xs text-base-content-muted">
-				Valid until {formatCalendarDate(summary.verification.expiresOn)}
+				{m.verify_valid_until({ date: formatCalendarDate(summary.verification.expiresOn) })}
 			</span>
 		{/if}
 	</div>
@@ -250,7 +250,7 @@
 	{#if summary.canResumePayment}
 		<button type="button" class="btn btn-primary btn-sm mt-3" disabled={ordering} onclick={order}>
 			{#if ordering}<span class="loading loading-spinner loading-xs"></span>{/if}
-			Continue payment
+			{m.verify_continue_payment()}
 		</button>
 	{/if}
 
@@ -261,7 +261,7 @@
 			target="_blank"
 			rel="external noopener noreferrer"
 		>
-			Continue your check
+			{m.verify_continue_check()}
 		</a>
 	{/if}
 
@@ -270,7 +270,7 @@
 			class="mt-3 max-w-xl rounded-md border border-error-content bg-error-content/40 px-3 py-2
 				text-xs leading-relaxed text-error"
 		>
-			<b>Reason:</b>
+			<b>{m.verify_reason_label()}</b>
 			{summary.verification.decisionReason}
 		</p>
 	{/if}
@@ -278,7 +278,7 @@
 
 {#if showCredibled}
 	<h2 class="mt-8 mb-3 text-lg font-semibold text-base-content">
-		{canStart ? 'Order checks' : 'Checks Credibled is collecting'}
+		{canStart ? m.verify_order_checks_heading() : m.verify_collecting_heading()}
 	</h2>
 
 	<div class="grid gap-4">
@@ -287,21 +287,20 @@
 				class="rounded-pill bg-credibled-tint px-2 py-0.5 text-[10.5px] font-semibold
 					text-credibled-text"
 			>
-				Powered by Credibled
+				{m.verify_powered_by_credibled()}
 			</span>
-			<h3 class="mt-3 text-base font-semibold text-base-content">Your check list</h3>
+			<h3 class="mt-3 text-base font-semibold text-base-content">
+				{m.verify_check_list_heading()}
+			</h3>
 
 			{#if basket.length === 0}
 				<p class="mt-1 text-sm text-base-content-muted">
-					Nothing selected yet. Pick the documents you'd like Credibled to collect, then come back
-					here to pay for them together.
+					{m.verify_check_list_empty()}
 				</p>
-				{@render documentsLink('btn btn-outline btn-sm mt-4 w-full', 'Choose documents')}
+				{@render documentsLink('btn btn-outline btn-sm mt-4 w-full', m.verify_choose_documents())}
 			{:else}
 				<p class="mt-1 text-sm text-base-content-muted">
-					{canStart
-						? 'You complete these securely with our screening provider — Poppynz never sees your ID documents.'
-						: 'These are being collected by our screening provider. You complete them securely with Credibled — Poppynz never sees your ID documents.'}
+					{canStart ? m.verify_check_list_intro_unpaid() : m.verify_check_list_intro_paid()}
 				</p>
 
 				<ul class="mt-4 flex flex-col gap-2">
@@ -316,14 +315,14 @@
 							</div>
 							<div class="flex shrink-0 items-center gap-2">
 								<span class="text-sm tabular-nums text-base-content">
-									{money(item.costCents)}
+									{formatMoney(item.costCents)}
 								</span>
 								<!-- Removable only while the list is still unpaid. -->
 								{#if canStart}
 									<button
 										type="button"
 										class="btn btn-ghost btn-xs btn-square"
-										aria-label="Remove {item.name}"
+										aria-label={m.verify_remove_item({ name: item.name })}
 										disabled={removingId !== null}
 										onclick={() => removeItem(item.id)}
 									>
@@ -340,28 +339,32 @@
 					     unknown one is never priced at 0. -->
 					<p class="mt-4 border-t border-credibled-border pt-3 text-sm text-base-content-muted">
 						{summary.quoteBlockedReason === 'tax_province_required'
-							? 'Add your province to your profile address to see the price — sales tax depends on where you live.'
-							: "We can't price checks right now. Please try again later."}
+							? m.verify_quote_province_required()
+							: m.verify_quote_unavailable()}
 					</p>
 				{:else if canStart && summary.quote}
 					<dl class="mt-4 space-y-1 border-t border-credibled-border pt-3 text-sm">
 						<div class="flex justify-between">
-							<dt class="text-base-content-muted">Checks</dt>
-							<dd class="tabular-nums text-base-content">{money(summary.quote.amountCents)}</dd>
+							<dt class="text-base-content-muted">{m.verify_quote_checks()}</dt>
+							<dd class="tabular-nums text-base-content">
+								{formatMoney(summary.quote.amountCents)}
+							</dd>
 						</div>
 						<div class="flex justify-between">
-							<dt class="text-base-content-muted">Poppynz administration fee</dt>
-							<dd class="tabular-nums text-base-content">{money(summary.quote.feeCents)}</dd>
+							<dt class="text-base-content-muted">{m.verify_quote_admin_fee()}</dt>
+							<dd class="tabular-nums text-base-content">{formatMoney(summary.quote.feeCents)}</dd>
 						</div>
 						{#each taxByLabel(summary.quote.taxLines) as line (line.label)}
 							<div class="flex justify-between">
 								<dt class="text-base-content-muted">{line.label}</dt>
-								<dd class="tabular-nums text-base-content">{money(line.taxCents)}</dd>
+								<dd class="tabular-nums text-base-content">{formatMoney(line.taxCents)}</dd>
 							</div>
 						{/each}
 						<div class="flex justify-between pt-1 font-semibold">
-							<dt class="text-base-content">Total</dt>
-							<dd class="tabular-nums text-base-content">{money(summary.quote.totalCents)}</dd>
+							<dt class="text-base-content">{m.verify_quote_total()}</dt>
+							<dd class="tabular-nums text-base-content">
+								{formatMoney(summary.quote.totalCents)}
+							</dd>
 						</div>
 					</dl>
 
@@ -372,17 +375,20 @@
 						onclick={order}
 					>
 						{#if ordering}<span class="loading loading-spinner loading-xs"></span>{/if}
-						Pay {money(summary.quote.totalCents)} and start
+						{m.verify_pay_and_start({ amount: formatMoney(summary.quote.totalCents) })}
 					</button>
-					{@render documentsLink('btn btn-ghost btn-xs mt-2 w-full', 'Add another document')}
+					{@render documentsLink(
+						'btn btn-ghost btn-xs mt-2 w-full',
+						m.verify_add_another_document()
+					)}
 				{:else if summary.verification.cost}
 					<!-- What was actually charged, frozen at payment — never the
 					     live quote, which today's prices would recompute. -->
 					<dl class="mt-4 space-y-1 border-t border-credibled-border pt-3 text-sm">
 						<div class="flex justify-between font-semibold">
-							<dt class="text-base-content">Paid</dt>
+							<dt class="text-base-content">{m.verify_paid()}</dt>
 							<dd class="tabular-nums text-base-content">
-								{money(summary.verification.cost.totalCents)}
+								{formatMoney(summary.verification.cost.totalCents)}
 							</dd>
 						</div>
 					</dl>
@@ -396,8 +402,8 @@
 	<PaymentModal
 		mode="payment"
 		clientSecret={payment.clientSecret}
-		title="Pay for your checks"
-		submitLabel="Pay {money(payment.totalCents)}"
+		title={m.verify_payment_modal_title()}
+		submitLabel={m.verify_pay_amount({ amount: formatMoney(payment.totalCents) })}
 		savedCard={payment.savedCard}
 		notice={payment.savesCard ? SAVE_NOTICE : null}
 		onconfirmed={paymentConfirmed}

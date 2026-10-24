@@ -13,6 +13,7 @@
 	} from '$lib/api/onboarding';
 	import ApprovalPanel from '$lib/components/verification/ApprovalPanel.svelte';
 	import { notifications } from '$lib/notifications.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		role: 'family' | 'service-provider';
@@ -24,7 +25,7 @@
 	 * role endpoints. */
 	type ApprovalHub = Pick<OnboardingState, 'approval' | 'latestApprovalRequest'>;
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 
 	let onboarding = $state<ApprovalHub | null>(null);
 	let history = $state<OnboardingHistory | null>(null);
@@ -66,13 +67,13 @@
 </script>
 
 <svelte:head>
-	<title>Approval · Poppynz</title>
+	<title>{m.approval_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-4xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Approval</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.approval_heading()}</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		Your verification status, and every request and approval over time.
+		{m.approval_intro()}
 	</p>
 
 	{#if loading}

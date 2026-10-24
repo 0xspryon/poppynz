@@ -10,6 +10,7 @@
 	import { resolve } from '$app/paths';
 	import SafetyCheckPanel from '$lib/components/verification/SafetyCheckPanel.svelte';
 	import { notifications } from '$lib/notifications.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		role: 'family' | 'service-provider';
@@ -17,7 +18,7 @@
 
 	let { role }: Props = $props();
 
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+	const RETRY_MESSAGE = m.verify_error_retry();
 
 	// NB: not named `state` — that shadows the $state rune and svelte-check
 	// resolves the rune to the local binding.
@@ -44,9 +45,7 @@
 			errorMessage = null;
 		} else {
 			errorMessage =
-				result.error.code === 'UNAUTHORIZED'
-					? 'Your session has expired — sign in again.'
-					: RETRY_MESSAGE;
+				result.error.code === 'UNAUTHORIZED' ? m.verify_session_expired() : RETRY_MESSAGE;
 		}
 	}
 
@@ -59,15 +58,13 @@
 </script>
 
 <svelte:head>
-	<title>Safety verification · Poppynz</title>
+	<title>{m.verify_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Safety verification</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.verify_heading()}</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		{role === 'family'
-			? 'Every Poppynz family completes a safety check before booking.'
-			: 'Every Poppynz helper completes a safety check before taking bookings.'}
+		{role === 'family' ? m.verify_intro_family() : m.verify_intro_provider()}
 	</p>
 
 	{#if loading}

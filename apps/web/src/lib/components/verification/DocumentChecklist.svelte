@@ -11,7 +11,9 @@
 	import { addSafetyVerificationItem, submitSafetyDocument } from '$lib/api/safety-verification';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import UploadDocumentDialog from '$lib/components/UploadDocumentDialog.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
+	import { documentUploadErrorText, safetyVerificationErrorText } from './error-messages';
 
 	interface Props {
 		documents: Array<OnboardingDocument>;
@@ -34,12 +36,12 @@
 		onchanged,
 		checkListHref,
 		oncheckList,
-		checkListPlace = 'Safety verification',
+		checkListPlace = m.verify_check_list_place_default(),
 		showRequiredHeading = true,
-		emptyRequiredText = 'No required documents right now.'
+		emptyRequiredText = m.verify_empty_required_default()
 	}: Props = $props();
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 
 	// Upload modal
 	let uploadTarget = $state<OnboardingDocument | null>(null);
@@ -67,9 +69,9 @@
 			toast.error(
 				result.error.code === 'SAFETY_VERIFICATION_CONFLICT' ||
 					result.error.code === 'INVALID_SAFETY_VERIFICATION_INPUT'
-					? result.error.message
+					? safetyVerificationErrorText(result.error)
 					: RETRY_MESSAGE,
-				{ title: 'Not added to your check list' }
+				{ title: m.verify_toast_not_added_title() }
 			);
 		}
 		addingId = null;
@@ -120,8 +122,8 @@
 		if (result.ok) {
 			toast.success(
 				uploadTarget.isSafetyGate
-					? `${uploadTarget.name} submitted for review.`
-					: `${uploadTarget.name} uploaded.`
+					? m.verify_toast_submitted_for_review({ name: uploadTarget.name })
+					: m.verify_toast_uploaded({ name: uploadTarget.name })
 			);
 			uploadTarget = null;
 			// The server drops the matching Credibled item on upload, so the
@@ -136,9 +138,9 @@
 		) {
 			// The server is rejecting the chosen file/expiry — keep that next to
 			// the inputs so it can be corrected in place.
-			uploadError = result.error.message;
+			uploadError = documentUploadErrorText(result.error);
 		} else {
-			toast.error(RETRY_MESSAGE, { title: 'Upload failed' });
+			toast.error(RETRY_MESSAGE, { title: m.verify_toast_upload_failed_title() });
 		}
 		uploading = false;
 	}
@@ -151,18 +153,14 @@
 
 {#snippet checkListLink(classes: string, label: string)}
 	{#if checkListHref}
-		<a
-			class={classes}
-			href={checkListHref}
-			title="Waiting for payment — open your check list to pay and start"
-		>
+		<a class={classes} href={checkListHref} title={m.verify_waiting_for_payment()}>
 			{label}
 		</a>
 	{:else}
 		<button
 			type="button"
 			class={classes}
-			title="Waiting for payment — open your check list to pay and start"
+			title={m.verify_waiting_for_payment()}
 			onclick={oncheckList}
 		>
 			{label}
@@ -210,27 +208,27 @@
 								class="flex size-3 items-center justify-center rounded-full border
 									border-credibled"
 							></span>
-							via Credibled
+							{m.verify_via_credibled()}
 						</span>
 					{/if}
 				</div>
 				<div class="mt-0.5 text-xs text-base-content-muted">
 					{#if doc.document}
 						{#if doc.document.source === 'credibled'}
-							Collected by Credibled
+							{m.verify_collected_by_credibled()}
 						{:else}
 							{doc.document.filename}
 						{/if}
 						{#if doc.document.expiryDate}
-							· expires {formatDate(doc.document.expiryDate)}
+							{m.verify_doc_expires({ date: formatDate(doc.document.expiryDate) ?? '' })}
 						{/if}
 					{:else if doc.isOptional}
-						Optional — add it if it strengthens your profile
+						{m.verify_doc_optional_hint()}
 					{:else}
-						Required — not submitted yet
+						{m.verify_doc_required_missing()}
 					{/if}
 					{#if !doc.isFetchable && doc.document === null}
-						· upload only — not available via Credibled
+						{m.verify_doc_upload_only()}
 					{/if}
 				</div>
 				{#if doc.status === 'rejected' && doc.document?.reason}
@@ -238,7 +236,7 @@
 						class="mt-2 max-w-xl rounded-md border border-error-content bg-error-content/40 px-3
 							py-2 text-xs leading-relaxed text-error"
 					>
-						<b>Reason:</b>
+						<b>{m.verify_reason_label()}</b>
 						{doc.document.reason}
 					</p>
 				{/if}
@@ -251,13 +249,13 @@
 					class="btn btn-outline btn-sm btn-secondary"
 					onclick={() => openUpload(doc)}
 				>
-					Upload yourself
+					{m.verify_upload_yourself()}
 				</button>
 				{#if doc.isFetchable}
 					{#if queuedTypeIds.includes(doc.documentTypeId)}
 						{@render checkListLink(
 							'btn btn-sm border-credibled-border bg-credibled-tint text-credibled-text',
-							'Scheduled via Credibled'
+							m.verify_scheduled_via_credibled()
 						)}
 					{:else}
 						<button
@@ -269,13 +267,13 @@
 							{#if addingId === doc.documentTypeId}
 								<span class="loading loading-spinner loading-xs"></span>
 							{/if}
-							Verify through Credibled
+							{m.verify_verify_through_credibled()}
 						</button>
 					{/if}
 				{/if}
 			{:else}
 				<button type="button" class="btn btn-outline btn-sm" onclick={() => openUpload(doc)}>
-					Replace
+					{m.verify_replace()}
 				</button>
 			{/if}
 		</div>
@@ -284,7 +282,7 @@
 
 {#if showRequiredHeading}
 	<div class="mb-2.5 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-		Required · {requiredSubmitted} of {requiredDocs.length}
+		{m.verify_required_heading({ submitted: requiredSubmitted, total: requiredDocs.length })}
 	</div>
 {/if}
 <div class="flex flex-col gap-2.5">
@@ -303,7 +301,7 @@
 		class="mb-2.5 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase
 			{requiredDocs.length > 0 || emptyRequiredText ? 'mt-6' : ''}"
 	>
-		Optional
+		{m.verify_optional_heading()}
 	</div>
 	<div class="flex flex-col gap-2.5">
 		{#each optionalDocs as doc (doc.documentTypeId)}
@@ -323,26 +321,24 @@
 {#if addedDoc}
 	<div class="modal modal-open" role="dialog" aria-modal="true">
 		<div class="modal-box max-w-lg border border-card-border">
-			<h3 class="font-display text-xl font-bold text-base-content">Added to your check list</h3>
+			<h3 class="font-display text-xl font-bold text-base-content">{m.verify_added_title()}</h3>
 			<p class="mt-2 text-sm text-base-content-muted">
-				<b>{addedDoc.name}</b> will be collected by Credibled on your behalf. Nothing has been ordered
-				or charged yet.
+				<b>{addedDoc.name}</b>{m.verify_added_collected_after()}
 			</p>
 			<p class="mt-3 text-sm text-base-content-muted">
-				If there are other documents you'd like Credibled to collect, close this and keep adding
-				them — you'll pay for everything together, once.
+				{m.verify_added_keep_adding()}
 			</p>
 			<p class="mt-3 text-sm text-base-content-muted">
-				When you're ready, {checkListPlace} shows the price and starts the checks.
+				{m.verify_added_when_ready({ place: checkListPlace })}
 			</p>
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={() => (addedDoc = null)}>
-					Add more checks
+					{m.verify_add_more_checks()}
 				</button>
 				{#if checkListHref}
 					<a class="btn btn-primary" href={checkListHref} onclick={() => (addedDoc = null)}>
-						Review and start
+						{m.verify_review_and_start()}
 					</a>
 				{:else}
 					<button
@@ -353,7 +349,7 @@
 							oncheckList?.();
 						}}
 					>
-						Review and start
+						{m.verify_review_and_start()}
 					</button>
 				{/if}
 			</div>
@@ -362,7 +358,7 @@
 			type="button"
 			class="modal-backdrop"
 			onclick={() => (addedDoc = null)}
-			aria-label="Close"
+			aria-label={m.common_close()}
 		></button>
 	</div>
 {/if}

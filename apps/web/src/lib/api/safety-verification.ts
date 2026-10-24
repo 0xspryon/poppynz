@@ -1,6 +1,7 @@
 /** Poppynz safety verification — both routes to being verified, plus the
  * admin review queue. Backed by /safety-verification and
  * /admin/safety-verifications. */
+import { m } from '$lib/paraglide/messages';
 import { apiClient, call, type ApiResult, type ErrorsOf, type UnexpectedError } from './client';
 
 const getEndpoint = apiClient['safety-verification'].$get;
@@ -104,7 +105,7 @@ export async function submitSafetyDocument(
 				ok: false,
 				error: {
 					code: 'UNEXPECTED',
-					message: 'The document could not be uploaded.',
+					message: m.verify_err_document_upload_failed(),
 					status: uploadRes.status
 				}
 			};
@@ -112,7 +113,11 @@ export async function submitSafetyDocument(
 	} catch {
 		return {
 			ok: false,
-			error: { code: 'UNEXPECTED', message: 'The document upload could not be sent.', status: null }
+			error: {
+				code: 'UNEXPECTED',
+				message: m.verify_err_document_upload_not_sent(),
+				status: null
+			}
 		};
 	}
 

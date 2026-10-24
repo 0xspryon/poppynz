@@ -4,6 +4,7 @@
 	 * `target` is set. */
 	import type { OnboardingDocument } from '$lib/api/onboarding';
 	import { todayInputValue } from '$lib/date';
+	import { m } from '$lib/paraglide/messages';
 
 	const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp';
 
@@ -77,21 +78,22 @@
 </script>
 
 {#if target}
-	<div class="modal modal-open" role="dialog" aria-label="Upload document">
+	<div class="modal modal-open" role="dialog" aria-label={m.verify_upload_dialog_label()}>
 		<!-- UAT #33: daisyUI's .label doesn't wrap, which pushed the box wider
 		     than the window on the Vulnerable Sector Check; cap the width and
 		     let every hint wrap. -->
 		<form class="modal-box w-full max-w-lg overflow-x-hidden" onsubmit={submit}>
 			<h2 class="text-lg font-bold break-words">
-				{target.document ? 'Replace' : 'Upload'} — {target.name}
+				{target.document
+					? m.verify_upload_title_replace({ name: target.name })
+					: m.verify_upload_title_upload({ name: target.name })}
 			</h2>
 			<p class="mt-1 text-xs text-base-content-muted">
-				PDF, JPG, PNG or WebP · up to 50 MB. Your file is stored securely and only visible to the
-				Poppynz review team.
+				{m.verify_upload_hint()}
 			</p>
 
 			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">File</legend>
+				<legend class="fieldset-legend">{m.verify_upload_file()}</legend>
 				<input
 					type="file"
 					class="file-input w-full"
@@ -102,21 +104,21 @@
 
 			{#if needsIssuingDetails}
 				<fieldset class="fieldset mt-2">
-					<legend class="fieldset-legend">Issuing police service</legend>
+					<legend class="fieldset-legend">{m.verify_upload_issuing_authority()}</legend>
 					<input
 						type="text"
 						class="input w-full"
 						maxlength="120"
-						placeholder="Toronto Police Service"
+						placeholder={m.verify_upload_issuing_authority_placeholder()}
 						bind:value={issuingAuthority}
 					/>
 				</fieldset>
 				<fieldset class="fieldset mt-2">
-					<legend class="fieldset-legend">Document number</legend>
+					<legend class="fieldset-legend">{m.verify_upload_document_number()}</legend>
 					<input type="text" class="input w-full" maxlength="60" bind:value={documentNumber} />
 				</fieldset>
 				<fieldset class="fieldset mt-2">
-					<legend class="fieldset-legend">Issued on</legend>
+					<legend class="fieldset-legend">{m.verify_upload_issued_on()}</legend>
 					<input type="date" class="input w-full" bind:value={issuedOn} />
 				</fieldset>
 			{/if}
@@ -124,7 +126,7 @@
 			{#if !needsIssuingDetails}
 				<!-- UAT #31: the issue date as printed on the document. -->
 				<fieldset class="fieldset mt-2">
-					<legend class="fieldset-legend">Issued on · optional</legend>
+					<legend class="fieldset-legend">{m.verify_upload_issued_on_optional()}</legend>
 					<input type="date" class="input w-full" max={todayInputValue()} bind:value={issuedOn} />
 				</fieldset>
 			{/if}
@@ -132,13 +134,11 @@
 			{#if target.requiresExpiryDate}
 				<fieldset class="fieldset mt-2">
 					<legend class="fieldset-legend">
-						{needsIssuingDetails ? 'Valid until' : 'Expiry date'}
+						{needsIssuingDetails ? m.verify_upload_valid_until() : m.verify_upload_expiry_date()}
 					</legend>
 					<input type="date" class="input w-full" bind:value={expiry} />
 					<p class="label text-xs whitespace-normal">
-						{needsIssuingDetails
-							? 'A Poppynz administrator reviews this — submitting is not the same as being verified.'
-							: 'This document type requires a future expiry date.'}
+						{needsIssuingDetails ? m.verify_upload_review_hint() : m.verify_upload_expiry_hint()}
 					</p>
 				</fieldset>
 			{/if}
@@ -149,16 +149,17 @@
 
 			<div class="modal-action">
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button type="submit" class="btn btn-primary" disabled={!canSubmit || busy}>
 					{#if busy}
 						<span class="loading loading-spinner loading-sm"></span>
 					{/if}
-					{target.document ? 'Replace document' : 'Submit document'}
+					{target.document ? m.verify_upload_submit_replace() : m.verify_upload_submit_new()}
 				</button>
 			</div>
 		</form>
-		<button type="button" class="modal-backdrop" aria-label="Close" onclick={oncancel}></button>
+		<button type="button" class="modal-backdrop" aria-label={m.common_close()} onclick={oncancel}
+		></button>
 	</div>
 {/if}

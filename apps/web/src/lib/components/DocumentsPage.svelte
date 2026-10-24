@@ -14,6 +14,7 @@
 	import { resolve } from '$app/paths';
 	import DocumentChecklist from '$lib/components/verification/DocumentChecklist.svelte';
 	import { notifications } from '$lib/notifications.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		role: 'family' | 'service-provider';
@@ -21,7 +22,7 @@
 
 	let { role }: Props = $props();
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 
 	const verificationHref = $derived(
 		role === 'family' ? resolve('/family/verification') : resolve('/service-provider/verification')
@@ -94,15 +95,13 @@
 </script>
 
 <svelte:head>
-	<title>Documents · Poppynz</title>
+	<title>{m.documents_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-4xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Documents</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.documents_heading()}</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		{role === 'family'
-			? 'Every Poppynz family completes a safety check before booking. Upload the documents below to get started.'
-			: 'Upload documents yourself, or let Credibled collect the official ones for you.'}
+		{role === 'family' ? m.documents_intro_family() : m.documents_intro_provider()}
 	</p>
 
 	{#if loading}
@@ -131,18 +130,19 @@
 				</span>
 				<div class="min-w-0 flex-1">
 					<div class="font-display text-[15px] font-bold text-base-content">
-						All required documents are in
+						{m.documents_all_required_in()}
 					</div>
 					<p class="mt-0.5 text-[13px] text-base-content-muted">
-						Submit your profile for approval — a Poppynz admin usually reviews within ~2 days.
+						{m.documents_submit_prompt()}
 					</p>
 				</div>
-				<a href={approvalHref} class="btn btn-primary btn-sm">Submit for approval</a>
+				<a href={approvalHref} class="btn btn-primary btn-sm">{m.documents_submit_for_approval()}</a
+				>
 			</div>
 		{:else if approvalCta === 'pending'}
 			<p class="mt-4 text-[13px] text-base-content-muted">
-				Your profile is with our review team.
-				<a href={approvalHref} class="link link-primary">Check your approval status</a>
+				{m.documents_with_review_team()}
+				<a href={approvalHref} class="link link-primary">{m.documents_check_approval_status()}</a>
 			</p>
 		{/if}
 	{/if}

@@ -15,6 +15,7 @@
 	} from '$lib/contract-sessions';
 	import { centsToDollars } from '$lib/money';
 	import { formatDateWithWeekday } from '$lib/date';
+	import PriceBreakdown from '$lib/components/contracts/PriceBreakdown.svelte';
 
 	interface Props {
 		terms: ContractTerms;
@@ -121,4 +122,10 @@
 			${centsToDollars(terms.weeklyEstimateCents)}
 		</span>
 	</div>
+
+	{#if terms.pricing}
+		<div class="mt-3">
+			<PriceBreakdown pricing={terms.pricing} viewerSide={viewerIsFamily ? 'family' : 'provider'} />
+		</div>
+	{/if}
 </section>

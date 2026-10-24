@@ -31,6 +31,7 @@
 		type EditorService
 	} from '$lib/components/contracts/ContractTermsEditor.svelte';
 	import ContractTermsView from '$lib/components/contracts/ContractTermsView.svelte';
+	import ContractBillingPanel from '$lib/components/contracts/ContractBillingPanel.svelte';
 	import WeekAtAGlance from '$lib/components/contracts/WeekAtAGlance.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
 	import {
@@ -137,7 +138,8 @@
 			'contract.accepted',
 			'contract.declined',
 			'contract.changes_requested',
-			'contract.ended'
+			'contract.ended',
+			'contract.billing'
 		] as const;
 		const unsubscribers = contractEvents.map((type) =>
 			notifications.on(type, (event) => {
@@ -205,6 +207,8 @@
 		} else if (error.code === 'PAYMENT_METHOD_REQUIRED') {
 			toast.error(error.message, { title: 'Card needed' });
 			void refresh(contractId);
+		} else if (error.code === 'TAX_PROVINCE_REQUIRED') {
+			toast.error(error.message, { title: 'Province needed' });
 		} else {
 			toast.error("That didn't go through. Please try again.");
 		}
@@ -228,6 +232,8 @@
 			void refresh(contractId);
 		} else if (error.code === 'COUNTERPART_UNAVAILABLE') {
 			toast.error("The other person can't take on new contracts right now.");
+		} else if (error.code === 'TAX_PROVINCE_REQUIRED') {
+			toast.error(error.message, { title: 'Province needed' });
 		} else {
 			toast.error(fallback);
 		}
@@ -666,6 +672,9 @@
 						profileHref={resolve('/family/profile')}
 						paymentMethodMissing={contract.hasPaymentMethod === false}
 						billingHref={resolve('/family/billing')}
+						pricing={contract.pendingVersion?.status === 'draft'
+							? contract.pendingVersion.pricing
+							: null}
 						{busy}
 						onsave={handleSaveDraft}
 						onsend={handleSendTerms}
@@ -682,6 +691,16 @@
 							: 'Services & sessions'}
 						timeZoneLabel={contract.timeZoneLabel}
 						viewerIsFamily={contract.viewerSide === 'family'}
+					/>
+				{/if}
+
+				{#if contract.billing}
+					<ContractBillingPanel
+						billing={contract.billing}
+						viewerSide={contract.viewerSide}
+						counterpartFirstName={firstName}
+						billingHref={resolve('/family/billing')}
+						payoutsHref={resolve('/service-provider/payouts')}
 					/>
 				{/if}
 

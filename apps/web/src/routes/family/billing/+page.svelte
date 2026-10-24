@@ -14,6 +14,7 @@
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { formatDate } from '$lib/date';
 	import { cardExpiry, cardLabel } from '$lib/payment-cards';
+	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
@@ -38,6 +39,8 @@
 
 	onMount(() => {
 		void load();
+		// A contract hold, charge or decline moved: show the fresh history.
+		return notifications.on('contract.billing', () => void load());
 	});
 
 	async function addCard() {

@@ -30,6 +30,10 @@ export type ContractDetailData = Extract<
 export type ContractDetail = ContractDetailData['contract'];
 export type ContractTerms = NonNullable<ContractDetail['pendingVersion']>;
 export type ContractServiceItem = ContractTerms['services'][number];
+/** The weekly price for the viewer's side (piece 3), or why there is none. */
+export type ContractPricing = NonNullable<ContractTerms['pricing']>;
+export type ContractBilling = NonNullable<ContractDetail['billing']>;
+export type ContractBillingCycle = ContractBilling['cycles'][number];
 export type ContractStatus = ContractDetail['status'];
 export type ContractTermsInput = {
 	services: Array<{

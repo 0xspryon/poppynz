@@ -10,7 +10,8 @@
 	 * contract-level free-text schedule is gone. Used for the family draft and
 	 * revisions after decline / requested changes. */
 	import type { ResolvedPathname } from '$app/types';
-	import type { ContractTerms, ContractTermsInput } from '$lib/api/contracts';
+	import type { ContractPricing, ContractTerms, ContractTermsInput } from '$lib/api/contracts';
+	import PriceBreakdown from '$lib/components/contracts/PriceBreakdown.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import ServiceWizard, {
 		type ServiceLineItem
@@ -49,6 +50,9 @@
 		paymentMethodMissing?: boolean;
 		/** Where the family adds a card. */
 		billingHref?: ResolvedPathname | null;
+		/** The last saved draft's weekly price with the fee and its tax
+		 * (computed by the server). Unsaved edits aren't in it. */
+		pricing?: ContractPricing | null;
 		busy?: boolean;
 		onsave?: (terms: ContractTermsInput) => void;
 		onsend: (terms: ContractTermsInput) => void;
@@ -66,6 +70,7 @@
 		profileHref = null,
 		paymentMethodMissing = false,
 		billingHref = null,
+		pricing = null,
 		busy = false,
 		onsave,
 		onsend
@@ -374,6 +379,13 @@
 			{/if}
 			to send — your card is used for contract billing.
 		</p>
+	{/if}
+
+	{#if pricing}
+		<div class="mt-3">
+			<PriceBreakdown {pricing} viewerSide="family" />
+			<p class="mt-1 text-[11px] text-outline">For your last saved draft — save to update it.</p>
+		</div>
 	{/if}
 
 	<div class="mt-4 flex items-center gap-2.5">

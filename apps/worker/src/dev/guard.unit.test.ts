@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkDevClock } from './guard';
+import { checkDevClock, checkLocalDatabase } from './guard';
 
 describe('checkDevClock', () => {
   it('runs only with ENVIRONMENT=dev set explicitly and BILLING_DEV_CLOCK=enabled', () => {
@@ -33,5 +33,19 @@ describe('checkDevClock', () => {
       ok: false,
       reason: 'run with TZ=UTC, like the API and worker containers'
     });
+  });
+});
+
+describe('checkLocalDatabase', () => {
+  it('accepts the host and compose Postgres only', () => {
+    expect(checkLocalDatabase('postgres://u:p@localhost:5432/poppynz_dev').ok).toBe(true);
+    expect(checkLocalDatabase('postgres://u:p@127.0.0.1:5432/poppynz_dev').ok).toBe(true);
+    expect(checkLocalDatabase('postgres://u:p@postgres:5432/poppynz_dev').ok).toBe(true);
+  });
+
+  it('refuses a remote, missing or malformed DATABASE_URL', () => {
+    expect(checkLocalDatabase('postgres://u:p@db.staging.poppynz.com:5432/app').ok).toBe(false);
+    expect(checkLocalDatabase(undefined).ok).toBe(false);
+    expect(checkLocalDatabase('not a url').ok).toBe(false);
   });
 });

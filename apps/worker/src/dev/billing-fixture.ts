@@ -35,25 +35,11 @@
  * Sign-in is by magic link only: request one on the sign-in page; the link is
  * printed in the api logs (`docker logs api 2>&1 | grep 'Magic link for'`).
  */
-import { requireDevClock } from './guard';
+import { requireDevClock, requireLocalDatabase } from './guard';
 
 requireDevClock();
 
-const ALLOWED_DB_HOSTS = new Set(['localhost', '127.0.0.1', 'postgres']);
-
-const databaseHost = (() => {
-  try {
-    return new URL(process.env.DATABASE_URL ?? '').hostname;
-  } catch {
-    return null;
-  }
-})();
-if (databaseHost === null || !ALLOWED_DB_HOSTS.has(databaseHost)) {
-  console.error(
-    '[dev-billing] DATABASE_URL must point at a local Postgres (localhost, 127.0.0.1 or postgres). Nothing was done.'
-  );
-  process.exit(1);
-}
+requireLocalDatabase();
 
 const argument = (name: string) => {
   const index = process.argv.indexOf(`--${name}`);

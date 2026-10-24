@@ -22,9 +22,10 @@ import { ContractBillingRepo } from '@repo/db';
 import { runContractBillingTick } from '@repo/billing';
 import { Effect, ManagedRuntime } from 'effect';
 import { ContractBillingBaseLive, withCycleSettlement } from '../billing-layer';
-import { requireDevClock } from './guard';
+import { requireDevClock, requireLocalDatabase } from './guard';
 
 requireDevClock();
+requireLocalDatabase();
 
 const argument = (name: string) => {
   const index = process.argv.indexOf(`--${name}`);

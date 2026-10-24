@@ -44,3 +44,32 @@ export const requireDevClock = (env: Record<string, string | undefined> = proces
     process.exit(1);
   }
 };
+
+/** Local Postgres hosts the dev tools may write to (host or compose). */
+export const LOCAL_DATABASE_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', 'postgres']);
+
+/** DATABASE_URL must point at a local Postgres: a dev clock against a shared
+ * or remote database would bill real contracts on a fake clock. */
+export const checkLocalDatabase = (databaseUrl: string | undefined): DevGuardResult => {
+  let host: string | null = null;
+  try {
+    host = new URL(databaseUrl ?? '').hostname;
+  } catch {
+    host = null;
+  }
+  return host !== null && LOCAL_DATABASE_HOSTS.has(host)
+    ? { ok: true }
+    : {
+        ok: false,
+        reason: 'DATABASE_URL must point at a local Postgres (localhost, 127.0.0.1 or postgres)'
+      };
+};
+
+/** Exits the process unless DATABASE_URL is a local Postgres. */
+export const requireLocalDatabase = (env: Record<string, string | undefined> = process.env) => {
+  const result = checkLocalDatabase(env.DATABASE_URL);
+  if (!result.ok) {
+    console.error(`[dev-billing] ${result.reason}. Nothing was done.`);
+    process.exit(1);
+  }
+};

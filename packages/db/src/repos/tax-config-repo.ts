@@ -4,7 +4,13 @@ import type { SqlError } from '@effect/sql/SqlError';
 import { and, asc, desc, eq, isNull, type InferSelectModel } from 'drizzle-orm';
 import { Context, Data, Effect, Layer } from 'effect';
 import { DrizzleLive } from '../effect-db';
-import { defaultTaxRates, defaultTaxRegistrations, defaultTaxTreatments } from '../tax-defaults';
+import {
+  defaultTaxJurisdictions,
+  defaultTaxRates,
+  defaultTaxRegistrations,
+  defaultTaxSupplyTypes,
+  defaultTaxTreatments
+} from '../tax-defaults';
 import {
   taxConfigAudit,
   taxJurisdiction,
@@ -355,8 +361,15 @@ export const TaxConfigRepoDefault = TaxConfigRepoLive.pipe(Layer.provide(Drizzle
 let memoryId = 0;
 const nextId = () => `tax-${++memoryId}`;
 
-export const makeInMemoryTaxConfigRepo = (initial: Partial<TaxLiveConfig> = {}) => {
+export const makeInMemoryTaxConfigRepo = (
+  initial: Partial<TaxLiveConfig> & {
+    jurisdictions?: Array<TaxJurisdiction>;
+    supplyTypes?: Array<TaxSupplyType>;
+  } = {}
+) => {
   const state = {
+    jurisdictions: [...(initial.jurisdictions ?? [])],
+    supplyTypes: [...(initial.supplyTypes ?? [])],
     rates: [...(initial.rates ?? [])],
     treatments: [...(initial.treatments ?? [])],
     registrations: [...(initial.registrations ?? [])],
@@ -458,8 +471,8 @@ export const makeInMemoryTaxConfigRepo = (initial: Partial<TaxLiveConfig> = {}) 
   );
 
   const service: Context.Tag.Service<TaxConfigRepo> = {
-    listJurisdictions: () => Effect.succeed([]),
-    listSupplyTypes: () => Effect.succeed([]),
+    listJurisdictions: () => Effect.sync(() => [...state.jurisdictions]),
+    listSupplyTypes: () => Effect.sync(() => [...state.supplyTypes]),
     listRates: rates.list,
     listSupplyTreatments: treatments.list,
     listRegistrations: registrations.list,
@@ -478,6 +491,7 @@ export const makeInMemoryTaxConfigRepo = (initial: Partial<TaxLiveConfig> = {}) 
               (!filter.recordId || row.recordId === filter.recordId)
           )
           .reverse()
+          .slice(0, filter.limit ?? 200)
       ),
     supersedeRate: (input, actor) => rates.supersede(input, actor),
     deleteRate: rates.remove,
@@ -558,5 +572,9 @@ export const makeSeededTaxConfigRepo = (
       })
     )
   };
-  return makeInMemoryTaxConfigRepo(adjust(base));
+  return makeInMemoryTaxConfigRepo({
+    ...adjust(base),
+    jurisdictions: defaultTaxJurisdictions.map((row) => ({ ...row }) as TaxJurisdiction),
+    supplyTypes: defaultTaxSupplyTypes.map((row) => ({ ...row }) as TaxSupplyType)
+  });
 };

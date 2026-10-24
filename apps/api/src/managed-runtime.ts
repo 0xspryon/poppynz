@@ -3,6 +3,7 @@ import {
   ApprovalRequestRepoDefault,
   BillingCustomerRepoDefault,
   CheckOrderRepoDefault,
+  ContractBillingRepoDefault,
   ContractRepoDefault,
   ConversationRepoDefault,
   FamilySearchOutboxRepoDefault,
@@ -29,6 +30,7 @@ import {
   UserSearchRepoDefault,
   VouchRepoDefault
 } from '@repo/db';
+import { CycleSettlementLive } from '@repo/billing';
 import { CredibledDefault } from '@repo/credibled';
 import { GooglePlacesLive } from '@repo/google';
 import { NotificationHubLive } from '@repo/notify';
@@ -47,7 +49,7 @@ import { MailerLive } from './lib/mailer';
 import { SigninServiceLive } from './routes/app/auth/signin/signin.handler';
 import { SignupServiceLive } from './routes/app/auth/signup/signup.handler';
 
-export const AppLive = Layer.mergeAll(
+const BaseLive = Layer.mergeAll(
   SignupIntentRepoDefault,
   UserProfileRepoDefault,
   UserRepoDefault,
@@ -77,6 +79,7 @@ export const AppLive = Layer.mergeAll(
   UserSearchRepoDefault,
   ConversationRepoDefault,
   ContractRepoDefault,
+  ContractBillingRepoDefault,
   NotificationHubLive,
   GooglePlacesLive,
   MailerLive,
@@ -94,5 +97,9 @@ export const AppLive = Layer.mergeAll(
   SignupServiceLive,
   AuthServiceLive
 );
+
+// Contract-cycle payments settle through the one settle path with contract
+// billing's own dependencies (piece 3).
+export const AppLive = CycleSettlementLive.pipe(Layer.provideMerge(BaseLive));
 
 export const makeAppRuntime = (): AppRuntime => ManagedRuntime.make(AppLive) as AppRuntime;

@@ -51,15 +51,15 @@ const record = (overrides: Partial<CheckOrder> = {}): CheckOrder =>
   }) as CheckOrder;
 
 type Options = {
-    found?: CheckOrder | null;
-    onUpdate?: (id: string, input: CheckOrderUpdateInput) => void;
-    onComplete?: (id: string, input: CheckOrderCompletionInput) => void;
-    /** Simulates a webhook and the poller racing: the guarded update matched
-     * nothing, so nothing was written. */
-    completeLosesRace?: boolean;
-    /** A guarded non-completing transition found the order already moved. */
-    advanceLosesRace?: boolean;
-    updateFails?: boolean;
+  found?: CheckOrder | null;
+  onUpdate?: (id: string, input: CheckOrderUpdateInput) => void;
+  onComplete?: (id: string, input: CheckOrderCompletionInput) => void;
+  /** Simulates a webhook and the poller racing: the guarded update matched
+   * nothing, so nothing was written. */
+  completeLosesRace?: boolean;
+  /** A guarded non-completing transition found the order already moved. */
+  advanceLosesRace?: boolean;
+  updateFails?: boolean;
 };
 
 const makeRuntime = (options: Options = {}) => {

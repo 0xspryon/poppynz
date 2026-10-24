@@ -3,6 +3,7 @@ import type {
   ApprovalRequestRepo,
   BillingCustomerRepo,
   CheckOrderRepo,
+  ContractBillingRepo,
   ContractRepo,
   ConversationRepo,
   FamilySearchOutboxRepo,
@@ -29,6 +30,7 @@ import type {
   UserSearchRepo,
   VouchRepo
 } from '@repo/db';
+import type { CycleSettlement } from '@repo/billing';
 import type { GooglePlaces } from '@repo/google';
 import type { Credibled } from '@repo/credibled';
 import type { NotificationHub } from '@repo/notify';
@@ -75,6 +77,8 @@ export type AppServices =
   | UserSearchRepo
   | ConversationRepo
   | ContractRepo
+  | ContractBillingRepo
+  | CycleSettlement
   | NotificationHub
   | Mailer
   | GooglePlaces

@@ -1,3 +1,4 @@
+import { makeIdleContractBillingLayer } from '@repo/billing';
 import { SqlError } from '@effect/sql/SqlError';
 import {
   dummyBillingCustomer,
@@ -8,6 +9,9 @@ import {
   makeContractRepoTest,
   makeConversationRepoTest,
   makeInMemoryBillingCustomerRepo,
+  makeInMemoryContractBillingRepo,
+  dummyContractBilling,
+  dummyContractCycle,
   makePayoutAccountRepoTest,
   makeServiceOfferedRepoTest,
   makeSafetyVerificationRepoTest,
@@ -113,7 +117,8 @@ const profile = (
   userId: string,
   firstName: string,
   phoneNumber: string | null,
-  location: { latitude: number; longitude: number } | null = null
+  location: { latitude: number; longitude: number } | null = null,
+  stateProvince: string | null = null
 ): SafeUserProfile => ({
   userId,
   email: `${firstName.toLowerCase()}@example.com`,
@@ -128,7 +133,7 @@ const profile = (
   city: 'Toronto',
   postalCode: null,
   country: null,
-  stateProvince: null,
+  stateProvince,
   shortBio: null,
   googlePlaceId: null,
   latitude: location?.latitude ?? null,
@@ -269,11 +274,21 @@ const makeLayer = (
     /** Whose payout account that is. Defaults to the helper (provider-1); the
      * stub finds it only for that user id. */
     payoutAccountOwner?: string;
+    /** Profile provinces (sales tax); null = none. Default MB family, ON helper. */
+    familyProvince?: string | null;
+    helperProvince?: string | null;
+    /** Contract billing state (piece 3); defaults to none. */
+    billing?: ReturnType<typeof makeInMemoryContractBillingRepo>;
+    onAcceptPending?: (options: unknown) => void;
   } = {}
 ) => {
   const viewer = options.viewer ?? familyUser();
   const counterpart = viewer.id === 'family-1' ? providerUser() : familyUser();
   return Layer.mergeAll(
+    // Contract billing (piece 3) is reached by accept and the detail; inert
+    // unless a test hands in billing state.
+    makeIdleContractBillingLayer(),
+    ...(options.billing ? [options.billing.layer] : []),
     // Sending needs a card on file; these suites assert other behaviour, so
     // the family has one unless a test says otherwise.
     makeInMemoryBillingCustomerRepo(options.familyCard === false ? [] : [dummyBillingCustomer()])
@@ -332,9 +347,16 @@ const makeLayer = (
                 null,
                 options.familyLocation === undefined
                   ? { latitude: 49.8951, longitude: -97.1384 }
-                  : options.familyLocation
+                  : options.familyLocation,
+                options.familyProvince === undefined ? 'MB' : options.familyProvince
               )
-            : profile('provider-1', 'Maria', '+1 416 555 0199')
+            : profile(
+                'provider-1',
+                'Maria',
+                '+1 416 555 0199',
+                null,
+                options.helperProvince === undefined ? 'ON' : options.helperProvince
+              )
         ),
       updateByUserId: () => Effect.die('not used'),
       updateLocationByUserId: () => Effect.die('not used')
@@ -436,6 +458,7 @@ const makeLayer = (
       },
       acceptPendingVersion: (_contractId, versionId, acceptOptions) => {
         options.calls?.push(`acceptPending:${acceptOptions.activate ? 'activate' : 'amend'}`);
+        options.onAcceptPending?.(acceptOptions);
         return Effect.succeed(
           options.acceptPendingResult === undefined
             ? proposedVersion({ id: versionId, status: 'accepted', decidedAt: new Date() })
@@ -927,6 +950,28 @@ describe('PUT /contracts/:id/terms', () => {
 });
 
 describe('POST /contracts/:id/send', () => {
+  it('refuses to send without the family province — the service fee is taxed by it', async () => {
+    const calls: Array<string> = [];
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            familyProvince: null,
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            calls
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ContractProvinceRequiredError',
+      party: 'family',
+      viewerIsParty: true
+    });
+    expect(calls).toEqual([]);
+  });
+
   it('proposes the draft and notifies the provider', async () => {
     const published: Array<Published> = [];
     const calls: Array<string> = [];
@@ -1181,6 +1226,74 @@ describe('POST /contracts/:id/withdraw', () => {
 });
 
 describe('POST /contracts/:id/accept', () => {
+  it('inserts the billing schedule with the frozen rates and provinces in the acceptance', async () => {
+    const accepted: Array<unknown> = [];
+    await Effect.runPromise(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'proposed' }),
+            versions: [proposedVersion()],
+            onAcceptPending: (acceptOptions) => accepted.push(acceptOptions)
+          })
+        )
+      )
+    );
+    expect(accepted).toEqual([
+      {
+        activate: true,
+        billing: expect.objectContaining({
+          // No payout account yet: the payment-readiness gate.
+          status: 'awaiting_payment_readiness',
+          familyFeeBps: 500,
+          providerCommissionBps: 1500,
+          familyProvince: 'MB',
+          helperProvince: 'ON',
+          timeZone: WPG,
+          startsOn: '2099-01-05',
+          billableFrom: null
+        })
+      }
+    ]);
+  });
+
+  it('refuses to accept until the helper has a province, telling the helper to add it', async () => {
+    const exit = await Effect.runPromiseExit(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            helperProvince: null,
+            contractById: baseContract({ status: 'proposed' }),
+            versions: [proposedVersion()]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ContractProvinceRequiredError',
+      party: 'helper',
+      viewerIsParty: true
+    });
+  });
+
+  it("refuses to accept a family's terms without the family's province", async () => {
+    const exit = await Effect.runPromiseExit(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            familyProvince: 'Bavaria',
+            contractById: baseContract({ status: 'proposed' }),
+            versions: [proposedVersion()]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ party: 'family', viewerIsParty: false });
+  });
+
   it('activates the contract and notifies the family', async () => {
     const published: Array<Published> = [];
     const calls: Array<string> = [];
@@ -1758,6 +1871,119 @@ describe('POST /contracts/:id/end', () => {
 });
 
 describe('GET /contracts/:id', () => {
+  // Tue & Thu 2 h at $26: $104.00 a week of service.
+  const detailFor = (viewer: User, extra: Parameters<typeof makeLayer>[0] = {}) =>
+    Effect.runPromise(
+      getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer,
+            contractWithContext: withContext(
+              baseContract({ status: 'proposed' }),
+              [proposedVersion()],
+              viewer.id
+            ),
+            conversationById: activeConversation(),
+            ...extra
+          })
+        )
+      )
+    );
+
+  it('shows the family the weekly price with the 5% fee and its tax added', async () => {
+    const { contract } = await detailFor(familyUser());
+    expect(contract.pendingVersion?.pricing).toEqual({
+      available: true,
+      side: 'family',
+      period: 'week',
+      serviceCents: 10400,
+      serviceTaxLines: [],
+      feeBps: 500,
+      feeCents: 520,
+      feeTaxLines: [{ label: 'GST (MB) 5%', taxCents: 26 }],
+      totalCents: 10946
+    });
+  });
+
+  it('shows the helper the 15% commission and its tax deducted, at the helper’s province', async () => {
+    const { contract } = await detailFor(providerUser());
+    expect(contract.pendingVersion?.pricing).toEqual({
+      available: true,
+      side: 'provider',
+      period: 'week',
+      serviceCents: 10400,
+      serviceTaxLines: [],
+      commissionBps: 1500,
+      commissionCents: 1560,
+      commissionTaxLines: [{ label: 'HST (ON) 13%', taxCents: 203 }],
+      shareCents: 8637
+    });
+  });
+
+  it('says why there is no price when a province is missing', async () => {
+    const { contract } = await detailFor(providerUser(), { helperProvince: null });
+    expect(contract.pendingVersion?.pricing).toEqual({
+      available: false,
+      reason: 'tax_province_required',
+      missingProvinceOf: 'helper'
+    });
+  });
+
+  it('shows the billing state and the viewer’s amount per cycle', async () => {
+    const billing = makeInMemoryContractBillingRepo({
+      billing: [
+        dummyContractBilling({ contractId: CONTRACT_ID, status: 'active', familyProvince: 'MB' })
+      ]
+    });
+    billing.state.cycles.push(
+      dummyContractCycle({
+        id: 'cycle-1',
+        contractId: CONTRACT_ID,
+        status: 'captured',
+        familyTotalCents: 10946,
+        capturedCents: 10946,
+        providerShareCents: 8637,
+        taxLines: [
+          {
+            supplyType: 'family_service_fee',
+            jurisdiction: 'MB',
+            component: 'gst',
+            rateMillipercent: 5000,
+            baseCents: 520,
+            taxCents: 26,
+            label: 'GST (MB) 5%',
+            registrationNumber: null
+          },
+          {
+            supplyType: 'provider_commission',
+            jurisdiction: 'ON',
+            component: 'hst',
+            rateMillipercent: 13000,
+            baseCents: 1560,
+            taxCents: 203,
+            label: 'HST (ON) 13%',
+            registrationNumber: null
+          }
+        ]
+      })
+    );
+    const family = (await detailFor(familyUser(), { billing })).contract.billing;
+    expect(family).toMatchObject({ status: 'active', feeBps: 500 });
+    expect(family?.cycles[0]).toMatchObject({
+      status: 'captured',
+      amountCents: 10946,
+      transferAt: null,
+      taxLines: [{ label: 'GST (MB) 5%', taxCents: 26 }]
+    });
+    const helper = (await detailFor(providerUser(), { billing })).contract.billing;
+    expect(helper).toMatchObject({ feeBps: 1500 });
+    expect(helper?.cycles[0]).toMatchObject({
+      amountCents: 8637,
+      taxLines: [{ label: 'HST (ON) 13%', taxCents: 203 }]
+    });
+    expect(helper?.cycles[0]?.transferAt).not.toBeNull();
+  });
+
   it('hides a family-private draft from the provider', async () => {
     const exit = await Effect.runPromiseExit(
       getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(

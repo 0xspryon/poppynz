@@ -1,3 +1,4 @@
+import { makeIdleContractBillingLayer } from '@repo/billing';
 import { SqlError } from '@effect/sql/SqlError';
 import {
   dummyBillingCustomer,
@@ -111,6 +112,7 @@ const makeWorld = (
   const payouts = makeInMemoryPayoutAccountRepo(options.payoutAccounts ?? []);
 
   const layer = Layer.mergeAll(
+    makeIdleContractBillingLayer(),
     makePaymentsTest({
       provider: 'stripe',
       verifyWebhook: (_raw, signature) =>
@@ -416,7 +418,11 @@ describe('account.updated (piece 2b)', () => {
 
   it('records an unknown account and answers 200', async () => {
     const world = makeWorld({
-      verified: accountUpdated({ eventId: 'evt_acct_2', objectId: 'acct_unknown', account: 'acct_unknown' }),
+      verified: accountUpdated({
+        eventId: 'evt_acct_2',
+        objectId: 'acct_unknown',
+        account: 'acct_unknown'
+      }),
       payoutAccounts: []
     });
     const response = await world.post();
@@ -457,9 +463,9 @@ describe('account.updated (piece 2b)', () => {
     expect(world.billing.rows.get('family-1')?.cardReference).toBeNull();
     expect(
       await Effect.runPromise(
-        processStripeEvent(
-          event({ type: 'payment_intent.succeeded', account: 'acct_123' })
-        ).pipe(Effect.provide(world.layer))
+        processStripeEvent(event({ type: 'payment_intent.succeeded', account: 'acct_123' })).pipe(
+          Effect.provide(world.layer)
+        )
       )
     ).toBe('ignored: connected-account event');
     expect(world.payment()?.status).toBe('pending');

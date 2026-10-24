@@ -1,6 +1,24 @@
 import type { SqlError } from '@effect/sql/SqlError';
-import { cardOnFile, effectiveEnd, effectiveEndsOn } from '@repo/billing';
 import {
+  cardOnFile,
+  contractBillingPolicy,
+  effectiveEnd,
+  effectiveEndsOn,
+  isPaymentReady,
+  loadTaxSnapshot,
+  newContractBilling,
+  startContractBilling
+} from '@repo/billing';
+import {
+  applyBps,
+  computeSupplyTax,
+  normaliseProvince,
+  weeklyServiceCents,
+  type ProvinceCode,
+  type TaxSnapshot
+} from '@repo/billing/pricing';
+import {
+  ContractBillingRepo,
   ContractRepo,
   ConversationRepo,
   ServiceOfferedRepo,
@@ -121,6 +139,13 @@ export class ContractStartDatePassedError extends Data.TaggedError(
   'ContractStartDatePassedError'
 )<{}> {}
 
+/** Sales tax on the fees depends on where each side is (piece 3 spec §3a):
+ * without a province the terms can't be priced, so they can't be sent or
+ * accepted. `viewerIsParty` picks the copy. */
+export class ContractProvinceRequiredError extends Data.TaggedError(
+  'ContractProvinceRequiredError'
+)<{ party: 'family' | 'helper'; viewerIsParty: boolean }> {}
+
 /** Sending terms needs a card on file — contract billing charges it. */
 export class PaymentMethodRequiredError extends Data.TaggedError(
   'PaymentMethodRequiredError'
@@ -200,6 +225,12 @@ const familyTimeZone = (familyUserId: string) =>
         ? zoneForLocation(profile.latitude, profile.longitude)
         : null
     )
+  );
+
+/** A member's province from their profile address (Canada only), or null. */
+const profileProvince = (userId: string) =>
+  loadProfileOrNull(userId).pipe(
+    Effect.map((profile) => normaliseProvince(profile?.stateProvince, profile?.country))
   );
 
 type ContractSide = 'family' | 'provider';
@@ -359,7 +390,154 @@ const hasNewsFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date
   return newsAt > (seenAt ?? new Date(0));
 };
 
-const toTermsResponse = (version: ContractVersion, viewerUserId: string, expiryDays: number) => ({
+// ---------------------------------------------------------------------------
+// Price breakdown and billing (piece 3)
+
+type TaxLineView = { label: string; taxCents: number };
+
+const taxLineViews = (
+  lines: ReadonlyArray<{ label: string; taxCents: number }>
+): Array<TaxLineView> => lines.map((line) => ({ label: line.label, taxCents: line.taxCents }));
+
+type PricingInputs = {
+  snapshot: TaxSnapshot;
+  familyFeeBps: number;
+  providerCommissionBps: number;
+  familyProvince: ProvinceCode | null;
+  helperProvince: ProvinceCode | null;
+  side: ContractSide;
+  /** Today in the zone the dates are read in, when known. */
+  today: string | null;
+};
+
+/** One week of the pattern, priced for the viewer's side only: the family
+ * sees the service fee and its tax added, the helper sees the commission and
+ * its tax deducted. Rounded per session by the one rule billing uses. */
+export const weeklyPricing = (version: ContractVersion, inputs: PricingInputs) => {
+  const serviceCents = weeklyServiceCents(version.services);
+  const on =
+    version.startsOn && (inputs.today === null || version.startsOn > inputs.today)
+      ? version.startsOn
+      : (inputs.today ?? version.startsOn ?? new Date().toISOString().slice(0, 10));
+  const provinces = {
+    payer: inputs.familyProvince,
+    contract: inputs.familyProvince,
+    helper: inputs.helperProvince
+  };
+  const tax = (
+    supplyType: 'care_service_value' | 'family_service_fee' | 'provider_commission',
+    baseCents: number
+  ) => computeSupplyTax({ snapshot: inputs.snapshot, supplyType, baseCents, on, provinces });
+  const blocked = (error: { reason: string; placeOfSupply?: string }) => ({
+    available: false as const,
+    reason:
+      error.reason === 'province_required'
+        ? ('tax_province_required' as const)
+        : ('tax_configuration_incomplete' as const),
+    missingProvinceOf:
+      error.reason !== 'province_required'
+        ? null
+        : error.placeOfSupply === 'helper_province'
+          ? ('helper' as const)
+          : ('family' as const)
+  });
+  const serviceTax = tax('care_service_value', serviceCents);
+  if (!serviceTax.ok) return blocked(serviceTax.error);
+  if (inputs.side === 'family') {
+    const feeCents = applyBps(serviceCents, inputs.familyFeeBps);
+    const feeTax = tax('family_service_fee', feeCents);
+    if (!feeTax.ok) return blocked(feeTax.error);
+    return {
+      available: true as const,
+      side: 'family' as const,
+      period: 'week' as const,
+      serviceCents,
+      serviceTaxLines: taxLineViews(serviceTax.lines),
+      feeBps: inputs.familyFeeBps,
+      feeCents,
+      feeTaxLines: taxLineViews(feeTax.lines),
+      totalCents: serviceCents + serviceTax.taxCents + feeCents + feeTax.taxCents
+    };
+  }
+  const commissionCents = applyBps(serviceCents, inputs.providerCommissionBps);
+  const commissionTax = tax('provider_commission', commissionCents);
+  if (!commissionTax.ok) return blocked(commissionTax.error);
+  return {
+    available: true as const,
+    side: 'provider' as const,
+    period: 'week' as const,
+    serviceCents,
+    serviceTaxLines: taxLineViews(serviceTax.lines),
+    commissionBps: inputs.providerCommissionBps,
+    commissionCents,
+    commissionTaxLines: taxLineViews(commissionTax.lines),
+    shareCents: serviceCents + serviceTax.taxCents - commissionCents - commissionTax.taxCents
+  };
+};
+
+export type WeeklyPricing = ReturnType<typeof weeklyPricing>;
+
+/** The contract's billing state and cycles, as the viewer may see them. */
+const billingSummary = (contractId: string, side: ContractSide) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    const billing = yield* repo
+      .findBilling(contractId)
+      .pipe((errors) => mapContractRepoError(errors));
+    if (billing === null) return null;
+    const [cycles, sessions] = yield* Effect.all([
+      repo.listCycles(contractId).pipe((errors) => mapContractRepoError(errors)),
+      repo.listSessions(contractId).pipe((errors) => mapContractRepoError(errors))
+    ]);
+    const familySupplies = ['care_service_value', 'family_service_fee'];
+    const helperSupplies = ['care_service_value', 'provider_commission'];
+    return {
+      status: billing.status,
+      suspendedReason: billing.suspendedReason,
+      // Cancelled unless the helper is payment-ready by cycle 1's capture.
+      readinessDeadline:
+        billing.status === 'awaiting_payment_readiness'
+          ? (cycles[0]?.captureAt.toISOString() ?? null)
+          : null,
+      feeBps: side === 'family' ? billing.familyFeeBps : billing.providerCommissionBps,
+      cycles: cycles.map((cycle) => {
+        const own = sessions.filter(
+          (session) => session.cycleId === cycle.id && session.status !== 'cancelled'
+        );
+        const supplies = side === 'family' ? familySupplies : helperSupplies;
+        return {
+          id: cycle.id,
+          index: cycle.index,
+          startsOn: cycle.startsOn,
+          endsOn: cycle.endsOn,
+          status: cycle.status,
+          holdAt: cycle.holdAt.toISOString(),
+          captureAt: cycle.captureAt.toISOString(),
+          transferAt: side === 'provider' ? cycle.transferAt.toISOString() : null,
+          sessionCount: own.length,
+          suspendedSessionCount: own.filter((session) => session.status === 'suspended').length,
+          minutes: own.reduce((total, session) => total + session.elapsedMinutes, 0),
+          // The family's charge (what was captured, once captured) or the
+          // helper's share; null until the cycle is quoted.
+          amountCents:
+            side === 'family'
+              ? (cycle.capturedCents ?? cycle.familyTotalCents)
+              : cycle.providerShareCents,
+          taxLines: taxLineViews(
+            cycle.taxLines.filter((line) => supplies.includes(line.supplyType))
+          )
+        };
+      })
+    };
+  });
+
+const toTermsResponse = (
+  version: ContractVersion,
+  viewerUserId: string,
+  expiryDays: number,
+  pricing: WeeklyPricing | null = null
+) => ({
+  pricing,
   versionId: version.id,
   version: version.version,
   status: version.status,
@@ -707,6 +885,12 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     if (pending.startsOn <= todayIn(timeZone)) {
       return yield* Effect.fail(new StartDateNotInFutureError());
     }
+    // The family service fee is taxed where the family is.
+    if ((yield* profileProvince(contract.familyUserId)) === null) {
+      return yield* Effect.fail(
+        new ContractProvinceRequiredError({ party: 'family', viewerIsParty: true })
+      );
+    }
 
     // Contract billing charges the family's card, so terms only go out once
     // there is one on file. Checked last: every other problem with the draft
@@ -806,14 +990,60 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     }
     yield* requireContractCounterpart(pending.proposedByUserId);
 
-    // Supersede + accept + activate run in one transaction — a concurrent
-    // decline can never leave the contract without an accepted version.
+    // Billing (piece 3): both places of supply are frozen with the contract,
+    // so both must be known — the family's for the fee, the helper's for the
+    // commission.
+    const viewerSide = sideOf(contract, viewer.id);
+    const familyProvince = yield* profileProvince(contract.familyUserId);
+    if (familyProvince === null) {
+      return yield* Effect.fail(
+        new ContractProvinceRequiredError({
+          party: 'family',
+          viewerIsParty: viewerSide === 'family'
+        })
+      );
+    }
+    const helperProvince = yield* profileProvince(contract.providerUserId);
+    if (helperProvince === null) {
+      return yield* Effect.fail(
+        new ContractProvinceRequiredError({
+          party: 'helper',
+          viewerIsParty: viewerSide === 'provider'
+        })
+      );
+    }
+    if (pending.timeZone === null) {
+      return yield* Effect.fail(new ContractStateError());
+    }
+    const acceptedAt = new Date();
+    const billing = yield* newContractBilling({
+      timeZone: pending.timeZone,
+      startsOn: pending.startsOn,
+      familyProvince,
+      helperProvince,
+      // Accepting never waits on payouts: a helper who isn't ready yet puts
+      // the contract in the payment-readiness gate instead.
+      helperReady: yield* isPaymentReady(contract.providerUserId),
+      now: acceptedAt
+    });
+
+    // Supersede + accept + activate + the billing schedule run in one
+    // transaction — a concurrent decline can never leave the contract without
+    // an accepted version, nor an accepted contract without its billing.
     const accepted = yield* contractRepo
-      .acceptPendingVersion(contractId, pending.id, { activate: true })
+      .acceptPendingVersion(contractId, pending.id, { activate: true, billing })
       .pipe((errors) => mapContractRepoError(errors));
     if (!accepted) {
       return yield* Effect.fail(new ContractStateError());
     }
+
+    // As soon as it is binding: the readiness reminder, and a late booking's
+    // immediate charge. Never fails the acceptance — the tick catches up.
+    yield* startContractBilling(contractId, acceptedAt).pipe(
+      Effect.catchAllCause((cause) =>
+        Effect.logError(`[billing] start after acceptance failed for ${contractId}`, cause)
+      )
+    );
 
     const accepterProfile = yield* loadProfileOrNull(viewer.id);
     yield* publishNotificationBestEffort(pending.proposedByUserId, {
@@ -1095,6 +1325,30 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
     // for the reminder at acceptance; null for the family. Stored snapshot
     // only, and readiness never gates accepting — pieces 3 and 4 enforce it.
     const payoutsReady = isFamily ? null : yield* hasReadyPayoutAccount(viewer.id);
+
+    // Piece 3: the price breakdown for the viewer's side (frozen rates and
+    // provinces once accepted, current ones before), and the billing state.
+    const billing = yield* billingSummary(row.id, viewerSide);
+    const billingRow = yield* ContractBillingRepo.pipe(
+      Effect.flatMap((repo) => repo.findBilling(row.id)),
+      (errors) => mapContractRepoError(errors)
+    );
+    const policy = yield* contractBillingPolicy;
+    const snapshot = yield* loadTaxSnapshot.pipe((errors) => mapContractRepoError(errors));
+    const pricingInputs: PricingInputs = {
+      snapshot,
+      familyFeeBps: billingRow?.familyFeeBps ?? policy.familyCommissionBps,
+      providerCommissionBps: billingRow?.providerCommissionBps ?? policy.providerCommissionBps,
+      familyProvince: billingRow
+        ? (billingRow.familyProvince as ProvinceCode)
+        : yield* profileProvince(row.familyUserId),
+      helperProvince: billingRow
+        ? (billingRow.helperProvince as ProvinceCode)
+        : yield* profileProvince(row.providerUserId),
+      side: viewerSide,
+      today: timeZone ? todayIn(timeZone) : null
+    };
+    const pricingOf = (version: ContractVersion) => weeklyPricing(version, pricingInputs);
     const effective = effectiveEnd(row, accepted);
     // Why the proposal can't be accepted, for both sides: the receiver's
     // Accept is gone, and the proposer is told to send a later start date.
@@ -1113,16 +1367,23 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         counterpart: counterpartResponse(row, viewer.id),
         counterpartContact,
         acceptedVersion:
-          accepted !== null ? toTermsResponse(accepted, viewer.id, expiryDays) : null,
+          accepted !== null
+            ? toTermsResponse(accepted, viewer.id, expiryDays, pricingOf(accepted))
+            : null,
         pendingVersion:
           pendingVisible && pending !== null
-            ? toTermsResponse(pending, viewer.id, expiryDays)
+            ? toTermsResponse(pending, viewer.id, expiryDays, pricingOf(pending))
             : null,
         // Newest visible terms regardless of outcome — the declined view keeps
         // the terms dimmed for context, and a revision pre-fills from them.
         latestVersion:
           visibleVersions.length > 0
-            ? toTermsResponse(visibleVersions[visibleVersions.length - 1], viewer.id, expiryDays)
+            ? toTermsResponse(
+                visibleVersions[visibleVersions.length - 1],
+                viewer.id,
+                expiryDays,
+                pricingOf(visibleVersions[visibleVersions.length - 1])
+              )
             : null,
         versions: visibleVersions.map((version) => ({
           version: version.version,
@@ -1140,6 +1401,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         acceptBlockedReason,
         hasPaymentMethod,
         payoutsReady,
+        billing,
         endedByMe: row.endedByUserId === viewer.id,
         endNote: row.endNote,
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,
@@ -1489,6 +1751,23 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
           }
         },
         409
+      );
+    case 'ContractProvinceRequiredError':
+      return c.json(
+        {
+          error: {
+            code: 'TAX_PROVINCE_REQUIRED' as const,
+            message: error.viewerIsParty
+              ? error.party === 'family'
+                ? 'Add your province to your profile address — sales tax on the service fee depends on it.'
+                : 'Add your province to your profile address — tax on the Poppynz commission depends on it.'
+              : error.party === 'family'
+                ? "The family's profile address has no province yet, so these terms can't be priced. Ask them to add it."
+                : "The helper's profile address has no province yet, so these terms can't be priced. Ask them to add it.",
+            party: error.party
+          }
+        },
+        422
       );
     case 'PaymentMethodRequiredError':
       return c.json(

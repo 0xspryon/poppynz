@@ -1,7 +1,4 @@
-import {
-  insertCredibledWebhookLog,
-  type CredibledWebhookLogId
-} from '@repo/db';
+import { insertCredibledWebhookLog, type CredibledWebhookLogId } from '@repo/db';
 import type { BaseAppEnv, HonoContext } from '@/api/app-env';
 
 /**

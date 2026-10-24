@@ -109,7 +109,7 @@ export const saveCard = (userId: string, card: CardDetails, mode: SaveCardMode) 
   });
 
 export type CardSetupResult =
-  | { outcome: 'saved'; card: BillingCard }
+  | { outcome: 'saved'; card: BillingCard; userId: string }
   /** Another card stays on file (a late webhook, or a concurrent confirm
    * won); `card` is the one on file now. */
   | { outcome: 'kept'; card: BillingCard | null }
@@ -150,6 +150,7 @@ export const applyCardSetup = (reference: string, userId: string | null) =>
     const { reference: cardReference, brand, last4, expMonth, expYear } = setup.paymentMethod;
     return {
       outcome: 'saved',
-      card: { reference: cardReference, brand, last4, expMonth, expYear }
+      card: { reference: cardReference, brand, last4, expMonth, expYear },
+      userId: owner.userId
     } as CardSetupResult;
   });

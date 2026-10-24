@@ -1,5 +1,14 @@
 import { daysBetween, todayIn } from '@repo/calendar';
 import {
+  DBNotFoundError as DBNotFoundErrorClass,
+  EmptyContractRepoTest,
+  EmptyUserProfileRepoTest,
+  makeInMemoryBillingCustomerRepo,
+  makeInMemoryContractBillingRepo,
+  makeInMemoryPaymentRepo,
+  makeInMemoryPayoutAccountRepo,
+  makeSeededTaxConfigRepo,
+  makeUserRepoTest,
   BillingCustomerRepo,
   ContractBillingRepo,
   ContractRepo,
@@ -20,8 +29,8 @@ import {
   UserProfileRepo,
   UserRepo
 } from '@repo/db';
-import { Mailer } from '@repo/mail';
-import { NotificationHub } from '@repo/notify';
+import { Mailer, makeMailerTest } from '@repo/mail';
+import { NoopNotificationHubTest, NotificationHub } from '@repo/notify';
 import { contractBillingConfig } from '@repo/env';
 import type { SqlError } from '@effect/sql/SqlError';
 import { Payments, type PaymentProviderError, type ProviderPayment } from '@repo/payments';
@@ -1472,3 +1481,25 @@ export const CycleSettlementLive = Layer.effect(
     };
   })
 );
+
+/** TEST HELPER: every contract-billing dependency as an empty, inert stand-in
+ * (no contracts, no users, mail and notifications dropped), for suites whose
+ * code path can reach contract billing without being about it. Merge it
+ * FIRST so the suite's own layers override what they care about. */
+export const makeIdleContractBillingLayer = () =>
+  Layer.mergeAll(
+    makeInMemoryContractBillingRepo().layer,
+    EmptyContractRepoTest,
+    makeInMemoryPaymentRepo().layer,
+    makeInMemoryBillingCustomerRepo().layer,
+    makeSeededTaxConfigRepo().layer,
+    makeInMemoryPayoutAccountRepo().layer,
+    makeUserRepoTest({
+      findById: (id) => Effect.fail(new DBNotFoundErrorClass({ entity: 'user', value: id })),
+      findByEmail: (email) =>
+        Effect.fail(new DBNotFoundErrorClass({ entity: 'user', value: email }))
+    }),
+    EmptyUserProfileRepoTest,
+    makeMailerTest({}),
+    NoopNotificationHubTest
+  );

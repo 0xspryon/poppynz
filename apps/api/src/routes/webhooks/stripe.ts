@@ -1,4 +1,9 @@
-import { applyCardSetup, mismatchReason, settlePaymentByReference } from '@repo/billing';
+import {
+  applyCardSetup,
+  mismatchReason,
+  retryFamilyBilling,
+  settlePaymentByReference
+} from '@repo/billing';
 import { PaymentRepo, StripeWebhookEventRepo } from '@repo/db';
 import { Payments, type PaymentWebhookEvent } from '@repo/payments';
 import { Cause, Effect, Exit } from 'effect';
@@ -28,6 +33,8 @@ const MAX_BODY_BYTES = 512 * 1024;
 
 const paymentIntentEvents = new Set([
   'payment_intent.succeeded',
+  // A contract-cycle hold was placed (manual capture).
+  'payment_intent.amount_capturable_updated',
   'payment_intent.payment_failed',
   'payment_intent.canceled',
   'payment_intent.processing'
@@ -89,6 +96,14 @@ export const processStripeEvent = (event: PaymentWebhookEvent) =>
     switch (event.type) {
       case 'setup_intent.succeeded': {
         const result = yield* applyCardSetup(event.objectId, null);
+        if (result.outcome === 'saved') {
+          // A new card on file: retry declined contract holds at once.
+          yield* retryFamilyBilling(result.userId, new Date()).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.logError('[stripe:webhook] contract billing retry failed', cause)
+            )
+          );
+        }
         return `card setup: ${result.outcome}`;
       }
       case 'charge.refunded':

@@ -1,5 +1,5 @@
 import type { SqlError } from '@effect/sql/SqlError';
-import { applyCardSetup, ensureBillingCustomer, toCard } from '@repo/billing';
+import { applyCardSetup, ensureBillingCustomer, retryFamilyBilling, toCard } from '@repo/billing';
 import { BillingCustomerRepo, PaymentRepo, type BillingCard } from '@repo/db';
 import { Payments, type PaymentProviderError } from '@repo/payments';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
@@ -150,6 +150,14 @@ export const confirmCardSetupRouteProgram = (c: HonoContext<HonoEnv>, headers: H
         }
         return { card: toCardSummary(result.card) };
       case 'saved':
+        // A new card retries every declined hold and resumes a suspended
+        // contract at once (piece 3). Best-effort: the card is saved either
+        // way, and the worker's tick catches up on anything that failed.
+        yield* retryFamilyBilling(userAndSession.user.id, new Date()).pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.logError('[billing] retry after card replacement failed', cause)
+          )
+        );
         return { card: toCardSummary(result.card) };
     }
   });

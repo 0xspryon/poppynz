@@ -1,3 +1,4 @@
+import { makeIdleContractBillingLayer } from '@repo/billing';
 import { SqlError } from '@effect/sql/SqlError';
 import {
   BillingCustomerRepo,
@@ -82,6 +83,7 @@ const makeLayer = (
 ) => {
   const billing = makeInMemoryBillingCustomerRepo(options.billing ?? []);
   const layer = Layer.mergeAll(
+    makeIdleContractBillingLayer(),
     makeAuthServiceTest({
       getSession: () => Effect.succeed({ user: { id: family.id }, session: { id: session.id } }),
       userHasPermission: () => Effect.succeed(options.hasPermission ?? true)

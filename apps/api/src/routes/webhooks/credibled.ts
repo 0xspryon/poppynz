@@ -86,8 +86,9 @@ const configuredSecrets = credibledConfig.pipe(
         { audience: 'service-provider', secret: secretValue(config.providerWebhookSecret) },
         { audience: 'family', secret: secretValue(config.familyWebhookSecret) }
       ] as const
-    ).flatMap(({ audience, secret }): Array<AudienceSecret> =>
-      secret === null ? [] : [{ audience, secret }]
+    ).flatMap(
+      ({ audience, secret }): Array<AudienceSecret> =>
+        secret === null ? [] : [{ audience, secret }]
     )
   ),
   Effect.orElseSucceed((): Array<AudienceSecret> => [])

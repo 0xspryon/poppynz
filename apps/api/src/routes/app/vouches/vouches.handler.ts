@@ -8,6 +8,7 @@ import {
 } from '@repo/db';
 import { publishNotificationBestEffort } from '@repo/notify';
 import { Cause, Data, Effect, Exit, Option, Schema } from 'effect';
+import { presignProfileImageUrl } from '@/api/lib/profile-image';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
   authErrorToResponse,
@@ -77,7 +78,10 @@ const hasLiveApproval = (userId: string) =>
 
 const toApplicantVouch = (vouch: VouchWithVoucher, now: Date) => ({
   id: vouch.id,
-  voucherName: fullName(vouch.voucher, vouch.voucher.name),
+  // The name only once the voucher has answered — before that the applicant
+  // sees just the email they typed (UAT #36: no name lookup before sending).
+  voucherName:
+    applicantVouchStatus(vouch, now) === 'pending' ? null : fullName(vouch.voucher, vouch.voucher.name),
   voucherEmail: vouch.voucher.email,
   relationship: vouch.relationship,
   status: applicantVouchStatus(vouch, now),
@@ -258,13 +262,24 @@ export const listVouchRequestsProgram = (userAndSession: UserAndSession) =>
       .listForVoucher(userAndSession.user.id)
       .pipe(Effect.mapError(repoError));
     const now = new Date();
+    // UAT #35: the stored value is a storage key, not a URL — the browser
+    // needs a short-lived signed link. A photo that can't be signed is shown
+    // as initials rather than failing the whole list.
+    const images = yield* Effect.forEach(
+      requests,
+      (vouch) =>
+        presignProfileImageUrl(vouch.applicant.image).pipe(
+          Effect.catchTag('ProfileImageUrlError', () => Effect.succeed(null))
+        ),
+      { concurrency: 5 }
+    );
     return {
-      requests: requests.map((vouch) => {
+      requests: requests.map((vouch, index) => {
         const status = voucherVouchStatus(vouch, now);
         return {
           id: vouch.id,
           applicantName: fullName(vouch.applicant, vouch.applicant.name),
-          applicantImage: vouch.applicant.image,
+          applicantImage: images[index] ?? null,
           relationship: vouch.relationship,
           status,
           // Mirrors withdrawVouchProgram: once the applicant is approved the
@@ -435,9 +450,24 @@ export const requestVouchRouteProgram = (c: HonoContext<HonoEnv>, headers: Heade
   Effect.gen(function* () {
     const input = yield* validateVouchRequestInput(yield* parseJsonBody(c, vouchJsonError));
     const userAndSession = yield* authed(headers, 'write');
-    return yield* requestVouchProgram(userAndSession, input, {
+    // UAT #36: the answer must not reveal whether the email belongs to a
+    // member — no name, and the same confirmation whether a request was
+    // created, the address is unknown or ineligible, or one is already open.
+    // The vouch itself shows up in the applicant's list only once sent, and
+    // without the voucher's name until they respond.
+    yield* requestVouchProgram(userAndSession, input, {
       uiOrigin: resolveUiOrigin(headers)
-    });
+    }).pipe(
+      Effect.catchTags({
+        VoucherUnavailableError: () => Effect.void,
+        VouchAlreadyRequestedError: () => Effect.void
+      })
+    );
+    return {
+      sent: true as const,
+      message:
+        'If that email belongs to an approved Poppynz member, we have sent them your request.'
+    };
   });
 
 export const listVouchRequestsRouteProgram = (headers: Headers) =>

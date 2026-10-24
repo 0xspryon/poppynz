@@ -121,6 +121,10 @@ const toProfileResponse = (
   stateProvince: profile.stateProvince,
   shortBio: profile.shortBio,
   googlePlaceId: profile.googlePlaceId,
+  // B9: radius search centres on saved COORDINATES; a profile can have them
+  // without a Google place id (seeded/fixture data), so say so directly
+  // rather than making the client infer it from googlePlaceId.
+  hasLocation: typeof profile.latitude === 'number' && typeof profile.longitude === 'number',
   ...(profile.role === 'service-provider'
     ? {
         kycDocuments: kycDocuments.map(toKycDocumentResponse),

@@ -20,6 +20,8 @@ import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
+import { makeObjectStorageTest } from '@repo/objs';
+import { ConfigProvider } from 'effect';
 import { makeMailerTest, type VouchRequestMail } from '@/api/lib/mailer';
 import {
   adminVouchActionProgram,
@@ -29,6 +31,7 @@ import {
   listMyVouchesProgram,
   listVouchRequestsProgram,
   requestVouchProgram,
+  requestVouchRouteProgram,
   submitVouchProgram,
   submitVouchRouteProgram,
   withdrawVouchProgram,
@@ -103,6 +106,16 @@ const makeLayer = (
   } = {}
 ) =>
   Layer.mergeAll(
+    makeObjectStorageTest({
+      ensureBucketExists: () => Effect.void,
+      ensurePublicReadBucket: () => Effect.void,
+      createPresignedGetUrl: (input) =>
+        Effect.succeed({
+          url: `https://files.test/${input.bucket}/${input.key}`,
+          expiresAt: new Date('2026-08-01T00:05:00.000Z')
+        }),
+      createPresignedPutUrl: () => Effect.die('not used')
+    }),
     makeAuthServiceTest({
       getSession: () =>
         Effect.succeed({ user: { id: applicant.id }, session: { id: 'session-1' } }),
@@ -682,5 +695,97 @@ describe('vouch route programs: the :id param', () => {
     );
     expect(failureOf(exit)).toMatchObject({ _tag: 'VouchNotFoundError' });
     expect(touched).toBe(1);
+  });
+});
+
+describe('vouch privacy and photos (UAT #35, #36)', () => {
+  const configured = ConfigProvider.fromMap(
+    new Map([
+      ['OBJS_KYC_BUCKET', 'kyc'],
+      ['OBJS_PUBLIC_BUCKET', 'public']
+    ])
+  );
+  const contextWithJson = (body: unknown) =>
+    ({ req: { json: async () => body, header: () => undefined } }) as never;
+
+  it('answers the same generic confirmation for a member, a stranger and a repeat', async () => {
+    const answers = [];
+    for (const [email, options] of [
+      [voucher.email, {}],
+      ['nobody@x.dev', {}],
+      [voucher.email, { openPair: dummyVouch }]
+    ] as const) {
+      answers.push(
+        await Effect.runPromise(
+          requestVouchRouteProgram(
+            contextWithJson({ email, relationship: 'Neighbour' }),
+            new Headers()
+          ).pipe(Effect.provide(makeLayer(options)))
+        )
+      );
+    }
+    expect(new Set(answers.map((answer) => JSON.stringify(answer))).size).toBe(1);
+    expect(JSON.stringify(answers[0])).not.toContain(voucher.name);
+  });
+
+  it("keeps a pending vouch's voucher name hidden from the applicant", async () => {
+    const pending: VouchWithVoucher = {
+      ...dummyVouch,
+      status: 'pending',
+      expiresAt: new Date(Date.now() + 86_400_000),
+      voucher: {
+        name: 'Vera Voucher',
+        email: 'vera@example.com',
+        firstName: 'Vera',
+        lastName: 'Voucher',
+        banned: false,
+        banExpires: null,
+        emailVerified: true,
+        hasLiveApproval: true
+      }
+    };
+    const result = await Effect.runPromise(
+      listMyVouchesProgram(asSession(applicant)).pipe(
+        Effect.provide(makeLayer({ listed: [pending] }))
+      )
+    );
+    expect(result.vouches[0]).toMatchObject({ voucherName: null, voucherEmail: 'vera@example.com' });
+  });
+
+  it('signs the applicant photo instead of returning the storage key', async () => {
+    const row: VouchWithApplicant = {
+      ...dummyVouch,
+      applicant: {
+        name: 'Ana',
+        firstName: null,
+        lastName: null,
+        image: 'users/a/public/profile-pictures/a.jpg'
+      },
+      applicantHasLiveApproval: false
+    } as VouchWithApplicant;
+    const result = await Effect.runPromise(
+      listVouchRequestsProgram(asSession(voucher)).pipe(
+        Effect.provide(makeLayer({ voucherListed: [row] })),
+        Effect.withConfigProvider(configured)
+      )
+    );
+    expect(result.requests[0]?.applicantImage).toBe(
+      'https://files.test/public/users/a/public/profile-pictures/a.jpg'
+    );
+  });
+
+  it('falls back to no photo when signing is not possible', async () => {
+    const row = {
+      ...dummyVouch,
+      applicant: { name: 'Ana', firstName: null, lastName: null, image: 'users/a/x.jpg' },
+      applicantHasLiveApproval: false
+    } as VouchWithApplicant;
+    const result = await Effect.runPromise(
+      listVouchRequestsProgram(asSession(voucher)).pipe(
+        Effect.provide(makeLayer({ voucherListed: [row] })),
+        Effect.withConfigProvider(ConfigProvider.fromMap(new Map()))
+      )
+    );
+    expect(result.requests[0]?.applicantImage).toBeNull();
   });
 });

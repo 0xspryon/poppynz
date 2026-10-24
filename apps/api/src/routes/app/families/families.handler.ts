@@ -196,6 +196,13 @@ export const searchFamiliesRouteProgram = (
       pageOfFamilies,
       (family) =>
         presignProfileImageUrl(family.image).pipe(
+          // A photo link that can't be signed (storage/env trouble) must not
+          // take the whole search down — show initials instead (UAT #26).
+          Effect.catchTag('ProfileImageUrlError', (error) =>
+            Effect.logWarning('search: profile photo could not be signed', error.cause).pipe(
+              Effect.as(null)
+            )
+          ),
           Effect.map((imageUrl) => publicFamily(family, imageUrl))
         ),
       { concurrency: 5 }
@@ -203,6 +210,8 @@ export const searchFamiliesRouteProgram = (
 
     // City facet options for the filter dropdown, respecting the other active
     // filters (q/service/radius) but not city itself.
+    // The filter dropdown is a nicety: a facet failure leaves it empty
+    // rather than failing the results the family asked for.
     const cityFacets = yield* index.listCityFacets({
       q: input.q,
       service: input.service,
@@ -211,7 +220,13 @@ export const searchFamiliesRouteProgram = (
       page: 1,
       perPage: input.perPage,
       sort: input.sort
-    });
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.logWarning('search: city facets unavailable', error.cause).pipe(
+          Effect.as([] as Array<{ value: string; count: number }>)
+        )
+      )
+    );
 
     return {
       families,
@@ -265,7 +280,7 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: FamiliesRouteError) => 
     case 'FamilySearchIndexError':
       return c.json(
         { error: { code: 'FAMILY_SEARCH_FAILED' as const, message: 'Unable to search families.' } },
-        502
+        503
       );
     case 'ProfileImageUrlError':
       return c.json(

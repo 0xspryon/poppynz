@@ -31,6 +31,7 @@ export * from './repos/contract-billing-repo';
 export * from './repos/user-directory-repo';
 export * from './repos/user-search-repo';
 export * from './repos/tc-document-repo';
+export * from './repos/user-dismissal-repo';
 
 // TEMPORARY — remove with migration 0018 after the staging webhook run.
 export * from './credibled-webhook-log';

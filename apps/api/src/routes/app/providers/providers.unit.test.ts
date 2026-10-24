@@ -444,8 +444,8 @@ describe('provider search route program', () => {
     expect(reconciledUserIds).toHaveLength(4);
   });
 
-  it('translates image presign failures to ProfileImageUrlError', async () => {
-    const exit = await Effect.runPromise(
+  it('shows a search result without its photo when the photo link cannot be signed (UAT #26)', async () => {
+    const result = await Effect.runPromise(
       searchProvidersRouteProgram(new Headers(), {}).pipe(
         Effect.provide(
           makeLayer({
@@ -455,12 +455,12 @@ describe('provider search route program', () => {
               cause: 'down'
             })
           })
-        ),
-        Effect.exit
+        )
       )
     );
 
-    expect(getFailure(exit)._tag).toBe('ProfileImageUrlError');
+    expect(result.providers.length).toBeGreaterThan(0);
+    expect(result.providers[0]?.image).toBeNull();
   });
 
   it('rejects lat/lng query parameters', async () => {

@@ -1,3 +1,4 @@
+import { recoverFromMissingCollection } from './recover';
 import { familySearchConfig, typesenseConfig } from '@repo/env';
 import {
   DBNotFoundError,
@@ -334,7 +335,7 @@ const makeFamilySearchIndex = (config: {
         yield* upsertFamily(document);
       });
 
-    const searchFamilies = (input: FamilySearchInput) =>
+    const rawSearchFamilies = (input: FamilySearchInput) =>
       Effect.tryPromise({
         try: async () => {
           const searchParams = {
@@ -362,7 +363,7 @@ const makeFamilySearchIndex = (config: {
         catch: (cause) => new FamilySearchIndexError({ operation: 'search', cause })
       });
 
-    const listCityFacets = (input: FamilySearchInput) =>
+    const rawListCityFacets = (input: FamilySearchInput) =>
       Effect.tryPromise({
         try: async () => {
           const response = await client
@@ -396,6 +397,31 @@ const makeFamilySearchIndex = (config: {
         catch: (cause) => new FamilySearchIndexError({ operation: 'search', cause })
       });
 
+
+    const whenCollectionMissing =
+      <A>(empty: A) =>
+      (error: FamilySearchIndexError) =>
+        recoverFromMissingCollection({
+          error,
+          empty,
+          collection: readCollection,
+          ensureCollection
+        });
+
+    const searchFamilies = (input: FamilySearchInput) =>
+      rawSearchFamilies(input).pipe(
+        Effect.catchAll(
+          whenCollectionMissing({
+            families: [],
+            pagination: { page: input.page, perPage: input.perPage, total: 0 }
+          })
+        )
+      );
+
+    const listCityFacets = (input: FamilySearchInput) =>
+      rawListCityFacets(input).pipe(
+        Effect.catchAll(whenCollectionMissing<Array<{ value: string; count: number }>>([]))
+      );
     const getFamily = (userId: string) =>
       Effect.tryPromise({
         try: async () => {

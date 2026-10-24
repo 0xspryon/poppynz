@@ -345,6 +345,23 @@ describe('profile programs', () => {
     );
   });
 
+  it('reports a saved location from coordinates, even without a place id (B9)', async () => {
+    const withCoordinates = await Effect.runPromise(
+      getProfileProgram(userAndSession).pipe(
+        Effect.provide(
+          makeLayer({ profile: profile({ googlePlaceId: null, latitude: 43.6, longitude: -79.4 }) })
+        )
+      )
+    );
+    expect(withCoordinates.hasLocation).toBe(true);
+    const without = await Effect.runPromise(
+      getProfileProgram(userAndSession).pipe(
+        Effect.provide(makeLayer({ profile: profile({ latitude: null, longitude: null }) }))
+      )
+    );
+    expect(without.hasLocation).toBe(false);
+  });
+
   it('returns a null image when no profile picture is stored', async () => {
     const result = await Effect.runPromise(
       getProfileProgram(userAndSession).pipe(Effect.provide(makeLayer()))

@@ -435,8 +435,8 @@ describe('family search route program', () => {
     expect(reconciledUserIds).toHaveLength(4);
   });
 
-  it('translates image presign failures to ProfileImageUrlError', async () => {
-    const exit = await Effect.runPromise(
+  it('shows a search result without its photo when the photo link cannot be signed (UAT #26)', async () => {
+    const result = await Effect.runPromise(
       searchFamiliesRouteProgram(new Headers(), {}).pipe(
         Effect.provide(
           makeLayer({
@@ -446,12 +446,12 @@ describe('family search route program', () => {
               cause: 'down'
             })
           })
-        ),
-        Effect.exit
+        )
       )
     );
 
-    expect(getFailure(exit)._tag).toBe('ProfileImageUrlError');
+    expect(result.families.length).toBeGreaterThan(0);
+    expect(result.families[0]?.image).toBeNull();
   });
 
   it('rejects lat/lng query parameters', async () => {

@@ -157,8 +157,6 @@ export const vouchStatus = appDb.enum('vouch_status', [
   'flagged'
 ]);
 
-// Derived by the API from the three Stripe readiness flags; see
-// migrations/0026_payout_accounts.sql.
 // Admin review of a helper's custom (non-catalogue) service. Catalogue-linked
 // services are approved on creation — their name and floor come from the
 // catalogue — so only free-text services wait in the queue.
@@ -167,6 +165,8 @@ export const serviceReviewStatus = appDb.enum('service_review_status', [
   'approved',
   'rejected'
 ]);
+// Derived by the API from the three Stripe readiness flags; see
+// migrations/0026_payout_accounts.sql.
 export const payoutAccountStatus = appDb.enum('payout_account_status', [
   'onboarding',
   'ready',

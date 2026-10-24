@@ -1167,12 +1167,14 @@ export const contract = appDb.table(
     conversationId: uuid('conversation_id')
       .notNull()
       .references(() => conversation.id, { onDelete: 'cascade' }),
+    // restrict (umbrella §10): a contract carries money, so its people are
+    // never hard-deleted from under it.
     familyUserId: text('family_user_id')
       .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'restrict' }),
     providerUserId: text('provider_user_id')
       .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'restrict' }),
     status: contractStatus('status').default('draft').notNull(),
     // Ending with 2 weeks' notice: the last working day is derived at read time
     // as end_noticed_at + 14 days (the negotiated end date, if any, lives on
@@ -1258,6 +1260,268 @@ export const contractVersion = appDb.table(
       'contract_versions_ends_at_minutes_valid',
       sql`${table.endsAtMinutes} is null or (${table.endsOn} is not null and ${table.endsAtMinutes} between 1 and 1440)`
     )
+  ]
+);
+
+// ---------------------------------------------------------------------------
+// Contract billing (piece 3; see migrations/0029_contract_billing.sql and the
+// piece 3 spec). Every foreign key is restrict: money rows are never deleted
+// from under each other, and soft state lives in status columns.
+
+export const contractBillingStatus = appDb.enum('contract_billing_status', [
+  'awaiting_payment_readiness',
+  'scheduled',
+  'active',
+  'suspended',
+  'cancelled',
+  'ended'
+]);
+export const contractBillingSuspension = appDb.enum('contract_billing_suspension', [
+  'card',
+  'helper_not_ready',
+  'provider_unavailable'
+]);
+export const contractCycleStatus = appDb.enum('contract_cycle_status', [
+  'scheduled',
+  'authorising',
+  'authorised',
+  'grace',
+  'capturing',
+  'captured',
+  'suspended',
+  'capture_failed',
+  'cancelled',
+  'empty',
+  'carried'
+]);
+export const contractCycleChargeMode = appDb.enum('contract_cycle_charge_mode', [
+  'hold',
+  'immediate',
+  'resume'
+]);
+export const contractSessionStatus = appDb.enum('contract_session_status', [
+  'scheduled',
+  'completed',
+  'cancelled',
+  'disputed',
+  'suspended'
+]);
+export const billingLedgerKind = appDb.enum('billing_ledger_kind', [
+  'session',
+  'service_tax',
+  'family_fee',
+  'family_fee_tax',
+  'provider_commission',
+  'provider_commission_tax',
+  'capture',
+  'carry_forward',
+  'carry_absorbed',
+  'hold_released'
+]);
+export const billingLedgerParty = appDb.enum('billing_ledger_party', [
+  'family',
+  'provider',
+  'platform'
+]);
+
+/** A frozen tax line on a cycle (same shape as on payments). */
+export type CycleTaxLine = PaymentTaxLine;
+
+/** One accepted contract's billing schedule and its frozen terms. */
+export const contractBilling = appDb.table(
+  'contract_billing',
+  {
+    contractId: uuid('contract_id')
+      .primaryKey()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    acceptedVersionId: uuid('accepted_version_id')
+      .notNull()
+      .references(() => contractVersion.id, { onDelete: 'restrict' }),
+    status: contractBillingStatus('status').notNull(),
+    suspendedReason: contractBillingSuspension('suspended_reason'),
+    suspendedAt: timestamp('suspended_at'),
+    // Frozen at acceptance (umbrella §6).
+    familyFeeBps: integer('family_fee_bps').notNull(),
+    providerCommissionBps: integer('provider_commission_bps').notNull(),
+    familyProvince: text('family_province').notNull(),
+    helperProvince: text('helper_province').notNull(),
+    timeZone: text('time_zone').notNull(),
+    startsOn: date('starts_on').notNull(),
+    // When the contract became billable: acceptance, or the moment a helper
+    // who wasn't payment-ready became so. Drives the late-booking rule.
+    billableFrom: timestamp('billable_from'),
+    // Last calendar date sessions were materialised for (rolling window).
+    materialisedThrough: date('materialised_through'),
+    remindersSent: jsonb('reminders_sent')
+      .$type<Array<string>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    cancelledAt: timestamp('cancelled_at'),
+    endedAt: timestamp('ended_at'),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [index('contract_billing_status_idx').on(table.status)]
+);
+
+/** A 3-day cycle. Instants are UTC, computed once from the contract zone. */
+export const contractCycle = appDb.table(
+  'contract_cycles',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    index: integer('index').notNull(),
+    startsOn: date('starts_on').notNull(),
+    endsOn: date('ends_on').notNull(),
+    startsAt: timestamp('starts_at').notNull(),
+    endsAt: timestamp('ends_at').notNull(),
+    holdAt: timestamp('hold_at').notNull(),
+    captureAt: timestamp('capture_at').notNull(),
+    transferAt: timestamp('transfer_at').notNull(),
+    status: contractCycleStatus('status').notNull().default('scheduled'),
+    chargeMode: contractCycleChargeMode('charge_mode'),
+    attempts: integer('attempts').notNull().default(0),
+    nextRetryAt: timestamp('next_retry_at'),
+    paymentId: uuid('payment_id').references(() => payment.id, { onDelete: 'restrict' }),
+    // The frozen quote (null until the cycle is quoted).
+    carriedInCents: integer('carried_in_cents').notNull().default(0),
+    serviceCents: integer('service_cents'),
+    serviceTaxCents: integer('service_tax_cents'),
+    familyFeeBps: integer('family_fee_bps'),
+    familyFeeCents: integer('family_fee_cents'),
+    familyFeeTaxCents: integer('family_fee_tax_cents'),
+    familyTotalCents: integer('family_total_cents'),
+    providerCommissionBps: integer('provider_commission_bps'),
+    providerCommissionCents: integer('provider_commission_cents'),
+    providerCommissionTaxCents: integer('provider_commission_tax_cents'),
+    providerShareCents: integer('provider_share_cents'),
+    taxLines: jsonb('tax_lines')
+      .$type<Array<CycleTaxLine>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    carriedOutCents: integer('carried_out_cents').notNull().default(0),
+    heldCents: integer('held_cents'),
+    capturedCents: integer('captured_cents'),
+    fundedAt: timestamp('funded_at'),
+    capturedAt: timestamp('captured_at'),
+    suspendedAt: timestamp('suspended_at'),
+    // Notices already sent for this cycle, so a rerun never repeats one.
+    noticesSent: jsonb('notices_sent')
+      .$type<Array<string>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    uniqueIndex('contract_cycles_contract_index_uidx').on(table.contractId, table.index),
+    index('contract_cycles_status_idx').on(table.status),
+    index('contract_cycles_payment_id_idx').on(table.paymentId)
+  ]
+);
+
+/** One dated session materialised from the accepted weekly pattern. */
+export const contractSession = appDb.table(
+  'contract_sessions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id')
+      .notNull()
+      .references(() => contractCycle.id, { onDelete: 'restrict' }),
+    date: date('date').notNull(),
+    // `<serviceId>@<startMinutes>`.
+    slot: text('slot').notNull(),
+    serviceId: text('service_id').notNull(),
+    serviceName: text('service_name').notNull(),
+    startMinutes: integer('start_minutes').notNull(),
+    endMinutes: integer('end_minutes').notNull(),
+    startsAt: timestamp('starts_at').notNull(),
+    endsAt: timestamp('ends_at').notNull(),
+    elapsedMinutes: integer('elapsed_minutes').notNull(),
+    rateCents: integer('rate_cents').notNull(),
+    valueCents: integer('value_cents').notNull(),
+    status: contractSessionStatus('status').notNull().default('scheduled'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    uniqueIndex('contract_sessions_contract_date_slot_uidx').on(
+      table.contractId,
+      table.date,
+      table.slot
+    ),
+    index('contract_sessions_cycle_id_idx').on(table.cycleId)
+  ]
+);
+
+/** Every cycle, session, fee and tax amount as its own entry (umbrella §5). */
+export const billingLedgerEntry = appDb.table(
+  'billing_ledger_entries',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id').references(() => contractCycle.id, { onDelete: 'restrict' }),
+    sessionId: uuid('session_id').references(() => contractSession.id, { onDelete: 'restrict' }),
+    paymentId: uuid('payment_id').references(() => payment.id, { onDelete: 'restrict' }),
+    // Deterministic, so writing an entry twice is a no-op.
+    entryKey: text('entry_key').notNull(),
+    kind: billingLedgerKind('kind').notNull(),
+    // Who the amount is for: charged to the family, owed to the helper, or
+    // kept (or absorbed) by Poppynz.
+    party: billingLedgerParty('party').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    label: text('label'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex('billing_ledger_entries_entry_key_uidx').on(table.entryKey),
+    index('billing_ledger_entries_contract_id_idx').on(table.contractId)
+  ]
+);
+
+/** A Poppynz/Stripe failure after a cycle was represented as funded. */
+export const billingIncident = appDb.table(
+  'billing_incidents',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id').references(() => contractCycle.id, { onDelete: 'restrict' }),
+    kind: text('kind').notNull(),
+    detail: text('detail').notNull(),
+    resolvedAt: timestamp('resolved_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex('billing_incidents_cycle_kind_uidx').on(table.cycleId, table.kind),
+    index('billing_incidents_contract_id_idx').on(table.contractId)
   ]
 );
 

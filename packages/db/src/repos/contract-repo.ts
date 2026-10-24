@@ -1,10 +1,25 @@
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import * as SqlClient from '@effect/sql/SqlClient';
 import type { SqlError } from '@effect/sql/SqlError';
-import { and, asc, eq, inArray, isNull, sql, type InferSelectModel } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNull,
+  sql,
+  type InferInsertModel,
+  type InferSelectModel
+} from 'drizzle-orm';
 import { Context, Data, Effect, Layer } from 'effect';
 import { DrizzleLive } from '../effect-db';
-import { contract, contractVersion, userProfile, type ContractServiceItem } from '../schema';
+import {
+  contract,
+  contractBilling,
+  contractVersion,
+  userProfile,
+  type ContractServiceItem
+} from '../schema';
 
 export type Contract = InferSelectModel<typeof contract>;
 export type ContractVersion = InferSelectModel<typeof contractVersion>;
@@ -94,7 +109,15 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
     acceptPendingVersion: (
       contractId: string,
       versionId: string,
-      options: { activate: boolean }
+      options: {
+        activate: boolean;
+        /** The contract's billing schedule (piece 3), inserted in the same
+         * transaction so an accepted contract never lacks one. */
+        billing?: Omit<
+          InferInsertModel<typeof contractBilling>,
+          'contractId' | 'acceptedVersionId'
+        >;
+      }
     ) => Effect.Effect<ContractVersion | null, SqlError>;
     /** Atomically: version proposed → declined/changes_requested AND (unless
      * contractStatus is null — the amendment case) the contract along with it.
@@ -120,6 +143,10 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
       side: 'family' | 'provider',
       at: Date
     ) => Effect.Effect<void, SqlError>;
+    /** active/ending → ended with a note: billing cancelled the contract
+     * (the helper's payout account was not ready by the deadline). Null when
+     * it was in neither state. */
+    endForBilling: (contractId: string, note: string) => Effect.Effect<Contract | null, SqlError>;
   }
 >() {}
 
@@ -358,6 +385,12 @@ export const ContractRepoLive = Layer.effect(
               .returning();
             const version = rows[0];
             if (!version) return yield* Effect.fail(new TxAbort());
+            if (options.billing) {
+              yield* db
+                .insert(contractBilling)
+                .values({ ...options.billing, contractId, acceptedVersionId: version.id })
+                .onConflictDoNothing({ target: contractBilling.contractId });
+            }
             if (options.activate) {
               yield* db
                 .update(contract)
@@ -422,15 +455,34 @@ export const ContractRepoLive = Layer.effect(
             updatedAt: sql`${contract.updatedAt}`
           })
           .where(eq(contract.id, contractId))
-          .pipe(Effect.asVoid)
+          .pipe(Effect.asVoid),
+      endForBilling: (contractId, note) =>
+        db
+          .update(contract)
+          .set({ status: 'ended', endNote: note })
+          .where(
+            and(
+              eq(contract.id, contractId),
+              inArray(contract.status, ['active', 'ending']),
+              isNull(contract.deletedAt)
+            )
+          )
+          .returning()
+          .pipe(Effect.map((rows) => rows[0] ?? null))
     };
   })
 );
 
 export const ContractRepoDefault = ContractRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makeContractRepoTest = (implementation: Context.Tag.Service<ContractRepo>) =>
-  Layer.succeed(ContractRepo, implementation);
+type ContractRepoService = Context.Tag.Service<ContractRepo>;
+
+// `endForBilling` is optional so suites written before contract billing keep
+// compiling; it matches nothing unless a test supplies it.
+export const makeContractRepoTest = (
+  implementation: Omit<ContractRepoService, 'endForBilling'> &
+    Partial<Pick<ContractRepoService, 'endForBilling'>>
+) => Layer.succeed(ContractRepo, { endForBilling: () => Effect.succeed(null), ...implementation });
 
 export const dummyContract: Contract = {
   id: 'contract-1',
@@ -503,5 +555,6 @@ export const EmptyContractRepoTest = makeContractRepoTest({
   acceptPendingVersion: () => Effect.succeed(null),
   decidePendingVersion: () => Effect.succeed(null),
   setEnding: () => Effect.succeed(null),
-  markSeen: () => Effect.void
+  markSeen: () => Effect.void,
+  endForBilling: () => Effect.succeed(null)
 });

@@ -1,6 +1,9 @@
 -- Staging UAT fixes (2026-10-12 findings), one migration for the whole round.
 -- Everything is additive: new columns are nullable or defaulted and the new
--- tables are empty, so it applies on top of 0030–0034 in any order.
+-- tables are empty. (There is no 0032–0034.) Order is NOT free, though:
+-- drizzle applies a journal entry only when its `when` is greater than the
+-- newest migration already applied, so this entry's `when` must stay above
+-- every earlier one (see packages/db/src/migrations.test.ts).
 --
 -- #1/#18 credential gate: a catalogue item can require an admin-approved
 -- document (Personal support needs the PSW credential).

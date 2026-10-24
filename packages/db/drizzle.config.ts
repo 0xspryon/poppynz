@@ -1,7 +1,7 @@
 import { defineConfig } from 'drizzle-kit';
 
+// Never log this: it carries the database password.
 const url = process.env.DATABASE_URL ?? '';
-console.log({ url });
 
 export default defineConfig({
   out: './src/migrations',

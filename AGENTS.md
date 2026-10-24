@@ -29,6 +29,12 @@ These project-specific rules exist to prevent repeat mistakes from prior impleme
 - List/read queries for active records should filter `deletedAt IS NULL` where relevant.
 - Delete handlers/repos should set `deletedAt` and preserve data instead of hard-deleting rows unless explicitly requested.
 
+## Database Migrations
+
+- drizzle applies a journal entry only when its `when` is greater than the `created_at` of the newest migration already applied. An entry with a lower `when` is skipped silently — it is never applied "out of order".
+- A new migration's `when` in `packages/db/src/migrations/meta/_journal.json` must therefore exceed the current maximum, its `idx` must follow the last one, its tag number must be higher than every earlier tag, and its `.sql` file must exist.
+- `packages/db/src/migrations.test.ts` enforces all of this; when two branches both add a migration, renumber and re-time the later one on merge.
+
 ## Effect Error-Mapping Style
 
 - When adapting repo/infrastructure errors into route-specific errors, pipe the effect through the mapper instead of wrapping the call in it. Preferred:

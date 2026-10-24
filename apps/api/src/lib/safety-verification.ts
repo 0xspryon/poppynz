@@ -190,15 +190,15 @@ export const toApplicantSummary = (state: ApplicantSafetyState, today: string) =
 export const toCredibledResult = (order: CheckOrderWithItems | null) =>
   order?.outcome
     ? {
-        outcome: order.outcome,
-        score: order.credibledScore,
-        checks: order.items.map((item) => ({
-          label: credibledCheckTypeLabel(item.credibledCheckTypeValue),
-          outcome: item.outcome,
-          status: item.credibledStatus,
-          score: item.credibledScore
-        }))
-      }
+      outcome: order.outcome,
+      score: order.credibledScore,
+      checks: order.items.map((item) => ({
+        label: credibledCheckTypeLabel(item.credibledCheckTypeValue),
+        outcome: item.outcome,
+        status: item.credibledStatus,
+        score: item.credibledScore
+      }))
+    }
     : null;
 
 // Adverse results first, then the ones a person has to read the report for;
@@ -206,14 +206,12 @@ export const toCredibledResult = (order: CheckOrderWithItems | null) =>
 const reviewPriority = (outcome: CheckOrderOutcome | null) =>
   outcome === 'not_cleared' ? 0 : outcome === 'inconclusive' ? 1 : 2;
 
-export const byReviewPriority = <
-  T extends { credibledResult: { outcome: CheckOrderOutcome } | null; createdAt: string }
->(
+export const byReviewPriority = <T extends { credibledResult: { outcome: CheckOrderOutcome } | null; createdAt: string }>(
   left: T,
   right: T
 ) =>
   reviewPriority(left.credibledResult?.outcome ?? null) -
-    reviewPriority(right.credibledResult?.outcome ?? null) ||
+  reviewPriority(right.credibledResult?.outcome ?? null) ||
   left.createdAt.localeCompare(right.createdAt);
 
 export const toAdminSummary = (

@@ -1413,6 +1413,8 @@ export const contractCycle = appDb.table(
     fundedAt: timestamp('funded_at'),
     capturedAt: timestamp('captured_at'),
     suspendedAt: timestamp('suspended_at'),
+    // A resume charges the sessions starting after this instant.
+    resumeFrom: timestamp('resume_from'),
     // Notices already sent for this cycle, so a rerun never repeats one.
     noticesSent: jsonb('notices_sent')
       .$type<Array<string>>()

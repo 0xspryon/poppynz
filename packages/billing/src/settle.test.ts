@@ -70,6 +70,9 @@ const fetched = (overrides: Partial<ProviderPayment> = {}): ProviderPayment => (
   receiptUrl: 'https://pay.stripe.com/receipts/r1',
   refundedCents: 0,
   paymentMethod: null,
+  capturableCents: 0,
+  receivedCents: 7500,
+  captureBefore: null,
   ...overrides
 });
 

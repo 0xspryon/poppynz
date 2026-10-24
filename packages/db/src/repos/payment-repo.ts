@@ -205,3 +205,93 @@ export const makePaymentRepoTest = (implementation: Partial<Context.Tag.Service<
   Layer.succeed(PaymentRepo, { ...emptyPaymentRepo, ...implementation });
 
 export const EmptyPaymentRepoTest = makePaymentRepoTest({});
+
+/** In-memory stand-in with the live repo's compare-and-set semantics. */
+export const makeInMemoryPaymentRepo = (initial: ReadonlyArray<Payment> = []) => {
+  const rows = new Map(initial.map((row) => [row.id, row]));
+  let sequence = 0;
+  const service: Context.Tag.Service<PaymentRepo> = {
+    findById: (id) => {
+      const row = rows.get(id);
+      return row
+        ? Effect.succeed(row)
+        : Effect.fail(new DBNotFoundError({ entity: 'payment', value: id }));
+    },
+    findByProviderReference: (provider, reference) =>
+      Effect.sync(
+        () =>
+          [...rows.values()].find(
+            (row) => row.provider === provider && row.providerReference === reference
+          ) ?? null
+      ),
+    listByUser: (userId) =>
+      Effect.sync(() =>
+        [...rows.values()]
+          .filter((row) => row.userId === userId && row.providerReference !== null)
+          .reverse()
+          .map((row) => ({
+            ...row,
+            description: row.description ?? paymentKindDescriptions[row.kind]
+          }))
+      ),
+    listStalePending: (provider, createdBefore) =>
+      Effect.sync(() =>
+        [...rows.values()].filter(
+          (row) =>
+            row.status === 'pending' &&
+            row.provider === provider &&
+            row.providerReference !== null &&
+            row.createdAt < createdBefore
+        )
+      ),
+    create: (input) =>
+      Effect.sync(() => {
+        const now = new Date();
+        const row: Payment = {
+          id: `payment-${++sequence}`,
+          status: 'pending',
+          providerReference: null,
+          refundReference: null,
+          currency: 'CAD',
+          lastError: null,
+          authorisedAt: null,
+          capturedAt: null,
+          refundedAt: null,
+          receiptUrl: null,
+          taxLines: [],
+          description: null,
+          capturedCents: null,
+          ...input,
+          createdAt: now,
+          updatedAt: now
+        } as Payment;
+        rows.set(row.id, row);
+        return row;
+      }),
+    update: (id, input) => {
+      const row = rows.get(id);
+      if (!row) return Effect.fail(new DBNotFoundError({ entity: 'payment', value: id }));
+      const next = { ...row, ...input, updatedAt: new Date() } as Payment;
+      rows.set(id, next);
+      return Effect.succeed(next);
+    },
+    advance: (id, input) =>
+      Effect.sync(() => {
+        const row = rows.get(id);
+        const from: ReadonlyArray<PaymentStatus> = Array.isArray(input.from)
+          ? (input.from as ReadonlyArray<PaymentStatus>)
+          : [input.from as PaymentStatus];
+        if (!row || !from.includes(row.status)) return null;
+        if (
+          input.providerReference !== undefined &&
+          row.providerReference !== input.providerReference
+        ) {
+          return null;
+        }
+        const next = { ...row, ...input.set, updatedAt: new Date() } as Payment;
+        rows.set(id, next);
+        return next;
+      })
+  };
+  return { layer: Layer.succeed(PaymentRepo, service), rows, service };
+};

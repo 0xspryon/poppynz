@@ -142,6 +142,8 @@
       "dependencies": {
         "@repo/calendar": "*",
         "@repo/db": "*",
+        "@repo/env": "*",
+        "@repo/mail": "*",
         "@repo/notify": "*",
         "@repo/payments": "*",
         "@repo/queue": "*",

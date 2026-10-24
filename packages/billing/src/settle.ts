@@ -1,8 +1,15 @@
-import { BillingCustomerRepo, CheckOrderRepo, PaymentRepo, type Payment } from '@repo/db';
+import type { SqlError } from '@effect/sql/SqlError';
+import {
+  BillingCustomerRepo,
+  CheckOrderRepo,
+  PaymentRepo,
+  type DBNotFoundError,
+  type Payment
+} from '@repo/db';
 import { publishNotificationBestEffort } from '@repo/notify';
-import { Payments, type ProviderPayment } from '@repo/payments';
+import { Payments, type PaymentProviderError, type ProviderPayment } from '@repo/payments';
 import { SafetyVerificationQueue } from '@repo/queue';
-import { Effect } from 'effect';
+import { Context, Effect, Option } from 'effect';
 import { saveCard } from './cards';
 
 /**
@@ -27,7 +34,58 @@ export type SettleResult =
   /** The fetched object does not match our row; flagged, nothing else done. */
   | { outcome: 'mismatch'; payment: Payment; reason: string }
   /** Recorded under another provider than the active one; left alone. */
-  | { outcome: 'skipped'; payment: Payment };
+  | { outcome: 'skipped'; payment: Payment }
+  /** A contract-cycle hold was placed (captured later). */
+  | { outcome: 'authorised'; payment: Payment };
+
+/**
+ * The contract-cycle branch of settle (piece 3), provided by contract
+ * billing. Optional so the check-order callers keep their own environment;
+ * the API and worker runtimes always provide it (`CycleSettlementLive`).
+ */
+export class CycleSettlement extends Context.Tag('@repo/billing/CycleSettlement')<
+  CycleSettlement,
+  {
+    settle: (
+      row: Payment,
+      now: Date
+    ) => Effect.Effect<
+      { outcome: string; payment: Payment },
+      SqlError | DBNotFoundError | PaymentProviderError
+    >;
+  }
+>() {}
+
+const settleContractCycle = (row: Payment, now: Date) =>
+  Effect.gen(function* () {
+    const settlement = yield* Effect.serviceOption(CycleSettlement);
+    if (Option.isNone(settlement)) {
+      yield* Effect.logWarning(`[billing] no cycle settlement here; left ${row.id} for the worker`);
+      return { outcome: 'pending' as const, payment: row };
+    }
+    const settled = yield* settlement.value.settle(row, now);
+    switch (settled.outcome) {
+      case 'authorised':
+        return { outcome: 'authorised' as const, payment: settled.payment };
+      case 'captured':
+        return { outcome: 'captured' as const, payment: settled.payment };
+      case 'declined':
+      case 'lost_hold':
+        return { outcome: 'failed' as const, payment: settled.payment };
+      case 'final':
+        return { outcome: 'final' as const, payment: settled.payment };
+      case 'skipped':
+        return { outcome: 'skipped' as const, payment: settled.payment };
+      case 'mismatch':
+        return {
+          outcome: 'mismatch' as const,
+          payment: settled.payment,
+          reason: settled.payment.lastError ?? 'mismatch'
+        };
+      default:
+        return { outcome: 'pending' as const, payment: settled.payment };
+    }
+  });
 
 /** Statuses after which a payment row never moves again here. `authorised`
  * rows are the pre-Stripe mock's settled charges. */
@@ -209,6 +267,12 @@ const settleRow = (row: Payment, now: () => Date) =>
   Effect.gen(function* () {
     const paymentRepo = yield* PaymentRepo;
     const payments = yield* Payments;
+
+    // Contract billing holds and captures: their own follow-ups (a hold is
+    // not final, and there is no order to finish).
+    if (row.kind === 'contract_cycle') {
+      return (yield* settleContractCycle(row, now())) as SettleResult;
+    }
 
     if (finalStatuses.includes(row.status)) {
       // Whichever follow-up never ran (a crash between the two writes) is

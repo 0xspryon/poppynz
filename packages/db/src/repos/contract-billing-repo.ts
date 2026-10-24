@@ -502,6 +502,7 @@ export const dummyContractCycle = (overrides: Partial<ContractCycle> = {}): Cont
   fundedAt: null,
   capturedAt: null,
   suspendedAt: null,
+  resumeFrom: null,
   noticesSent: [],
   lastError: null,
   createdAt: new Date('2026-10-24T00:00:00.000Z'),

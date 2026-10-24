@@ -69,6 +69,7 @@ CREATE TABLE "app_db"."contract_cycles" (
 	"funded_at" timestamp,
 	"captured_at" timestamp,
 	"suspended_at" timestamp,
+	"resume_from" timestamp,
 	"notices_sent" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"last_error" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,

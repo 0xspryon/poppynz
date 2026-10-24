@@ -11,7 +11,7 @@
 		type ServiceMutationError,
 		type ServiceOffered
 	} from '$lib/api/services-offered';
-	import { acceptTcs, listPendingTcs, type PublishedTc } from '$lib/api/tcs';
+	import { acceptTcs, listPendingTcs, tcCheckboxLabel, type PublishedTc } from '$lib/api/tcs';
 	import { centsToDollars, dollarsToCents, formatMoney } from '$lib/money';
 	import { m } from '$lib/paraglide/messages';
 	import BrowseServicesDialog from '$lib/components/BrowseServicesDialog.svelte';
@@ -520,7 +520,8 @@
 		open
 		title={feeTerms.title}
 		content={feeTerms.content}
-		checkboxLabel={feeTerms.checkboxLabel}
+		checkboxLabel={tcCheckboxLabel(feeTerms)}
+		notice={feeTerms.fallback ? m.tc_english_governs_notice() : null}
 		intro={m.provider_services_fee_intro()}
 		busy={feeTermsBusy}
 		error={feeTermsError}

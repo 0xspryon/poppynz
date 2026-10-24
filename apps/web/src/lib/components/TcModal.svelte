@@ -16,6 +16,8 @@
 		error?: string | null;
 		/** Optional lead-in shown above the document (e.g. "Our terms have changed"). */
 		intro?: string | null;
+		/** Shown above the text when it is not in the reader's language (U7). */
+		notice?: string | null;
 		onaccept?: () => void;
 		onclose?: () => void;
 	}
@@ -29,6 +31,7 @@
 		busy = false,
 		error = null,
 		intro = null,
+		notice = null,
 		onaccept,
 		onclose
 	}: Props = $props();
@@ -66,6 +69,16 @@
 				{/if}
 			</div>
 			<div class="min-h-0 flex-1 overflow-y-auto px-6 py-4">
+				{#if notice}
+					<p
+						class="mb-3 flex items-center gap-2 rounded-md border border-info-content bg-info-content/40
+							px-3 py-2 text-[13px] text-info"
+						lang="fr"
+					>
+						<i class="las la-language text-base" aria-hidden="true"></i>
+						{notice}
+					</p>
+				{/if}
 				<MarkdownView {content} />
 			</div>
 			<div class="border-t border-base-300 bg-base-200 px-6 py-4">

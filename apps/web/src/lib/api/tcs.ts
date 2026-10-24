@@ -15,6 +15,9 @@ const adminCreateDraftEndpoint = apiClient.admin.tcs[':id'].draft.$post;
 const adminUpdateDraftEndpoint = apiClient.admin.tcs[':id'].draft.$patch;
 const adminPublishEndpoint = apiClient.admin.tcs[':id'].publish.$post;
 
+/** The languages a T&C version can be written in; English is authoritative. */
+export type TcLocale = 'en' | 'fr';
+
 /** Admins are never a T&C audience — "all" covers the non-admin profiles. */
 export type TcAudienceRole = 'family' | 'service-provider';
 export type TcAppliesToRole = 'all' | TcAudienceRole;
@@ -32,7 +35,9 @@ export const tcAudienceLabel = (role: TcAppliesToRole): string =>
  * the second to `never`. The explicit wrapper return annotations below keep
  * these honest — tsc rejects them if the API payloads drift. */
 
-/** A live document flattened with its latest published version. */
+/** A live document flattened with the published version shown to this
+ * reader: the translation in their language when there is one, else the
+ * authoritative English (`fallback`). */
 export interface PublishedTc {
 	documentId: string;
 	slug: string;
@@ -40,6 +45,8 @@ export interface PublishedTc {
 	appliesToRole: TcAppliesToRole;
 	versionId: string;
 	version: number;
+	locale: TcLocale;
+	fallback: boolean;
 	content: string;
 	checkboxLabel: string;
 	publishedAt: string | null;
@@ -58,6 +65,7 @@ export interface TcDocumentSummary {
 export interface AdminTcVersion {
 	id: string;
 	documentId: string;
+	locale: string;
 	version: number;
 	description: string;
 	content: string;
@@ -141,12 +149,14 @@ export async function removeTcDocument(
 	return call(adminRemoveEndpoint({ param: { id } }));
 }
 
+/** Draft endpoints act on one language's draft (`?locale=`, English by default). */
 export async function createTcDraft(
 	id: string,
-	draft: TcVersionDraft
+	draft: TcVersionDraft,
+	locale: TcLocale = 'en'
 ): Promise<ApiResult<AdminTcVersion, ErrorsOf<typeof adminCreateDraftEndpoint>>> {
 	// Same parseJsonBody caveat as PATCH — the input type omits `json`.
-	const args = { param: { id }, json: draft } as unknown as Parameters<
+	const args = { param: { id }, query: { locale }, json: draft } as unknown as Parameters<
 		typeof adminCreateDraftEndpoint
 	>[0];
 	return call(adminCreateDraftEndpoint(args));
@@ -154,18 +164,35 @@ export async function createTcDraft(
 
 export async function updateTcDraft(
 	id: string,
-	patch: Partial<TcVersionDraft>
+	patch: Partial<TcVersionDraft>,
+	locale: TcLocale = 'en'
 ): Promise<ApiResult<AdminTcVersion, ErrorsOf<typeof adminUpdateDraftEndpoint>>> {
-	const args = { param: { id }, json: patch } as unknown as Parameters<
+	const args = { param: { id }, query: { locale }, json: patch } as unknown as Parameters<
 		typeof adminUpdateDraftEndpoint
 	>[0];
 	return call(adminUpdateDraftEndpoint(args));
 }
 
 export async function publishTcDraft(
-	id: string
+	id: string,
+	locale: TcLocale = 'en'
 ): Promise<ApiResult<AdminTcVersion, ErrorsOf<typeof adminPublishEndpoint>>> {
-	return call(adminPublishEndpoint({ param: { id } }));
+	const args = { param: { id }, query: { locale } } as unknown as Parameters<
+		typeof adminPublishEndpoint
+	>[0];
+	return call(adminPublishEndpoint(args));
+}
+
+/**
+ * The agree sentence beside the checkbox. A translated version carries its
+ * own; when a French reader is shown the English text (no translation yet),
+ * the sentence is still in their language (U2) — the document stays English.
+ */
+export function tcCheckboxLabel(tc: Pick<PublishedTc, 'slug' | 'title' | 'checkboxLabel' | 'fallback'>) {
+	if (!tc.fallback) return tc.checkboxLabel;
+	return tc.slug === 'terms_of_service'
+		? m.auth_signup_terms_fallback()
+		: m.tc_checkbox_fallback({ title: tc.title });
 }
 
 export type { ApiResult };

@@ -6,7 +6,7 @@
 	import { requestSignUpLink, type Role } from '$lib/api/auth';
 	import { matchError } from '$lib/api/client';
 	import { m } from '$lib/paraglide/messages';
-	import { listPublishedTcs, type PublishedTc } from '$lib/api/tcs';
+	import { listPublishedTcs, tcCheckboxLabel, type PublishedTc } from '$lib/api/tcs';
 	import RoleChooser from '$lib/components/RoleChooser.svelte';
 	import TcModal from '$lib/components/TcModal.svelte';
 
@@ -101,7 +101,7 @@
 	<label class="label mb-7 items-start gap-2.5 text-sm whitespace-normal">
 		<input type="checkbox" class="checkbox checkbox-primary checkbox-sm" bind:checked={agreed} />
 		<span>
-			{terms?.checkboxLabel ?? TERMS_CHECKBOX_FALLBACK}
+			{terms ? tcCheckboxLabel(terms) : TERMS_CHECKBOX_FALLBACK}
 			{#if terms}
 				<button
 					type="button"
@@ -148,6 +148,7 @@
 		mode="view"
 		title={terms.title}
 		content={terms.content}
+		notice={terms.fallback ? m.tc_english_governs_notice() : null}
 		onclose={() => (termsOpen = false)}
 	/>
 {/if}

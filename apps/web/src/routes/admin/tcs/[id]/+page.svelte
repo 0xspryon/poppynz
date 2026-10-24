@@ -10,7 +10,8 @@
 		updateTcDraft,
 		type AdminTcDocument,
 		type AdminTcVersion,
-		type TcDocumentDraft
+		type TcDocumentDraft,
+		type TcLocale
 	} from '$lib/api/tcs';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import TcDocumentDialog from '$lib/components/admin/TcDocumentDialog.svelte';
@@ -46,11 +47,24 @@
 
 	let viewing = $state<AdminTcVersion | null>(null);
 
+	// U7: each language has its own drafts; English governs and numbers the
+	// versions, a French version translates one (written by a person).
+	let editingLocale = $state<TcLocale>('en');
+	const localeOf = (version: AdminTcVersion): TcLocale => (version.locale === 'fr' ? 'fr' : 'en');
+	const localeVersions = $derived(
+		doc?.versions.filter((version) => localeOf(version) === editingLocale) ?? []
+	);
 	const serverDraft = $derived(
-		doc?.versions.find((version) => version.publishedAt === null) ?? null
+		localeVersions.find((version) => version.publishedAt === null) ?? null
 	);
 	const latestPublished = $derived(
-		doc?.versions.find((version) => version.publishedAt !== null) ?? null
+		localeVersions.find((version) => version.publishedAt !== null) ?? null
+	);
+	/** The authoritative revision the header reports. */
+	const latestPublishedEnglish = $derived(
+		doc?.versions.find(
+			(version) => localeOf(version) === 'en' && version.publishedAt !== null
+		) ?? null
 	);
 	const draftDirty = $derived(
 		serverDraft === null ||
@@ -77,13 +91,7 @@
 		if (result.ok) {
 			doc = result.data;
 			errorMessage = null;
-			const openDraft = result.data.versions.find((version) => version.publishedAt === null);
-			if (openDraft) {
-				editorOpen = true;
-				draftDescription = openDraft.description;
-				draftContent = openDraft.content;
-				draftCheckboxLabel = openDraft.checkboxLabel;
-			}
+			syncEditorWithDraft();
 		} else {
 			errorMessage = errorText(result.error);
 		}
@@ -94,14 +102,43 @@
 		if (documentId) void load();
 	});
 
+	/** Open the editor on this language's draft, if it has one. */
+	function syncEditorWithDraft() {
+		const openDraft = doc?.versions.find(
+			(version) => localeOf(version) === editingLocale && version.publishedAt === null
+		);
+		editorOpen = openDraft !== undefined;
+		if (openDraft) {
+			draftDescription = openDraft.description;
+			draftContent = openDraft.content;
+			draftCheckboxLabel = openDraft.checkboxLabel;
+		}
+		showPreview = false;
+	}
+
+	function switchLocale(locale: TcLocale) {
+		if (locale === editingLocale) return;
+		editingLocale = locale;
+		syncEditorWithDraft();
+	}
+
 	function openNewDraft() {
-		// Start from the latest published text so the admin edits, not retypes.
+		// Start from the latest published text so the admin edits, not retypes;
+		// a first French version starts from the English text to translate.
+		const base = latestPublished ?? (editingLocale === 'fr' ? latestPublishedEnglish : null);
 		draftDescription = '';
-		draftContent = latestPublished?.content ?? '';
-		draftCheckboxLabel = latestPublished?.checkboxLabel ?? '';
+		draftContent = base?.content ?? '';
+		draftCheckboxLabel = base?.checkboxLabel ?? '';
 		showPreview = false;
 		editorOpen = true;
 	}
+
+	const draftErrorText = (error: { code: string; message: string }) =>
+		error.code === 'TC_TRANSLATION_BASE_MISSING'
+			? m.admin_tcs_error_translation_base()
+			: error.code === 'TC_TRANSLATION_EXISTS'
+				? m.admin_tcs_error_translation_exists()
+				: errorText(error);
 
 	async function saveDetails(details: TcDocumentDraft) {
 		if (detailsBusy || !doc) return;
@@ -131,8 +168,8 @@
 			checkboxLabel: draftCheckboxLabel
 		};
 		const result = serverDraft
-			? await updateTcDraft(doc.id, input)
-			: await createTcDraft(doc.id, input);
+			? await updateTcDraft(doc.id, input, editingLocale)
+			: await createTcDraft(doc.id, input, editingLocale);
 		if (result.ok) {
 			toast.success(m.admin_tcs_draft_saved_toast({ version: result.data.version }));
 			await load();
@@ -141,7 +178,7 @@
 				title: m.admin_tcs_draft_not_saved_title()
 			});
 		} else {
-			toast.error(errorText(result.error), { title: m.admin_tcs_draft_not_saved_title() });
+			toast.error(draftErrorText(result.error), { title: m.admin_tcs_draft_not_saved_title() });
 		}
 		draftBusy = false;
 	}
@@ -149,7 +186,7 @@
 	async function publish() {
 		if (publishBusy || !doc) return;
 		publishBusy = true;
-		const result = await publishTcDraft(doc.id);
+		const result = await publishTcDraft(doc.id, editingLocale);
 		publishConfirmOpen = false;
 		if (result.ok) {
 			toast.success(m.admin_tcs_published_toast({ version: result.data.version }));
@@ -198,8 +235,8 @@
 				<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info">
 					{tcAudienceLabel(doc.appliesToRole)}
 				</span>
-				{#if latestPublished}
-					<span>{m.admin_tcs_currently_at({ version: latestPublished.version })}</span>
+				{#if latestPublishedEnglish}
+					<span>{m.admin_tcs_currently_at({ version: latestPublishedEnglish.version })}</span>
 				{:else}
 					<span class="text-warning">{m.admin_tcs_never_published()}</span>
 				{/if}
@@ -218,6 +255,29 @@
 			{/if}
 		</div>
 	</div>
+
+	<div class="mb-4 flex flex-wrap items-center gap-3">
+		<span class="text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
+			{m.admin_tcs_locale_legend()}
+		</span>
+		<div class="join" role="group" aria-label={m.admin_tcs_locale_legend()}>
+			{#each [{ locale: 'en' as const, label: m.admin_tcs_locale_en() }, { locale: 'fr' as const, label: m.admin_tcs_locale_fr() }] as option (option.locale)}
+				<button
+					type="button"
+					class="btn join-item btn-sm {editingLocale === option.locale ? 'btn-secondary' : 'btn-ghost'}"
+					aria-pressed={editingLocale === option.locale}
+					onclick={() => switchLocale(option.locale)}
+				>
+					{option.label}
+				</button>
+			{/each}
+		</div>
+	</div>
+	{#if editingLocale === 'fr'}
+		<p class="mb-4 max-w-3xl text-[12.5px] text-base-content-muted">
+			{m.admin_tcs_translation_hint()}
+		</p>
+	{/if}
 
 	{#if editorOpen}
 		<section class="mb-8 rounded-xl border border-card-border bg-base-100 p-5">
@@ -302,7 +362,12 @@
 				class="rounded-lg border border-card-border bg-base-100 px-4 py-3.5
 					lg:grid lg:grid-cols-[70px_150px_1fr_90px] lg:items-center lg:gap-3.5"
 			>
-				<span class="font-display text-sm font-bold text-base-content">v{version.version}</span>
+				<span class="font-display text-sm font-bold text-base-content"
+					>v{version.version}
+					<span class="ml-1 text-[10.5px] font-semibold text-outline"
+						>{localeOf(version).toUpperCase()}</span
+					></span
+				>
 				<div class="py-1 lg:py-0">
 					{#if version.publishedAt}
 						<span class="badge badge-sm border-0 bg-success-content font-semibold text-success">
@@ -351,7 +416,9 @@
 <ConfirmDialog
 	open={publishConfirmOpen}
 	title={m.admin_tcs_publish_title()}
-	body={m.admin_tcs_publish_body({ version: serverDraft?.version ?? '' })}
+	body={editingLocale === 'fr'
+		? m.admin_tcs_publish_body_translation({ version: serverDraft?.version ?? '' })
+		: m.admin_tcs_publish_body({ version: serverDraft?.version ?? '' })}
 	confirmLabel={m.admin_tcs_publish()}
 	confirmClass="btn-primary"
 	busy={publishBusy}

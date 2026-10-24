@@ -8,7 +8,7 @@
 	 * the booking flow. Anything else pending — including documents the admin
 	 * creates later — blocks here so it can never silently go unshown. */
 	import { onMount } from 'svelte';
-	import { acceptTcs, listPendingTcs, type PublishedTc } from '$lib/api/tcs';
+	import { acceptTcs, listPendingTcs, tcCheckboxLabel, type PublishedTc } from '$lib/api/tcs';
 	import TcModal from './TcModal.svelte';
 	import { m } from '$lib/paraglide/messages';
 
@@ -53,7 +53,8 @@
 		open
 		title={current.title}
 		content={current.content}
-		checkboxLabel={current.checkboxLabel}
+		checkboxLabel={tcCheckboxLabel(current)}
+		notice={current.fallback ? m.tc_english_governs_notice() : null}
 		intro={current.version > 1 ? m.tc_intro_changed() : m.tc_intro()}
 		{busy}
 		error={errorMessage}

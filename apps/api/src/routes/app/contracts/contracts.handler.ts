@@ -97,6 +97,14 @@ export class UnknownContractServiceError extends Data.TaggedError(
   'UnknownContractServiceError'
 )<{}> {}
 
+/** Terms name a service the helper still lists but that families may not
+ * see — a custom service awaiting (or refused) review, or a credentialed
+ * service whose credential is missing, rejected or expired. Sign & send and
+ * accept both refuse it rather than contracting an unapproved service. */
+export class ContractServiceNotPublishableError extends Data.TaggedError(
+  'ContractServiceNotPublishableError'
+)<{ serviceIds: Array<string> }> {}
+
 /** Offers floor at the service's BASE rate (UAT #39) — its catalogue rate,
  * or the platform base rate for a custom service — never at a fraction of
  * what the helper lists. Violations name the offending line items (and the
@@ -720,6 +728,35 @@ const snapshotTerms = (providerUserId: string, input: ContractTermsInput) =>
     return services;
   });
 
+/**
+ * Every snapshotted service that the helper still lists must be publishable.
+ * A service the helper has since removed keeps its snapshot (the family
+ * agreed to the terms as drafted); one that is still listed but not
+ * publishable fails with the offending ids. Returns the publishable listing.
+ */
+const ensureSnapshotServicesPublishable = (
+  providerUserId: string,
+  items: ReadonlyArray<{ serviceId: string }>
+) =>
+  Effect.gen(function* () {
+    const repo = yield* ServiceOfferedRepo;
+    const [listed, active] = yield* Effect.all([
+      repo.listPublishableByUserIds([providerUserId]),
+      repo.listByUserId(providerUserId)
+    ]).pipe((errors) => mapContractRepoError(errors));
+    const publishableIds = new Set(listed.map((service) => service.id));
+    const activeIds = new Set(active.map((service) => service.id));
+    const blocked = items
+      .map((item) => item.serviceId)
+      .filter((id) => activeIds.has(id) && !publishableIds.has(id));
+    if (blocked.length > 0) {
+      return yield* Effect.fail(
+        new ContractServiceNotPublishableError({ serviceIds: Array.from(new Set(blocked)) })
+      );
+    }
+    return listed;
+  });
+
 export const createContractProgram = (
   userAndSession: UserAndSession,
   input: { conversationId: string }
@@ -871,12 +908,13 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
 
     // The floor is re-checked against the provider's CURRENT listing at send
     // time — a draft that sat while the provider raised rates must be revised,
-    // not slipped through. Rates on delisted services keep their snapshot, as
+    // not slipped through. Rates on removed services keep their snapshot, as
     // do items whose listing switched currency (cents in different currencies
-    // are not comparable).
-    const listed = yield* ServiceOfferedRepo.pipe(
-      Effect.flatMap((repo) => repo.listPublishableByUserIds([contract.providerUserId])),
-      (errors) => mapContractRepoError(errors)
+    // are not comparable). A service still listed but no longer publishable
+    // (review pending or refused, credential lost) stops the send.
+    const listed = yield* ensureSnapshotServicesPublishable(
+      contract.providerUserId,
+      pending.services
     );
     const listedById = new Map(listed.map((service) => [service.id, service]));
     const violations: Array<{
@@ -1017,6 +1055,9 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
       return yield* Effect.fail(new ContractStartDatePassedError());
     }
     yield* requireContractCounterpart(pending.proposedByUserId);
+    // Re-checked at acceptance: a service can lose its approval (or its
+    // credential) while the proposal waits.
+    yield* ensureSnapshotServicesPublishable(contract.providerUserId, pending.services);
 
     // Billing (piece 3): both places of supply are frozen with the contract,
     // so both must be known — the family's for the fee, the helper's for the
@@ -1744,6 +1785,18 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
           error: {
             code: 'UNKNOWN_CONTRACT_SERVICE' as const,
             message: "Pick services from this provider's current list."
+          }
+        },
+        422
+      );
+    case 'ContractServiceNotPublishableError':
+      return c.json(
+        {
+          error: {
+            code: 'CONTRACT_SERVICE_NOT_AVAILABLE' as const,
+            message:
+              "Some services in these terms aren't approved for families yet — remove them and send again.",
+            serviceIds: error.serviceIds
           }
         },
         422

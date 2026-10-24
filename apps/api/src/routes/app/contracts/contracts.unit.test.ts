@@ -1181,6 +1181,46 @@ describe('POST /contracts/:id/send', () => {
     });
   });
 
+  it('refuses to send terms naming a service that is listed but not publishable (R5)', async () => {
+    for (const reviewStatus of ['pending', 'rejected'] as const) {
+      const calls: Array<string> = [];
+      const exit = await Effect.runPromiseExit(
+        sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
+          Effect.provide(
+            makeLayer({
+              contractById: baseContract(),
+              versions: [draftVersion()],
+              offered: [offeredService({ reviewStatus })],
+              calls
+            })
+          )
+        )
+      );
+      expect(getFailure(exit)).toMatchObject({
+        _tag: 'ContractServiceNotPublishableError',
+        serviceIds: [SERVICE_ID]
+      });
+      expect(calls).toEqual([]);
+    }
+  });
+
+  it('still sends terms whose service the helper has since removed (snapshot kept)', async () => {
+    const updates: Array<unknown> = [];
+    await Effect.runPromise(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            offered: [],
+            onSendPending: (_versionId, terms) => updates.push(terms)
+          })
+        )
+      )
+    );
+    expect(updates).toHaveLength(1);
+  });
+
   it('refuses to send without a start date', async () => {
     const exit = await Effect.runPromiseExit(
       sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
@@ -1333,6 +1373,28 @@ describe('POST /contracts/:id/accept', () => {
         })
       }
     ]);
+  });
+
+  it('refuses to accept when a contracted service lost its approval since the proposal (R5)', async () => {
+    const accepted: Array<unknown> = [];
+    const exit = await Effect.runPromiseExit(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'proposed' }),
+            versions: [proposedVersion()],
+            offered: [offeredService({ reviewStatus: 'pending' })],
+            onAcceptPending: (acceptOptions) => accepted.push(acceptOptions)
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ContractServiceNotPublishableError',
+      serviceIds: [SERVICE_ID]
+    });
+    expect(accepted).toEqual([]);
   });
 
   it('refuses to accept until the helper has a province, telling the helper to add it', async () => {

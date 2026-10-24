@@ -1035,6 +1035,7 @@
 	"contracts_error_province_own_helper": "Add your province to your profile address — tax on the Poppynz commission depends on it.",
 	"contracts_error_rate_below_floor": "Some rates are below the base rate for the service — raise them and retry.",
 	"contracts_error_request_changes_failed": "Requesting changes failed. Please try again.",
+	"contracts_error_service_not_available": "Some services in these terms aren't approved for families yet — remove them and try again.",
 	"contracts_error_start_date_not_future": "The start date must be after today.",
 	"contracts_error_start_date_passed": "The start date has passed — ask the family for new terms with a later date.",
 	"contracts_error_start_date_required": "Pick a start date before sending.",

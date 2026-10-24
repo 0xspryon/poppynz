@@ -1035,6 +1035,7 @@
 	"contracts_error_province_own_helper": "Ajoutez votre province à l’adresse de votre profil — la taxe sur la commission Poppynz en dépend.",
 	"contracts_error_rate_below_floor": "Certains tarifs sont sous le tarif de base du service — augmentez-les et réessayez.",
 	"contracts_error_request_changes_failed": "La demande de modifications a échoué. Veuillez réessayer.",
+	"contracts_error_service_not_available": "Certains services de ces conditions ne sont pas encore approuvés pour les familles — retirez-les et réessayez.",
 	"contracts_error_start_date_not_future": "La date de début doit être postérieure à aujourd’hui.",
 	"contracts_error_start_date_passed": "La date de début est passée — demandez à la famille de nouvelles conditions avec une date ultérieure.",
 	"contracts_error_start_date_required": "Choisissez une date de début avant d’envoyer.",

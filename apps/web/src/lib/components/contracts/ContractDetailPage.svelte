@@ -215,6 +215,8 @@
 			toast.error(m.contracts_error_rate_below_floor());
 		} else if (error.code === 'UNKNOWN_CONTRACT_SERVICE') {
 			toast.error(m.contracts_error_unknown_service({ name: firstName }));
+		} else if (error.code === 'CONTRACT_SERVICE_NOT_AVAILABLE') {
+			toast.error(m.contracts_error_service_not_available());
 		} else if (error.code === 'EMPTY_CONTRACT_TERMS') {
 			toast.error(m.contracts_error_empty_terms());
 		} else if (error.code === 'INVALID_CONTRACT_TERMS') {
@@ -260,6 +262,8 @@
 			void refresh(contractId);
 		} else if (error.code === 'COUNTERPART_UNAVAILABLE') {
 			toast.error(m.contracts_error_counterpart_unavailable());
+		} else if (error.code === 'CONTRACT_SERVICE_NOT_AVAILABLE') {
+			toast.error(m.contracts_error_service_not_available());
 		} else if (error.code === 'TAX_PROVINCE_REQUIRED') {
 			toast.error(provinceRequiredMessage(error), {
 				title: m.contracts_error_province_needed_title()

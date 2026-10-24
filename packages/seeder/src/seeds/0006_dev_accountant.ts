@@ -13,7 +13,7 @@ export const seedsDevAccountant = (environment: string, nodeEnv: string | undefi
   environment === 'dev' && nodeEnv !== 'production';
 
 export const devAccountant: Seed = {
-  name: '0005_dev_accountant',
+  name: '0006_dev_accountant',
   run: async (db) => {
     const environment = Effect.runSync(environmentConfig);
     if (!seedsDevAccountant(environment, process.env.NODE_ENV)) return;

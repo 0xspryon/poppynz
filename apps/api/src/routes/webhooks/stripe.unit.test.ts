@@ -6,6 +6,7 @@ import {
   makeCheckOrderRepoTest,
   makeInMemoryBillingCustomerRepo,
   makeInMemoryPayoutAccountRepo,
+  makeContractBillingRepoTest,
   makePaymentRepoTest,
   makeStripeWebhookEventRepoTest,
   type CheckOrder,
@@ -85,6 +86,8 @@ const makeWorld = (
     processingFails?: boolean;
     /** The card already on file for family-1. */
     cardOnFile?: string | null;
+    /** The card setup family-1 started last (the one being confirmed). */
+    latestSetup?: string | null;
     /** Helper payout accounts on file (piece 2b). */
     payoutAccounts?: Array<PayoutAccount>;
     /** Stripe can't be reached when a payout account is re-fetched. */
@@ -106,13 +109,22 @@ const makeWorld = (
     dummyBillingCustomer({
       provider: 'stripe',
       customerReference: 'cus_1',
-      cardReference: options.cardOnFile ?? null
+      cardReference: options.cardOnFile ?? null,
+      latestSetupReference: options.latestSetup ?? null
     })
   ]);
+  const billingRetries: Array<string> = [];
   const payouts = makeInMemoryPayoutAccountRepo(options.payoutAccounts ?? []);
 
   const layer = Layer.mergeAll(
     makeIdleContractBillingLayer(),
+    makeContractBillingRepoTest({
+      listLiveBillingForFamily: (userId) =>
+        Effect.sync(() => {
+          billingRetries.push(userId);
+          return [];
+        })
+    }),
     makePaymentsTest({
       provider: 'stripe',
       verifyWebhook: (_raw, signature) =>
@@ -204,7 +216,17 @@ const makeWorld = (
       body
     });
 
-  return { post, app, layer, log, billing, payouts, payment: () => payment, order: () => order };
+  return {
+    post,
+    app,
+    layer,
+    log,
+    billing,
+    billingRetries,
+    payouts,
+    payment: () => payment,
+    order: () => order
+  };
 };
 
 describe('POST /webhooks/stripe', () => {
@@ -360,6 +382,25 @@ describe('processStripeEvent', () => {
     const note = await run(world, event({ type: 'setup_intent.succeeded', objectId: 'seti_1' }));
     expect(note).toBe('card setup: kept');
     expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_newer');
+  });
+
+  it('puts the card of the setup being confirmed now on file, over an older card (B1)', async () => {
+    const world = makeWorld({ cardOnFile: 'pm_old', latestSetup: 'seti_1' });
+    const note = await run(world, event({ type: 'setup_intent.succeeded', objectId: 'seti_1' }));
+    expect(note).toBe('card setup: saved');
+    expect(world.billing.rows.get('family-1')?.cardReference).toBe('pm_new');
+  });
+
+  it("retries the family's declined and suspended contract billing once a card is saved", async () => {
+    const world = makeWorld();
+    await run(world, event({ type: 'setup_intent.succeeded', objectId: 'seti_1' }));
+    expect(world.billingRetries).toEqual(['family-1']);
+  });
+
+  it('retries nothing when the setup only replayed an older card', async () => {
+    const world = makeWorld({ cardOnFile: 'pm_newer' });
+    await run(world, event({ type: 'setup_intent.succeeded', objectId: 'seti_1' }));
+    expect(world.billingRetries).toEqual([]);
   });
 
   it('marks a fully refunded charge refunded', async () => {

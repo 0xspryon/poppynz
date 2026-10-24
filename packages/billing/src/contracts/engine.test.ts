@@ -30,6 +30,7 @@ import {
 } from '@repo/payments';
 import { ConfigProvider, Context, Effect, Exit, Layer } from 'effect';
 import {
+  previewCardResumes,
   retryFamilyBilling,
   runContractBilling,
   runContractBillingTick,
@@ -1142,5 +1143,21 @@ describe('configuration (L6)', () => {
     );
     expect(Exit.isFailure(exit)).toBe(true);
     expect(world.payments.size).toBe(0);
+  });
+});
+
+describe('card dialog preview (B2)', () => {
+  it('says what replacing the card would charge on a card-suspended contract', async () => {
+    const world = makeWorld({ card: 'mock_pm_decline' });
+    const preview = () =>
+      world.run(previewCardResumes('family-1', TUESDAY).pipe(Effect.provide(world.layer)));
+    expect(await preview()).toEqual([]);
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    expect(await preview()).toEqual([
+      { contractId: 'contract-1', dates: 'Mon, Nov 2 – Wed, Nov 4', amountCents: 6604 }
+    ]);
+    // Nothing was charged by asking.
+    expect([...world.payments.values()].some((row) => row.status === 'captured')).toBe(false);
   });
 });

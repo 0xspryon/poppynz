@@ -5,6 +5,7 @@ import {
   DBNotFoundError,
   dummyBillingCustomer,
   makeInMemoryBillingCustomerRepo,
+  makeContractBillingRepoTest,
   makePaymentRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
@@ -82,8 +83,16 @@ const makeLayer = (
   } = {}
 ) => {
   const billing = makeInMemoryBillingCustomerRepo(options.billing ?? []);
+  const billingRetries: Array<string> = [];
   const layer = Layer.mergeAll(
     makeIdleContractBillingLayer(),
+    makeContractBillingRepoTest({
+      listLiveBillingForFamily: (userId) =>
+        Effect.sync(() => {
+          billingRetries.push(userId);
+          return [];
+        })
+    }),
     makeAuthServiceTest({
       getSession: () => Effect.succeed({ user: { id: family.id }, session: { id: session.id } }),
       userHasPermission: () => Effect.succeed(options.hasPermission ?? true)
@@ -126,7 +135,7 @@ const makeLayer = (
       removeCard: (reference) => Effect.sync(() => void options.removed?.push(reference))
     })
   );
-  return { layer, billing };
+  return { layer, billing, billingRetries };
 };
 
 describe('GET /billing', () => {
@@ -163,7 +172,55 @@ describe('GET /billing', () => {
           receiptUrl: null
         }
       ],
-      provider: 'mock'
+      provider: 'mock',
+      resumeCharges: []
+    });
+  });
+
+  it('shows a released contract hold as not charged, never as failed (L7)', async () => {
+    const { layer } = makeLayer({
+      history: [
+        historyRow({
+          kind: 'contract_cycle',
+          status: 'failed',
+          lastError: 'hold released',
+          releasedAt: new Date('2026-11-02T12:00:00.000Z')
+        })
+      ]
+    });
+    const result = await Effect.runPromise(
+      getBillingRouteProgram(new Headers()).pipe(Effect.provide(layer))
+    );
+    expect(result.payments[0]!.status).toBe('released');
+  });
+
+  it('shows what a reduced capture took, with the captured tax lines (M6)', async () => {
+    const line = {
+      supplyType: 'family_service_fee',
+      jurisdiction: 'ON',
+      component: 'hst',
+      rateMillipercent: 13000,
+      baseCents: 313,
+      taxCents: 41,
+      label: 'HST (ON) 13%',
+      registrationNumber: null
+    };
+    const { layer } = makeLayer({
+      history: [
+        historyRow({
+          kind: 'contract_cycle',
+          totalCents: 13206,
+          capturedCents: 6604,
+          taxLines: [line]
+        })
+      ]
+    });
+    const result = await Effect.runPromise(
+      getBillingRouteProgram(new Headers()).pipe(Effect.provide(layer))
+    );
+    expect(result.payments[0]).toMatchObject({
+      totalCents: 6604,
+      taxLines: [{ label: 'HST (ON) 13%', taxCents: 41 }]
     });
   });
 
@@ -204,6 +261,8 @@ describe('POST /billing/card/setup', () => {
       provider: 'mock'
     });
     expect(billing.rows.get('family-1')?.customerReference).toBe('mock_cus_family-1');
+    // The setup being confirmed is the one the webhook may trust (B1).
+    expect(billing.rows.get('family-1')?.latestSetupReference).toBe('seti_for_mock_cus_family-1');
   });
 
   it('maps an unreachable provider to the provider error', async () => {
@@ -242,6 +301,22 @@ describe('POST /billing/card/confirm', () => {
     );
     expect(billing.rows.get('family-1')?.cardReference).toBe('mock_pm_new');
     expect(removed).toEqual(['mock_pm_saved']);
+  });
+
+  it("retries the family's declined and suspended contract billing once the card is saved (L8)", async () => {
+    const { layer, billingRetries } = makeLayer({ billing: [dummyBillingCustomer()] });
+    await confirm(layer);
+    expect(billingRetries).toEqual(['family-1']);
+  });
+
+  it('saves the card even when the billing retry fails', async () => {
+    const { layer, billing } = makeLayer({ billing: [dummyBillingCustomer()] });
+    const failing = makeContractBillingRepoTest({
+      listLiveBillingForFamily: () => Effect.fail(new SqlError({ cause: 'down' }))
+    });
+    const exit = await confirm(Layer.merge(layer, failing));
+    expect(Exit.isSuccess(exit)).toBe(true);
+    expect(billing.rows.get('family-1')?.cardReference).toBe('mock_pm_new');
   });
 
   it('answers with the card now on file when a concurrent confirm replaced it first', async () => {

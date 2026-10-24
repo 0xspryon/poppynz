@@ -120,9 +120,10 @@ export type CardSetupResult =
 
 /** Applies a card setup the browser (or the webhook) says finished: re-fetch
  * it, check it belongs to `userId` when one is given, and make its card the
- * card on file. Only the browser's confirm (`userId` given) replaces a card
- * already on file; the webhook (`userId` null) can be a retry of an older
- * setup, so it only fills an empty slot. */
+ * card on file. The browser's confirm (`userId` given) replaces a card
+ * already on file; the webhook (`userId` null) does so only for the user's
+ * latest setup — any other can be a retry of an older one, so it only fills
+ * an empty slot. */
 export const applyCardSetup = (reference: string, userId: string | null) =>
   Effect.gen(function* () {
     const repo = yield* BillingCustomerRepo;
@@ -138,11 +139,12 @@ export const applyCardSetup = (reference: string, userId: string | null) =>
     if (setup.status !== 'succeeded' || setup.paymentMethod === null) {
       return { outcome: 'incomplete' } as CardSetupResult;
     }
-    const saved = yield* saveCard(
-      owner.userId,
-      setup.paymentMethod,
-      userId === null ? 'fill' : 'replace'
-    );
+    // The browser's confirm replaces; the webhook replaces only for the
+    // setup the payer started last (the one being confirmed now) — an older
+    // setup may be a stale replay and only fills an empty slot.
+    const mode: SaveCardMode =
+      userId !== null || owner.latestSetupReference === reference ? 'replace' : 'fill';
+    const saved = yield* saveCard(owner.userId, setup.paymentMethod, mode);
     if (saved === 'kept') {
       const current = yield* repo.findByUserId(owner.userId);
       return { outcome: 'kept', card: toCard(current, payments.provider) } as CardSetupResult;

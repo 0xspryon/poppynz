@@ -1,5 +1,11 @@
 import type { SqlError } from '@effect/sql/SqlError';
-import { applyCardSetup, ensureBillingCustomer, retryFamilyBilling, toCard } from '@repo/billing';
+import {
+  applyCardSetup,
+  ensureBillingCustomer,
+  previewCardResumes,
+  retryFamilyBilling,
+  toCard
+} from '@repo/billing';
 import { BillingCustomerRepo, PaymentRepo, type BillingCard } from '@repo/db';
 import { Payments, type PaymentProviderError } from '@repo/payments';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
@@ -58,11 +64,18 @@ const paymentStatusLabel = {
 } as const;
 
 /** A contract charge that is only authorised is a hold, not money taken
- * (pre-Stripe mock check payments stayed `authorised` once paid). */
-const historyStatus = (row: { kind: string; status: keyof typeof paymentStatusLabel }) =>
+ * (pre-Stripe mock check payments stayed `authorised` once paid); a hold
+ * Poppynz released was never charged — not a failed payment. */
+const historyStatus = (row: {
+  kind: string;
+  status: keyof typeof paymentStatusLabel;
+  releasedAt: Date | null;
+}) =>
   row.kind === 'contract_cycle' && row.status === 'authorised'
     ? ('on_hold' as const)
-    : paymentStatusLabel[row.status];
+    : row.kind === 'contract_cycle' && row.releasedAt !== null
+      ? ('released' as const)
+      : paymentStatusLabel[row.status];
 
 /** The card on file and the payment history. */
 export const getBillingRouteProgram = (headers: Headers) =>
@@ -74,10 +87,13 @@ export const getBillingRouteProgram = (headers: Headers) =>
     const paymentRepo = yield* PaymentRepo;
     const payments = yield* Payments;
 
-    const [customer, history] = yield* Effect.all(
+    const [customer, history, resumeCharges] = yield* Effect.all(
       [
         repo.findByUserId(userId).pipe((errors) => mapRepoError(errors)),
-        paymentRepo.listByUser(userId).pipe((errors) => mapRepoError(errors))
+        paymentRepo.listByUser(userId).pipe((errors) => mapRepoError(errors)),
+        // What saving a new card would charge at once (a card-suspended
+        // contract resumes with the rest of its cycle).
+        previewCardResumes(userId, new Date()).pipe((errors) => mapRepoError(errors))
       ],
       { concurrency: 'unbounded' }
     );
@@ -96,7 +112,8 @@ export const getBillingRouteProgram = (headers: Headers) =>
         status: historyStatus(row),
         receiptUrl: row.receiptUrl
       })),
-      provider: payments.provider
+      provider: payments.provider,
+      resumeCharges
     };
   });
 
@@ -117,6 +134,11 @@ export const startCardSetupRouteProgram = (headers: Headers) =>
     const setup = yield* payments
       .startCardSetup(customer.customerReference)
       .pipe((errors) => mapBillingError(errors));
+    // The setup the payer is about to confirm: the webhook may put its card
+    // on file even over an existing card (it is the newest choice).
+    yield* (yield* BillingCustomerRepo)
+      .setLatestSetup(userAndSession.user.id, setup.reference)
+      .pipe((errors) => mapRepoError(errors));
     return {
       setupId: setup.reference,
       clientSecret: setup.clientSecret,

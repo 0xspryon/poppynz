@@ -22,6 +22,9 @@ export type NotificationPayloads = {
     senderUserId: string;
     senderName: string;
     preview: string;
+    /** Contact details detected in the message (UAT #38) — the recipient
+     * is warned too. Absent on events from before the warning existed. */
+    contactWarning?: Array<'phone' | 'email' | 'link'> | null;
   };
   /** An admin decided the viewer's approval request. */
   'approval.decided': {

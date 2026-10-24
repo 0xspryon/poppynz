@@ -198,6 +198,9 @@ const makeLayer = (
     contractByConversation?: Contract | null;
     contractVersions?: Array<ContractVersion>;
     published?: Array<Published>;
+    onCreateMessage?: (input: unknown) => void;
+    contactWarnings?: Array<{ messageId: string; kinds: Array<'phone' | 'email' | 'link'> }>;
+    warningsFailWith?: SqlError;
     onCreate?: (input: unknown) => void;
     onSoftDelete?: (id: string) => void;
     onMarkRead?: (id: string, side: string, at: Date) => void;
@@ -286,14 +289,30 @@ const makeLayer = (
       findWithContext: () => Effect.succeed(options.conversationWithContext ?? null),
       listForUser: () => Effect.succeed(options.conversations ?? []),
       listMessages: () => Effect.succeed([dummyConversationMessage]),
-      createMessage: (input) =>
-        Effect.succeed({
+      listContactWarnings: () =>
+        options.warningsFailWith
+          ? Effect.fail(options.warningsFailWith)
+          : Effect.succeed(
+              (options.contactWarnings ?? []).map((warning) => ({
+                id: `warning-${warning.messageId}`,
+                conversationId: CONVERSATION_ID,
+                messageId: warning.messageId,
+                senderUserId: 'provider-1',
+                recipientUserId: 'family-1',
+                kinds: warning.kinds,
+                createdAt: new Date('2026-08-01T09:32:00.000Z')
+              }))
+            ),
+      createMessage: (input) => {
+        options.onCreateMessage?.(input);
+        return Effect.succeed({
           ...dummyConversationMessage,
           id: 'message-2',
           conversationId: input.conversationId,
           senderUserId: input.senderUserId,
           body: input.body
-        }),
+        });
+      },
       markResponded: () => Effect.succeed(options.markRespondedResult ?? null),
       markIgnored: () => Effect.succeed(options.markIgnoredResult ?? null),
       markRead: (id, side, at) => {
@@ -715,7 +734,8 @@ describe('GET /conversations/:id', () => {
         id: 'message-1',
         body: 'Hi Priya! Thanks for reaching out.',
         at: '2026-08-01T09:32:00.000Z',
-        sentByMe: false
+        sentByMe: false,
+        contactWarning: null
       }
     ]);
   });
@@ -1069,6 +1089,101 @@ describe('POST /conversations/:id/respond & /ignore', () => {
   });
 });
 
+describe('contact-detail warnings (UAT #38)', () => {
+  it('records a warning with the message and warns the recipient — the text is not masked', async () => {
+    const published: Array<Published> = [];
+    const created: Array<any> = [];
+    const result = await Effect.runPromise(
+      sendMessageRouteProgram(
+        makeContext({
+          params: { id: CONVERSATION_ID },
+          body: { body: 'Text me on 416-555-0123 or priya@example.com' }
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            conversationById: activeConversation(),
+            published,
+            onCreateMessage: (input) => created.push(input)
+          })
+        )
+      )
+    );
+    expect(created[0]).toMatchObject({
+      senderUserId: 'family-1',
+      contactWarning: { recipientUserId: 'provider-1', kinds: ['phone', 'email'] }
+    });
+    expect(result).toMatchObject({
+      body: 'Text me on 416-555-0123 or priya@example.com',
+      contactWarning: ['phone', 'email']
+    });
+    expect(published[0]?.input).toMatchObject({
+      payload: { contactWarning: ['phone', 'email'] }
+    });
+  });
+
+  it('records nothing for an ordinary message', async () => {
+    const created: Array<any> = [];
+    await Effect.runPromise(
+      sendMessageRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID }, body: { body: 'See you at 3:30' } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            conversationById: activeConversation(),
+            onCreateMessage: (input) => created.push(input)
+          })
+        )
+      )
+    );
+    expect(created[0].contactWarning).toBeUndefined();
+  });
+
+  it('shows recorded warnings on the thread for both sides', async () => {
+    const result = await Effect.runPromise(
+      getConversationRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            conversationWithContext: {
+              ...dummyConversationWithContext,
+              id: CONVERSATION_ID,
+              status: 'active'
+            },
+            contactWarnings: [{ messageId: 'message-1', kinds: ['link'] }]
+          })
+        )
+      )
+    );
+    expect(result.messages[0]?.contactWarning).toEqual(['link']);
+  });
+
+  it('translates a warning lookup failure to a repo error', async () => {
+    const exit = await Effect.runPromiseExit(
+      getConversationRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID } }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            conversationWithContext: {
+              ...dummyConversationWithContext,
+              id: CONVERSATION_ID,
+              status: 'active'
+            },
+            warningsFailWith: new SqlError({ cause: new Error('x'), message: 'x' })
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ConversationRepoError' });
+  });
+});
+
 describe('POST /conversations/:id/messages', () => {
   it("stores the message, bumps the sender's read marker and notifies the other side", async () => {
     const published: Array<Published> = [];
@@ -1105,7 +1220,8 @@ describe('POST /conversations/:id/messages', () => {
             messageId: 'message-2',
             senderUserId: 'family-1',
             senderName: 'Priya Tester',
-            preview: 'School pickup at 3:30?'
+            preview: 'School pickup at 3:30?',
+            contactWarning: null
           }
         }
       }

@@ -19,6 +19,7 @@
     "@repo/queue": "*",
     "@repo/typesense": "*",
     "bullmq": "^5.66.0",
+    "drizzle-orm": "^0.45.2",
     "effect": "^3.21.2",
     "express": "^5.2.1",
     "hono": "^4.12.27"

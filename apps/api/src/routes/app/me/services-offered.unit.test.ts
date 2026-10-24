@@ -897,7 +897,7 @@ describe('admin review of custom services', () => {
       )
     ]) {
       const exit = await Effect.runPromise(
-        (program as Effect.Effect<unknown, { _tag: string }, never>).pipe(
+        (program as unknown as Effect.Effect<unknown, { _tag: string }, never>).pipe(
           Effect.provide(makeLayer({ hasPermission: false, pendingReview: [pending] })),
           Effect.exit
         )

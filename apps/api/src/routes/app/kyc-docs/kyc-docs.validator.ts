@@ -41,7 +41,17 @@ export const kycDocumentSubmitSchema = Schema.Struct({
   documentTypeId: trimmedNonEmptyString,
   filename: trimmedNonEmptyString.pipe(Schema.maxLength(255)),
   fileKey: trimmedNonEmptyString,
-  expiryDate: Schema.optional(Schema.NullOr(trimmedNonEmptyString))
+  expiryDate: Schema.optional(Schema.NullOr(trimmedNonEmptyString)),
+  // Date-only, as printed on the document (UAT #31).
+  issuedOn: Schema.optional(
+    Schema.NullOr(Schema.Trim.pipe(Schema.pattern(/^\d{4}-\d{2}-\d{2}$/)))
+  )
+});
+
+/** An admin's decision on one submitted document (UAT #27). */
+export const kycDocumentReviewSchema = Schema.Struct({
+  decision: Schema.Literal('approve', 'reject'),
+  reason: Schema.optional(Schema.NullOr(Schema.Trim.pipe(Schema.maxLength(500))))
 });
 
 export const kycDocumentExpiryUpdateSchema = Schema.Struct({
@@ -67,6 +77,10 @@ export const validateKycDocumentSubmitInput = validateInput(
 );
 export const validateKycDocumentExpiryUpdateInput = validateInput(
   kycDocumentExpiryUpdateSchema,
+  kycDocValidationError
+);
+export const validateKycDocumentReviewInput = validateInput(
+  kycDocumentReviewSchema,
   kycDocValidationError
 );
 export const kycDocTypeJsonError = kycDocTypeValidationError;

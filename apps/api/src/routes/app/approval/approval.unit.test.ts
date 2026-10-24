@@ -5,8 +5,12 @@ import {
   type Approval,
   type ApprovalCreateInput,
   type ApprovalRequest,
+  makeKycDocumentRepoTest,
+  makeKycDocumentTypeRepoTest,
   makeServiceOfferedRepoTest,
   makeUserProfileRepoTest,
+  type KycDocument,
+  type KycDocumentType,
   makeSafetyVerificationRepoTest,
   makeUserRepoTest,
   type User
@@ -14,6 +18,7 @@ import {
 import { SqlError } from '@effect/sql/SqlError';
 import { MailerError, makeMailerTest } from '@/api/lib/mailer';
 import { makeFamilySearchQueueTest, makeProviderSearchQueueTest } from '@repo/queue';
+import { NoopNotificationHubTest } from '@repo/notify';
 import {
   makeFamilySearchOutboxRepoTest,
   makeProviderSearchOutboxRepoTest,
@@ -22,6 +27,7 @@ import {
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import {
+  ApprovalIncompleteError,
   ApprovalRepoError,
   ApprovalRequestMismatchError,
   ApprovalRequestNotFoundError,
@@ -144,9 +150,35 @@ const makeLayer = (
     role?: 'family' | 'service-provider';
     /** Which side's index reconcile was scheduled. */
     reconciled?: Array<{ side: 'family' | 'provider'; userId: string }>;
+    /** The applicant's photo; helpers default to having one. */
+    image?: string | null;
+    /** Required document types for the applicant's role and their documents. */
+    documentTypes?: Array<KycDocumentType>;
+    documents?: Array<KycDocument>;
+    documentsError?: SqlError;
   } = {}
 ) =>
   Layer.mergeAll(
+    NoopNotificationHubTest,
+    makeKycDocumentTypeRepoTest({
+      listActive: () => Effect.succeed(options.documentTypes ?? []),
+      findActiveById: (id) =>
+        Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id })),
+      create: () => Effect.die('not used'),
+      update: () => Effect.die('not used'),
+      softDelete: () => Effect.die('not used')
+    }),
+    makeKycDocumentRepoTest({
+      findByIdWithType: () => Effect.die('not used'),
+      findByUserId: () =>
+        options.documentsError
+          ? Effect.fail(options.documentsError)
+          : Effect.succeed(options.documents ?? []),
+      findByUserIdWithTypes: () => Effect.succeed([]),
+      submit: () => Effect.die('not used'),
+      updateExpiryDate: () => Effect.die('not used'),
+      approveSubmittedByUserId: () => Effect.succeed([])
+    }),
     // Safety verification now gates the bookable actions; these suites assert
     // other behaviour, so the applicant is verified unless a test says so.
     makeSafetyVerificationRepoTest({
@@ -266,7 +298,11 @@ const makeLayer = (
           shortBio: null,
           googlePlaceId: 'place-1',
           latitude: 43.6532,
-          longitude: -79.3832
+          longitude: -79.3832,
+          image:
+            options.image === undefined
+              ? 'users/provider-1/public/profile-pictures/me.jpg'
+              : options.image
         }),
       updateByUserId: (userId) =>
         Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId })),
@@ -297,6 +333,8 @@ const makeLayer = (
                 }
               ]
         ),
+      findByIdForUser: (id) =>
+        Effect.fail(new DBNotFoundError({ entity: 'serviceOffered', value: id })),
       create: () => Effect.fail(new SqlError({ message: 'not used' })),
       updateByIdForUser: (id) =>
         Effect.fail(new DBNotFoundError({ entity: 'serviceOffered', value: id })),
@@ -483,6 +521,104 @@ describe('createApprovalProgram', () => {
     );
 
     expect(getFailure(exit)).toBeInstanceOf(ApprovalRequestNotFoundError);
+  });
+});
+
+describe('createApprovalProgram: incomplete accounts (UAT #25, #27, #30)', () => {
+  const govId = (overrides: Partial<KycDocumentType> = {}): KycDocumentType => ({
+    id: 'type-id',
+    name: 'Government ID',
+    appliesToRole: 'service-provider',
+    isOptional: false,
+    requiresExpiryDate: true,
+    credibledCheckTypeValue: null,
+    credibledCostCents: null,
+    isSafetyGate: false,
+    deletedAt: null,
+    createdAt: new Date('2026-06-12T00:00:00.000Z'),
+    updatedAt: new Date('2026-06-12T00:00:00.000Z'),
+    ...overrides
+  });
+  const document = (status: KycDocument['status']): KycDocument => ({
+    id: 'doc-1',
+    userId: 'provider-1',
+    documentTypeId: 'type-id',
+    filename: 'id.jpg',
+    fileKey: 'users/provider-1/kyc/id.jpg',
+    expiryDate: null,
+    issuedOn: null,
+    status,
+    source: 'upload',
+    reason: null,
+    reviewedBy: null,
+    reviewedAt: null,
+    deletedAt: null,
+    createdAt: new Date('2026-06-12T00:00:00.000Z'),
+    updatedAt: new Date('2026-06-12T00:00:00.000Z')
+  });
+
+  it('refuses a helper without the required profile photo', async () => {
+    const created: Array<ApprovalCreateInput> = [];
+    const exit = await Effect.runPromiseExit(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(makeLayer({ image: null, onCreateApproval: (row) => created.push(row) }))
+      )
+    );
+    const failure = getFailure(exit);
+    expect(failure).toBeInstanceOf(ApprovalIncompleteError);
+    expect(failure).toMatchObject({ blockers: [{ kind: 'photo_missing' }] });
+    expect(created).toEqual([]);
+  });
+
+  it('refuses while a required document is missing, unreviewed or rejected', async () => {
+    const cases: Array<[Array<KycDocument>, string]> = [
+      [[], 'document_missing'],
+      [[document('submitted')], 'document_unreviewed'],
+      [[document('rejected')], 'document_rejected']
+    ];
+    for (const [documents, kind] of cases) {
+      const exit = await Effect.runPromiseExit(
+        createApprovalProgram(userAndSession, input).pipe(
+          Effect.provide(makeLayer({ documentTypes: [govId()], documents }))
+        )
+      );
+      expect(getFailure(exit)).toMatchObject({
+        _tag: 'ApprovalIncompleteError',
+        blockers: [{ kind, name: 'Government ID' }]
+      });
+    }
+  });
+
+  it('approves once every required document is approved', async () => {
+    const result = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(makeLayer({ documentTypes: [govId()], documents: [document('approved')] }))
+      )
+    );
+    expect(result.id).toBe(APPROVAL_ID);
+  });
+
+  it('does not require a photo from a family', async () => {
+    const result = await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(makeLayer({ role: 'family', image: null }))
+      )
+    );
+    expect(result.id).toBe(APPROVAL_ID);
+  });
+
+  it('translates a checklist lookup failure to ApprovalRepoError', async () => {
+    const exit = await Effect.runPromiseExit(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(
+          makeLayer({
+            documentTypes: [govId()],
+            documentsError: new SqlError({ cause: new Error('boom'), message: 'boom' })
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toBeInstanceOf(ApprovalRepoError);
   });
 });
 

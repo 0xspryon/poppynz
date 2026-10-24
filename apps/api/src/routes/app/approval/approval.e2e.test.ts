@@ -243,7 +243,8 @@ const makeApp = (
             shortBio: null,
             googlePlaceId: 'place-1',
             latitude: 43.6532,
-            longitude: -79.3832
+            longitude: -79.3832,
+            image: 'users/provider-1/public/profile-pictures/me.jpg'
           }),
         updateByUserId: (userId) =>
           Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId })),

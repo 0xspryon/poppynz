@@ -5,7 +5,7 @@ import {
   EmptyKycDocumentTypeRepoTest,
   EmptyServiceOfferedRepoTest,
   EmptySignupIntentRepoTest,
-  EmptyUserProfileRepoTest,
+  makeUserProfileRepoTest,
   makeApprovalRequestRepoTest,
   makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
@@ -164,7 +164,20 @@ const makeApp = (
       EmptySignupIntentRepoTest,
       EmptySigninServiceTest,
       EmptySignupServiceTest,
-      EmptyUserProfileRepoTest,
+      makeUserProfileRepoTest({
+        create: () => Effect.die('not used'),
+        // Submitting checks the helper's required photo (UAT #12).
+        findByUserId: (userId) =>
+          Effect.succeed({
+            userId,
+            email: 'provider@example.com',
+            role: 'service-provider',
+            language: 'en',
+            image: 'users/provider/public/profile-pictures/me.jpg'
+          } as never),
+        updateByUserId: () => Effect.die('not used'),
+        updateLocationByUserId: () => Effect.die('not used')
+      }),
       makeMailerTest({}),
       EmptyApprovalRepoTest,
       EmptyKycDocumentRepoTest,

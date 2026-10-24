@@ -1,8 +1,7 @@
-import { environmentConfig } from '@repo/env';
-import { Cause, Data, Effect, Exit, Option, Schema } from 'effect';
+import { Cause, Config, Data, Effect, Exit, Option, Schema } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { handleNever } from '@/api/lib/effect-auth';
-import { latestDevMagicLink } from '@/api/lib/dev-magic-links';
+import { isDevInboxEnabled, latestDevMagicLink } from '@/api/lib/dev-magic-links';
 import { validateInput, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 
 /** Outside dev the mock inbox does not exist at all. */
@@ -18,13 +17,22 @@ const validateQuery = validateInput(
   } as const
 );
 
+/** Raw, undefaulted ENVIRONMENT and NODE_ENV: an unset ENVIRONMENT must not
+ * count as dev here (the shared environmentConfig defaults it to dev). */
+const devInboxEnvConfig = Config.all({
+  ENVIRONMENT: Config.option(Config.string('ENVIRONMENT')),
+  NODE_ENV: Config.option(Config.string('NODE_ENV'))
+});
+
 /** The latest real magic link for an address — dev only (UAT #32, B10). */
 export const latestDevMagicLinkRouteProgram = (query: Record<string, string | undefined>) =>
   Effect.gen(function* () {
-    const environment = yield* environmentConfig.pipe(
-      Effect.mapError(() => new DevInboxConfigError())
-    );
-    if (environment !== 'dev') {
+    const env = yield* devInboxEnvConfig.pipe(Effect.mapError(() => new DevInboxConfigError()));
+    const enabled = isDevInboxEnabled({
+      ENVIRONMENT: Option.getOrUndefined(env.ENVIRONMENT),
+      NODE_ENV: Option.getOrUndefined(env.NODE_ENV)
+    });
+    if (!enabled) {
       return yield* Effect.fail(new DevInboxUnavailableError());
     }
     const input = yield* validateQuery(query);

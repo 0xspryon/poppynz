@@ -30,7 +30,10 @@ export const STRIPE_API_VERSION = '2026-09-30.endive' as const;
 /** The slice of the SDK this adapter uses. Narrow on purpose: a test fake only
  * has to implement these methods. */
 export type StripeApi = {
-  paymentIntents: Pick<Stripe['paymentIntents'], 'create' | 'retrieve' | 'cancel' | 'capture'>;
+  paymentIntents: Pick<
+    Stripe['paymentIntents'],
+    'create' | 'retrieve' | 'cancel' | 'capture' | 'search'
+  >;
   setupIntents: Pick<Stripe['setupIntents'], 'create' | 'retrieve'>;
   customers: Pick<Stripe['customers'], 'create'>;
   paymentMethods: Pick<Stripe['paymentMethods'], 'detach'>;
@@ -346,6 +349,21 @@ export const makeStripePayments = (options: {
         )
       ).pipe(Effect.map(normalisePaymentIntent)),
 
+    // Search is eventually consistent (about a minute): callers use it only
+    // once an attempt has gone unanswered for longer than that.
+    findPaymentByRowId: (paymentId) =>
+      call('findPaymentByRowId', () =>
+        client.paymentIntents.search({
+          query: `metadata['payment_id']:'${paymentId.replace(/'/g, '')}'`,
+          expand: ['data.latest_charge', 'data.payment_method']
+        })
+      ).pipe(
+        Effect.map((result) => {
+          const found = result.data[0];
+          return found ? offSession(normalisePaymentIntent(found)) : null;
+        })
+      ),
+
     // Helper payout accounts (Stripe Connect Express, piece 2b).
     ...makeStripeConnectOperations(client),
 
@@ -368,9 +386,7 @@ export const makeStripePayments = (options: {
           try: () =>
             constructEventWithAnySecret(
               (secret) => client.webhooks.constructEventAsync(rawBody, signatureHeader, secret),
-              connectWebhookSecret === null
-                ? [webhookSecret]
-                : [webhookSecret, connectWebhookSecret]
+              connectWebhookSecret === null ? [webhookSecret] : [webhookSecret, connectWebhookSecret]
             ),
           catch: (cause) =>
             new PaymentWebhookSignatureError({

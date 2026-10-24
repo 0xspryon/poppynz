@@ -239,6 +239,21 @@ export const makeMockPayments = (
         return Effect.succeed(captured);
       }),
 
+    findPaymentByRowId: (paymentId) =>
+      options.providerDown
+        ? Effect.fail(
+            new PaymentProviderError({
+              operation: 'findPaymentByRowId',
+              cause: 'mock provider down'
+            })
+          )
+        : Effect.sync(
+            () =>
+              [...byReference.values()].find(
+                (payment) => payment.metadata.payment_id === paymentId
+              ) ?? null
+          ),
+
     // Payout accounts: enabled straight away, so the whole helper flow runs
     // without Stripe. The "hosted onboarding" is the return page itself.
     createPayoutAccount: ({ userId }) => Effect.succeed({ reference: `mock_acct_${userId}` }),

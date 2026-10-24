@@ -38,6 +38,7 @@ const fakeStripe = (
     retrieve?: () => unknown;
     cancel?: () => unknown;
     capture?: () => unknown;
+    search?: () => unknown;
     setupCreate?: () => unknown;
     setupRetrieve?: () => unknown;
   } = {}
@@ -53,6 +54,7 @@ const fakeStripe = (
       create: record('paymentIntents.create', answers.create ?? (() => intent())),
       retrieve: record('paymentIntents.retrieve', answers.retrieve ?? (() => intent())),
       cancel: record('paymentIntents.cancel', answers.cancel ?? (() => intent())),
+      search: record('paymentIntents.search', answers.search ?? (() => ({ data: [] }))),
       capture: (first: unknown, second: unknown, third: unknown) => {
         calls.push({ method: 'paymentIntents.capture', params: [first, [second, third]] });
         return Promise.resolve((answers.capture ?? (() => intent()))() as never);
@@ -586,5 +588,32 @@ describe('capturePayment', () => {
         ]
       ]
     });
+  });
+});
+
+describe('findPaymentByRowId', () => {
+  it('searches intents by the payment row id in their metadata', async () => {
+    const { client, calls } = fakeStripe({
+      search: () => ({ data: [intent({ status: 'requires_capture', amount_capturable: 7500 })] })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const found = await Effect.runPromise(payments.findPaymentByRowId('payment-1'));
+    expect(found).toMatchObject({ reference: 'pi_123', status: 'authorised' });
+    expect(calls[0]).toEqual({
+      method: 'paymentIntents.search',
+      params: [
+        {
+          query: "metadata['payment_id']:'payment-1'",
+          expand: ['data.latest_charge', 'data.payment_method']
+        },
+        undefined
+      ]
+    });
+  });
+
+  it('answers null when no intent was ever created for the row', async () => {
+    const { client } = fakeStripe();
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    expect(await Effect.runPromise(payments.findPaymentByRowId('payment-9'))).toBeNull();
   });
 });

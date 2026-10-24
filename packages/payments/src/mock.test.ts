@@ -49,6 +49,16 @@ describe('quoteFromPolicy', () => {
       'Background check $45.00 · Admin fee $5.00 · HST (ON) 13% $6.50 (reg. PLACEHOLDER-1)'
     );
   });
+
+  it('prints "reg. pending" for a line whose registration number is not final', () => {
+    const taxed = quoteFromPolicy([{ label: 'Check', costCents: 4500 }], {
+      adminFeeCents: 0,
+      taxLines: [{ ...hst('credibled_check', 4500, 585), registrationNumber: null }]
+    });
+    expect(describeQuote('Background check', taxed)).toBe(
+      'Background check $45.00 · HST (ON) 13% $5.85 (reg. pending)'
+    );
+  });
 });
 
 describe('mock payments', () => {
@@ -145,5 +155,16 @@ describe('mock off-session billing', () => {
     expect(released.status).toBe('canceled');
     const down = makeMockPayments({ providerDown: true });
     expect(Exit.isFailure(await Effect.runPromiseExit(down.chargeSavedCard(input)))).toBe(true);
+  });
+
+  it('finds the intent created for a payment row by its metadata, or nothing', async () => {
+    const payments = makeMockPayments();
+    expect(await Effect.runPromise(payments.findPaymentByRowId('payment-1'))).toBeNull();
+    const held = await Effect.runPromise(payments.chargeSavedCard(input));
+    expect(await Effect.runPromise(payments.findPaymentByRowId('payment-1'))).toEqual(held);
+    const down = makeMockPayments({ providerDown: true });
+    expect(
+      Exit.isFailure(await Effect.runPromiseExit(down.findPaymentByRowId('payment-1')))
+    ).toBe(true);
   });
 });

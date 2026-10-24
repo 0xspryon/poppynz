@@ -193,7 +193,8 @@ export type PaymentOperation =
   | 'getPayoutAccount'
   | 'createDashboardLink'
   | 'chargeSavedCard'
-  | 'capturePayment';
+  | 'capturePayment'
+  | 'findPaymentByRowId';
 
 export class PaymentDeclinedError extends Data.TaggedError('PaymentDeclinedError')<{
   reason: string;
@@ -283,6 +284,12 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
       amountCents: number;
       idempotencyKey: string;
     }) => Effect.Effect<ProviderPayment, PaymentProviderError>;
+    /** The intent created for our `payments.id` (its `metadata.payment_id`),
+     * or null when none exists. How a charge whose response was lost is
+     * resolved before the attempt is given up — never a second charge. */
+    findPaymentByRowId: (
+      paymentId: string
+    ) => Effect.Effect<ProviderPayment | null, PaymentProviderError>;
     /** Creates the helper's connected account. Same user → same account
      * (idempotency key `payout-account:<userId>`). */
     createPayoutAccount: (input: {
@@ -345,7 +352,9 @@ export const describeQuote = (title: string, quote: Money): string => {
     ...(quote.feeCents > 0 ? [`Admin fee ${dollars(quote.feeCents)}`] : []),
     ...[...byLabel].map(
       ([label, { cents, registration }]) =>
-        `${label} ${dollars(cents)}${registration ? ` (reg. ${registration})` : ''}`
+        // A line exists only while Poppynz is registered; a null number is a
+        // registration whose number is not final yet (never a placeholder).
+        `${label} ${dollars(cents)} (reg. ${registration ?? 'pending'})`
     )
   ];
   return parts.join(' · ').slice(0, 1000);

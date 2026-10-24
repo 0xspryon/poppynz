@@ -30,7 +30,7 @@ export const STRIPE_API_VERSION = '2026-09-30.endive' as const;
 /** The slice of the SDK this adapter uses. Narrow on purpose: a test fake only
  * has to implement these methods. */
 export type StripeApi = {
-  paymentIntents: Pick<Stripe['paymentIntents'], 'create' | 'retrieve' | 'cancel'>;
+  paymentIntents: Pick<Stripe['paymentIntents'], 'create' | 'retrieve' | 'cancel' | 'capture'>;
   setupIntents: Pick<Stripe['setupIntents'], 'create' | 'retrieve'>;
   customers: Pick<Stripe['customers'], 'create'>;
   paymentMethods: Pick<Stripe['paymentMethods'], 'detach'>;
@@ -64,9 +64,11 @@ export const normaliseStatus = (status: string, hasError: boolean): ProviderPaym
       return 'canceled';
     case 'requires_payment_method':
       return hasError ? 'failed' : 'requires_action';
+    case 'requires_capture':
+      // A hold (contract billing, manual capture).
+      return 'authorised';
     default:
-      // requires_action, requires_confirmation, requires_capture (never used —
-      // capture is automatic) and anything Stripe adds later.
+      // requires_action, requires_confirmation and anything Stripe adds later.
       return 'requires_action';
   }
 };
@@ -101,9 +103,31 @@ export const normalisePaymentIntent = (intent: Stripe.PaymentIntent): ProviderPa
     failureReason: intent.last_payment_error?.message ?? null,
     receiptUrl: charge?.receipt_url ?? null,
     refundedCents: charge?.amount_refunded ?? 0,
-    paymentMethod: cardDetails(intent.payment_method)
+    paymentMethod: cardDetails(intent.payment_method),
+    capturableCents: intent.amount_capturable ?? 0,
+    receivedCents: intent.amount_received ?? 0,
+    captureBefore: captureBeforeOf(charge)
   };
 };
+
+/** `payment_method_details.card.capture_before` — the real deadline of a
+ * hold (umbrella §11), in seconds. */
+const captureBeforeOf = (charge: Stripe.Charge | null): Date | null => {
+  const seconds = (charge?.payment_method_details?.card as { capture_before?: number } | undefined)
+    ?.capture_before;
+  return typeof seconds === 'number' ? new Date(seconds * 1000) : null;
+};
+
+/** Off-session there is nobody to complete 3-D Secure: an intent left
+ * needing action is, for the family, a declined card. */
+const offSession = (payment: ProviderPayment): ProviderPayment =>
+  payment.status === 'requires_action'
+    ? {
+        ...payment,
+        status: 'failed',
+        failureReason: payment.failureReason ?? 'Your bank needs you to confirm this card.'
+      }
+    : payment;
 
 const started =
   (operation: PaymentOperation) =>
@@ -271,6 +295,56 @@ export const makeStripePayments = (options: {
 
     removeCard: (cardReference) =>
       call('removeCard', () => client.paymentMethods.detach(cardReference)).pipe(Effect.asVoid),
+
+    chargeSavedCard: (input) =>
+      Effect.tryPromise({
+        try: () =>
+          client.paymentIntents.create(
+            {
+              amount: input.amountCents,
+              currency: input.currency.toLowerCase(),
+              customer: input.customer,
+              payment_method: input.card,
+              allowed_payment_method_types: ['card'],
+              // Merchant-initiated, on the card the family saved for it.
+              off_session: true,
+              confirm: true,
+              capture_method: input.capture,
+              metadata: input.metadata,
+              ...(input.description ? { description: input.description } : {}),
+              expand: PAYMENT_EXPAND
+            },
+            { idempotencyKey: `charge-${input.idempotencyKey}` }
+          ),
+        catch: (cause) => cause
+      }).pipe(
+        Effect.map((intent) => offSession(normalisePaymentIntent(intent))),
+        // A card error is Stripe answering about the CARD: the intent exists
+        // (on the error) and the decline is data for the caller.
+        Effect.catchAll((cause) => {
+          if (cause instanceof Stripe.errors.StripeCardError) {
+            const intent = (cause.raw as { payment_intent?: Stripe.PaymentIntent }).payment_intent;
+            if (intent) {
+              const normalised = normalisePaymentIntent(intent);
+              return Effect.succeed<ProviderPayment>({
+                ...normalised,
+                status: normalised.status === 'succeeded' ? 'succeeded' : 'failed',
+                failureReason: normalised.failureReason ?? cause.message
+              });
+            }
+          }
+          return Effect.fail(new PaymentProviderError({ operation: 'chargeSavedCard', cause }));
+        })
+      ),
+
+    capturePayment: ({ reference, amountCents, idempotencyKey }) =>
+      call('capturePayment', () =>
+        client.paymentIntents.capture(
+          reference,
+          { amount_to_capture: amountCents, expand: PAYMENT_EXPAND },
+          { idempotencyKey: `capture-${idempotencyKey}` }
+        )
+      ).pipe(Effect.map(normalisePaymentIntent)),
 
     // Helper payout accounts (Stripe Connect Express, piece 2b).
     ...makeStripeConnectOperations(client),

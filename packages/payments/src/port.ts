@@ -67,10 +67,12 @@ export type Money = {
 };
 
 /** A provider-side status, normalised. `failed` is an attempt that was
- * declined and left waiting for another card; `canceled` is terminal. */
+ * declined and left waiting for another card; `canceled` is terminal;
+ * `authorised` is a hold waiting to be captured (contract billing). */
 export type ProviderPaymentStatus =
   | 'requires_action'
   | 'processing'
+  | 'authorised'
   | 'succeeded'
   | 'failed'
   | 'canceled';
@@ -111,6 +113,12 @@ export type ProviderPayment = {
   readonly receiptUrl: string | null;
   readonly refundedCents: number;
   readonly paymentMethod: CardDetails | null;
+  /** What a hold can still capture (0 unless `authorised`). */
+  readonly capturableCents: number;
+  /** What was actually taken (a partial capture takes less than the hold). */
+  readonly receivedCents: number;
+  /** The card network's deadline for capturing a hold, when known. */
+  readonly captureBefore: Date | null;
 };
 
 export type PaymentRefund = {
@@ -183,7 +191,9 @@ export type PaymentOperation =
   | 'createPayoutAccount'
   | 'createOnboardingLink'
   | 'getPayoutAccount'
-  | 'createDashboardLink';
+  | 'createDashboardLink'
+  | 'chargeSavedCard'
+  | 'capturePayment';
 
 export class PaymentDeclinedError extends Data.TaggedError('PaymentDeclinedError')<{
   reason: string;
@@ -212,6 +222,20 @@ export type StartPaymentInput = {
   saveCard: boolean;
   /** Shown on the provider's receipt (the itemised tax lines go here). */
   description?: string;
+};
+
+/** An off-session charge on a family's saved card (contract billing). */
+export type ChargeSavedCardInput = {
+  readonly amountCents: number;
+  readonly currency: 'CAD';
+  readonly customer: string;
+  readonly card: string;
+  /** `manual`: a hold, captured later. `automatic`: taken at once. */
+  readonly capture: 'manual' | 'automatic';
+  /** Same key must produce the same intent, never a second charge. */
+  readonly idempotencyKey: string;
+  readonly metadata: { payment_id: string } & Record<string, string>;
+  readonly description?: string;
 };
 
 export class Payments extends Context.Tag('@repo/payments/Payments')<
@@ -246,6 +270,19 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
     getCardSetup: (reference: string) => Effect.Effect<ProviderCardSetup, PaymentProviderError>;
     /** Detaches a card from its customer. */
     removeCard: (cardReference: string) => Effect.Effect<void, PaymentProviderError>;
+    /** Charges (or holds) a saved card with nobody present. A decline is
+     * DATA — `status: 'failed'` with the card's reason — because it is a
+     * business outcome (grace period, suspension), not a fault. Only trouble
+     * reaching the provider fails the effect. */
+    chargeSavedCard: (
+      input: ChargeSavedCardInput
+    ) => Effect.Effect<ProviderPayment, PaymentProviderError>;
+    /** Captures a hold; a partial capture releases the rest. */
+    capturePayment: (input: {
+      reference: string;
+      amountCents: number;
+      idempotencyKey: string;
+    }) => Effect.Effect<ProviderPayment, PaymentProviderError>;
     /** Creates the helper's connected account. Same user → same account
      * (idempotency key `payout-account:<userId>`). */
     createPayoutAccount: (input: {

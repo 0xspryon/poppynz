@@ -103,3 +103,47 @@ describe('mock payments', () => {
     );
   });
 });
+
+describe('mock off-session billing', () => {
+  const input = {
+    amountCents: 10000,
+    currency: 'CAD' as const,
+    customer: 'mock_cus_family',
+    card: 'mock_pm_1',
+    capture: 'manual' as const,
+    idempotencyKey: 'cycle-1-1',
+    metadata: { payment_id: 'payment-1' }
+  };
+
+  it('holds, then captures part of the hold, once per key', async () => {
+    const payments = makeMockPayments();
+    const held = await Effect.runPromise(payments.chargeSavedCard(input));
+    expect(held).toMatchObject({ status: 'authorised', capturableCents: 10000 });
+    expect(await Effect.runPromise(payments.chargeSavedCard(input))).toEqual(held);
+    const captured = await Effect.runPromise(
+      payments.capturePayment({ reference: held.reference, amountCents: 8000, idempotencyKey: 'c' })
+    );
+    expect(captured).toMatchObject({
+      status: 'succeeded',
+      receivedCents: 8000,
+      capturableCents: 0
+    });
+  });
+
+  it('declines a card whose reference says so, as data', async () => {
+    const payments = makeMockPayments();
+    const declined = await Effect.runPromise(
+      payments.chargeSavedCard({ ...input, card: 'mock_pm_decline' })
+    );
+    expect(declined).toMatchObject({ status: 'failed', failureReason: 'Your card was declined.' });
+  });
+
+  it('releases a hold on cancel and fails while the provider is down', async () => {
+    const payments = makeMockPayments();
+    const held = await Effect.runPromise(payments.chargeSavedCard(input));
+    const released = await Effect.runPromise(payments.cancelPayment(held.reference));
+    expect(released.status).toBe('canceled');
+    const down = makeMockPayments({ providerDown: true });
+    expect(Exit.isFailure(await Effect.runPromiseExit(down.chargeSavedCard(input)))).toBe(true);
+  });
+});

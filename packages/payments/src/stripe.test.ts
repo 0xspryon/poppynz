@@ -37,6 +37,7 @@ const fakeStripe = (
     create?: () => unknown;
     retrieve?: () => unknown;
     cancel?: () => unknown;
+    capture?: () => unknown;
     setupCreate?: () => unknown;
     setupRetrieve?: () => unknown;
   } = {}
@@ -51,7 +52,11 @@ const fakeStripe = (
     paymentIntents: {
       create: record('paymentIntents.create', answers.create ?? (() => intent())),
       retrieve: record('paymentIntents.retrieve', answers.retrieve ?? (() => intent())),
-      cancel: record('paymentIntents.cancel', answers.cancel ?? (() => intent()))
+      cancel: record('paymentIntents.cancel', answers.cancel ?? (() => intent())),
+      capture: (first: unknown, second: unknown, third: unknown) => {
+        calls.push({ method: 'paymentIntents.capture', params: [first, [second, third]] });
+        return Promise.resolve((answers.capture ?? (() => intent()))() as never);
+      }
     },
     setupIntents: {
       create: record(
@@ -94,6 +99,8 @@ describe('normaliseStatus', () => {
     // Waiting for a card vs. a declined attempt.
     expect(normaliseStatus('requires_payment_method', false)).toBe('requires_action');
     expect(normaliseStatus('requires_payment_method', true)).toBe('failed');
+    // A hold waiting for capture (contract billing).
+    expect(normaliseStatus('requires_capture', false)).toBe('authorised');
   });
 });
 
@@ -243,7 +250,10 @@ describe('getPayment', () => {
         last4: '4242',
         expMonth: 12,
         expYear: 2034
-      }
+      },
+      capturableCents: 0,
+      receivedCents: 0,
+      captureBefore: null
     });
     expect(calls[0]!.params).toEqual(['pi_123', { expand: ['latest_charge', 'payment_method'] }]);
   });
@@ -439,5 +449,142 @@ describe('verifyWebhook', () => {
     // Without the Connect secret configured, the same delivery is refused.
     const exit = await Effect.runPromiseExit(payments.verifyWebhook(connectPayload, header));
     expect(Exit.isFailure(exit)).toBe(true);
+  });
+});
+
+describe('chargeSavedCard', () => {
+  const input = {
+    amountCents: 63390,
+    currency: 'CAD' as const,
+    customer: 'cus_1',
+    card: 'pm_saved',
+    capture: 'manual' as const,
+    idempotencyKey: 'cycle-c1-1',
+    metadata: { payment_id: 'payment-9', cycle_id: 'c1' },
+    description: 'Care with Sam T. · Nov 2–4, 2026'
+  };
+
+  it('places an off-session hold on the saved card under the cycle key', async () => {
+    const { client, calls } = fakeStripe({
+      create: () =>
+        intent({
+          status: 'requires_capture',
+          amount: 63390,
+          amount_capturable: 63390,
+          payment_method: card,
+          latest_charge: {
+            id: 'ch_1',
+            receipt_url: null,
+            amount_refunded: 0,
+            payment_method_details: { card: { capture_before: 1_793_000_000 } }
+          }
+        })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const result = await Effect.runPromise(payments.chargeSavedCard(input));
+
+    expect(result).toMatchObject({
+      status: 'authorised',
+      capturableCents: 63390,
+      captureBefore: new Date(1_793_000_000 * 1000)
+    });
+    const [params, options] = calls[0]!.params as [Record<string, unknown>, unknown];
+    expect(params).toEqual({
+      amount: 63390,
+      currency: 'cad',
+      customer: 'cus_1',
+      payment_method: 'pm_saved',
+      allowed_payment_method_types: ['card'],
+      off_session: true,
+      confirm: true,
+      capture_method: 'manual',
+      metadata: { payment_id: 'payment-9', cycle_id: 'c1' },
+      description: 'Care with Sam T. · Nov 2–4, 2026',
+      expand: ['latest_charge', 'payment_method']
+    });
+    expect(options).toEqual({ idempotencyKey: 'charge-cycle-c1-1' });
+  });
+
+  it('charges at once with automatic capture', async () => {
+    const { client, calls } = fakeStripe({
+      create: () => intent({ status: 'succeeded', amount: 63390, amount_received: 63390 })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const result = await Effect.runPromise(
+      payments.chargeSavedCard({ ...input, capture: 'automatic' })
+    );
+    expect(result).toMatchObject({ status: 'succeeded', receivedCents: 63390 });
+    expect((calls[0]!.params[0] as Record<string, unknown>).capture_method).toBe('automatic');
+  });
+
+  it('returns a decline as data, with the intent Stripe attached to the error', async () => {
+    const { client } = fakeStripe({
+      create: () => {
+        throw new Stripe.errors.StripeCardError({
+          message: 'Your card was declined.',
+          payment_intent: intent({
+            id: 'pi_declined',
+            status: 'requires_payment_method',
+            last_payment_error: { message: 'Your card was declined.' }
+          })
+        } as never);
+      }
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const result = await Effect.runPromise(payments.chargeSavedCard(input));
+    expect(result).toMatchObject({
+      reference: 'pi_declined',
+      status: 'failed',
+      failureReason: 'Your card was declined.'
+    });
+  });
+
+  it('treats an intent that needs 3-D Secure off-session as declined', async () => {
+    const { client } = fakeStripe({ create: () => intent({ status: 'requires_action' }) });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const result = await Effect.runPromise(payments.chargeSavedCard(input));
+    expect(result.status).toBe('failed');
+    expect(result.failureReason).toContain('confirm');
+  });
+
+  it('fails with a provider error when Stripe itself is in trouble', async () => {
+    const { client } = fakeStripe({
+      create: () => {
+        throw new Stripe.errors.StripeAPIError({ message: 'boom' });
+      }
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const exit = await Effect.runPromiseExit(payments.chargeSavedCard(input));
+    expect(exit).toEqual(
+      Exit.fail(
+        expect.objectContaining({
+          _tag: 'PaymentProviderError',
+          operation: 'chargeSavedCard'
+        }) as never
+      )
+    );
+  });
+});
+
+describe('capturePayment', () => {
+  it('captures the amount asked for under the capture key', async () => {
+    const { client, calls } = fakeStripe({
+      capture: () => intent({ status: 'succeeded', amount: 63390, amount_received: 50000 })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const result = await Effect.runPromise(
+      payments.capturePayment({ reference: 'pi_123', amountCents: 50000, idempotencyKey: 'c1' })
+    );
+    expect(result).toMatchObject({ status: 'succeeded', receivedCents: 50000 });
+    expect(calls[0]).toEqual({
+      method: 'paymentIntents.capture',
+      params: [
+        'pi_123',
+        [
+          { amount_to_capture: 50000, expand: ['latest_charge', 'payment_method'] },
+          { idempotencyKey: 'capture-c1' }
+        ]
+      ]
+    });
   });
 });

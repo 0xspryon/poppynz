@@ -36,6 +36,9 @@ RUN bun install --frozen-lockfile
 FROM deps AS worker
 COPY . .
 ENV NODE_ENV=production
+# The database's timestamp/date columns carry no zone: the process must run
+# in UTC so instants are read and written unshifted.
+ENV TZ=UTC
 WORKDIR /usr/src/app/apps/worker
 EXPOSE 3000
 CMD ["bun", "run", "src/index.ts"]

@@ -37,6 +37,9 @@ const paymentRow = (overrides: Partial<Payment> = {}): Payment => ({
   capturedAt: null,
   refundedAt: null,
   receiptUrl: null,
+  taxLines: [],
+  description: null,
+  capturedCents: null,
   createdAt: new Date('2026-10-02T11:00:00.000Z'),
   updatedAt: new Date('2026-10-02T11:00:00.000Z'),
   ...overrides

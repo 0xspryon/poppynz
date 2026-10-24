@@ -4,6 +4,7 @@ import type { SqlError } from '@effect/sql/SqlError';
 import { and, asc, desc, eq, isNull, type InferSelectModel } from 'drizzle-orm';
 import { Context, Data, Effect, Layer } from 'effect';
 import { DrizzleLive } from '../effect-db';
+import { defaultTaxRates, defaultTaxRegistrations, defaultTaxTreatments } from '../tax-defaults';
 import {
   taxConfigAudit,
   taxJurisdiction,
@@ -210,6 +211,7 @@ export const TaxConfigRepoLive = Layer.effect(
       ): Effect.Effect<Row, SqlError | TaxConfigOverlapError> =>
         sqlClient
           .withTransaction(
+            // The table is typed loosely (`any`), so the body's type is pinned here.
             Effect.gen(function* () {
               const live = (yield* db
                 .select()
@@ -247,13 +249,15 @@ export const TaxConfigRepoLive = Layer.effect(
               const row = inserted[0]!;
               yield* audit(entity, row.id, 'create', actor, null, row);
               return row;
-            })
+            }) as never as Effect.Effect<Row, SqlError | TaxConfigOverlapError>
           )
           .pipe(
-            Effect.catchTag('SqlError', (error) =>
-              isExclusionViolation(error)
-                ? Effect.fail(new TaxConfigOverlapError({ entity, conflictingId: null }))
-                : Effect.fail(error)
+            Effect.catchTag(
+              'SqlError',
+              (error): Effect.Effect<never, SqlError | TaxConfigOverlapError> =>
+                isExclusionViolation(error)
+                  ? Effect.fail(new TaxConfigOverlapError({ entity, conflictingId: null }))
+                  : Effect.fail(error)
             )
           );
 
@@ -278,7 +282,7 @@ export const TaxConfigRepoLive = Layer.effect(
               .returning()) as Array<Row>;
             yield* audit(entity, id, 'delete', actor, before[0], rows[0]);
             return rows[0]!;
-          })
+          }) as never as Effect.Effect<Row, SqlError | TaxConfigNotFoundError>
         );
 
       const list = (options?: { includeDeleted?: boolean }) =>
@@ -529,3 +533,30 @@ export const dummyTaxRegistration = (
   createdAt: new Date('2026-01-01T00:00:00.000Z'),
   ...overrides
 });
+
+/** The seeded default configuration (seed 0004_tax_config) as an in-memory
+ * repo — the realistic fixture for quote tests. `adjust` edits the rows
+ * before the repo is built (e.g. switch a registration off). */
+export const makeSeededTaxConfigRepo = (
+  adjust: (config: TaxLiveConfig) => TaxLiveConfig = (config) => config
+) => {
+  const created = new Date('2026-01-01T00:00:00.000Z');
+  const base: TaxLiveConfig = {
+    rates: defaultTaxRates.map((row) =>
+      dummyTaxRate({ ...row, effectiveTo: row.effectiveTo ?? null, createdAt: created })
+    ),
+    treatments: defaultTaxTreatments.map((row) =>
+      dummyTaxSupplyTreatment({ ...row, effectiveTo: row.effectiveTo ?? null, createdAt: created })
+    ),
+    registrations: defaultTaxRegistrations.map((row) =>
+      dummyTaxRegistration({
+        ...row,
+        registrationNumber: row.registrationNumber ?? null,
+        isPlaceholder: row.isPlaceholder ?? false,
+        effectiveTo: row.effectiveTo ?? null,
+        createdAt: created
+      })
+    )
+  };
+  return makeInMemoryTaxConfigRepo(adjust(base));
+};

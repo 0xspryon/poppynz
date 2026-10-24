@@ -57,6 +57,13 @@ const paymentStatusLabel = {
   failed: 'failed'
 } as const;
 
+/** A contract charge that is only authorised is a hold, not money taken
+ * (pre-Stripe mock check payments stayed `authorised` once paid). */
+const historyStatus = (row: { kind: string; status: keyof typeof paymentStatusLabel }) =>
+  row.kind === 'contract_cycle' && row.status === 'authorised'
+    ? ('on_hold' as const)
+    : paymentStatusLabel[row.status];
+
 /** The card on file and the payment history. */
 export const getBillingRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
@@ -81,9 +88,12 @@ export const getBillingRouteProgram = (headers: Headers) =>
         id: row.id,
         createdAt: row.createdAt.toISOString(),
         description: row.description,
-        totalCents: row.totalCents,
+        // A partially captured hold charged what it captured.
+        totalCents: row.capturedCents ?? row.totalCents,
         currency: row.currency,
-        status: paymentStatusLabel[row.status],
+        // Frozen at quote time, labelled by type and province.
+        taxLines: row.taxLines.map((line) => ({ label: line.label, taxCents: line.taxCents })),
+        status: historyStatus(row),
         receiptUrl: row.receiptUrl
       })),
       provider: payments.provider

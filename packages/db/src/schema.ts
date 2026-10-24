@@ -110,7 +110,7 @@ export const safetyVerificationRoute = appDb.enum('safety_verification_route', [
 // What a charge was for. The subject table points at `payments`, never the
 // reverse, so a new purpose is a new value here plus a foreign key on its own
 // table — not a new payments table.
-export const paymentKind = appDb.enum('payment_kind', ['credibled_order']);
+export const paymentKind = appDb.enum('payment_kind', ['credibled_order', 'contract_cycle']);
 // `captured` is what the settle path writes once the provider confirms the
 // money (automatic capture). `authorised` remains for rows the pre-Stripe
 // mock wrote and for a later hold-then-capture flow (contract billing).
@@ -449,6 +449,18 @@ export const kycDocument = appDb.table(
 // identify the charge at whichever gateway made it, so nothing here commits
 // to Stripe. The itemised breakdown is frozen at authorisation and never
 // recomputed for display.
+/** One frozen tax line on a payment (mirrors `TaxLine` in @repo/billing/pricing). */
+export type PaymentTaxLine = {
+  supplyType: string;
+  jurisdiction: string;
+  component: string;
+  rateMillipercent: number;
+  baseCents: number;
+  taxCents: number;
+  label: string;
+  registrationNumber: string | null;
+};
+
 export const payment = appDb.table(
   'payments',
   {
@@ -457,7 +469,7 @@ export const payment = appDb.table(
       .default(sql`uuidv7()`),
     userId: text('user_id')
       .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+      .references(() => user.id, { onDelete: 'restrict' }),
     kind: paymentKind('kind').notNull(),
     status: paymentStatus('status').notNull().default('pending'),
     provider: text('provider').notNull(),
@@ -477,6 +489,15 @@ export const payment = appDb.table(
     // The provider's receipt page for a captured charge (Stripe hosts it).
     // Shown in the family's payment history; null for mock payments.
     receiptUrl: text('receipt_url'),
+    // Per-line tax frozen at quote time (see migrations/0028_payment_tax_lines).
+    taxLines: jsonb('tax_lines')
+      .$type<Array<PaymentTaxLine>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    // The payer's history label; null falls back to the kind's description.
+    description: text('description'),
+    // What a hold-then-capture payment took; null until captured.
+    capturedCents: integer('captured_cents'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()

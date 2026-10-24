@@ -51,7 +51,9 @@ const historyRow = (overrides: Partial<PaymentHistoryItem> = {}): PaymentHistory
     provider: 'mock',
     providerReference: 'mock_pi_payment-1',
     totalCents: 7500,
+    capturedCents: null,
     currency: 'CAD',
+    taxLines: [],
     receiptUrl: 'https://pay.stripe.com/receipts/r1',
     createdAt: new Date('2026-10-01T10:00:00.000Z'),
     description: 'Background check',
@@ -144,6 +146,7 @@ describe('GET /billing', () => {
           description: 'Background check',
           totalCents: 7500,
           currency: 'CAD',
+          taxLines: [],
           status: 'paid',
           receiptUrl: 'https://pay.stripe.com/receipts/r1'
         },
@@ -153,6 +156,7 @@ describe('GET /billing', () => {
           description: 'Background check',
           totalCents: 7500,
           currency: 'CAD',
+          taxLines: [],
           status: 'failed',
           receiptUrl: null
         }

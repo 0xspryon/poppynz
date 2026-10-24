@@ -56,7 +56,15 @@ const summary = (overrides: Record<string, unknown> = {}) =>
 				costCents: 7000
 			}
 		],
-		quote: { amountCents: 7000, feeCents: 500, taxCents: 0, totalCents: 7500, currency: 'CAD' },
+		quote: {
+			amountCents: 7000,
+			feeCents: 500,
+			taxCents: 0,
+			taxLines: [],
+			totalCents: 7500,
+			currency: 'CAD'
+		},
+		quoteBlockedReason: null,
 		orderableCheckTypes: [{ documentTypeId: 'type-1' }],
 		canOrderThroughCredibled: true,
 		canResumePayment: false,
@@ -220,7 +228,9 @@ describe('SafetyCheckPanel payment', () => {
 		unmount(app);
 
 		expect(confirmSafetyCheckPayment).toHaveBeenCalledWith('payment-1');
-		expect(toast.success).toHaveBeenCalledWith('Payment received. We are setting up your check now.');
+		expect(toast.success).toHaveBeenCalledWith(
+			'Payment received. We are setting up your check now.'
+		);
 		expect(dialog).toBeNull();
 		expect(onchanged).toHaveBeenCalled();
 	});
@@ -244,6 +254,56 @@ describe('SafetyCheckPanel payment', () => {
 
 		expect(dialogWhileOpen).not.toBeNull();
 		expect(dialogAfterRefresh).toBeNull();
-		expect(toast.success).toHaveBeenCalledWith('Payment received. We are setting up your check now.');
+		expect(toast.success).toHaveBeenCalledWith(
+			'Payment received. We are setting up your check now.'
+		);
+	});
+});
+
+describe('SafetyCheckPanel sales tax', () => {
+	afterEach(() => {
+		document.body.innerHTML = '';
+	});
+
+	it('lists each tax line by type and province, combining the checks and the fee', () => {
+		const app = mount(SafetyCheckPanel, {
+			target: document.body,
+			props: {
+				summary: summary({
+					quote: {
+						amountCents: 7000,
+						feeCents: 500,
+						taxCents: 975,
+						taxLines: [
+							{ label: 'HST (ON) 13%', taxCents: 910 },
+							{ label: 'HST (ON) 13%', taxCents: 65 }
+						],
+						totalCents: 8475,
+						currency: 'CAD'
+					}
+				}),
+				onchanged: vi.fn(async () => {})
+			}
+		});
+		flushSync();
+		expect(document.body.textContent).toContain('HST (ON) 13%');
+		expect(document.body.textContent).toContain('$9.75');
+		expect(document.body.textContent).not.toContain('Tax$');
+		expect(button('Pay $84.75 and start')).toBeDefined();
+		unmount(app);
+	});
+
+	it('explains a missing province instead of pricing at 0', () => {
+		const app = mount(SafetyCheckPanel, {
+			target: document.body,
+			props: {
+				summary: summary({ quote: null, quoteBlockedReason: 'tax_province_required' }),
+				onchanged: vi.fn(async () => {})
+			}
+		});
+		flushSync();
+		expect(document.body.textContent).toContain('Add your province to your profile address');
+		expect(button('and start')).toBeUndefined();
+		unmount(app);
 	});
 });

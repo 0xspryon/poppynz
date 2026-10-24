@@ -139,6 +139,18 @@
 	const money = (cents: number) =>
 		new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD' }).format(cents / 100);
 
+	/** One row per tax label ("HST (ON) 13%"): the checks and the admin fee are
+	 * separate supplies taxed alike, shown as one line. */
+	const taxByLabel = (lines: ReadonlyArray<{ label: string; taxCents: number }>) => {
+		const rows: Array<{ label: string; taxCents: number }> = [];
+		for (const line of lines) {
+			const row = rows.find((existing) => existing.label === line.label);
+			if (row) row.taxCents += line.taxCents;
+			else rows.push({ label: line.label, taxCents: line.taxCents });
+		}
+		return rows;
+	};
+
 	/** Starts the payment — or resumes the one already started. */
 	async function order() {
 		if (ordering) return;
@@ -158,7 +170,9 @@
 				result.error.code === 'SAFETY_VERIFICATION_UNAVAILABLE'
 					? 'Ordering is temporarily unavailable. Please try again shortly.'
 					: result.error.code === 'SAFETY_VERIFICATION_PAYMENT_FAILED' ||
-						  result.error.code === 'SAFETY_VERIFICATION_CONFLICT'
+						  result.error.code === 'SAFETY_VERIFICATION_CONFLICT' ||
+						  result.error.code === 'TAX_PROVINCE_REQUIRED' ||
+						  result.error.code === 'TAX_CONFIGURATION_INCOMPLETE'
 						? result.error.message
 						: RETRY_MESSAGE,
 				{ title: 'Check not ordered' }
@@ -314,7 +328,15 @@
 					{/each}
 				</ul>
 
-				{#if canStart}
+				{#if canStart && summary.quote === null}
+					<!-- No quote: sales tax depends on the payer's province, and an
+					     unknown one is never priced at 0. -->
+					<p class="mt-4 border-t border-credibled-border pt-3 text-sm text-base-content-muted">
+						{summary.quoteBlockedReason === 'tax_province_required'
+							? 'Add your province to your profile address to see the price — sales tax depends on where you live.'
+							: "We can't price checks right now. Please try again later."}
+					</p>
+				{:else if canStart && summary.quote}
 					<dl class="mt-4 space-y-1 border-t border-credibled-border pt-3 text-sm">
 						<div class="flex justify-between">
 							<dt class="text-base-content-muted">Checks</dt>
@@ -324,10 +346,12 @@
 							<dt class="text-base-content-muted">Poppynz administration fee</dt>
 							<dd class="tabular-nums text-base-content">{money(summary.quote.feeCents)}</dd>
 						</div>
-						<div class="flex justify-between">
-							<dt class="text-base-content-muted">Tax</dt>
-							<dd class="tabular-nums text-base-content">{money(summary.quote.taxCents)}</dd>
-						</div>
+						{#each taxByLabel(summary.quote.taxLines) as line (line.label)}
+							<div class="flex justify-between">
+								<dt class="text-base-content-muted">{line.label}</dt>
+								<dd class="tabular-nums text-base-content">{money(line.taxCents)}</dd>
+							</div>
+						{/each}
 						<div class="flex justify-between pt-1 font-semibold">
 							<dt class="text-base-content">Total</dt>
 							<dd class="tabular-nums text-base-content">{money(summary.quote.totalCents)}</dd>

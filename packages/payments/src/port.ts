@@ -32,10 +32,25 @@ export type QuoteLineItem = {
   readonly costCents: number;
 };
 
-/** Fee and tax policy for one purpose. Pre-tax, in cents and basis points. */
+/** One frozen tax line, resolved by the caller from the tax configuration
+ * (`@repo/billing/pricing`) — this port never decides tax. */
+export type QuoteTaxLine = {
+  readonly supplyType: string;
+  readonly jurisdiction: string;
+  readonly component: string;
+  readonly rateMillipercent: number;
+  readonly baseCents: number;
+  readonly taxCents: number;
+  /** "HST (ON) 13%". */
+  readonly label: string;
+  readonly registrationNumber: string | null;
+};
+
+/** Fee and tax for one purpose, pre-tax fee in cents. `taxLines` were
+ * resolved for exactly these line items and this fee. */
 export type QuotePolicy = {
   readonly adminFeeCents: number;
-  readonly taxRateBasisPoints: number;
+  readonly taxLines: ReadonlyArray<QuoteTaxLine>;
 };
 
 export type Money = {
@@ -44,7 +59,9 @@ export type Money = {
   readonly lineItems: ReadonlyArray<QuoteLineItem>;
   /** Poppynz administration fee, pre-tax. */
   readonly feeCents: number;
+  /** The sum of `taxLines`. */
   readonly taxCents: number;
+  readonly taxLines: ReadonlyArray<QuoteTaxLine>;
   readonly totalCents: number;
   readonly currency: 'CAD';
 };
@@ -193,6 +210,8 @@ export type StartPaymentInput = {
   savedCard?: string | null;
   /** Keep the card for off-session use (a family's first card). */
   saveCard: boolean;
+  /** Shown on the provider's receipt (the itemised tax lines go here). */
+  description?: string;
 };
 
 export class Payments extends Context.Tag('@repo/payments/Payments')<
@@ -239,7 +258,9 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
       returnUrl: string;
       refreshUrl: string;
     }) => Effect.Effect<OnboardingLink, PaymentProviderError>;
-    getPayoutAccount: (reference: string) => Effect.Effect<PayoutAccountSnapshot, PaymentProviderError>;
+    getPayoutAccount: (
+      reference: string
+    ) => Effect.Effect<PayoutAccountSnapshot, PaymentProviderError>;
     /** A login link to the provider's payout dashboard. */
     createDashboardLink: (reference: string) => Effect.Effect<DashboardLink, PaymentProviderError>;
     verifyWebhook: (
@@ -257,17 +278,38 @@ export const quoteFromPolicy = (
   // An empty basket is quoted as nothing at all — charging the administration
   // fee on zero checks would bill somebody for ordering nothing.
   const feeCents = lineItems.length === 0 ? 0 : policy.adminFeeCents;
-  const taxable = amountCents + feeCents;
-  // Integer arithmetic throughout — a float here shows up as a cent that
-  // doesn't reconcile.
-  const taxCents = Math.round((taxable * policy.taxRateBasisPoints) / 10_000);
+  const taxLines = lineItems.length === 0 ? [] : policy.taxLines;
+  // Integer cents throughout; the lines were rounded by the one rule.
+  const taxCents = taxLines.reduce((total, line) => total + line.taxCents, 0);
 
   return {
     amountCents,
     lineItems,
     feeCents,
     taxCents,
-    totalCents: taxable + taxCents,
+    taxLines,
+    totalCents: amountCents + feeCents + taxCents,
     currency: 'CAD'
   };
+};
+
+/** "Background check $55.00 · Admin fee $5.00 · HST (ON) 13% $7.80 (GST/HST
+ * PLACEHOLDER-…)" — the receipt line the provider prints. */
+export const describeQuote = (title: string, quote: Money): string => {
+  const dollars = (cents: number) => `$${(cents / 100).toFixed(2)}`;
+  const byLabel = new Map<string, { cents: number; registration: string | null }>();
+  for (const line of quote.taxLines) {
+    const entry = byLabel.get(line.label) ?? { cents: 0, registration: line.registrationNumber };
+    entry.cents += line.taxCents;
+    byLabel.set(line.label, entry);
+  }
+  const parts = [
+    `${title} ${dollars(quote.amountCents)}`,
+    ...(quote.feeCents > 0 ? [`Admin fee ${dollars(quote.feeCents)}`] : []),
+    ...[...byLabel].map(
+      ([label, { cents, registration }]) =>
+        `${label} ${dollars(cents)}${registration ? ` (reg. ${registration})` : ''}`
+    )
+  ];
+  return parts.join(' · ').slice(0, 1000);
 };

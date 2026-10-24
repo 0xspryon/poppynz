@@ -53,6 +53,7 @@ const payment = (overrides: Partial<Payment> = {}): Payment =>
     amountCents: 4500,
     feeCents: 500,
     taxCents: 0,
+    taxLines: [],
     totalCents: 5000,
     currency: 'CAD',
     lastError: null,

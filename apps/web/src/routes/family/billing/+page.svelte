@@ -81,7 +81,8 @@
 		paid: { status: 'approved', label: 'Paid' },
 		refunded: { status: 'expired', label: 'Refunded' },
 		failed: { status: 'rejected', label: 'Failed' },
-		pending: { status: 'in-progress', label: 'Pending' }
+		pending: { status: 'in-progress', label: 'Pending' },
+		on_hold: { status: 'in-progress', label: 'On hold' }
 	};
 
 	const money = (cents: number, currency: string) =>
@@ -158,7 +159,16 @@
 						{#each billing.payments as row (row.id)}
 							<tr>
 								<td class="whitespace-nowrap">{formatDate(row.createdAt)}</td>
-								<td>{row.description}</td>
+								<td>
+									{row.description}
+									{#if row.taxLines.length > 0}
+										<div class="text-xs text-base-content-muted">
+											Incl. {row.taxLines
+												.map((line) => `${line.label} ${money(line.taxCents, row.currency)}`)
+												.join(' · ')}
+										</div>
+									{/if}
+								</td>
 								<td class="text-right tabular-nums">{money(row.totalCents, row.currency)}</td>
 								<td>
 									<StatusChip status={chip[row.status].status} label={chip[row.status].label} />

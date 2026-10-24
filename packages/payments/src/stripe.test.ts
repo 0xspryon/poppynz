@@ -81,7 +81,7 @@ const fakeStripe = (
 
 const quote = quoteFromPolicy([{ label: 'Check', costCents: 7000 }], {
   adminFeeCents: 500,
-  taxRateBasisPoints: 0
+  taxLines: []
 });
 
 describe('normaliseStatus', () => {

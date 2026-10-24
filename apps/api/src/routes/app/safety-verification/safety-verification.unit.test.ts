@@ -7,6 +7,8 @@ import {
   makeInMemoryBillingCustomerRepo,
   makeKycDocumentTypeRepoTest,
   makePaymentRepoTest,
+  makeSeededTaxConfigRepo,
+  makeUserProfileRepoTest,
   makeSafetyVerificationRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
@@ -169,6 +171,7 @@ const payment = (overrides: Partial<Payment> = {}): Payment =>
     amountCents: 0,
     feeCents: 0,
     taxCents: 0,
+    taxLines: [],
     totalCents: 0,
     currency: 'CAD',
     lastError: null,
@@ -260,6 +263,8 @@ const makeLayer = (
     concurrentReference?: string;
     /** The active gateway, when not the mock. */
     provider?: 'mock' | 'stripe';
+    /** The payer's profile province (`state_province`); null = none. */
+    province?: string | null;
     recorded?: Recorded;
   } = {}
 ) => {
@@ -275,7 +280,20 @@ const makeLayer = (
   const providerError = (operation: 'getPayment' | 'resumePayment') =>
     Effect.fail(new PaymentProviderError({ operation, cause: 'provider down' }));
 
+  const province = options.province === undefined ? 'ON' : options.province;
   return Layer.mergeAll(
+    makeSeededTaxConfigRepo().layer,
+    makeUserProfileRepoTest({
+      create: () => Effect.die('not used'),
+      findByUserId: (userId) =>
+        Effect.succeed({
+          userId,
+          stateProvince: province,
+          country: 'CA'
+        } as never),
+      updateByUserId: () => Effect.die('not used'),
+      updateLocationByUserId: () => Effect.die('not used')
+    }),
     makeAuthServiceTest({
       getSession: () =>
         Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
@@ -825,20 +843,87 @@ describe('ordering a check', () => {
       )
     );
 
+  it('refuses to price a check without the payer’s province, and charges nothing', async () => {
+    const recorded = record();
+    const exit = await Effect.runPromiseExit(
+      orderSafetyCheckRouteProgram(contextWithJson({ consentAccepted: true }), new Headers()).pipe(
+        Effect.provide(makeLayer({ ...basketReady, province: null, recorded }))
+      )
+    );
+    expect(failureTag(exit)).toBe('TaxProvinceRequiredError');
+    expect(recorded.paymentsCreated).toHaveLength(0);
+    expect(recorded.started).toHaveLength(0);
+  });
+
+  it('charges GST and QST at a Quebec payer’s province', async () => {
+    const recorded = record();
+    await placeOrder({ ...basketReady, province: 'Québec', recorded });
+    expect(
+      recorded.paymentsCreated[0]?.taxLines?.map((line) => [
+        line.supplyType,
+        line.label,
+        line.taxCents
+      ])
+    ).toEqual([
+      ['credibled_check', 'GST (QC) 5%', 350],
+      ['credibled_check', 'QST (QC) 9.975%', 698],
+      ['credibled_admin_fee', 'GST (QC) 5%', 25],
+      ['credibled_admin_fee', 'QST (QC) 9.975%', 50]
+    ]);
+    expect(recorded.paymentsCreated[0]?.totalCents).toBe(7500 + 350 + 698 + 25 + 50);
+  });
+
+  it('shows the summary without a quote, and says why, when the province is unknown', async () => {
+    const result = await Effect.runPromise(
+      getMySafetyVerificationRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ ...basketReady, province: null }))
+      )
+    );
+    expect(result.quote).toBeNull();
+    expect(result.quoteBlockedReason).toBe('tax_province_required');
+  });
+
+  it('quotes the basket with its tax lines', async () => {
+    const result = await Effect.runPromise(
+      getMySafetyVerificationRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer(basketReady))
+      )
+    );
+    expect(result.quoteBlockedReason).toBeNull();
+    expect(result.quote?.taxLines.map((line) => line.label)).toEqual([
+      'HST (ON) 13%',
+      'HST (ON) 13%'
+    ]);
+    expect(result.quote?.totalCents).toBe(8475);
+  });
+
   it('charges the summed basket once and, when the provider settles at once, hands the order to the worker', async () => {
     const recorded = record();
     const result = await placeOrder({ ...basketReady, recorded });
 
     // A payment row exists before the provider is asked, frozen at the quote:
-    // 4500 + 2500 checks, + 500 fee, 0 tax.
+    // 4500 + 2500 checks, + 500 fee, + HST (ON) 13% on both (910 + 65).
     expect(recorded.paymentsCreated).toHaveLength(1);
     expect(recorded.paymentsCreated[0]).toMatchObject({
       kind: 'credibled_order',
       provider: 'mock',
       amountCents: 7000,
       feeCents: 500,
-      totalCents: 7500
+      taxCents: 975,
+      totalCents: 8475
     });
+    expect(
+      recorded.paymentsCreated[0]?.taxLines?.map((line) => [
+        line.supplyType,
+        line.label,
+        line.taxCents
+      ])
+    ).toEqual([
+      ['credibled_check', 'HST (ON) 13%', 910],
+      ['credibled_admin_fee', 'HST (ON) 13%', 65]
+    ]);
+    expect(recorded.paymentsCreated[0]?.description).toContain('HST (ON) 13% $9.75');
+    expect(recorded.started[0]?.description).toContain('HST (ON) 13% $9.75');
     expect(recorded.claims[0]?.paymentId).toBe('payment-1');
     // The payment row is the idempotency key and the intent's metadata.
     expect(recorded.started[0]).toMatchObject({
@@ -865,7 +950,7 @@ describe('ordering a check', () => {
     expect(recorded.verificationsCreated).toHaveLength(0);
     expect(result).toMatchObject({
       status: 'paid',
-      verification: { status: 'payment_pending', cost: { totalCents: 7500 } }
+      verification: { status: 'payment_pending', cost: { totalCents: 8475 } }
     });
   });
 
@@ -879,7 +964,7 @@ describe('ordering a check', () => {
       clientSecret: 'mock_secret_mock_pi_payment-1',
       provider: 'mock',
       // The row's frozen total: what the provider charges and the modal shows.
-      totalCents: 7500,
+      totalCents: 8475,
       savesCard: false,
       savedCard: null
     });

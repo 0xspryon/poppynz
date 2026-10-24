@@ -29,7 +29,6 @@ const policy = safetyVerificationConfig.pipe(
     consentPolicyVersion: '2026-08-22',
     checkCostCents: 5500,
     adminFeeCents: 500,
-    taxRateBasisPoints: 0,
     orderMaxAttempts: 3
   }))
 );

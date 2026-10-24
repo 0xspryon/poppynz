@@ -26,7 +26,7 @@ export type PaymentCreateInput = Pick<
   PaymentInsert,
   'userId' | 'kind' | 'provider' | 'amountCents' | 'feeCents' | 'taxCents' | 'totalCents'
 > &
-  Partial<Pick<PaymentInsert, 'currency'>>;
+  Partial<Pick<PaymentInsert, 'currency' | 'taxLines' | 'description'>>;
 
 export type PaymentUpdateInput = Partial<
   Omit<Payment, 'id' | 'userId' | 'kind' | 'createdAt' | 'updatedAt'>
@@ -55,7 +55,8 @@ export const isSettledPayment = (record: Pick<Payment, 'status'> | null): boolea
 
 /** What each kind of charge is called in the payer's history. */
 export const paymentKindDescriptions: Record<PaymentKind, string> = {
-  credibled_order: 'Background check'
+  credibled_order: 'Background check',
+  contract_cycle: 'Contract care'
 };
 
 export class PaymentRepo extends Context.Tag('@repo/db/PaymentRepo')<
@@ -124,7 +125,10 @@ export const PaymentRepoLive = Layer.effect(
           .orderBy(desc(payment.createdAt))
           .pipe(
             Effect.map((rows) =>
-              rows.map((row) => ({ ...row, description: paymentKindDescriptions[row.kind] }))
+              rows.map((row) => ({
+                ...row,
+                description: row.description ?? paymentKindDescriptions[row.kind]
+              }))
             )
           ),
 

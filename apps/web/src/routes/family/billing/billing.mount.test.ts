@@ -29,6 +29,7 @@ const billing = (overrides: Record<string, unknown> = {}) => ({
 				description: 'Background check',
 				totalCents: 7500,
 				currency: 'CAD',
+				taxLines: [{ label: 'HST (ON) 13%', taxCents: 975 }],
 				status: 'paid',
 				receiptUrl: 'https://pay.stripe.com/receipts/r1'
 			},
@@ -38,6 +39,7 @@ const billing = (overrides: Record<string, unknown> = {}) => ({
 				description: 'Background check',
 				totalCents: 7500,
 				currency: 'CAD',
+				taxLines: [],
 				status: 'failed',
 				receiptUrl: null
 			}
@@ -82,6 +84,7 @@ describe('family billing page', () => {
 		expect(text).toContain('Paid');
 		expect(text).toContain('Failed');
 		expect(text).toContain('$75.00');
+		expect(text).toContain('Incl. HST (ON) 13% $9.75');
 		expect(receipts).toHaveLength(1);
 		expect(receipts[0]?.getAttribute('href')).toBe('https://pay.stripe.com/receipts/r1');
 	});

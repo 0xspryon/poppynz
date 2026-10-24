@@ -1,5 +1,13 @@
 import type { SqlError } from '@effect/sql/SqlError';
-import { cardOnFile, ensureBillingCustomer, settlePayment, toCard } from '@repo/billing';
+import {
+  cardOnFile,
+  ensureBillingCustomer,
+  loadTaxSnapshot,
+  settlePayment,
+  toCard,
+  toTaxQuoteError
+} from '@repo/billing';
+import { normaliseProvince, quoteCheckTax } from '@repo/billing/pricing';
 import { credibledCheckTypeClub, credibledCheckTypeLabel, Credibled } from '@repo/credibled';
 import {
   CheckOrderRepo,
@@ -7,6 +15,7 @@ import {
   KycDocumentTypeRepo,
   PaymentRepo,
   SafetyVerificationRepo,
+  UserProfileRepo,
   isSettledPayment,
   type BillingCard,
   type CheckOrder,
@@ -19,6 +28,7 @@ import {
 import { safetyVerificationConfig } from '@repo/env';
 import {
   Payments,
+  describeQuote,
   type Money,
   type PaymentProviderError,
   type QuoteLineItem,
@@ -170,7 +180,6 @@ const policyConfig = safetyVerificationConfig.pipe(
     consentPolicyVersion: '2026-08-22',
     checkCostCents: 5500,
     adminFeeCents: 500,
-    taxRateBasisPoints: 0,
     orderMaxAttempts: 3
   }))
 );
@@ -196,6 +205,37 @@ const toLineItems = (
     // editing pricing mid-basket must not change what was quoted.
     costCents: item.costCents
   }));
+
+/** The basket's quote with GST/HST resolved from the tax configuration at
+ * the payer's province (spec §3a): the checks and the administration fee are
+ * separate supplies. No province, or a taxable supply with no rate, refuses
+ * the quote with a typed error — never a silent 0. */
+const basketQuote = (
+  userId: string,
+  lineItems: Array<QuoteLineItem>,
+  adminFeeCents: number,
+  on: string
+) =>
+  Effect.gen(function* () {
+    const payments = yield* Payments;
+    const profile = yield* UserProfileRepo.pipe(
+      Effect.flatMap((profiles) => profiles.findByUserId(userId)),
+      Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)),
+      (errors) => mapRepoError(errors)
+    );
+    const snapshot = yield* loadTaxSnapshot.pipe((errors) => mapRepoError(errors));
+    const checksCents = lineItems.reduce((total, item) => total + item.costCents, 0);
+    const feeCents = lineItems.length === 0 ? 0 : adminFeeCents;
+    const tax = quoteCheckTax({
+      snapshot,
+      on,
+      payerProvince: normaliseProvince(profile?.stateProvince, profile?.country),
+      checksCents,
+      adminFeeCents: feeCents
+    });
+    if (!tax.ok) return yield* Effect.fail(toTaxQuoteError(tax.error));
+    return yield* payments.quote(lineItems, { adminFeeCents, taxLines: tax.lines });
+  });
 
 /** The basket only exists while an order has not been paid for. */
 const basketFor = (order: CheckOrder | null) =>
@@ -252,7 +292,29 @@ export const getMySafetyVerificationRouteProgram = (headers: Headers) =>
       : null;
 
     const items = order ? yield* mapRepoError(orders.listItems(order.id)) : [];
-    const quote = yield* payments.quote(toLineItems(items, types), policy);
+    // The page still renders without a quote; ordering then explains why.
+    const quoted = yield* basketQuote(
+      userAndSession.user.id,
+      toLineItems(items, types),
+      policy.adminFeeCents,
+      today()
+    ).pipe(
+      Effect.map((quote) => ({ quote, quoteBlockedReason: null })),
+      Effect.catchTags({
+        TaxProvinceRequiredError: () =>
+          Effect.succeed({ quote: null, quoteBlockedReason: 'tax_province_required' as const }),
+        TaxRateMissingError: () =>
+          Effect.succeed({
+            quote: null,
+            quoteBlockedReason: 'tax_configuration_incomplete' as const
+          }),
+        TaxTreatmentMissingError: () =>
+          Effect.succeed({
+            quote: null,
+            quoteBlockedReason: 'tax_configuration_incomplete' as const
+          })
+      })
+    );
 
     // Which Credibled checks this role's document types map onto. Empty means
     // ordering is unavailable and only the upload route is offered.
@@ -276,7 +338,8 @@ export const getMySafetyVerificationRouteProgram = (headers: Headers) =>
         credibledLabel: credibledCheckTypeLabel(item.credibledCheckTypeValue),
         costCents: item.costCents
       })),
-      quote,
+      quote: quoted.quote,
+      quoteBlockedReason: quoted.quoteBlockedReason,
       orderableCheckTypes,
       // Credibled has no vulnerable-sector product, so the upload route is the
       // only way to evidence one. The UI leans on this rather than hard-coding
@@ -469,7 +532,12 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
       );
     }
 
-    const quote = yield* payments.quote(toLineItems(items, types), policy);
+    const quote = yield* basketQuote(
+      userId,
+      toLineItems(items, types),
+      policy.adminFeeCents,
+      today()
+    );
 
     // Who keeps a card on file for later (contract billing) is a permission,
     // not a role check: families hold billing:write, helpers pay one-off.
@@ -616,6 +684,7 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
           lineItems: quote.lineItems,
           feeCents: payment.feeCents,
           taxCents: payment.taxCents,
+          taxLines: payment.taxLines,
           totalCents: payment.totalCents,
           currency: payment.currency as Money['currency']
         };
@@ -636,7 +705,9 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
             customer: customer?.customerReference ?? null,
             savedCard: card?.reference ?? null,
             // A family's first card is kept for contract billing.
-            saveCard: keepsCard && card === null
+            saveCard: keepsCard && card === null,
+            // The receipt carries the itemised tax lines.
+            ...(payment.description ? { description: payment.description } : {})
           })
           .pipe(
             Effect.catchTags({
@@ -677,7 +748,10 @@ export const orderSafetyCheckRouteProgram = (c: HonoContext<HonoEnv>, headers: H
             feeCents: quote.feeCents,
             taxCents: quote.taxCents,
             totalCents: quote.totalCents,
-            currency: quote.currency
+            currency: quote.currency,
+            // Frozen with the amounts: a later tax edit never changes it.
+            taxLines: [...quote.taxLines],
+            description: describeQuote('Background check', quote)
           })
         );
         const claimed = yield* mapRepoError(
@@ -1133,6 +1207,28 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: SafetyVerificationRoute
     case 'SafetyVerificationVendorError':
       return c.json(
         { error: { code: 'SAFETY_VERIFICATION_UNAVAILABLE' as const, message: error.reason } },
+        503
+      );
+    case 'TaxProvinceRequiredError':
+      return c.json(
+        {
+          error: {
+            code: 'TAX_PROVINCE_REQUIRED' as const,
+            message:
+              'Add your province to your profile address — sales tax depends on where you live.'
+          }
+        },
+        422
+      );
+    case 'TaxRateMissingError':
+    case 'TaxTreatmentMissingError':
+      return c.json(
+        {
+          error: {
+            code: 'TAX_CONFIGURATION_INCOMPLETE' as const,
+            message: "We can't price this right now. Please try again later."
+          }
+        },
         503
       );
     case 'SafetyVerificationQueueingError':

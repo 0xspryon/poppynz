@@ -15,11 +15,11 @@ export const environmentConfig = Config.string('ENVIRONMENT').pipe(
     return isAppEnvironment(value)
       ? Either.right(value)
       : Either.left(
-        ConfigError.InvalidData(
-          [],
-          `ENVIRONMENT must be one of: ${appEnvironments.join(', ')} — got "${raw}"`
-        )
-      );
+          ConfigError.InvalidData(
+            [],
+            `ENVIRONMENT must be one of: ${appEnvironments.join(', ')} — got "${raw}"`
+          )
+        );
   })
 );
 
@@ -203,11 +203,8 @@ export const safetyVerificationConfig = Config.all({
   adminFeeCents: Config.integer('SAFETY_VERIFICATION_ADMIN_FEE_CENTS').pipe(
     Config.withDefault(500)
   ),
-  // Placeholder until Stripe Tax lands: Canadian rates run from 5% GST to 15%
-  // HST and vary by province, which the payment PR resolves properly.
-  taxRateBasisPoints: Config.integer('SAFETY_VERIFICATION_TAX_RATE_BASIS_POINTS').pipe(
-    Config.withDefault(0)
-  ),
+  // Sales tax is not configured here: it is resolved from the tax
+  // configuration tables at quote time (piece 3 spec §3a).
   // Order attempts after a successful payment before the charge is refunded.
   orderMaxAttempts: Config.integer('SAFETY_VERIFICATION_ORDER_MAX_ATTEMPTS').pipe(
     Config.withDefault(3)
@@ -227,9 +224,10 @@ export const safetyVerificationConfig = Config.all({
 // re-fetched by the worker after PAYMENTS_SETTLE_AFTER_MINUTES and cancelled
 // after PAYMENTS_ABANDON_AFTER_HOURS, which returns its order to the basket.
 export const stripeConfig = Config.all({
-  provider: Config.literal('mock', 'stripe')('PAYMENTS_PROVIDER').pipe(
-    Config.withDefault('mock' as const)
-  ),
+  provider: Config.literal(
+    'mock',
+    'stripe'
+  )('PAYMENTS_PROVIDER').pipe(Config.withDefault('mock' as const)),
   secretKey: Config.option(Config.redacted('STRIPE_SECRET_KEY')),
   webhookSecret: Config.option(Config.redacted('STRIPE_WEBHOOK_SECRET')),
   // The Connect endpoint's signing secret (account.updated on connected
@@ -250,7 +248,5 @@ export const payoutsConfig = Config.all({
     Config.withDefault('https://app.poppynz.com'),
     Config.map((origin) => origin.trim().replace(/\/+$/, ''))
   ),
-  refreshAfterMinutes: Config.integer('PAYOUTS_REFRESH_AFTER_MINUTES').pipe(
-    Config.withDefault(60)
-  )
+  refreshAfterMinutes: Config.integer('PAYOUTS_REFRESH_AFTER_MINUTES').pipe(Config.withDefault(60))
 });

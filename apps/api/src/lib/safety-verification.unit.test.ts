@@ -1,7 +1,4 @@
-import {
-  canApplyCredibledTransition,
-  credibledStatusToCheckOrderStatus
-} from '@repo/credibled';
+import { canApplyCredibledTransition, credibledStatusToCheckOrderStatus } from '@repo/credibled';
 import type { CheckOrder, CheckOrderItem, Payment, SafetyVerification } from '@repo/db';
 import { describe, expect, it } from 'vitest';
 import {
@@ -75,6 +72,7 @@ const payment = (overrides: Partial<Payment> = {}): Payment =>
     amountCents: 4500,
     feeCents: 500,
     taxCents: 0,
+    taxLines: [],
     totalCents: 5000,
     currency: 'CAD',
     lastError: null,
@@ -92,11 +90,7 @@ const summary = (
     order: CheckOrder | null;
     payment: Payment | null;
   }> = {}
-) =>
-  toApplicantSummary(
-    { verification: null, order: null, payment: null, ...state },
-    '2026-08-22'
-  );
+) => toApplicantSummary({ verification: null, order: null, payment: null, ...state }, '2026-08-22');
 
 describe('expiry arithmetic', () => {
   it('clamps a month-end rollover instead of spilling into the next month', () => {
@@ -185,6 +179,7 @@ describe('what the applicant sees before there is a verdict', () => {
       amountCents: 4500,
       feeCents: 500,
       taxCents: 0,
+      taxLines: [],
       totalCents: 5000,
       currency: 'CAD'
     });
@@ -296,13 +291,15 @@ describe('what each audience can see', () => {
       at('not_cleared', '2026-08-04'),
       at('not_cleared', '2026-08-03')
     ].sort(byReviewPriority);
-    expect(queue.map((entry) => [entry.credibledResult?.outcome ?? null, entry.createdAt])).toEqual([
-      ['not_cleared', '2026-08-03'],
-      ['not_cleared', '2026-08-04'],
-      ['inconclusive', '2026-08-05'],
-      [null, '2026-08-01'],
-      ['cleared', '2026-08-02']
-    ]);
+    expect(queue.map((entry) => [entry.credibledResult?.outcome ?? null, entry.createdAt])).toEqual(
+      [
+        ['not_cleared', '2026-08-03'],
+        ['not_cleared', '2026-08-04'],
+        ['inconclusive', '2026-08-05'],
+        [null, '2026-08-01'],
+        ['cleared', '2026-08-02']
+      ]
+    );
   });
 
   it('keeps money off the review screen', () => {

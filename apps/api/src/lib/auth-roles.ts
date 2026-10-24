@@ -37,6 +37,11 @@ export const appAc = createAccessControl({
   serviceCatalogue: ['read', 'write'],
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
+  // Sales-tax configuration (rates, supply-type treatments, registrations)
+  // and its reports. Granted to admins now and to the accountant role the
+  // tax portal adds later — always checked as a permission, never a role.
+  tax: ['read', 'write'],
+  taxReport: ['read'],
   tcs: ['read', 'accept', 'write'],
   userSearch: ['read', 'write'],
   vouch: ['read', 'write', 'review']
@@ -96,6 +101,8 @@ export const adminRole = appAc.newRole({
   serviceCatalogue: ['read', 'write'],
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
+  tax: ['read', 'write'],
+  taxReport: ['read'],
   tcs: ['read', 'accept', 'write'],
   userSearch: ['read', 'write'],
   vouch: ['read', 'write', 'review']

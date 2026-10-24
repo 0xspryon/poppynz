@@ -1,18 +1,29 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect, Exit } from 'effect';
 import { makeMockPayments } from './mock';
-import { quoteFromPolicy } from './port';
+import { describeQuote, quoteFromPolicy } from './port';
 
 const quote = quoteFromPolicy([{ label: 'Check', costCents: 4500 }], {
   adminFeeCents: 500,
-  taxRateBasisPoints: 0
+  taxLines: []
+});
+
+const hst = (supplyType: string, baseCents: number, taxCents: number) => ({
+  supplyType,
+  jurisdiction: 'ON',
+  component: 'hst',
+  rateMillipercent: 13000,
+  baseCents,
+  taxCents,
+  label: 'HST (ON) 13%',
+  registrationNumber: 'PLACEHOLDER-1'
 });
 
 describe('quoteFromPolicy', () => {
-  it('adds the fee and tax to the lines, in integer cents', () => {
+  it('adds the fee and the frozen tax lines, in integer cents', () => {
     const taxed = quoteFromPolicy([{ label: 'Check', costCents: 4500 }], {
       adminFeeCents: 500,
-      taxRateBasisPoints: 1300
+      taxLines: [hst('credibled_check', 4500, 585), hst('credibled_admin_fee', 500, 65)]
     });
     expect(taxed).toMatchObject({
       amountCents: 4500,
@@ -20,11 +31,22 @@ describe('quoteFromPolicy', () => {
       taxCents: 650,
       totalCents: 5650
     });
+    expect(taxed.taxLines).toHaveLength(2);
   });
 
   it('charges nothing at all for an empty basket', () => {
-    expect(quoteFromPolicy([], { adminFeeCents: 500, taxRateBasisPoints: 1300 }).totalCents).toBe(
-      0
+    const empty = quoteFromPolicy([], { adminFeeCents: 500, taxLines: [hst('x', 500, 65)] });
+    expect(empty.totalCents).toBe(0);
+    expect(empty.taxLines).toEqual([]);
+  });
+
+  it('describes the quote for the receipt, tax lines by label', () => {
+    const taxed = quoteFromPolicy([{ label: 'Check', costCents: 4500 }], {
+      adminFeeCents: 500,
+      taxLines: [hst('credibled_check', 4500, 585), hst('credibled_admin_fee', 500, 65)]
+    });
+    expect(describeQuote('Background check', taxed)).toBe(
+      'Background check $45.00 · Admin fee $5.00 · HST (ON) 13% $6.50 (reg. PLACEHOLDER-1)'
     );
   });
 });

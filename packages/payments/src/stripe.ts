@@ -174,6 +174,7 @@ export const makeStripePayments = (options: {
             metadata: input.metadata,
             ...(input.customer ? { customer: input.customer } : {}),
             ...(input.savedCard ? { payment_method: input.savedCard } : {}),
+            ...(input.description ? { description: input.description } : {}),
             ...(input.saveCard ? { setup_future_usage: 'off_session' as const } : {})
           },
           { idempotencyKey: `payment-${input.idempotencyKey}` }
@@ -293,7 +294,9 @@ export const makeStripePayments = (options: {
           try: () =>
             constructEventWithAnySecret(
               (secret) => client.webhooks.constructEventAsync(rawBody, signatureHeader, secret),
-              connectWebhookSecret === null ? [webhookSecret] : [webhookSecret, connectWebhookSecret]
+              connectWebhookSecret === null
+                ? [webhookSecret]
+                : [webhookSecret, connectWebhookSecret]
             ),
           catch: (cause) =>
             new PaymentWebhookSignatureError({

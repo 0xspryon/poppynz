@@ -9,7 +9,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./schema": "./src/schema.ts"
+    "./schema": "./src/schema.ts",
+    "./tax-defaults": "./src/tax-defaults.ts"
   },
   "dependencies": {
     "@effect/sql": "^0.51.1",

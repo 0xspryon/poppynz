@@ -22,6 +22,7 @@ import type {
   ReferralRepo,
   SafetyVerificationRepo,
   StripeWebhookEventRepo,
+  TaxConfigRepo,
   UserDirectoryRepo,
   UserProfileRepo,
   UserRepo,
@@ -68,6 +69,7 @@ export type AppServices =
   | PaymentRepo
   | BillingCustomerRepo
   | StripeWebhookEventRepo
+  | TaxConfigRepo
   | PayoutAccountRepo
   | UserDirectoryRepo
   | UserSearchRepo

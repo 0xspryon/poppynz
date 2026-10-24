@@ -74,7 +74,10 @@ describe('computeSupplyTax with the seeded configuration', () => {
     BC: [['GST (BC) 5%', 25]],
     MB: [['GST (MB) 5%', 25]],
     SK: [['GST (SK) 5%', 25]],
-    QC: [['GST (QC) 5%', 25]],
+    QC: [
+      ['GST (QC) 5%', 25],
+      ['QST (QC) 9.975%', 50]
+    ],
     NT: [['GST (NT) 5%', 25]],
     NU: [['GST (NU) 5%', 25]],
     YT: [['GST (YT) 5%', 25]],
@@ -90,7 +93,7 @@ describe('computeSupplyTax with the seeded configuration', () => {
       const result = feeTax(province as ProvinceCode, 500);
       if (!result.ok) throw new Error(JSON.stringify(result.error));
       expect(result.lines.map((line) => [line.label, line.taxCents])).toEqual(lines);
-      expect(result.taxCents).toBe(lines[0]![1]);
+      expect(result.taxCents).toBe(lines.reduce((sum, [, cents]) => sum + cents, 0));
     });
   }
 
@@ -101,15 +104,15 @@ describe('computeSupplyTax with the seeded configuration', () => {
     expect(after.ok && after.lines[0]?.label).toBe('HST (NS) 14%');
   });
 
-  it('charges QST only once Poppynz is registered for it', () => {
-    const unregistered = feeTax('QC', 10000);
-    expect(unregistered.ok && unregistered.lines.map((line) => line.label)).toEqual([
-      'GST (QC) 5%'
-    ]);
-    const registered = feeTax('QC', 10000, ON, seededSnapshot({ qstRegistered: true }));
+  it('charges GST and QST in Quebec, and QST only while Poppynz is registered', () => {
+    const registered = feeTax('QC', 10000);
     expect(registered.ok && registered.lines.map((line) => [line.label, line.taxCents])).toEqual([
       ['GST (QC) 5%', 500],
       ['QST (QC) 9.975%', 998]
+    ]);
+    const unregistered = feeTax('QC', 10000, ON, seededSnapshot({ qstRegistered: false }));
+    expect(unregistered.ok && unregistered.lines.map((line) => line.label)).toEqual([
+      'GST (QC) 5%'
     ]);
   });
 

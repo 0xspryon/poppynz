@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatCalendarDate } from '$lib/date';
 	/** Where an applicant's safety check stands, plus the Credibled check list
 	 * they pay for in one go. Data-in: the caller loads the summary and
 	 * refetches through `onchanged`. "Documents" links either navigate
@@ -237,7 +238,7 @@
 		<StatusChip status={chip[status] ?? 'missing'} label={statusLabel[status]} />
 		{#if summary.verification.expiresOn && status === 'verified'}
 			<span class="text-xs text-base-content-muted">
-				Valid until {summary.verification.expiresOn}
+				Valid until {formatCalendarDate(summary.verification.expiresOn)}
 			</span>
 		{/if}
 	</div>

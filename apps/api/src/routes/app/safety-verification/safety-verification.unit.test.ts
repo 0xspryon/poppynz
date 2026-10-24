@@ -467,6 +467,9 @@ const makeLayer = (
           failureReason: status === 'failed' ? 'Your card was declined.' : null,
           receiptUrl: null,
           refundedCents: 0,
+          capturableCents: 0,
+          receivedCents: 0,
+          captureBefore: null,
           paymentMethod: null
         });
       },
@@ -483,6 +486,9 @@ const makeLayer = (
           failureReason: null,
           receiptUrl: null,
           refundedCents: 0,
+          capturableCents: 0,
+          receivedCents: 0,
+          captureBefore: null,
           paymentMethod: null
         });
       }

@@ -1,4 +1,4 @@
-import { Schema } from 'effect';
+import { Effect, Schema } from 'effect';
 import { validateInput } from '@/api/lib/schema-validator';
 
 const tcValidationError = {
@@ -62,3 +62,10 @@ export const validateTcDraftInput = validateInput(tcDraftSchema, tcValidationErr
 export const validateTcDraftUpdateInput = validateInput(tcDraftUpdateSchema, tcValidationError);
 export const validateTcAcceptInput = validateInput(tcAcceptSchema, tcValidationError);
 export const tcJsonError = tcValidationError;
+
+/** `?locale=` on the admin draft endpoints: absent means English. */
+export const tcLocaleQuerySchema = Schema.optional(Schema.Literal('en', 'fr'));
+export const validateTcLocaleQuery = (value: string | undefined) =>
+  validateInput(Schema.Struct({ locale: tcLocaleQuerySchema }), tcValidationError)({
+    locale: value
+  }).pipe(Effect.map((input) => input.locale ?? ('en' as const)));

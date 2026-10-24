@@ -1,7 +1,11 @@
 import type { SqlError } from '@effect/sql/SqlError';
 import {
+  currentRevisionRow,
   DBNotFoundError,
+  nextDraftVersion,
   TcDocumentRepo,
+  toTcLocale,
+  type TcLocale,
   type TcDocument,
   type TcDocumentAcceptance,
   type TcDocumentVersion,
@@ -28,7 +32,8 @@ import {
   validateTcDocumentCreateInput,
   validateTcDocumentUpdateInput,
   validateTcDraftInput,
-  validateTcDraftUpdateInput
+  validateTcDraftUpdateInput,
+  validateTcLocaleQuery
 } from './tcs.validator';
 
 class TcDocumentNotFoundError extends Data.TaggedError('TcDocumentNotFoundError')<{ id: string }> {}
@@ -40,6 +45,15 @@ class TcSlugTakenError extends Data.TaggedError('TcSlugTakenError')<{ slug: stri
 /** The accepted versionId is no longer the latest published one. */
 class TcVersionStaleError extends Data.TaggedError('TcVersionStaleError')<{ slug: string }> {}
 class TcRepoError extends Data.TaggedError('TcRepoError')<{ cause: SqlError }> {}
+/** A translation needs English text to translate (U7). */
+class TcTranslationBaseMissingError extends Data.TaggedError('TcTranslationBaseMissingError')<{
+  documentId: string;
+}> {}
+/** That revision is already published in this locale. */
+class TcTranslationExistsError extends Data.TaggedError('TcTranslationExistsError')<{
+  documentId: string;
+  version: number;
+}> {}
 
 function mapTcRepoError<A, R>(
   effect: Effect.Effect<A, SqlError, R>
@@ -75,14 +89,18 @@ const toTcVersionResponse = (version: TcDocumentVersion) => ({
   updatedAt: version.updatedAt.toISOString()
 });
 
-/** Flattened document + latest published version, as shown to end users. */
-const toPublishedTcResponse = ({ document, version }: TcPublishedDocument) => ({
+/** Flattened document + the published version shown to end users. `locale`
+ * is the text's language; `fallback` says the reader's locale has no
+ * translation of this revision, so the authoritative English is shown. */
+const toPublishedTcResponse = ({ document, version, fallback }: TcPublishedDocument) => ({
   documentId: document.id,
   slug: document.slug,
   title: document.title,
   appliesToRole: document.appliesToRole,
   versionId: version.id,
   version: version.version,
+  locale: toTcLocale(version.locale),
+  fallback,
   content: version.content,
   checkboxLabel: version.checkboxLabel,
   publishedAt: toDateString(version.publishedAt)
@@ -95,17 +113,17 @@ const toTcAcceptanceResponse = (acceptance: TcDocumentAcceptance) => ({
 
 // Public: signup shows the terms before a session exists, and any signed-in
 // user may read another role's documents.
-export const listPublishedTcsRouteProgram = (roleParam: string) =>
+export const listPublishedTcsRouteProgram = (roleParam: string, locale: TcLocale = 'en') =>
   Effect.gen(function* () {
     const role = yield* validateTcAudienceRole(roleParam);
     const repo = yield* TcDocumentRepo;
     const published = yield* repo
-      .listPublishedForRole(role)
+      .listPublishedForRole(role, locale)
       .pipe((errors) => mapTcRepoError(errors));
     return published.map(toPublishedTcResponse);
   });
 
-export const listPendingTcsRouteProgram = (headers: Headers) =>
+export const listPendingTcsRouteProgram = (headers: Headers, locale: TcLocale = 'en') =>
   Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
     const userAndSession = yield* requirePermissions(headers, { tcs: ['accept'] })(authenticated);
@@ -118,7 +136,7 @@ export const listPendingTcsRouteProgram = (headers: Headers) =>
 
     const repo = yield* TcDocumentRepo;
     const pending = yield* repo
-      .listPendingForUser(userAndSession.user.id, role)
+      .listPendingForUser(userAndSession.user.id, role, locale)
       .pipe((errors) => mapTcRepoError(errors));
     return pending.map(toPublishedTcResponse);
   });
@@ -139,18 +157,21 @@ export const acceptTcsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers)
         const document = yield* repo
           .findActiveBySlug(acceptance.slug)
           .pipe((errors) => mapTcRepoError(errors));
-        const latest = yield* repo
-          .findLatestPublished(document.id)
+        // Either locale's text of the current revision may be accepted; the
+        // acceptance records the row that was actually read (U7).
+        const versions = yield* repo
+          .listVersions(document.id)
           .pipe((errors) => mapTcRepoError(errors));
-        if (latest.id !== acceptance.versionId) {
+        const accepted = currentRevisionRow(versions, acceptance.versionId);
+        if (accepted === null) {
           return yield* Effect.fail(new TcVersionStaleError({ slug: document.slug }));
         }
 
         return {
           documentId: document.id,
           slug: document.slug,
-          versionId: latest.id,
-          version: latest.version
+          versionId: accepted.id,
+          version: accepted.version
         };
       })
     );
@@ -234,39 +255,67 @@ export const deleteTcDocumentRouteProgram = (headers: Headers, id: string) =>
     return toTcDocumentResponse(document);
   });
 
-export const createTcDraftRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers, id: string) =>
+/** The draft endpoints act on one locale's draft, `?locale=` (default
+ * English, the authoritative text). */
+export const createTcDraftRouteProgram = (
+  c: HonoContext<HonoEnv>,
+  headers: Headers,
+  id: string,
+  localeQuery?: string
+) =>
   Effect.gen(function* () {
     const rawBody = yield* parseJsonBody(c, tcJsonError);
     const input = yield* validateTcDraftInput(rawBody);
+    const locale = yield* validateTcLocaleQuery(localeQuery);
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { tcs: ['write'] })(authenticated);
     const repo = yield* TcDocumentRepo;
     const versions = yield* repo.listVersions(id).pipe((errors) => mapTcRepoError(errors));
-    if (versions.some((version) => version.publishedAt === null)) {
+    if (versions.some((version) => version.locale === locale && version.publishedAt === null)) {
       return yield* Effect.fail(new TcDraftExistsError({ documentId: id }));
     }
+    const version = nextDraftVersion(versions, locale);
+    if (version === null) {
+      return yield* Effect.fail(new TcTranslationBaseMissingError({ documentId: id }));
+    }
+    if (versions.some((row) => row.locale === locale && row.version === version)) {
+      return yield* Effect.fail(new TcTranslationExistsError({ documentId: id, version }));
+    }
 
-    const draft = yield* repo.createDraft(id, input).pipe((errors) => mapTcRepoError(errors));
+    const draft = yield* repo
+      .createDraft(id, { ...input, locale, version })
+      .pipe((errors) => mapTcRepoError(errors));
     return toTcVersionResponse(draft);
   });
 
-export const updateTcDraftRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers, id: string) =>
+export const updateTcDraftRouteProgram = (
+  c: HonoContext<HonoEnv>,
+  headers: Headers,
+  id: string,
+  localeQuery?: string
+) =>
   Effect.gen(function* () {
     const rawBody = yield* parseJsonBody(c, tcJsonError);
     const input = yield* validateTcDraftUpdateInput(rawBody);
+    const locale = yield* validateTcLocaleQuery(localeQuery);
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { tcs: ['write'] })(authenticated);
     const repo = yield* TcDocumentRepo;
-    const draft = yield* repo.updateDraft(id, input).pipe((errors) => mapTcRepoError(errors));
+    const draft = yield* repo
+      .updateDraft(id, input, locale)
+      .pipe((errors) => mapTcRepoError(errors));
     return toTcVersionResponse(draft);
   });
 
-export const publishTcDraftRouteProgram = (headers: Headers, id: string) =>
+export const publishTcDraftRouteProgram = (headers: Headers, id: string, localeQuery?: string) =>
   Effect.gen(function* () {
+    const locale = yield* validateTcLocaleQuery(localeQuery);
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { tcs: ['write'] })(authenticated);
     const repo = yield* TcDocumentRepo;
-    const published = yield* repo.publishDraft(id).pipe((errors) => mapTcRepoError(errors));
+    const published = yield* repo
+      .publishDraft(id, locale)
+      .pipe((errors) => mapTcRepoError(errors));
     return toTcVersionResponse(published);
   });
 
@@ -335,6 +384,26 @@ const tcErrorToResponse = (c: HonoContext<HonoEnv>, error: TcRouteError) => {
         },
         409
       );
+    case 'TcTranslationBaseMissingError':
+      return c.json(
+        {
+          error: {
+            code: 'TC_TRANSLATION_BASE_MISSING' as const,
+            message: 'Write the English version first — a translation needs a text to translate.'
+          }
+        },
+        422
+      );
+    case 'TcTranslationExistsError':
+      return c.json(
+        {
+          error: {
+            code: 'TC_TRANSLATION_EXISTS' as const,
+            message: `Version ${error.version} is already published in this language.`
+          }
+        },
+        409
+      );
     case 'TcRepoError':
       return c.json(
         {
@@ -369,14 +438,18 @@ const exitToResponse = <T>(c: HonoContext<HonoEnv>, exit: Exit.Exit<T, TcRouteEr
 export async function listPublishedTcsHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const role = c.req.param('role') ?? '';
-  const exit = await runtime.runPromiseExit(listPublishedTcsRouteProgram(role));
+  const exit = await runtime.runPromiseExit(
+    listPublishedTcsRouteProgram(role, toTcLocale(c.get('language')))
+  );
   return exitToResponse(c, exit);
 }
 
 export async function listPendingTcsHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
-  const exit = await runtime.runPromiseExit(listPendingTcsRouteProgram(headers));
+  const exit = await runtime.runPromiseExit(
+    listPendingTcsRouteProgram(headers, toTcLocale(c.get('language')))
+  );
   return exitToResponse(c, exit);
 }
 
@@ -429,7 +502,9 @@ export async function createTcDraftHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
   const id = c.req.param('id') ?? '';
-  const exit = await runtime.runPromiseExit(createTcDraftRouteProgram(c, headers, id));
+  const exit = await runtime.runPromiseExit(
+    createTcDraftRouteProgram(c, headers, id, c.req.query('locale'))
+  );
   return exitToResponse(c, exit);
 }
 
@@ -437,7 +512,9 @@ export async function updateTcDraftHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
   const id = c.req.param('id') ?? '';
-  const exit = await runtime.runPromiseExit(updateTcDraftRouteProgram(c, headers, id));
+  const exit = await runtime.runPromiseExit(
+    updateTcDraftRouteProgram(c, headers, id, c.req.query('locale'))
+  );
   return exitToResponse(c, exit);
 }
 
@@ -445,6 +522,8 @@ export async function publishTcDraftHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
   const id = c.req.param('id') ?? '';
-  const exit = await runtime.runPromiseExit(publishTcDraftRouteProgram(headers, id));
+  const exit = await runtime.runPromiseExit(
+    publishTcDraftRouteProgram(headers, id, c.req.query('locale'))
+  );
   return exitToResponse(c, exit);
 }

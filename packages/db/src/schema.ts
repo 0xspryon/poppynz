@@ -1675,7 +1675,16 @@ export const tcDocument = appDb.table(
 
 // Immutable once published (publishedAt set): users accepted that exact text,
 // so published rows are never updated or deleted. publishedAt null = the
-// document's single open draft, enforced by the partial unique index.
+// document's single open draft per locale, enforced by the partial unique
+// index.
+//
+// Per-locale versions (U7): English is the authoritative text and numbers the
+// revisions. A translation is a row in another locale carrying the SAME
+// version number as the English revision it translates; it is optional and
+// written by a person (legal text is never machine-translated). Readers in a
+// locale see the translation of the current revision when one is published,
+// otherwise the English text with a notice. Accepting either row accepts
+// that revision.
 export const tcDocumentVersion = appDb.table(
   'tc_document_versions',
   {
@@ -1685,6 +1694,7 @@ export const tcDocumentVersion = appDb.table(
     documentId: uuid('document_id')
       .notNull()
       .references(() => tcDocument.id, { onDelete: 'cascade' }),
+    locale: text('locale').default('en').notNull(),
     version: integer('version').notNull(),
     description: text('description').notNull(),
     content: text('content').notNull(),
@@ -1698,13 +1708,15 @@ export const tcDocumentVersion = appDb.table(
   },
   (table) => [
     index('tc_document_versions_document_id_idx').on(table.documentId),
-    uniqueIndex('tc_document_versions_document_id_version_uidx').on(
+    uniqueIndex('tc_document_versions_document_id_locale_version_uidx').on(
       table.documentId,
+      table.locale,
       table.version
     ),
-    uniqueIndex('tc_document_versions_document_id_draft_uidx')
-      .on(table.documentId)
-      .where(sql`${table.publishedAt} is null`)
+    uniqueIndex('tc_document_versions_document_id_locale_draft_uidx')
+      .on(table.documentId, table.locale)
+      .where(sql`${table.publishedAt} is null`),
+    check('tc_document_versions_locale_check', sql`${table.locale} in ('en', 'fr')`)
   ]
 );
 

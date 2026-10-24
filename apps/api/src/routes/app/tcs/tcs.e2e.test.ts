@@ -23,6 +23,7 @@ import {
   type TcDraftUpdateInput,
   type User
 } from '@repo/db';
+import { displayedVersion, type TcLocale } from '@repo/db';
 import { makeGooglePlacesTest } from '@repo/google';
 import { Effect, Layer, ManagedRuntime } from 'effect';
 import { makeObjectStorageTest } from '@repo/objs';
@@ -78,6 +79,7 @@ const makeDoc = (overrides: Partial<TcDocument> = {}): TcDocument => ({
 const makeVersion = (overrides: Partial<TcDocumentVersion> = {}): TcDocumentVersion => ({
   id: `version-${crypto.randomUUID()}`,
   documentId: 'doc-1',
+  locale: 'en',
   version: 1,
   description: 'Initial version',
   content: '# Terms',
@@ -94,14 +96,15 @@ const makeInMemoryTcRepo = (
   acceptances: Array<TcDocumentAcceptance>
 ) => {
   const activeDocuments = () => documents.filter((document) => document.deletedAt === null);
-  const publishedForRole = (role: TcAudienceRole) =>
+  const publishedForRole = (role: TcAudienceRole, locale: TcLocale = 'en') =>
     activeDocuments()
       .filter((document) => document.appliesToRole === role || document.appliesToRole === 'all')
       .flatMap((document) => {
-        const latest = versions
-          .filter((version) => version.documentId === document.id && version.publishedAt !== null)
-          .sort((a, b) => b.version - a.version)[0];
-        return latest ? [{ document, version: latest }] : [];
+        const shown = displayedVersion(
+          versions.filter((version) => version.documentId === document.id),
+          locale
+        );
+        return shown ? [{ document, ...shown }] : [];
       });
 
   return {
@@ -147,34 +150,39 @@ const makeInMemoryTcRepo = (
           .filter((version) => documentIds.includes(version.documentId))
           .sort((a, b) => b.version - a.version)
       ),
-    createDraft: (documentId: string, input: TcDraftInput) => {
+    createDraft: (
+      documentId: string,
+      input: TcDraftInput & { locale: TcLocale; version: number }
+    ) => {
       const document = activeDocuments().find((candidate) => candidate.id === documentId);
       if (!document)
         return Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: documentId }));
-      const latest = versions
-        .filter((version) => version.documentId === documentId)
-        .sort((a, b) => b.version - a.version)[0];
       const draft = makeVersion({
         ...input,
         documentId,
-        version: (latest?.version ?? 0) + 1,
         publishedAt: null
       });
       versions.push(draft);
       return Effect.succeed(draft);
     },
-    updateDraft: (documentId: string, input: TcDraftUpdateInput) => {
+    updateDraft: (documentId: string, input: TcDraftUpdateInput, locale: TcLocale = 'en') => {
       const draft = versions.find(
-        (version) => version.documentId === documentId && version.publishedAt === null
+        (version) =>
+          version.documentId === documentId &&
+          version.locale === locale &&
+          version.publishedAt === null
       );
       if (!draft)
         return Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value: documentId }));
       Object.assign(draft, input);
       return Effect.succeed(draft);
     },
-    publishDraft: (documentId: string) => {
+    publishDraft: (documentId: string, locale: TcLocale = 'en') => {
       const draft = versions.find(
-        (version) => version.documentId === documentId && version.publishedAt === null
+        (version) =>
+          version.documentId === documentId &&
+          version.locale === locale &&
+          version.publishedAt === null
       );
       if (!draft)
         return Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value: documentId }));
@@ -189,14 +197,17 @@ const makeInMemoryTcRepo = (
         ? Effect.succeed(latest)
         : Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value: documentId }));
     },
-    listPublishedForRole: (role: TcAudienceRole) => Effect.succeed(publishedForRole(role)),
-    listPendingForUser: (userId: string, role: TcAudienceRole) =>
+    listPublishedForRole: (role: TcAudienceRole, locale?: TcLocale) =>
+      Effect.succeed(publishedForRole(role, locale)),
+    listPendingForUser: (userId: string, role: TcAudienceRole, locale?: TcLocale) =>
       Effect.succeed(
-        publishedForRole(role).filter(
+        publishedForRole(role, locale).filter(
           (entry) =>
             !acceptances.some(
               (acceptance) =>
-                acceptance.userId === userId && acceptance.versionId === entry.version.id
+                acceptance.userId === userId &&
+                acceptance.documentId === entry.document.id &&
+                acceptance.version === entry.version.version
             )
         )
       ),

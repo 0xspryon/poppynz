@@ -14,6 +14,7 @@ import {
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
 import { tcDocument, tcDocumentAcceptance, tcDocumentVersion } from '../schema';
+import { displayedVersion, TC_SOURCE_LOCALE, type TcLocale } from '../tc-locale';
 
 export type TcDocument = InferSelectModel<typeof tcDocument>;
 export type TcDocumentVersion = InferSelectModel<typeof tcDocumentVersion>;
@@ -32,8 +33,14 @@ export type TcAcceptanceInput = Pick<
   InferInsertModel<typeof tcDocumentAcceptance>,
   'documentId' | 'slug' | 'versionId' | 'version'
 >;
-/** A live document paired with its latest published version. */
-export type TcPublishedDocument = { document: TcDocument; version: TcDocumentVersion };
+/** A live document paired with the published version a reader is shown:
+ * the translation of the current revision in their locale when there is
+ * one, else the English text (`fallback`). */
+export type TcPublishedDocument = {
+  document: TcDocument;
+  version: TcDocumentVersion;
+  fallback: boolean;
+};
 export type TcAudienceRole = Exclude<TcDocument['appliesToRole'], 'all'>;
 
 export class TcDocumentRepo extends Context.Tag('@repo/db/TcDocumentRepo')<
@@ -54,30 +61,37 @@ export class TcDocumentRepo extends Context.Tag('@repo/db/TcDocumentRepo')<
     listVersionsByDocumentIds: (
       documentIds: Array<string>
     ) => Effect.Effect<Array<TcDocumentVersion>, SqlError>;
-    /** Opens the document's single draft; version is assigned here (latest + 1). */
+    /** Opens the document's single draft in `locale` at `version` (see
+     * nextDraftVersion — the caller decides the number). */
     createDraft: (
       documentId: string,
-      input: TcDraftInput
+      input: TcDraftInput & { locale: TcLocale; version: number }
     ) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
     /** Edits the open draft only — published versions are immutable by design. */
     updateDraft: (
       documentId: string,
-      input: TcDraftUpdateInput
+      input: TcDraftUpdateInput,
+      locale?: TcLocale
     ) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
     publishDraft: (
-      documentId: string
+      documentId: string,
+      locale?: TcLocale
     ) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
     findLatestPublished: (
       documentId: string
     ) => Effect.Effect<TcDocumentVersion, SqlError | DBNotFoundError>;
-    /** Live documents whose audience matches `role` (or "all"), latest published version each. */
+    /** Live documents whose audience matches `role` (or "all"), each with
+     * the current revision as shown in `locale`. */
     listPublishedForRole: (
-      role: TcAudienceRole
+      role: TcAudienceRole,
+      locale?: TcLocale
     ) => Effect.Effect<Array<TcPublishedDocument>, SqlError>;
-    /** Subset of listPublishedForRole the user has not accepted at the latest version. */
+    /** Subset of listPublishedForRole whose current revision the user has
+     * not accepted in any locale. */
     listPendingForUser: (
       userId: string,
-      role: TcAudienceRole
+      role: TcAudienceRole,
+      locale?: TcLocale
     ) => Effect.Effect<Array<TcPublishedDocument>, SqlError>;
     listAcceptancesForUser: (
       userId: string
@@ -108,7 +122,7 @@ export const TcDocumentRepoLive = Layer.effect(
 
       return Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value }));
     };
-    const listPublishedForRole = (role: TcAudienceRole) =>
+    const listPublishedForRole = (role: TcAudienceRole, locale: TcLocale = TC_SOURCE_LOCALE) =>
       Effect.gen(function* () {
         const documents = yield* db
           .select()
@@ -138,8 +152,11 @@ export const TcDocumentRepoLive = Layer.effect(
           .orderBy(desc(tcDocumentVersion.version));
 
         return documents.flatMap((document) => {
-          const latest = versions.find((version) => version.documentId === document.id);
-          return latest ? [{ document, version: latest }] : [];
+          const shown = displayedVersion(
+            versions.filter((version) => version.documentId === document.id),
+            locale
+          );
+          return shown ? [{ document, ...shown }] : [];
         });
       });
 
@@ -201,38 +218,36 @@ export const TcDocumentRepoLive = Layer.effect(
             .where(and(eq(tcDocument.id, documentId), isNull(tcDocument.deletedAt)))
             .limit(1)
             .pipe(Effect.flatMap(documentOrNotFound(documentId)));
-          const latest = yield* db
-            .select()
-            .from(tcDocumentVersion)
-            .where(eq(tcDocumentVersion.documentId, document.id))
-            .orderBy(desc(tcDocumentVersion.version))
-            .limit(1);
 
           return yield* db
             .insert(tcDocumentVersion)
-            .values({
-              documentId: document.id,
-              version: (latest[0]?.version ?? 0) + 1,
-              ...input
-            })
+            .values({ documentId: document.id, ...input })
             .returning()
             .pipe(Effect.map((rows) => rows[0]));
         }),
-      updateDraft: (documentId, input) =>
+      updateDraft: (documentId, input, locale = TC_SOURCE_LOCALE) =>
         db
           .update(tcDocumentVersion)
           .set({ ...input, updatedAt: new Date() })
           .where(
-            and(eq(tcDocumentVersion.documentId, documentId), isNull(tcDocumentVersion.publishedAt))
+            and(
+              eq(tcDocumentVersion.documentId, documentId),
+              eq(tcDocumentVersion.locale, locale),
+              isNull(tcDocumentVersion.publishedAt)
+            )
           )
           .returning()
           .pipe(Effect.flatMap(versionOrNotFound(documentId))),
-      publishDraft: (documentId) =>
+      publishDraft: (documentId, locale = TC_SOURCE_LOCALE) =>
         db
           .update(tcDocumentVersion)
           .set({ publishedAt: new Date(), updatedAt: new Date() })
           .where(
-            and(eq(tcDocumentVersion.documentId, documentId), isNull(tcDocumentVersion.publishedAt))
+            and(
+              eq(tcDocumentVersion.documentId, documentId),
+              eq(tcDocumentVersion.locale, locale),
+              isNull(tcDocumentVersion.publishedAt)
+            )
           )
           .returning()
           .pipe(Effect.flatMap(versionOrNotFound(documentId))),
@@ -243,6 +258,7 @@ export const TcDocumentRepoLive = Layer.effect(
           .where(
             and(
               eq(tcDocumentVersion.documentId, documentId),
+              eq(tcDocumentVersion.locale, TC_SOURCE_LOCALE),
               isNotNull(tcDocumentVersion.publishedAt)
             )
           )
@@ -250,13 +266,15 @@ export const TcDocumentRepoLive = Layer.effect(
           .limit(1)
           .pipe(Effect.flatMap(versionOrNotFound(documentId))),
       listPublishedForRole,
-      listPendingForUser: (userId, role) =>
+      listPendingForUser: (userId, role, locale = TC_SOURCE_LOCALE) =>
         Effect.gen(function* () {
-          const published = yield* listPublishedForRole(role);
+          const published = yield* listPublishedForRole(role, locale);
           if (published.length === 0) {
             return [];
           }
 
+          // A revision accepted in either locale is accepted: the row's
+          // version number is the revision, whichever text was read.
           const accepted = yield* db
             .select()
             .from(tcDocumentAcceptance)
@@ -264,14 +282,18 @@ export const TcDocumentRepoLive = Layer.effect(
               and(
                 eq(tcDocumentAcceptance.userId, userId),
                 inArray(
-                  tcDocumentAcceptance.versionId,
-                  published.map((entry) => entry.version.id)
+                  tcDocumentAcceptance.documentId,
+                  published.map((entry) => entry.document.id)
                 )
               )
             );
-          const acceptedVersionIds = new Set(accepted.map((row) => row.versionId));
+          const acceptedRevisions = new Set(
+            accepted.map((row) => `${row.documentId}:${row.version}`)
+          );
 
-          return published.filter((entry) => !acceptedVersionIds.has(entry.version.id));
+          return published.filter(
+            (entry) => !acceptedRevisions.has(`${entry.document.id}:${entry.version.version}`)
+          );
         }),
       listAcceptancesForUser: (userId) =>
         db

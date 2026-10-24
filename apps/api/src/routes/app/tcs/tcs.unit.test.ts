@@ -11,6 +11,7 @@ import {
   type TcDocumentVersion,
   type User
 } from '@repo/db';
+import { displayedVersion, type TcLocale } from '@repo/db';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
@@ -71,6 +72,7 @@ const doc = (overrides: Partial<TcDocument> = {}): TcDocument => ({
 const version = (overrides: Partial<TcDocumentVersion> = {}): TcDocumentVersion => ({
   id: 'version-1',
   documentId: 'doc-1',
+  locale: 'en',
   version: 1,
   description: 'Initial version',
   content: '# Terms',
@@ -108,16 +110,18 @@ const makeLayer = (
   const acceptances = options.acceptances ?? [];
 
   const activeDocuments = () => documents.filter((candidate) => candidate.deletedAt === null);
-  const publishedForRole = (role: 'family' | 'service-provider' | 'admin') =>
+  const publishedForRole = (
+    role: 'family' | 'service-provider' | 'admin',
+    locale: TcLocale = 'en'
+  ) =>
     activeDocuments()
       .filter((candidate) => candidate.appliesToRole === role || candidate.appliesToRole === 'all')
       .flatMap((document) => {
-        const latest = versions
-          .filter(
-            (candidate) => candidate.documentId === document.id && candidate.publishedAt !== null
-          )
-          .sort((a, b) => b.version - a.version)[0];
-        return latest ? [{ document, version: latest }] : [];
+        const shown = displayedVersion(
+          versions.filter((candidate) => candidate.documentId === document.id),
+          locale
+        );
+        return shown ? [{ document, ...shown }] : [];
       });
 
   return Layer.mergeAll(
@@ -187,22 +191,21 @@ const makeLayer = (
         const document = activeDocuments().find((candidate) => candidate.id === documentId);
         if (!document)
           return Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: documentId }));
-        const latest = versions
-          .filter((candidate) => candidate.documentId === documentId)
-          .sort((a, b) => b.version - a.version)[0];
         const draft = version({
           ...input,
-          id: `version-draft-${documentId}`,
+          id: `version-draft-${input.locale}-${documentId}`,
           documentId,
-          version: (latest?.version ?? 0) + 1,
           publishedAt: null
         });
         versions.push(draft);
         return Effect.succeed(draft);
       },
-      updateDraft: (documentId, input) => {
+      updateDraft: (documentId, input, locale = 'en') => {
         const draft = versions.find(
-          (candidate) => candidate.documentId === documentId && candidate.publishedAt === null
+          (candidate) =>
+            candidate.documentId === documentId &&
+            candidate.locale === locale &&
+            candidate.publishedAt === null
         );
         if (!draft)
           return Effect.fail(
@@ -211,9 +214,12 @@ const makeLayer = (
         Object.assign(draft, input);
         return Effect.succeed(draft);
       },
-      publishDraft: (documentId) => {
+      publishDraft: (documentId, locale = 'en') => {
         const draft = versions.find(
-          (candidate) => candidate.documentId === documentId && candidate.publishedAt === null
+          (candidate) =>
+            candidate.documentId === documentId &&
+            candidate.locale === locale &&
+            candidate.publishedAt === null
         );
         if (!draft)
           return Effect.fail(
@@ -232,14 +238,16 @@ const makeLayer = (
           ? Effect.succeed(latest)
           : Effect.fail(new DBNotFoundError({ entity: 'tcDocumentVersion', value: documentId }));
       },
-      listPublishedForRole: (role) => Effect.succeed(publishedForRole(role)),
-      listPendingForUser: (userId, role) =>
+      listPublishedForRole: (role, locale) => Effect.succeed(publishedForRole(role, locale)),
+      listPendingForUser: (userId, role, locale) =>
         Effect.succeed(
-          publishedForRole(role).filter(
+          publishedForRole(role, locale).filter(
             (entry) =>
               !acceptances.some(
                 (acceptance) =>
-                  acceptance.userId === userId && acceptance.versionId === entry.version.id
+                  acceptance.userId === userId &&
+                  acceptance.documentId === entry.document.id &&
+                  acceptance.version === entry.version.version
               )
           )
         ),
@@ -521,5 +529,134 @@ describe('tcs route programs', () => {
       )
     );
     expect(getFailure(exit)._tag).toBe('TcRepoError');
+  });
+
+  describe('per-locale versions (U7)', () => {
+    const french = (overrides: Partial<TcDocumentVersion> = {}) =>
+      version({
+        id: 'version-1-fr',
+        locale: 'fr',
+        content: '# Conditions',
+        checkboxLabel: "J'accepte les conditions.",
+        ...overrides
+      });
+
+    it('shows French readers the English text, flagged, until a translation is published', async () => {
+      const english = await Effect.runPromise(
+        listPublishedTcsRouteProgram('family', 'fr').pipe(Effect.provide(makeLayer()))
+      );
+      expect(english[0]).toMatchObject({ versionId: 'version-1', locale: 'en', fallback: true });
+
+      const translated = await Effect.runPromise(
+        listPublishedTcsRouteProgram('family', 'fr').pipe(
+          Effect.provide(makeLayer({ versions: [version(), french()] }))
+        )
+      );
+      expect(translated[0]).toMatchObject({
+        versionId: 'version-1-fr',
+        locale: 'fr',
+        fallback: false,
+        checkboxLabel: "J'accepte les conditions."
+      });
+
+      const englishReader = await Effect.runPromise(
+        listPublishedTcsRouteProgram('family', 'en').pipe(
+          Effect.provide(makeLayer({ versions: [version(), french()] }))
+        )
+      );
+      expect(englishReader[0]).toMatchObject({ versionId: 'version-1', fallback: false });
+    });
+
+    it('accepts the French text of the current revision and counts it for both locales', async () => {
+      const acceptances: Array<TcDocumentAcceptance> = [];
+      const versions = [version(), french()];
+      await Effect.runPromise(
+        acceptTcsRouteProgram(
+          contextWithJson({
+            acceptances: [{ slug: 'terms_of_service', versionId: 'version-1-fr' }]
+          }),
+          new Headers()
+        ).pipe(Effect.provide(makeLayer({ versions, acceptances })))
+      );
+      expect(acceptances[0]).toMatchObject({ versionId: 'version-1-fr', version: 1 });
+
+      for (const locale of ['en', 'fr'] as const) {
+        const pending = await Effect.runPromise(
+          listPendingTcsRouteProgram(new Headers(), locale).pipe(
+            Effect.provide(makeLayer({ versions, acceptances }))
+          )
+        );
+        expect(pending).toEqual([]);
+      }
+    });
+
+    it('refuses accepting a translation of an older revision', async () => {
+      const versions = [version(), french(), version({ id: 'version-2', version: 2 })];
+      const exit = await Effect.runPromise(
+        acceptTcsRouteProgram(
+          contextWithJson({
+            acceptances: [{ slug: 'terms_of_service', versionId: 'version-1-fr' }]
+          }),
+          new Headers()
+        ).pipe(Effect.provide(makeLayer({ versions })), Effect.exit)
+      );
+      expect(getFailure(exit)._tag).toBe('TcVersionStaleError');
+    });
+
+    it('opens a French draft as a translation of the latest English revision', async () => {
+      const versions = [version()];
+      const draft = await Effect.runPromise(
+        createTcDraftRouteProgram(
+          contextWithJson({ description: 'Traduction', content: '# Conditions', checkboxLabel: "J'accepte." }),
+          new Headers(),
+          'doc-1',
+          'fr'
+        ).pipe(Effect.provide(makeLayer({ versions })))
+      );
+      expect(draft).toMatchObject({ locale: 'fr', version: 1, publishedAt: null });
+
+      // The French draft doesn't block an English one, and is published on its own.
+      const english = await Effect.runPromise(
+        createTcDraftRouteProgram(
+          contextWithJson({ description: 'v2', content: '# v2', checkboxLabel: 'I agree.' }),
+          new Headers(),
+          'doc-1'
+        ).pipe(Effect.provide(makeLayer({ versions })))
+      );
+      expect(english).toMatchObject({ locale: 'en', version: 2 });
+      const published = await Effect.runPromise(
+        publishTcDraftRouteProgram(new Headers(), 'doc-1', 'fr').pipe(
+          Effect.provide(makeLayer({ versions }))
+        )
+      );
+      expect(published).toMatchObject({ locale: 'fr', version: 1 });
+    });
+
+    it('refuses a translation with nothing to translate, or of a revision already translated', async () => {
+      const draftInput = { description: 'Traduction', content: '# C', checkboxLabel: "J'accepte." };
+      const noBase = await Effect.runPromise(
+        createTcDraftRouteProgram(contextWithJson(draftInput), new Headers(), 'doc-1', 'fr').pipe(
+          Effect.provide(makeLayer({ versions: [] })),
+          Effect.exit
+        )
+      );
+      expect(getFailure(noBase)._tag).toBe('TcTranslationBaseMissingError');
+
+      const exists = await Effect.runPromise(
+        createTcDraftRouteProgram(contextWithJson(draftInput), new Headers(), 'doc-1', 'fr').pipe(
+          Effect.provide(makeLayer({ versions: [version(), french()] })),
+          Effect.exit
+        )
+      );
+      expect(getFailure(exists)).toMatchObject({ _tag: 'TcTranslationExistsError', version: 1 });
+
+      const badLocale = await Effect.runPromise(
+        publishTcDraftRouteProgram(new Headers(), 'doc-1', 'de').pipe(
+          Effect.provide(makeLayer()),
+          Effect.exit
+        )
+      );
+      expect(getFailure(badLocale)._tag).toBe('RequestValidationError');
+    });
   });
 });

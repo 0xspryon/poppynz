@@ -9,8 +9,10 @@
 	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = m.common_error_generic();
-	// Typical market range shown under the rate field.
-	const typicalRange = rateRangeLabel(1800, 3000);
+	/** Top of the typical market range shown under the rate field. */
+	const TYPICAL_TOP_CENTS = 3000;
+	/** Until the API answers, the platform base rate custom services start at. */
+	const DEFAULT_BASE_CENTS = 2000;
 
 	let name = $state('');
 	let description = $state('');
@@ -19,6 +21,12 @@
 	let errorMessage = $state('');
 	// Custom services can't go below the platform base rate (UAT #34).
 	let baseRateCents = $state<number | null>(null);
+	// U5: the range never starts below the base rate a custom service can't
+	// undercut (it used to say $18–$30/hr beside a $20 minimum).
+	const typicalRange = $derived.by(() => {
+		const floor = baseRateCents ?? DEFAULT_BASE_CENTS;
+		return rateRangeLabel(floor, Math.max(TYPICAL_TOP_CENTS, floor + 1000));
+	});
 
 	onMount(() => {
 		void listServicesOffered().then((result) => {

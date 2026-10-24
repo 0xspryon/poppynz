@@ -11,6 +11,7 @@ import {
   type User
 } from '@repo/db';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
+import { makeProviderSearchQueueTest } from '@repo/queue';
 import { describe, expect, it } from 'vitest';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
@@ -106,6 +107,7 @@ const makeLayer = (
       isLive?: boolean | null;
     }) => void;
     onUpdate?: (id: string, input: Record<string, unknown>) => void;
+    reindexed?: Array<string>;
   } = {}
 ) => {
   const currentUser = user();
@@ -113,6 +115,13 @@ const makeLayer = (
   const items = options.items ?? [item()];
   const documentTypes = options.documentTypes ?? [documentType()];
   return Layer.mergeAll(
+    makeProviderSearchQueueTest({
+      enqueueReconcile: () => Effect.die('not used'),
+      enqueueReindex: () => {
+        options.reindexed?.push('reindex');
+        return Effect.succeed({ id: 'job-1' } as never);
+      }
+    }),
     makeKycDocumentTypeRepoTest({
       listActive: () => Effect.succeed(documentTypes),
       findActiveById: (id) => {
@@ -359,5 +368,27 @@ describe('service catalogue route programs', () => {
       )
     );
     expect(updates).toEqual([{ requiredDocumentTypeId: null }]);
+  });
+
+  it('re-indexes search when the credential requirement changes, not otherwise (R11)', async () => {
+    const changed: Array<string> = [];
+    await Effect.runPromise(
+      updateServiceCatalogueItemRouteProgram(
+        contextWithJson({ requiredDocumentTypeId: documentType().id }),
+        new Headers(),
+        'item-1'
+      ).pipe(Effect.provide(makeLayer({ reindexed: changed })))
+    );
+    expect(changed).toEqual(['reindex']);
+
+    const unchanged: Array<string> = [];
+    await Effect.runPromise(
+      updateServiceCatalogueItemRouteProgram(
+        contextWithJson({ name: 'Babysitting (evenings)' }),
+        new Headers(),
+        'item-1'
+      ).pipe(Effect.provide(makeLayer({ reindexed: unchanged })))
+    );
+    expect(unchanged).toEqual([]);
   });
 });

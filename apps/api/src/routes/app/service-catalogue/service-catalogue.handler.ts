@@ -5,6 +5,7 @@ import {
   ServiceCatalogueRepo,
   type ServiceCatalogueItem
 } from '@repo/db';
+import { ProviderSearchQueue } from '@repo/queue';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
@@ -128,9 +129,31 @@ export const updateServiceCatalogueItemRouteProgram = (
     yield* requirePermissions(headers, { serviceCatalogue: ['write'] })(authenticated);
     yield* ensureCredentialType(input.requiredDocumentTypeId);
     const repo = yield* ServiceCatalogueRepo;
+    const before = yield* repo.findById(id).pipe((errors) => mapCatalogueRepoError(errors));
     const item = yield* repo.update(id, input).pipe((errors) => mapCatalogueRepoError(errors));
+    if (item.requiredDocumentTypeId !== before.requiredDocumentTypeId) {
+      yield* scheduleCredentialReindex(id);
+    }
     return toCatalogueItemResponse(item);
   });
+
+/**
+ * A changed credential requirement changes which helpers' listings of this
+ * item are publishable, so the search index is rebuilt (deduplicated by the
+ * queue; credential changes are rare admin edits). Best-effort: the edit is
+ * saved either way, and the next reindex or per-helper reconcile catches up.
+ */
+const scheduleCredentialReindex = (itemId: string) =>
+  ProviderSearchQueue.pipe(
+    Effect.flatMap((queue) => queue.enqueueReindex()),
+    Effect.catchAllCause((cause) =>
+      Effect.logWarning(
+        `[catalogue] reindex after a credential change to ${itemId} was not queued`,
+        cause
+      )
+    ),
+    Effect.asVoid
+  );
 
 export const deleteServiceCatalogueItemRouteProgram = (headers: Headers, id: string) =>
   Effect.gen(function* () {

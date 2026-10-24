@@ -1,12 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import {
-  addDays,
-  dateIn,
-  instantAt,
-  sessionElapsedMinutes,
-  todayIn,
-  zoneLabel
-} from './index';
+import { addDays, dateIn, instantAt, sessionElapsedMinutes, todayIn, zoneLabel } from './index';
 
 const WPG = 'America/Winnipeg';
 
@@ -97,9 +90,9 @@ describe('sessionElapsedMinutes', () => {
 
   it('counts a session starting exactly at the gap', () => {
     // 02:00–05:00 on spring-forward night: 03:00 CDT → 05:00 CDT.
-    expect(
-      sessionElapsedMinutes('2026-03-08', { startMinutes: 120, endMinutes: 300 }, WPG)
-    ).toBe(120);
+    expect(sessionElapsedMinutes('2026-03-08', { startMinutes: 120, endMinutes: 300 }, WPG)).toBe(
+      120
+    );
   });
 
   it('counts a session ending exactly at the gap', () => {
@@ -111,9 +104,9 @@ describe('sessionElapsedMinutes', () => {
 
   it('counts a gap start from the moment the clock resumes', () => {
     // 02:30–05:00 on spring-forward night: 03:00 CDT → 05:00 CDT.
-    expect(
-      sessionElapsedMinutes('2026-03-08', { startMinutes: 150, endMinutes: 300 }, WPG)
-    ).toBe(120);
+    expect(sessionElapsedMinutes('2026-03-08', { startMinutes: 150, endMinutes: 300 }, WPG)).toBe(
+      120
+    );
   });
 
   it('cuts a session at the last-day end time', () => {
@@ -124,11 +117,15 @@ describe('sessionElapsedMinutes', () => {
   it('drops a session that starts at or after the end time', () => {
     const afternoon = { startMinutes: 780, endMinutes: 1020 }; // 13:00–17:00
     expect(sessionElapsedMinutes('2026-07-01', afternoon, WPG, 720)).toBe(0);
-    expect(sessionElapsedMinutes('2026-07-01', { startMinutes: 720, endMinutes: 780 }, WPG, 720)).toBe(0);
+    expect(
+      sessionElapsedMinutes('2026-07-01', { startMinutes: 720, endMinutes: 780 }, WPG, 720)
+    ).toBe(0);
   });
 
   it('ignores a cap later than the session', () => {
-    expect(sessionElapsedMinutes('2026-07-01', { startMinutes: 540, endMinutes: 660 }, WPG, 720)).toBe(120);
+    expect(
+      sessionElapsedMinutes('2026-07-01', { startMinutes: 540, endMinutes: 660 }, WPG, 720)
+    ).toBe(120);
   });
 });
 
@@ -140,5 +137,15 @@ describe('zoneLabel', () => {
     expect(zoneLabel(WPG, 'en-CA', winter)).toBe('Central Time');
     expect(zoneLabel('America/Toronto', 'en-CA', summer)).toBe('Eastern Time');
     expect(zoneLabel('America/Vancouver', 'en-CA', summer)).toBe('Pacific Time');
+  });
+});
+
+describe('daysBetween and weekdayOf', () => {
+  it('counts calendar days and numbers weekdays from Monday', async () => {
+    const { daysBetween, weekdayOf } = await import('./index');
+    expect(daysBetween('2026-10-30', '2026-11-02')).toBe(3);
+    expect(daysBetween('2026-11-02', '2026-10-30')).toBe(-3);
+    expect(weekdayOf('2026-11-02')).toBe(0); // Monday
+    expect(weekdayOf('2026-11-01')).toBe(6); // Sunday
   });
 });

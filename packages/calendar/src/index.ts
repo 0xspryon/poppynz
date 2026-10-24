@@ -28,6 +28,13 @@ export const todayIn = (zone: string, now: Date = new Date()): IsoDate => dateIn
 export const addDays = (date: IsoDate, days: number): IsoDate =>
   Temporal.PlainDate.from(date).add({ days }).toString();
 
+/** Whole days from `from` to `to` (negative when `to` is earlier). */
+export const daysBetween = (from: IsoDate, to: IsoDate): number =>
+  Temporal.PlainDate.from(from).until(Temporal.PlainDate.from(to), { largestUnit: 'days' }).days;
+
+/** 0 = Monday … 6 = Sunday — the contract pattern's weekday numbering. */
+export const weekdayOf = (date: IsoDate): number => Temporal.PlainDate.from(date).dayOfWeek - 1;
+
 /**
  * Wall-clock minutes (0–1440, 1440 = the next midnight) on `date` in `zone` →
  * the UTC instant.

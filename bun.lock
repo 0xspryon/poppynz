@@ -140,6 +140,7 @@
       "name": "@repo/billing",
       "version": "0.0.0",
       "dependencies": {
+        "@repo/calendar": "*",
         "@repo/db": "*",
         "@repo/notify": "*",
         "@repo/payments": "*",

@@ -18,6 +18,10 @@
 		/** Families see base rates as starting prices ("from $20/hr") — helpers
 		 * set their own rates above them (UAT #5). */
 		ratesAreStartingPrices?: boolean;
+		/** Helpers only (U6): their credential per document type, so an item
+		 * that requires one (PSW) says so up front — and can't be picked
+		 * until it is approved. */
+		credentials?: ReadonlyMap<string, { name: string; status: string }> | null;
 		onadd: (ids: Array<string>) => void;
 		oncancel: () => void;
 	}
@@ -29,6 +33,7 @@
 		busy = false,
 		subtitle = m.family_browse_default_subtitle(),
 		ratesAreStartingPrices = false,
+		credentials = null,
 		onadd,
 		oncancel
 	}: Props = $props();
@@ -54,8 +59,31 @@
 		)
 	);
 
+	type CredentialHint = { text: string; blocked: boolean; approved: boolean };
+
+	function credentialHint(item: CatalogueItem): CredentialHint | null {
+		if (!credentials || !item.requiredDocumentTypeId) return null;
+		const entry = credentials.get(item.requiredDocumentTypeId);
+		const document = entry?.name ?? m.provider_services_credential_generic();
+		if (entry?.status === 'approved') {
+			return {
+				text: m.provider_services_credential_approved({ document }),
+				blocked: false,
+				approved: true
+			};
+		}
+		return {
+			text:
+				entry?.status === 'submitted'
+					? m.provider_services_credential_pending({ document })
+					: m.provider_services_credential_needed({ document }),
+			blocked: true,
+			approved: false
+		};
+	}
+
 	function toggle(item: CatalogueItem) {
-		if (linkedIds.has(item.id)) return;
+		if (linkedIds.has(item.id) || credentialHint(item)?.blocked) return;
 		if (selected.has(item.id)) {
 			selected.delete(item.id);
 		} else {
@@ -119,12 +147,13 @@
 				{#each items as item (item.id)}
 					{@const inList = linkedIds.has(item.id)}
 					{@const isSelected = selected.has(item.id)}
+					{@const hint = inList ? null : credentialHint(item)}
 					<button
 						type="button"
 						class="flex w-full items-center gap-3 border-b border-base-300 px-5 py-3 text-left
 							{isSelected ? 'bg-base-200' : ''}"
 						onclick={() => toggle(item)}
-						disabled={inList}
+						disabled={inList || hint?.blocked === true}
 					>
 						<span
 							class="flex size-5 shrink-0 items-center justify-center rounded-full
@@ -143,6 +172,18 @@
 							{#if inList}
 								<span class="ml-2 text-[11px] text-success">
 									{m.family_browse_already_in_list()}
+								</span>
+							{/if}
+							{#if hint}
+								<span
+									class="mt-0.5 flex items-center gap-1 text-[11.5px]
+										{hint.approved ? 'text-success' : 'text-warning'}"
+								>
+									<i
+										class="las {hint.approved ? 'la-check-circle' : 'la-certificate'} text-sm"
+										aria-hidden="true"
+									></i>
+									{hint.text}
 								</span>
 							{/if}
 						</span>

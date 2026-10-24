@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { SvelteMap, SvelteSet } from 'svelte/reactivity';
 	import { listLiveCatalogue, type CatalogueItem } from '$lib/api/service-catalogue';
+	import { getOnboardingState } from '$lib/api/onboarding';
 	import {
 		createServiceOffered,
 		listServicesOffered,
@@ -23,6 +24,9 @@
 	const COMMON_COUNT = 6;
 
 	let catalogue = $state<Array<CatalogueItem>>([]);
+	/** The helper's credentials by document type, for the picker's hints (U6);
+	 * null if they couldn't be loaded — the server still enforces the rule. */
+	let credentials = $state<Map<string, { name: string; status: string }> | null>(null);
 	let services = $state<Array<ServiceOffered>>([]);
 	let maxServices = $state(20);
 	let customBaseRateCents = $state(2000);
@@ -80,6 +84,16 @@
 			listLiveCatalogue(),
 			listServicesOffered()
 		]);
+		void getOnboardingState().then((result) => {
+			credentials = result.ok
+				? new Map(
+						result.data.documents.map((doc) => [
+							doc.documentTypeId,
+							{ name: doc.name, status: doc.status }
+						])
+					)
+				: null;
+		});
 		if (catalogueResult.ok && servicesResult.ok) {
 			catalogue = catalogueResult.data;
 			services = servicesResult.data.services;
@@ -500,6 +514,7 @@
 	open={browseOpen}
 	{catalogue}
 	linkedIds={linkedCatalogueIds}
+	{credentials}
 	busy={browseBusy}
 	onadd={(ids) => void addSelected(ids)}
 	oncancel={() => (browseOpen = false)}

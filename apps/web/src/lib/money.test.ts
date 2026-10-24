@@ -1,5 +1,12 @@
-import { describe, expect, it } from 'vitest';
-import { centsToCompactDollars, centsToDollars, dollarsToCents, rateRangeLabel } from './money';
+import { afterEach, describe, expect, it } from 'vitest';
+import { overwriteGetLocale } from '$lib/paraglide/runtime';
+import {
+	centsToCompactDollars,
+	centsToDollars,
+	dollarsToCents,
+	formatMoney,
+	rateRangeLabel
+} from './money';
 
 describe('centsToDollars', () => {
 	it('formats cents as a two-decimal dollar string', () => {
@@ -40,5 +47,26 @@ describe('dollarsToCents', () => {
 		expect(dollarsToCents('18.999')).toBeNull();
 		expect(dollarsToCents('-5')).toBeNull();
 		expect(dollarsToCents('0')).toBeNull();
+	});
+});
+
+describe('money in French (fr-CA, still CAD)', () => {
+	afterEach(() => overwriteGetLocale(() => 'en'));
+
+	it('formats CAD the Canadian-French way', () => {
+		overwriteGetLocale(() => 'fr');
+		expect(formatMoney(12500)).toBe('125,00 $');
+		expect(centsToCompactDollars(2800)).toBe('28 $');
+		expect(rateRangeLabel(2100, 2100)).toBe('21 $/h');
+		expect(rateRangeLabel(2500, 4000)).toBe('25 $ à 40 $/h');
+	});
+
+	it('formats CAD in English by default', () => {
+		expect(formatMoney(12500)).toBe('$125.00');
+	});
+
+	it('accepts a French decimal comma', () => {
+		expect(dollarsToCents('18,50')).toBe(1850);
+		expect(dollarsToCents('18,50 $')).toBe(1850);
 	});
 });

@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
+import { overwriteGetLocale } from '$lib/paraglide/runtime';
 import {
 	formatCalendarDate,
 	formatDate,
@@ -69,5 +70,23 @@ describe('toDateInputValue', () => {
 	it('uses the local calendar day, not the UTC one', () => {
 		// 11 pm local on Oct 11 is already Oct 12 in UTC west of Greenwich.
 		expect(toDateInputValue(new Date(2027, 9, 11, 23, 30))).toBe('2027-10-11');
+	});
+});
+
+describe('dates in French (fr-CA)', () => {
+	afterEach(() => overwriteGetLocale(() => 'en'));
+
+	it('formats dates, times and relative days in French', () => {
+		overwriteGetLocale(() => 'fr');
+		expect(formatDate('2026-08-04')).toBe('4 août 2026');
+		expect(formatDateTime('2026-08-04T09:48:00')).toBe('4 août 2026, 9 h 48');
+		const now = new Date(2026, 7, 7, 12, 0);
+		expect(relativeDayLabel('2026-08-07T09:00:00', now)).toBe('Aujourd’hui');
+		expect(relativeDayLabel('2026-08-06T23:59:00', now)).toBe('Hier');
+	});
+
+	it('keeps calendar dates free of time-zone shifts (UAT #28)', () => {
+		overwriteGetLocale(() => 'fr');
+		expect(formatCalendarDate('2030-01-15T00:00:00.000Z')).toBe('15 janv. 2030');
 	});
 });

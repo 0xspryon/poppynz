@@ -144,8 +144,10 @@ describe('accountant rates page', () => {
 		await settle();
 		unmount(app);
 
-		expect(toastError).toHaveBeenCalledWith('Another value already starts later.', {
-			title: 'Rate not saved'
-		});
+		// The web's own sentence for the code, not the server's raw message.
+		expect(toastError).toHaveBeenCalledWith(
+			'Another value already starts later in this range. Pick a date after it, or end the new value before it.',
+			{ title: 'Rate not saved' }
+		);
 	});
 });

@@ -3,6 +3,9 @@
 	import {
 		getTaxConfig,
 		supersedeTaxTreatment,
+		taxComponentList,
+		taxPlaceLabel,
+		taxTreatmentLabel,
 		taxWriteErrorText,
 		type TaxComponent,
 		type TaxConfig,
@@ -13,22 +16,14 @@
 	import FrozenChargesNote from '$lib/components/tax/FrozenChargesNote.svelte';
 	import TaxChangeDialog, { type EffectiveDraft } from '$lib/components/tax/TaxChangeDialog.svelte';
 	import TaxStanding from '$lib/components/tax/TaxStanding.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 
 	type Treatment = TaxTreatmentRow['treatment'];
 	type Place = TaxTreatmentRow['placeOfSupply'];
 
-	const TREATMENTS: Record<Treatment, string> = {
-		taxable: 'Taxable',
-		exempt: 'Exempt',
-		zero_rated: 'Zero-rated',
-		out_of_scope: 'Out of scope'
-	};
-	const PLACES: Record<Place, string> = {
-		payer_province: "Payer's province",
-		helper_province: "Helper's province",
-		contract_location: 'Contract location (family)'
-	};
+	const TREATMENTS: Array<Treatment> = ['taxable', 'exempt', 'zero_rated', 'out_of_scope'];
+	const PLACES: Array<Place> = ['payer_province', 'helper_province', 'contract_location'];
 
 	let config = $state<TaxConfig | null>(null);
 	let loadFailed = $state(false);
@@ -46,7 +41,9 @@
 			loadFailed = false;
 		} else {
 			loadFailed = true;
-			toast.error(taxWriteErrorText(result.error), { title: 'Treatments not loaded' });
+			toast.error(taxWriteErrorText(result.error), {
+				title: m.accountant_treatments_load_failed_title()
+			});
 		}
 	}
 
@@ -54,6 +51,19 @@
 
 	const supplyName = (code: string) =>
 		config?.supplyTypes.find((row) => row.code === code)?.name ?? code;
+	const summary = $derived.by(() => {
+		const params = {
+			supply: supplyName(supplyTypeCode),
+			treatment: taxTreatmentLabel(treatment),
+			place: taxPlaceLabel(placeOfSupply).toLowerCase()
+		};
+		return treatment === 'taxable'
+			? m.accountant_treatments_summary_taxable({
+					...params,
+					components: taxComponentList(components)
+				})
+			: m.accountant_treatments_summary(params);
+	});
 	const valid = $derived(treatment !== 'taxable' || components.length > 0);
 
 	function openChange(row: TaxTreatmentRow) {
@@ -77,27 +87,32 @@
 		saving = false;
 		if (result.ok) {
 			dialogOpen = false;
-			toast.success(`${supplyName(supplyTypeCode)} from ${formatDate(draft.effectiveFrom)}.`, {
-				title: 'Treatment saved'
-			});
+			toast.success(
+				m.accountant_treatments_saved_body({
+					supply: supplyName(supplyTypeCode),
+					date: formatDate(draft.effectiveFrom)
+				}),
+				{ title: m.accountant_treatments_saved_title() }
+			);
 			await load();
 		} else {
-			toast.error(taxWriteErrorText(result.error), { title: 'Treatment not saved' });
+			toast.error(taxWriteErrorText(result.error), {
+				title: m.accountant_treatments_not_saved_title()
+			});
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>Supply treatments · Poppynz accountant</title>
+	<title>{m.accountant_treatments_page_title()}</title>
 </svelte:head>
 
 <div class="mb-6">
 	<h1 class="mb-1 font-display text-2xl font-bold text-base-content lg:text-3xl">
-		Supply treatments
+		{m.accountant_treatments_heading()}
 	</h1>
 	<p class="text-sm text-base-content-muted">
-		How each kind of supply is taxed: its treatment, the components that apply and where it is
-		supplied.
+		{m.accountant_treatments_intro()}
 	</p>
 </div>
 
@@ -110,30 +125,30 @@
 		<table class="table">
 			<thead>
 				<tr>
-					<th>Supply</th>
-					<th>Treatment</th>
-					<th>Components</th>
-					<th>Place of supply</th>
-					<th>From</th>
-					<th>Until</th>
-					<th>Status</th>
-					<th><span class="sr-only">Actions</span></th>
+					<th>{m.accountant_col_supply()}</th>
+					<th>{m.accountant_col_treatment()}</th>
+					<th>{m.accountant_col_components()}</th>
+					<th>{m.accountant_col_place()}</th>
+					<th>{m.accountant_col_from()}</th>
+					<th>{m.accountant_col_until()}</th>
+					<th>{m.accountant_col_status()}</th>
+					<th><span class="sr-only">{m.accountant_col_actions()}</span></th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each config.treatments as row (row.id)}
 					<tr>
 						<td>{supplyName(row.supplyTypeCode)}</td>
-						<td>{TREATMENTS[row.treatment]}</td>
-						<td>{row.components.map((value) => value.toUpperCase()).join(', ') || '—'}</td>
-						<td>{PLACES[row.placeOfSupply]}</td>
+						<td>{taxTreatmentLabel(row.treatment)}</td>
+						<td>{taxComponentList(row.components) || '—'}</td>
+						<td>{taxPlaceLabel(row.placeOfSupply)}</td>
 						<td class="whitespace-nowrap">{formatDate(row.effectiveFrom)}</td>
 						<td class="whitespace-nowrap">{row.effectiveTo ? formatDate(row.effectiveTo) : '—'}</td>
 						<td><TaxStanding standing={row.standing} /></td>
 						<td class="text-right">
 							{#if row.standing !== 'ended'}
 								<button type="button" class="btn btn-ghost btn-sm" onclick={() => openChange(row)}>
-									Change
+									{m.accountant_change()}
 								</button>
 							{/if}
 						</td>
@@ -146,37 +161,35 @@
 
 	<TaxChangeDialog
 		open={dialogOpen}
-		title="Change how {supplyName(supplyTypeCode)} is taxed"
+		title={m.accountant_treatments_dialog_title({ supply: supplyName(supplyTypeCode) })}
 		today={config.today}
 		{valid}
-		summary="{supplyName(supplyTypeCode)}: {TREATMENTS[treatment]}{treatment === 'taxable'
-			? ` (${components.map((value) => value.toUpperCase()).join(', ')})`
-			: ''}, {PLACES[placeOfSupply].toLowerCase()}"
+		{summary}
 		busy={saving}
 		onsave={(draft) => void save(draft)}
 		oncancel={() => (dialogOpen = false)}
 	>
 		<div class="grid gap-4 sm:grid-cols-2">
 			<label class="flex flex-col gap-1">
-				<span class="text-sm font-medium text-base-content">Treatment</span>
+				<span class="text-sm font-medium text-base-content">{m.accountant_col_treatment()}</span>
 				<select class="select select-bordered w-full" bind:value={treatment}>
-					{#each Object.entries(TREATMENTS) as [value, label] (value)}
-						<option {value}>{label}</option>
+					{#each TREATMENTS as value (value)}
+						<option {value}>{taxTreatmentLabel(value)}</option>
 					{/each}
 				</select>
 			</label>
 			<label class="flex flex-col gap-1">
-				<span class="text-sm font-medium text-base-content">Place of supply</span>
+				<span class="text-sm font-medium text-base-content">{m.accountant_col_place()}</span>
 				<select class="select select-bordered w-full" bind:value={placeOfSupply}>
-					{#each Object.entries(PLACES) as [value, label] (value)}
-						<option {value}>{label}</option>
+					{#each PLACES as value (value)}
+						<option {value}>{taxPlaceLabel(value)}</option>
 					{/each}
 				</select>
 			</label>
 		</div>
 		<ComponentPicker bind:selected={components} disabled={treatment !== 'taxable'} />
 		{#if treatment === 'taxable' && components.length === 0}
-			<span class="text-xs text-error">A taxable supply needs at least one component.</span>
+			<span class="text-xs text-error">{m.accountant_treatments_components_required()}</span>
 		{/if}
 	</TaxChangeDialog>
 {/if}

@@ -16,6 +16,7 @@
 	 * explicit tick. */
 	import type { Snippet } from 'svelte';
 	import { formatDate } from '$lib/date';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		open: boolean;
@@ -93,7 +94,9 @@
 
 					<div class="grid gap-4 sm:grid-cols-2">
 						<label class="flex flex-col gap-1">
-							<span class="text-sm font-medium text-base-content">Effective from</span>
+							<span class="text-sm font-medium text-base-content"
+								>{m.tax_change_effective_from()}</span
+							>
 							<input
 								type="date"
 								class="input input-bordered w-full"
@@ -103,32 +106,35 @@
 						</label>
 						<label class="flex flex-col gap-1">
 							<span class="text-sm font-medium text-base-content">
-								Until <span class="font-normal text-outline">(optional)</span>
+								{m.tax_change_until()}
+								<span class="font-normal text-outline">{m.tax_change_optional_hint()}</span>
 							</span>
 							<input type="date" class="input input-bordered w-full" bind:value={effectiveTo} />
 							{#if !rangeOk}
-								<span class="text-xs text-error">The end must be after the start.</span>
+								<span class="text-xs text-error">{m.tax_change_range_error()}</span>
 							{/if}
 						</label>
 					</div>
 
 					<label class="flex flex-col gap-1">
-						<span class="text-sm font-medium text-base-content">Reason for the change</span>
+						<span class="text-sm font-medium text-base-content">{m.tax_change_reason_label()}</span>
 						<textarea
 							class="textarea textarea-bordered w-full"
 							rows="2"
 							maxlength="500"
-							placeholder="e.g. Budget 2026: HST rises to 13.5% from 1 January"
+							placeholder={m.tax_change_reason_placeholder()}
 							bind:value={reason}
 							required
 						></textarea>
-						<span class="text-xs text-outline">Kept in the audit log with your name.</span>
+						<span class="text-xs text-outline">{m.tax_change_reason_hint()}</span>
 					</label>
 
 					<div class="modal-action">
-						<button type="button" class="btn btn-ghost" onclick={oncancel}>Cancel</button>
+						<button type="button" class="btn btn-ghost" onclick={oncancel}
+							>{m.common_cancel()}</button
+						>
 						<button type="submit" class="btn btn-primary" disabled={!canReview}>
-							Review change
+							{m.tax_change_review()}
 						</button>
 					</div>
 				</form>
@@ -136,15 +142,19 @@
 				<div class="mt-3 flex flex-col gap-3 text-sm">
 					<p class="font-medium text-base-content">{summary}</p>
 					<p class="text-base-content-muted">
-						From {formatDate(effectiveFrom)}{effectiveTo
-							? ` until ${formatDate(effectiveTo)}`
-							: ''}. The value in force on that date is closed there and kept in the history.
+						{effectiveTo
+							? m.tax_change_period_range({
+									from: formatDate(effectiveFrom),
+									to: formatDate(effectiveTo)
+								})
+							: m.tax_change_period_open({ from: formatDate(effectiveFrom) })}
 					</p>
 					<p class="rounded-md bg-base-200 px-3 py-2 text-base-content-muted">
-						Applies to quotes made from now on. Charges already made keep the tax lines frozen on
-						them and never change.
+						{m.tax_change_applies_note()}
 					</p>
-					<p class="text-base-content-muted">Reason: “{reason.trim()}”</p>
+					<p class="text-base-content-muted">
+						{m.tax_change_reason_quote({ reason: reason.trim() })}
+					</p>
 					{#if isPast}
 						<label class="flex items-start gap-2 rounded-md border border-warning/40 px-3 py-2">
 							<input
@@ -153,7 +163,7 @@
 								bind:checked={confirmPast}
 							/>
 							<span class="text-base-content">
-								{formatDate(effectiveFrom)} is already past. I confirm the change applies from that date.
+								{m.tax_change_confirm_past({ date: formatDate(effectiveFrom) })}
 							</span>
 						</label>
 					{/if}
@@ -165,11 +175,11 @@
 						onclick={() => (step = 'edit')}
 						disabled={busy}
 					>
-						Back
+						{m.common_back()}
 					</button>
 					<button type="button" class="btn btn-primary" onclick={save} disabled={busy || !canSave}>
 						{#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-						Save change
+						{m.tax_change_save()}
 					</button>
 				</div>
 			{/if}
@@ -179,7 +189,7 @@
 			class="modal-backdrop"
 			onclick={oncancel}
 			disabled={busy}
-			aria-label="Close"
+			aria-label={m.common_close()}
 		></button>
 	</div>
 {/if}

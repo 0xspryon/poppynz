@@ -2,9 +2,11 @@
 	import { onMount } from 'svelte';
 	import {
 		formatRatePercent,
+		formatTaxRate,
 		getTaxConfig,
 		parseRatePercent,
 		supersedeTaxRate,
+		taxComponentLabel,
 		taxWriteErrorText,
 		type TaxComponent,
 		type TaxConfig,
@@ -14,6 +16,7 @@
 	import FrozenChargesNote from '$lib/components/tax/FrozenChargesNote.svelte';
 	import TaxChangeDialog, { type EffectiveDraft } from '$lib/components/tax/TaxChangeDialog.svelte';
 	import TaxStanding from '$lib/components/tax/TaxStanding.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 
 	const COMPONENTS: Array<TaxComponent> = ['gst', 'hst', 'pst', 'qst', 'rst'];
@@ -36,7 +39,9 @@
 			loadFailed = false;
 		} else {
 			loadFailed = true;
-			toast.error(taxWriteErrorText(result.error), { title: 'Rates not loaded' });
+			toast.error(taxWriteErrorText(result.error), {
+				title: m.accountant_rates_load_failed_title()
+			});
 		}
 	}
 
@@ -71,30 +76,37 @@
 		if (result.ok) {
 			dialogOpen = false;
 			toast.success(
-				`${component.toUpperCase()} (${jurisdictionCode}) ${rate}% from ${formatDate(draft.effectiveFrom)}.`,
-				{ title: 'Rate saved' }
+				m.accountant_rates_saved_body({
+					component: taxComponentLabel(component),
+					jurisdiction: jurisdictionCode,
+					rate: formatTaxRate(rateMillipercent),
+					date: formatDate(draft.effectiveFrom)
+				}),
+				{ title: m.accountant_rates_saved_title() }
 			);
 			await load();
 		} else {
-			toast.error(taxWriteErrorText(result.error), { title: 'Rate not saved' });
+			toast.error(taxWriteErrorText(result.error), { title: m.accountant_rates_not_saved_title() });
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>Tax rates · Poppynz accountant</title>
+	<title>{m.accountant_rates_page_title()}</title>
 </svelte:head>
 
 <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
 	<div>
-		<h1 class="mb-1 font-display text-2xl font-bold text-base-content lg:text-3xl">Tax rates</h1>
+		<h1 class="mb-1 font-display text-2xl font-bold text-base-content lg:text-3xl">
+			{m.accountant_rates_heading()}
+		</h1>
 		<p class="text-sm text-base-content-muted">
-			Effective-dated rates by jurisdiction and component.
+			{m.accountant_rates_intro()}
 		</p>
 	</div>
 	<button type="button" class="btn btn-primary" disabled={!config} onclick={() => openChange(null)}>
 		<i class="las la-plus" aria-hidden="true"></i>
-		New rate
+		{m.accountant_rates_new()}
 	</button>
 </div>
 
@@ -107,9 +119,9 @@
 		<select
 			class="select select-bordered select-sm"
 			bind:value={jurisdictionFilter}
-			aria-label="Jurisdiction"
+			aria-label={m.accountant_jurisdiction()}
 		>
-			<option value="">All jurisdictions</option>
+			<option value="">{m.accountant_all_jurisdictions()}</option>
 			{#each config.jurisdictions as jurisdiction (jurisdiction.code)}
 				<option value={jurisdiction.code}>{jurisdiction.code} · {jurisdiction.name}</option>
 			{/each}
@@ -117,11 +129,11 @@
 		<select
 			class="select select-bordered select-sm"
 			bind:value={componentFilter}
-			aria-label="Component"
+			aria-label={m.accountant_component()}
 		>
-			<option value="">All components</option>
+			<option value="">{m.accountant_all_components()}</option>
 			{#each COMPONENTS as value (value)}
-				<option {value}>{value.toUpperCase()}</option>
+				<option {value}>{taxComponentLabel(value)}</option>
 			{/each}
 		</select>
 	</div>
@@ -130,34 +142,36 @@
 		<table class="table">
 			<thead>
 				<tr>
-					<th>Jurisdiction</th>
-					<th>Component</th>
-					<th class="text-right">Rate</th>
-					<th>From</th>
-					<th>Until</th>
-					<th>Status</th>
-					<th><span class="sr-only">Actions</span></th>
+					<th>{m.accountant_jurisdiction()}</th>
+					<th>{m.accountant_component()}</th>
+					<th class="text-right">{m.accountant_col_rate()}</th>
+					<th>{m.accountant_col_from()}</th>
+					<th>{m.accountant_col_until()}</th>
+					<th>{m.accountant_col_status()}</th>
+					<th><span class="sr-only">{m.accountant_col_actions()}</span></th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each rows as row (row.id)}
 					<tr>
 						<td>{row.jurisdictionCode}</td>
-						<td>{row.component.toUpperCase()}</td>
-						<td class="text-right tabular-nums">{formatRatePercent(row.rateMillipercent)}%</td>
+						<td>{taxComponentLabel(row.component)}</td>
+						<td class="text-right tabular-nums">{formatTaxRate(row.rateMillipercent)}</td>
 						<td class="whitespace-nowrap">{formatDate(row.effectiveFrom)}</td>
 						<td class="whitespace-nowrap">{row.effectiveTo ? formatDate(row.effectiveTo) : '—'}</td>
 						<td><TaxStanding standing={row.standing} /></td>
 						<td class="text-right">
 							{#if row.standing !== 'ended'}
 								<button type="button" class="btn btn-ghost btn-sm" onclick={() => openChange(row)}>
-									Change
+									{m.accountant_change()}
 								</button>
 							{/if}
 						</td>
 					</tr>
 				{:else}
-					<tr><td colspan="7" class="text-sm text-base-content-muted">No rates match.</td></tr>
+					<tr>
+						<td colspan="7" class="text-sm text-base-content-muted">{m.accountant_rates_none()}</td>
+					</tr>
 				{/each}
 			</tbody>
 		</table>
@@ -166,17 +180,21 @@
 
 	<TaxChangeDialog
 		open={dialogOpen}
-		title="Set a tax rate"
+		title={m.accountant_rates_dialog_title()}
 		today={config.today}
 		valid={rateMillipercent !== null}
-		summary="{component.toUpperCase()} ({jurisdictionCode}) at {rate}%"
+		summary={m.accountant_rates_summary({
+			component: taxComponentLabel(component),
+			jurisdiction: jurisdictionCode,
+			rate: formatTaxRate(rateMillipercent ?? 0)
+		})}
 		busy={saving}
 		onsave={(draft) => void save(draft)}
 		oncancel={() => (dialogOpen = false)}
 	>
 		<div class="grid gap-4 sm:grid-cols-3">
 			<label class="flex flex-col gap-1">
-				<span class="text-sm font-medium text-base-content">Jurisdiction</span>
+				<span class="text-sm font-medium text-base-content">{m.accountant_jurisdiction()}</span>
 				<select class="select select-bordered w-full" bind:value={jurisdictionCode}>
 					{#each config.jurisdictions as jurisdiction (jurisdiction.code)}
 						<option value={jurisdiction.code}>{jurisdiction.code}</option>
@@ -184,15 +202,15 @@
 				</select>
 			</label>
 			<label class="flex flex-col gap-1">
-				<span class="text-sm font-medium text-base-content">Component</span>
+				<span class="text-sm font-medium text-base-content">{m.accountant_component()}</span>
 				<select class="select select-bordered w-full" bind:value={component}>
 					{#each COMPONENTS as value (value)}
-						<option {value}>{value.toUpperCase()}</option>
+						<option {value}>{taxComponentLabel(value)}</option>
 					{/each}
 				</select>
 			</label>
 			<label class="flex flex-col gap-1">
-				<span class="text-sm font-medium text-base-content">Rate (%)</span>
+				<span class="text-sm font-medium text-base-content">{m.accountant_rates_rate_label()}</span>
 				<input
 					class="input input-bordered w-full"
 					inputmode="decimal"
@@ -200,7 +218,7 @@
 					bind:value={rate}
 				/>
 				{#if rate !== '' && rateMillipercent === null}
-					<span class="text-xs text-error">A percentage from 0 to 100, up to 3 decimals.</span>
+					<span class="text-xs text-error">{m.accountant_rates_rate_invalid()}</span>
 				{/if}
 			</label>
 		</div>

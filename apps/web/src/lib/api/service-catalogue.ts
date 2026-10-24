@@ -22,6 +22,7 @@ export interface CatalogueItemDraft {
 	category: string;
 	baseHourlyRateCents: number;
 	isLive: boolean;
+	requiredDocumentTypeId: string | null;
 }
 
 /** Admin view: every non-deleted item, hidden ones included. */

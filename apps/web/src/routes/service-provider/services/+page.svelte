@@ -23,6 +23,7 @@
 	let catalogue = $state<Array<CatalogueItem>>([]);
 	let services = $state<Array<ServiceOffered>>([]);
 	let maxServices = $state(20);
+	let customBaseRateCents = $state(2000);
 	let loading = $state(true);
 	let errorMessage = $state('');
 
@@ -81,6 +82,7 @@
 			catalogue = catalogueResult.data;
 			services = servicesResult.data.services;
 			maxServices = servicesResult.data.maxServicesOffered;
+			customBaseRateCents = servicesResult.data.customServiceBaseRateCents;
 			rateDrafts.clear();
 			for (const service of servicesResult.data.services) {
 				rateDrafts.set(service.id, centsToDollars(service.hourlyRateCents));
@@ -109,7 +111,8 @@
 	);
 
 	function floorFor(service: ServiceOffered): number | null {
-		if (!service.catalogueServiceId) return null;
+		// Custom services floor at the platform base rate (UAT #34).
+		if (!service.catalogueServiceId) return customBaseRateCents;
 		const item = catalogue.find((entry) => entry.id === service.catalogueServiceId);
 		return item?.baseHourlyRateCents ?? null;
 	}
@@ -125,7 +128,10 @@
 		if (result.ok) {
 			toast.success(`${item.name} added to your services.`);
 			await load();
-		} else if (result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED') {
+		} else if (
+			result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED' ||
+			result.error.code === 'SERVICE_CREDENTIAL_REQUIRED'
+		) {
 			toast.error(result.error.message, { title: `Could not add ${item.name}` });
 		} else {
 			toast.error(RETRY_MESSAGE, { title: `Could not add ${item.name}` });
@@ -163,6 +169,8 @@
 			);
 		} else if (result.error.code === 'SERVICE_RATE_BELOW_FLOOR') {
 			rowErrors.set(service.id, result.error.message);
+		} else if (result.error.code === 'SERVICE_CREDENTIAL_REQUIRED') {
+			toast.error(result.error.message, { title: `${service.name} not updated` });
 		} else {
 			toast.error(RETRY_MESSAGE, { title: `${service.name} rate not saved` });
 		}
@@ -198,7 +206,8 @@
 			});
 			if (!result.ok) {
 				const reason =
-					result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED'
+					result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED' ||
+					result.error.code === 'SERVICE_CREDENTIAL_REQUIRED'
 						? result.error.message
 						: RETRY_MESSAGE;
 				toast.error(
@@ -358,17 +367,35 @@
 								<i class="las la-heart text-lg text-secondary" aria-hidden="true"></i>
 							</span>
 							<div class="min-w-0 flex-1">
-								<div class="text-sm font-semibold text-base-content">{service.name}</div>
+								<div class="flex flex-wrap items-center gap-2 text-sm font-semibold text-base-content">
+									{service.name}
+									{#if service.reviewStatus === 'pending'}
+										<span class="rounded-sm bg-info-content px-1.5 py-0.5 text-[10.5px] font-semibold text-info">
+											Awaiting review
+										</span>
+									{:else if service.reviewStatus === 'rejected'}
+										<span class="rounded-sm bg-error-content px-1.5 py-0.5 text-[10.5px] font-semibold text-error">
+											Not approved
+										</span>
+									{/if}
+								</div>
 								<div class="text-xs text-base-content-muted">
-									{#if floorFor(service) !== null}
+									{#if service.catalogueServiceId}
 										Base rate ${centsToDollars(floorFor(service) ?? 0)}/hr
 									{:else}
-										Custom service
+										Custom service · from ${centsToDollars(customBaseRateCents)}/hr
 										{#if service.description}
 											· {service.description}
 										{/if}
 									{/if}
 								</div>
+								{#if service.reviewStatus === 'pending'}
+									<div class="mt-0.5 text-[11.5px] text-outline">
+										Families see it once a Poppynz administrator approves it.
+									</div>
+								{:else if service.reviewStatus === 'rejected' && service.reviewReason}
+									<div class="mt-0.5 text-[11.5px] text-error">{service.reviewReason}</div>
+								{/if}
 							</div>
 							<label class="flex items-center gap-2">
 								<span class="text-xs text-outline">Your rate</span>

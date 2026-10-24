@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { formatDate, formatDateTime, formatDateWithWeekday, relativeDayLabel } from './date';
+import {
+	formatCalendarDate,
+	formatDate,
+	formatDateTime,
+	formatDateWithWeekday,
+	relativeDayLabel,
+	toDateInputValue
+} from './date';
 
 describe('formatDate', () => {
 	it('formats timestamps', () => {
@@ -42,5 +49,25 @@ describe('relativeDayLabel', () => {
 
 	it('keeps the year for older dates', () => {
 		expect(relativeDayLabel('2025-05-22T00:00:00', now)).toContain('2025');
+	});
+});
+
+describe('formatCalendarDate (UAT #28)', () => {
+	it('never shifts a date-only value back a day', () => {
+		expect(formatCalendarDate('2030-01-15')).toMatch(/15/);
+		expect(formatCalendarDate('2027-09-01')).toMatch(/Sep\.? 1|1 Sep/);
+	});
+
+	it('reads a UTC-midnight timestamp as the calendar date it encodes', () => {
+		// Stored as 2030-01-15T00:00Z; in Toronto that instant is Jan 14.
+		expect(formatCalendarDate('2030-01-15T00:00:00.000Z')).toMatch(/15/);
+		expect(formatCalendarDate('2030-01-15T00:00:00.000Z')).not.toMatch(/14/);
+	});
+});
+
+describe('toDateInputValue', () => {
+	it('uses the local calendar day, not the UTC one', () => {
+		// 11 pm local on Oct 11 is already Oct 12 in UTC west of Greenwich.
+		expect(toDateInputValue(new Date(2027, 9, 11, 23, 30))).toBe('2027-10-11');
 	});
 });

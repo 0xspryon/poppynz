@@ -9,6 +9,9 @@
 		category: string;
 		baseHourlyRateCents: number;
 		isLive: boolean;
+		/** A helper document that must be approved before a helper can offer
+		 * this service (e.g. the PSW credential). Null = no credential. */
+		requiredDocumentTypeId: string | null;
 	}
 
 	interface Props {
@@ -17,18 +20,30 @@
 		editing: CatalogueItem | null;
 		/** Existing categories offered as datalist suggestions. */
 		categories: Array<string>;
+		/** Helper document types an admin can require as a credential. */
+		credentialTypes?: Array<{ id: string; name: string }>;
 		busy?: boolean;
 		error?: string | null;
 		onsave: (draft: CatalogueItemDraft) => void;
 		oncancel: () => void;
 	}
 
-	let { open, editing, categories, busy = false, error = null, onsave, oncancel }: Props = $props();
+	let {
+		open,
+		editing,
+		categories,
+		credentialTypes = [],
+		busy = false,
+		error = null,
+		onsave,
+		oncancel
+	}: Props = $props();
 
 	let name = $state('');
 	let category = $state('');
 	let rate = $state('');
 	let isLive = $state(true);
+	let requiredDocumentTypeId = $state('');
 
 	$effect(() => {
 		if (open) {
@@ -36,6 +51,7 @@
 			category = editing?.category ?? '';
 			rate = editing ? centsToDollars(editing.baseHourlyRateCents) : '';
 			isLive = editing?.isLive ?? true;
+			requiredDocumentTypeId = editing?.requiredDocumentTypeId ?? '';
 		}
 	});
 
@@ -49,7 +65,8 @@
 			name: name.trim(),
 			category: category.trim(),
 			baseHourlyRateCents: rateCents,
-			isLive
+			isLive,
+			requiredDocumentTypeId: requiredDocumentTypeId === '' ? null : requiredDocumentTypeId
 		});
 	}
 </script>
@@ -114,6 +131,19 @@
 					</select>
 				</fieldset>
 			</div>
+
+			<fieldset class="fieldset mt-3">
+				<legend class="fieldset-legend">Required credential</legend>
+				<select class="select w-full" bind:value={requiredDocumentTypeId}>
+					<option value="">None — any approved helper can offer it</option>
+					{#each credentialTypes as type (type.id)}
+						<option value={type.id}>{type.name}</option>
+					{/each}
+				</select>
+				<p class="label text-xs whitespace-normal">
+					A helper can only offer this service once an administrator has approved this document.
+				</p>
+			</fieldset>
 
 			<div class="mt-4 flex flex-wrap gap-x-6 gap-y-3">
 				<label class="flex items-center gap-2.5">

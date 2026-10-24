@@ -8,7 +8,10 @@
 		safetyVerificationReportUrl,
 		type AdminSafetyVerification
 	} from '$lib/api/safety-verification';
+	import { getSafetyDocumentFileUrl } from '$lib/api/admin-approvals';
+	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import { formatCalendarDate, formatDateTime } from '$lib/date';
 	import { toast } from '$lib/toast.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 
@@ -27,6 +30,9 @@
 	let loading = $state(true);
 	let errorMessage: string | null = $state(null);
 	const busyIds = new SvelteSet<string>();
+
+	// Approve is confirmed first (UAT #29) — it makes the person discoverable.
+	let approving = $state<AdminSafetyVerification | null>(null);
 
 	let rejecting: AdminSafetyVerification | null = $state<AdminSafetyVerification | null>(null);
 	let rejectReason = $state('');
@@ -51,7 +57,20 @@
 		void load();
 	});
 
+	const personLabel = (item: AdminSafetyVerification) =>
+		item.applicant.name ?? item.applicant.email ?? 'Unnamed applicant';
+
+	async function openFile(item: AdminSafetyVerification) {
+		const result = await getSafetyDocumentFileUrl(item.id);
+		if (result.ok) {
+			window.open(result.data.url, '_blank', 'noopener');
+		} else {
+			toast.error(RETRY_MESSAGE, { title: 'Could not open the document' });
+		}
+	}
+
 	async function approve(item: AdminSafetyVerification) {
+		approving = null;
 		busyIds.add(item.id);
 		const result = await decideSafetyVerification(item.id, { decision: 'approve' });
 		if (result.ok) {
@@ -111,10 +130,12 @@
 						status={item.route === 'credibled' ? 'in-progress' : 'submitted'}
 						label={item.route === 'credibled' ? 'Credibled check' : 'Submitted document'}
 					/>
-					<span class="text-sm font-semibold text-base-content">{item.userId}</span>
+					<span class="text-sm font-semibold text-base-content">{personLabel(item)}</span>
 					<span class="text-xs text-base-content-muted">
 						{item.role === 'family' ? 'Family' : 'Helper'}
+						{#if item.applicant.name && item.applicant.email}· {item.applicant.email}{/if}
 					</span>
+					<span class="text-xs font-medium text-base-content">{item.documentTypeName}</span>
 					{#if item.credibledResult}
 						<StatusChip {...outcomeChips[item.credibledResult.outcome]} />
 					{/if}
@@ -142,20 +163,25 @@
 						<div><dt class="inline font-medium">Number:</dt> <dd class="inline">{item.documentNumber}</dd></div>
 					{/if}
 					{#if item.issuedOn}
-						<div><dt class="inline font-medium">Issued:</dt> <dd class="inline">{item.issuedOn}</dd></div>
+						<div><dt class="inline font-medium">Issued:</dt> <dd class="inline">{formatCalendarDate(item.issuedOn)}</dd></div>
 					{/if}
 					{#if item.expiresOn}
-						<div><dt class="inline font-medium">Valid until:</dt> <dd class="inline">{item.expiresOn}</dd></div>
+						<div><dt class="inline font-medium">Valid until:</dt> <dd class="inline">{formatCalendarDate(item.expiresOn)}</dd></div>
 					{/if}
 					{#if item.consentAt}
 						<div>
 							<dt class="inline font-medium">Consent:</dt>
-							<dd class="inline">{item.consentAt} (policy {item.consentPolicyVersion})</dd>
+							<dd class="inline">{formatDateTime(item.consentAt)} (policy {item.consentPolicyVersion})</dd>
 						</div>
 					{/if}
 				</dl>
 
 				<div class="mt-3 flex flex-wrap gap-2">
+					{#if item.hasFile}
+						<button type="button" class="btn btn-outline btn-sm" onclick={() => void openFile(item)}>
+							View file
+						</button>
+					{/if}
 					{#if item.hasCredibledCheck}
 						<a
 							class="btn btn-outline btn-sm"
@@ -170,9 +196,9 @@
 						type="button"
 						class="btn btn-primary btn-sm"
 						disabled={busy}
-						onclick={() => approve(item)}
+						onclick={() => (approving = item)}
 					>
-						Approve
+						Approve…
 					</button>
 					<button
 						type="button"
@@ -230,3 +256,15 @@
 		></button>
 	</div>
 {/if}
+
+<ConfirmDialog
+	open={approving !== null}
+	title="Approve this verification?"
+	body={approving
+		? `${personLabel(approving)} — ${approving.documentTypeName}. Approving marks them verified; check the document first.`
+		: ''}
+	confirmLabel="Approve"
+	confirmClass="btn-primary"
+	onconfirm={() => approving && void approve(approving)}
+	oncancel={() => (approving = null)}
+/>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatCalendarDate } from '$lib/date';
 	/** A documents checklist (required, then optional) with the upload dialog
 	 * and the "Verify through Credibled" check-list action. Data-in: the caller
 	 * loads the checklist and the unpaid check list and refetches both through
@@ -141,13 +142,9 @@
 		uploading = false;
 	}
 
+	// Expiry dates are calendar dates — never shifted by the viewer's zone (UAT #28).
 	function formatDate(iso: string | null): string | null {
-		if (!iso) return null;
-		return new Date(iso).toLocaleDateString('en-CA', {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		});
+		return iso ? formatCalendarDate(iso) : null;
 	}
 </script>
 

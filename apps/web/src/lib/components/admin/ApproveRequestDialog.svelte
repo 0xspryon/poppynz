@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatDate, toDateInputValue, todayInputValue } from '$lib/date';
 	/** Approve dialog (design 8c): approvals expire, so an explicit expiry date
 	 * is required — presets fill the date input. Emits the chosen yyyy-mm-dd. */
 	interface Props {
@@ -6,6 +7,8 @@
 		applicantName: string;
 		warningCount: number;
 		warningText: string;
+		/** What stops approval (UAT #25) — the server refuses while any remain. */
+		blockers?: Array<string>;
 		busy?: boolean;
 		onconfirm: (expiryDate: string) => void;
 		oncancel: () => void;
@@ -16,6 +19,7 @@
 		applicantName,
 		warningCount,
 		warningText,
+		blockers = [],
 		busy = false,
 		onconfirm,
 		oncancel
@@ -27,9 +31,6 @@
 	let preset = $state<Preset>('1y');
 	let expiry = $state('');
 
-	function toDateInputValue(date: Date): string {
-		return date.toISOString().slice(0, 10);
-	}
 
 	function setPreset(next: Preset) {
 		preset = next;
@@ -42,19 +43,13 @@
 		if (open) setPreset('1y');
 	});
 
-	const dateValid = $derived(expiry !== '' && new Date(expiry).getTime() > Date.now());
-
-	function formatDate(iso: string): string {
-		return new Date(iso).toLocaleDateString('en-CA', {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		});
-	}
+	// Compared and shown as calendar dates in the admin's own zone — the
+	// button once read "until Oct 10" for an Oct 11 expiry (UAT #28).
+	const dateValid = $derived(expiry !== '' && expiry > todayInputValue());
 
 	function submit(event: SubmitEvent) {
 		event.preventDefault();
-		if (!dateValid || busy) return;
+		if (!dateValid || busy || blockers.length > 0) return;
 		onconfirm(expiry);
 	}
 </script>
@@ -106,9 +101,17 @@
 					<i class="las la-exclamation-circle text-base text-warning" aria-hidden="true"></i>
 					<span class="text-[12.5px] leading-relaxed text-warning">
 						This application has {warningCount}
-						{warningCount === 1 ? 'warning' : 'warnings'} ({warningText}) — warnings don't block
-						approval. Blocking issues (no services, no location) disable approval instead.
+						{warningCount === 1 ? 'warning' : 'warnings'} ({warningText}).
 					</span>
+				</div>
+			{/if}
+
+			{#if blockers.length > 0}
+				<div class="mt-3 rounded-md border border-error-content bg-error-content/40 px-3.5 py-2.5">
+					<p class="text-[12.5px] font-semibold text-error">This account can't be approved yet:</p>
+					<ul class="mt-1 list-disc pl-5 text-[12.5px] text-error">
+						{#each blockers as blocker (blocker)}<li>{blocker}</li>{/each}
+					</ul>
 				</div>
 			{/if}
 
@@ -116,7 +119,7 @@
 				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>
 					Cancel
 				</button>
-				<button type="submit" class="btn btn-primary" disabled={!dateValid || busy}>
+				<button type="submit" class="btn btn-primary" disabled={!dateValid || busy || blockers.length > 0}>
 					{#if busy}
 						<span class="loading loading-spinner loading-sm"></span>
 					{/if}

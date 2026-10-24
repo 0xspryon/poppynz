@@ -5,7 +5,9 @@
 		approveRequest,
 		getApprovalRequest,
 		getKycDocumentFileUrl,
+		getSafetyDocumentFileUrl,
 		rejectApprovalRequest,
+		reviewKycDocument,
 		revokeApproval,
 		type ApprovalApproveError,
 		type ApprovalRequestDetail,
@@ -20,6 +22,8 @@
 	import GeneralRemarksCard from '$lib/components/admin/GeneralRemarksCard.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { toast } from '$lib/toast.svelte';
+	import { formatCalendarDate } from '$lib/date';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
 
@@ -38,6 +42,11 @@
 	// Revoke dialog (live approval only)
 	let revokeOpen = $state(false);
 	let revoking = $state(false);
+
+	// Per-document review (UAT #27)
+	const reviewingIds = new SvelteSet<string>();
+	let rejectingDoc = $state<{ id: string; name: string } | null>(null);
+	let rejectDocReason = $state('');
 
 	// Fullscreen document viewer
 	let viewer = $state<KycFileView | null>(null);
@@ -79,6 +88,7 @@
 		detail?.documents.filter((doc) => doc.isOptional && doc.status !== 'missing') ?? []
 	);
 	const requiredSubmitted = $derived(requiredDocs.filter((doc) => doc.status !== 'missing').length);
+	const blockers = $derived(detail?.approvalBlockers ?? []);
 	const warningCount = $derived(
 		detail
 			? detail.warnings.missingRequiredDocuments.length +
@@ -125,6 +135,7 @@
 	function approveErrorText(error: ApprovalApproveError): string {
 		switch (error.code) {
 			case 'APPROVAL_ELIGIBILITY_FAILED':
+			case 'APPROVAL_INCOMPLETE':
 			case 'INVALID_APPROVAL_INPUT':
 				return error.message;
 			case 'APPROVAL_REQUEST_MISMATCH':
@@ -194,6 +205,39 @@
 			);
 		}
 		revoking = false;
+	}
+
+	async function reviewDocument(
+		doc: { id: string; name: string },
+		decision: 'approve' | 'reject',
+		reason?: string
+	) {
+		if (reviewingIds.has(doc.id)) return;
+		reviewingIds.add(doc.id);
+		const result = await reviewKycDocument(doc.id, { decision, reason: reason ?? null });
+		if (result.ok) {
+			toast.success(`${doc.name} ${decision === 'approve' ? 'approved' : 'rejected'}.`);
+			rejectingDoc = null;
+			rejectDocReason = '';
+			await load();
+		} else {
+			toast.error(
+				result.error.code === 'INVALID_KYC_DOCUMENT' ? result.error.message : RETRY_MESSAGE,
+				{ title: `${doc.name} not ${decision === 'approve' ? 'approved' : 'rejected'}` }
+			);
+		}
+		reviewingIds.delete(doc.id);
+	}
+
+	/** The safety-gate document lives on the verification record; it opens
+	 * in a new tab from a short-lived link (UAT #29). */
+	async function openSafetyDocument(verificationId: string) {
+		const result = await getSafetyDocumentFileUrl(verificationId);
+		if (result.ok) {
+			window.open(result.data.url, '_blank', 'noopener');
+		} else {
+			toast.error(RETRY_MESSAGE, { title: 'Could not open document' });
+		}
 	}
 
 	async function openViewer(documentId: string) {
@@ -275,7 +319,15 @@
 					>
 						Reject…
 					</button>
-					<button type="button" class="btn btn-primary" onclick={openApprove}>Approve…</button>
+					<button
+						type="button"
+						class="btn btn-primary"
+						onclick={openApprove}
+						disabled={blockers.length > 0}
+						title={blockers.length > 0 ? 'Resolve the items listed below first' : undefined}
+					>
+						Approve…
+					</button>
 				</div>
 			{/if}
 		</div>
@@ -308,6 +360,23 @@
 				<b>Rejected:</b>
 				{detail.approvalRequest.reason}
 			</p>
+		{/if}
+
+		{#if blockers.length > 0 && detail.approvalRequest.status === 'submitted'}
+			<!-- UAT #25/#30: approval is refused server-side until these are resolved. -->
+			<div
+				role="status"
+				class="mt-4 rounded-[10px] border border-error-content bg-error-content/40 px-4 py-3"
+			>
+				<p class="text-[13px] font-semibold text-error">
+					This account can't be approved yet. It stays in the queue until:
+				</p>
+				<ul class="mt-1.5 list-disc pl-5 text-[12.5px] text-error">
+					{#each blockers as blocker (blocker.kind + ('documentTypeId' in blocker ? blocker.documentTypeId : ''))}
+						<li>{blocker.message}</li>
+					{/each}
+				</ul>
+			</div>
 		{/if}
 
 		{#if warningCount > 0 && detail.approvalRequest.status === 'submitted'}
@@ -474,7 +543,7 @@
 											{doc.document.filename}
 										{/if}
 										{#if doc.document.expiryDate}
-											· expires {formatDate(doc.document.expiryDate)}
+											· expires {formatCalendarDate(doc.document.expiryDate)}
 										{/if}
 									{:else}
 										Required — not submitted
@@ -487,10 +556,39 @@
 								<button
 									type="button"
 									class="btn btn-outline btn-xs"
-									onclick={() => void openViewer(doc.document!.id)}
+									onclick={() =>
+										void (doc.isSafetyGate
+											? openSafetyDocument(doc.document!.id)
+											: openViewer(doc.document!.id))}
 								>
 									View file
 								</button>
+							{/if}
+							{#if doc.document && doc.status === 'submitted'}
+								{#if doc.isSafetyGate}
+									<!-- The gate's verdict is decided with the verification itself. -->
+									<a href={resolve('/admin/safety-verifications')} class="btn btn-ghost btn-xs">
+										Decide in Safety verifications
+									</a>
+								{:else}
+									{@const ref = { id: doc.document.id, name: doc.name }}
+									<button
+										type="button"
+										class="btn btn-primary btn-xs"
+										disabled={reviewingIds.has(ref.id)}
+										onclick={() => void reviewDocument(ref, 'approve')}
+									>
+										Approve
+									</button>
+									<button
+										type="button"
+										class="btn btn-outline btn-error btn-xs"
+										disabled={reviewingIds.has(ref.id)}
+										onclick={() => (rejectingDoc = ref)}
+									>
+										Reject
+									</button>
+								{/if}
 							{/if}
 						</div>
 					{/each}
@@ -499,8 +597,8 @@
 					class="mt-3.5 flex items-center gap-2 border-t border-base-300 pt-3.5 text-xs text-outline"
 				>
 					<i class="las la-info-circle text-sm" aria-hidden="true"></i>
-					The decision is on the whole request — documents are submitted or missing. Expiry dates can
-					be corrected from the fullscreen viewer.
+					Every required document needs its own approval before the account can be approved.
+					Expiry dates can be corrected from the fullscreen viewer.
 				</p>
 			</div>
 		</div>
@@ -510,6 +608,7 @@
 <ApproveRequestDialog
 	open={approveOpen && detail !== null}
 	{applicantName}
+	blockers={blockers.map((blocker) => blocker.message)}
 	{warningCount}
 	{warningText}
 	busy={approving}
@@ -538,3 +637,41 @@
 	onclose={closeViewer}
 	onsaved={() => void load()}
 />
+
+{#if rejectingDoc}
+	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Reject document">
+		<div class="modal-box max-w-lg border border-card-border">
+			<h3 class="font-display text-xl font-bold text-base-content">Reject {rejectingDoc.name}</h3>
+			<p class="mt-1 mb-4 text-sm text-base-content-muted">
+				The applicant sees this reason and uploads a new file.
+			</p>
+			<textarea
+				class="textarea w-full"
+				rows="3"
+				maxlength="500"
+				bind:value={rejectDocReason}
+				placeholder="The photo is blurry — please upload a clearer one."
+			></textarea>
+			<div class="modal-action">
+				<button type="button" class="btn btn-ghost" onclick={() => (rejectingDoc = null)}>
+					Cancel
+				</button>
+				<button
+					type="button"
+					class="btn btn-error"
+					disabled={rejectDocReason.trim().length === 0 || reviewingIds.has(rejectingDoc.id)}
+					onclick={() =>
+						rejectingDoc && void reviewDocument(rejectingDoc, 'reject', rejectDocReason.trim())}
+				>
+					Reject
+				</button>
+			</div>
+		</div>
+		<button
+			type="button"
+			class="modal-backdrop"
+			aria-label="Close"
+			onclick={() => (rejectingDoc = null)}
+		></button>
+	</div>
+{/if}

@@ -67,6 +67,28 @@ export const submissionBlockers = (
 ): Array<ApprovalBlocker> =>
   approvalBlockers(input).filter((blocker) => blocker.kind !== 'document_unreviewed');
 
+/**
+ * A check the applicant has already paid Credibled for (paid, invited or in
+ * progress) is evidence on its way: its verdict lands with the admin anyway,
+ * so a request is not refused for the documents that check will produce
+ * (R11 — a family with a paid, in-progress check was told its safety check
+ * "has not been submitted"). Only `document_missing` is waived; a rejected
+ * or expired document still needs the applicant.
+ */
+export const paidCheckStatuses = ['paid', 'invited', 'in_progress'] as const;
+
+export const waiveBlockersForChecksInProgress = (
+  blockers: ReadonlyArray<ApprovalBlocker>,
+  documentTypeIdsInProgress: ReadonlySet<string>
+): Array<ApprovalBlocker> =>
+  blockers.filter(
+    (blocker) =>
+      !(
+        blocker.kind === 'document_missing' &&
+        documentTypeIdsInProgress.has(blocker.documentTypeId)
+      )
+  );
+
 /** One line per blocker, for error messages and the admin UI. */
 export const describeBlocker = (blocker: ApprovalBlocker): string => {
   switch (blocker.kind) {

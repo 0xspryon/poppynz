@@ -2,6 +2,7 @@ import type { SqlError } from '@effect/sql/SqlError';
 import {
   ApprovalRepo,
   ApprovalRequestRepo,
+  CheckOrderRepo,
   DBNotFoundError,
   KycDocumentTypeRepo,
   ServiceNeededRepo,
@@ -25,7 +26,9 @@ import {
   type ApprovalBlocker,
   approvalBlockers,
   describeBlocker,
-  submissionBlockers
+  paidCheckStatuses,
+  submissionBlockers,
+  waiveBlockersForChecksInProgress
 } from '@/api/lib/approval-readiness';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import { summariseVouches } from '@/api/lib/vouches';
@@ -83,6 +86,19 @@ const toRequestResponse = <
   generalRemarksUpdatedAt: request.generalRemarksUpdatedAt?.toISOString() ?? null
 });
 
+/** Document types covered by a Credibled check the applicant has paid for
+ * and that has not finished yet (R11). */
+const documentTypesBeingChecked = (userId: string, role: ApplicantRole) =>
+  Effect.gen(function* () {
+    const orders = yield* CheckOrderRepo;
+    const open = yield* orders.findOpen(userId, role);
+    if (open === null || !(paidCheckStatuses as ReadonlyArray<string>).includes(open.status)) {
+      return new Set<string>();
+    }
+    const items = yield* orders.listItems(open.id);
+    return new Set(items.map((item) => item.documentTypeId));
+  });
+
 export const createApprovalRequestRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
@@ -106,7 +122,10 @@ export const createApprovalRequestRouteProgram = (headers: Headers) =>
       [profileRepo.findByUserId(provider.user.id), loadChecklist(provider.user.id, role)],
       { concurrency: 'unbounded' }
     );
-    const blockers = submissionBlockers({ role, profile, checklist });
+    const blockers = waiveBlockersForChecksInProgress(
+      submissionBlockers({ role, profile, checklist }),
+      yield* documentTypesBeingChecked(provider.user.id, role)
+    );
     if (blockers.length > 0) {
       return yield* Effect.fail(new ApprovalRequestIncompleteError({ blockers }));
     }

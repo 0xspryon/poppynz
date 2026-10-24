@@ -21,6 +21,9 @@ import {
   type UserProfile,
   type VouchWithVoucher,
   EmptyApprovalRepoTest,
+  makeCheckOrderRepoTest,
+  type CheckOrder,
+  type CheckOrderItem,
   makeServiceNeededRepoTest
 } from '@repo/db';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
@@ -222,6 +225,10 @@ const makeLayer = (
     onCheckPermission?: (permissions: Record<string, Array<string>>) => void;
     /** Called on every approval-request lookup or write by id. */
     onRequestRepoTouch?: () => void;
+    /** The live safety verdict; undefined = verified, null = none yet. */
+    verification?: null;
+    /** The applicant's open Credibled order and the types it covers. */
+    openCheckOrder?: { status: CheckOrder['status']; documentTypeIds: Array<string> };
   } = {}
 ) => {
   const currentUser = options.user ?? user();
@@ -232,7 +239,11 @@ const makeLayer = (
     // other behaviour, so the applicant is verified unless a test says so.
     makeSafetyVerificationRepoTest({
       findLive: () =>
-        Effect.succeed({ id: 'sv-1', status: 'verified', expiresOn: '2099-01-01' } as never),
+        Effect.succeed(
+          options.verification === null
+            ? null
+            : ({ id: 'sv-1', status: 'verified', expiresOn: '2099-01-01' } as never)
+        ),
       findById: () => Effect.fail(new DBNotFoundError({ entity: 'safetyVerification', value: '' })),
       listByUser: () => Effect.succeed([]),
       listForReview: () => Effect.succeed([]),
@@ -244,6 +255,20 @@ const makeLayer = (
       listLapsed: () => Effect.succeed([])
     }),
     EmptyApprovalRepoTest,
+    makeCheckOrderRepoTest({
+      findOpen: () =>
+        Effect.succeed(
+          options.openCheckOrder
+            ? ({ id: 'order-1', status: options.openCheckOrder.status } as CheckOrder)
+            : null
+        ),
+      listItems: () =>
+        Effect.succeed(
+          (options.openCheckOrder?.documentTypeIds ?? []).map(
+            (documentTypeId) => ({ id: `item-${documentTypeId}`, documentTypeId }) as CheckOrderItem
+          )
+        )
+    }),
     makeServiceNeededRepoTest({
       listByUserId: () => Effect.succeed((options.needs ?? []) as never),
       findByIdForUser: (id) =>
@@ -587,6 +612,48 @@ describe('createApprovalRequestRouteProgram', () => {
       { email: 'priya@example.com', name: 'Priya K', role: 'family', locale: 'en' },
       { applicantName: 'Priya K', applicantEmail: 'priya@example.com', role: 'family' }
     ]);
+  });
+
+  it('lets a family submit while its paid Credibled safety check is in progress (R11)', async () => {
+    const family = user({ id: 'family-1', role: 'family', email: 'priya@example.com' });
+    const gate = documentType({
+      id: 'gate-1',
+      name: 'Vulnerable Sector Check',
+      appliesToRole: 'family',
+      isSafetyGate: true
+    });
+    const base = {
+      user: family,
+      profile: profile({ userId: 'family-1', role: 'family', image: null }),
+      documentTypes: [gate],
+      documents: [],
+      services: [],
+      verification: null
+    };
+    for (const status of ['paid', 'invited', 'in_progress'] as const) {
+      const result = await Effect.runPromise(
+        createApprovalRequestRouteProgram(new Headers()).pipe(
+          Effect.provide(
+            makeLayer({ ...base, openCheckOrder: { status, documentTypeIds: ['gate-1'] } })
+          )
+        )
+      );
+      expect(result.status).toBe('submitted');
+    }
+
+    // Not yet paid: still the applicant's to do.
+    const unpaid = await Effect.runPromise(
+      createApprovalRequestRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({ ...base, openCheckOrder: { status: 'draft', documentTypeIds: ['gate-1'] } })
+        ),
+        Effect.exit
+      )
+    );
+    expect(getFailure(unpaid)).toMatchObject({
+      _tag: 'ApprovalRequestIncompleteError',
+      blockers: [{ kind: 'document_missing', documentTypeId: 'gate-1' }]
+    });
   });
 
   it('still creates the request when the confirmation mail fails', async () => {

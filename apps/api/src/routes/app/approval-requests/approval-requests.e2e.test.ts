@@ -1,6 +1,7 @@
 import {
   DBNotFoundError,
   EmptyApprovalRepoTest,
+  EmptyCheckOrderRepoTest,
   EmptyKycDocumentRepoTest,
   EmptyKycDocumentTypeRepoTest,
   EmptyServiceOfferedRepoTest,
@@ -180,6 +181,7 @@ const makeApp = (
       }),
       makeMailerTest({}),
       EmptyApprovalRepoTest,
+      EmptyCheckOrderRepoTest,
       EmptyKycDocumentRepoTest,
       EmptyKycDocumentTypeRepoTest,
       EmptyServiceOfferedRepoTest,

@@ -14,6 +14,9 @@
 		busy?: boolean;
 		/** Line under the title; defaults to the provider services copy. */
 		subtitle?: string;
+		/** Families see base rates as starting prices ("from $20/hr") — helpers
+		 * set their own rates above them (UAT #5). */
+		ratesAreStartingPrices?: boolean;
 		onadd: (ids: Array<string>) => void;
 		oncancel: () => void;
 	}
@@ -24,6 +27,7 @@
 		linkedIds,
 		busy = false,
 		subtitle = 'Select any service to add it — its base rate is the floor for your rate.',
+		ratesAreStartingPrices = false,
 		onadd,
 		oncancel
 	}: Props = $props();
@@ -136,7 +140,9 @@
 							{/if}
 						</span>
 						<span class="shrink-0 font-display text-[13.5px] font-bold text-secondary">
-							${centsToDollars(item.baseHourlyRateCents)}<span
+							{#if ratesAreStartingPrices}<span class="text-[10.5px] font-normal text-outline"
+									>from
+								</span>{/if}${centsToDollars(item.baseHourlyRateCents)}<span
 								class="text-[10.5px] font-normal text-outline">/hr</span
 							>
 						</span>

@@ -10,6 +10,8 @@
 		type ProviderProfile
 	} from '$lib/api/provider-profile';
 	import { toast } from '$lib/toast.svelte';
+	import { toDateInputValue } from '$lib/date';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	interface Props {
 		/** Subtitle under the page heading. */
@@ -17,9 +19,26 @@
 		bioPlaceholder: string;
 		/** Helpers need a photo for their profile to count as complete. */
 		photoRequired?: boolean;
+		/** Whose profile this is — the photo and location copy speak to the
+		 * people who will see it (UAT #6). */
+		audience?: 'family' | 'helper';
 	}
 
-	let { description, bioPlaceholder, photoRequired = false }: Props = $props();
+	let { description, bioPlaceholder, photoRequired = false, audience = 'helper' }: Props = $props();
+
+	const photoHint = $derived(
+		audience === 'family'
+			? 'A clear, friendly photo helps helpers recognise your family.'
+			: 'A clear, friendly photo of your face helps families feel at ease.'
+	);
+	const locationHint = $derived(
+		audience === 'family'
+			? 'Searches centre on your area and helpers see your neighbourhood only — never your exact address.'
+			: 'Families search by area — only your neighbourhood is shown, never your exact address.'
+	);
+
+	const MIN_BIRTH_DATE = '1900-01-01';
+	const maxBirthDate = toDateInputValue(new Date());
 
 	// Mirrors the API's public-image limits so a bad pick fails before upload.
 	const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -54,13 +73,23 @@
 	let uploadingPhoto = $state(false);
 	let photoError = $state('');
 
+	// Fields the person has typed into since the form appeared. Loaded data
+	// never overwrites them, so a late or repeated load can't erase what was
+	// typed (UAT #19).
+	const dirty = new SvelteSet<string>();
+
 	function fillForm(data: ProviderProfile) {
-		firstName = data.firstName ?? '';
-		lastName = data.lastName ?? '';
-		gender = data.gender ?? '';
-		phoneNumber = data.phoneNumber ?? '';
-		dateOfBirth = data.dateOfBirth ?? '';
-		shortBio = data.shortBio ?? '';
+		if (!dirty.has('firstName')) firstName = data.firstName ?? '';
+		if (!dirty.has('lastName')) lastName = data.lastName ?? '';
+		if (!dirty.has('gender')) gender = data.gender ?? '';
+		if (!dirty.has('phoneNumber')) phoneNumber = data.phoneNumber ?? '';
+		if (!dirty.has('dateOfBirth')) dateOfBirth = data.dateOfBirth ?? '';
+		if (!dirty.has('shortBio')) shortBio = data.shortBio ?? '';
+	}
+
+	function markDirty(event: Event) {
+		const name = (event.target as HTMLInputElement | null)?.name;
+		if (name) dirty.add(name);
 	}
 
 	async function load() {
@@ -80,7 +109,18 @@
 		void load();
 	});
 
-	const canSave = $derived(firstName.trim().length > 0 && lastName.trim().length > 0);
+	// A typed six-digit year ("198501") used to save (UAT #13).
+	const dateOfBirthError = $derived.by(() => {
+		const value = dateOfBirth.trim();
+		if (value === '') return '';
+		if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < MIN_BIRTH_DATE || value > maxBirthDate) {
+			return 'Enter a real date of birth, between 1900 and today.';
+		}
+		return '';
+	});
+	const canSave = $derived(
+		firstName.trim().length > 0 && lastName.trim().length > 0 && dateOfBirthError === ''
+	);
 
 	async function save(event: SubmitEvent) {
 		event.preventDefault();
@@ -97,6 +137,7 @@
 		});
 		if (result.ok) {
 			profile = result.data;
+			dirty.clear();
 			toast.success('Profile saved.');
 		} else if (result.error.code === 'INVALID_PROFILE_INPUT') {
 			// Server-side form validation stays next to the fields.
@@ -185,9 +226,11 @@
 
 	const savedAddress = $derived.by(() => {
 		if (!profile) return null;
-		const parts = [profile.address, profile.city, profile.stateProvince, profile.country].filter(
-			Boolean
-		);
+		// The saved address is Google's formatted one, which already ends in
+		// the city, province and country — appending them again showed them
+		// twice (UAT #7).
+		if (profile.address) return profile.address;
+		const parts = [profile.city, profile.stateProvince, profile.country].filter(Boolean);
 		return parts.length > 0 ? parts.join(', ') : null;
 	});
 </script>
@@ -225,9 +268,7 @@
 			<div class="min-w-0 flex-1">
 				<h2 class="text-base font-bold text-base-content">Profile photo</h2>
 				<p class="mt-0.5 text-xs text-base-content-muted">
-					{photoRequired && !profile?.image
-						? 'Required — a clear, friendly photo of your face helps families feel at ease.'
-						: 'A clear, friendly photo of your face helps families feel at ease.'}
+					{photoRequired && !profile?.image ? `Required — ${photoHint.charAt(0).toLowerCase()}${photoHint.slice(1)}` : photoHint}
 					JPG, PNG or WebP, up to 5 MB.
 				</p>
 				{#if photoError}
@@ -254,19 +295,34 @@
 			</button>
 		</div>
 
-		<form class="rounded-lg border border-card-border bg-base-100 p-6 lg:p-7" onsubmit={save}>
+		<form
+			class="rounded-lg border border-card-border bg-base-100 p-6 lg:p-7"
+			onsubmit={save}
+			oninput={markDirty}
+			onchange={markDirty}
+		>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">First name</legend>
-					<input class="input w-full" bind:value={firstName} autocomplete="given-name" />
+					<input
+						class="input w-full"
+						name="firstName"
+						bind:value={firstName}
+						autocomplete="given-name"
+					/>
 				</fieldset>
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">Last name</legend>
-					<input class="input w-full" bind:value={lastName} autocomplete="family-name" />
+					<input
+						class="input w-full"
+						name="lastName"
+						bind:value={lastName}
+						autocomplete="family-name"
+					/>
 				</fieldset>
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">Gender</legend>
-					<select class="select w-full" bind:value={gender}>
+					<select class="select w-full" name="gender" bind:value={gender}>
 						<option value="">Prefer not to say</option>
 						<option value="female">Female</option>
 						<option value="male">Male</option>
@@ -274,11 +330,26 @@
 				</fieldset>
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">Phone number</legend>
-					<input class="input w-full" bind:value={phoneNumber} autocomplete="tel" />
+					<input
+						class="input w-full"
+						name="phoneNumber"
+						bind:value={phoneNumber}
+						autocomplete="tel"
+					/>
 				</fieldset>
 				<fieldset class="fieldset">
 					<legend class="fieldset-legend">Date of birth</legend>
-					<input class="input w-full" type="date" bind:value={dateOfBirth} />
+					<input
+						class="input w-full {dateOfBirthError ? 'input-error' : ''}"
+						type="date"
+						name="dateOfBirth"
+						min={MIN_BIRTH_DATE}
+						max={maxBirthDate}
+						bind:value={dateOfBirth}
+					/>
+					{#if dateOfBirthError}
+						<p class="label text-xs text-error">{dateOfBirthError}</p>
+					{/if}
 				</fieldset>
 			</div>
 
@@ -286,6 +357,7 @@
 				<legend class="fieldset-legend">Short bio</legend>
 				<textarea
 					class="textarea min-h-24 w-full"
+					name="shortBio"
 					maxlength="512"
 					bind:value={shortBio}
 					placeholder={bioPlaceholder}
@@ -310,7 +382,7 @@
 		<div class="mt-5 rounded-lg border border-card-border bg-base-100 p-6 lg:p-7">
 			<h2 class="text-base font-bold text-base-content">Location</h2>
 			<p class="mt-0.5 mb-4 text-xs text-base-content-muted">
-				Families search by area — only your neighbourhood is shown, never your exact address.
+				{locationHint}
 			</p>
 
 			{#if savedAddress}

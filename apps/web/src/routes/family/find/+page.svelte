@@ -13,7 +13,11 @@
 		type ProviderSearchData,
 		type ProviderSearchSort
 	} from '$lib/api/providers';
-	import { getFamilyOnboardingState, type FamilyOnboardingState } from '$lib/api/onboarding';
+	import {
+		dismissFamilyWelcome,
+		getFamilyOnboardingState,
+		type FamilyOnboardingState
+	} from '$lib/api/onboarding';
 	import { getProfile } from '$lib/api/provider-profile';
 	import { listLiveCatalogue } from '$lib/api/service-catalogue';
 	import { reportUserSearch } from '$lib/api/user-searches';
@@ -121,21 +125,18 @@
 	let modalDecided = $state(false);
 	let tourStarted = false;
 
-	const dismissKey = (userId: string) => `poppynz-family-getting-started:${userId}`;
-
+	// UAT #16: the server decides (dismissed, finished or already submitted)
+	// and remembers the dismissal across devices — no localStorage.
 	function dismissModal() {
-		if (onboarding) localStorage.setItem(dismissKey(onboarding.userId), '1');
 		modalOpen = false;
+		void dismissFamilyWelcome();
 	}
 
 	onMount(() => {
 		void getFamilyOnboardingState().then((result) => {
 			if (result.ok) {
 				onboarding = result.data;
-				const incomplete = result.data.progress.completed < result.data.progress.total;
-				if (incomplete && !localStorage.getItem(dismissKey(result.data.userId))) {
-					modalOpen = true;
-				}
+				modalOpen = result.data.welcome.show;
 			}
 			modalDecided = true;
 		});
@@ -153,14 +154,11 @@
 	onMount(() => {
 		void getProfile().then((result) => {
 			if (result.ok) {
-				// The profile response never exposes lat/lng; a saved googlePlaceId
-				// means the API has coordinates for radius search.
-				const profile = result.data as {
-					city?: string | null;
-					stateProvince?: string | null;
-					googlePlaceId?: string | null;
-				};
-				hasLocation = Boolean(profile.googlePlaceId);
+				// The profile never exposes lat/lng; `hasLocation` says whether the
+				// API holds coordinates for radius search (B9: a place id is not
+				// required — seeded locations have coordinates without one).
+				const profile = result.data;
+				hasLocation = profile.hasLocation;
 				originLabel = [profile.city, profile.stateProvince].filter(Boolean).join(', ');
 				// Nearby-first default: families with a saved location start on a
 				// 10 km distance search unless the URL already carries a search.

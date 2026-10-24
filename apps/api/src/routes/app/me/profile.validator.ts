@@ -9,12 +9,27 @@ const profileUpdateValidationError = {
 const trimmedNonEmptyString = Schema.Trim.pipe(Schema.nonEmptyString());
 const nullableOptionalNonEmptyString = Schema.optional(Schema.NullOr(trimmedNonEmptyString));
 
+/** A real calendar date of birth, YYYY-MM-DD, between 1900 and today — a
+ * typed "198501" year used to be accepted (UAT #13). */
+export const isPlausibleDateOfBirth = (value: string, today: Date = new Date()) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) return false;
+  return value >= '1900-01-01' && value <= today.toISOString().slice(0, 10);
+};
+
+const dateOfBirth = Schema.Trim.pipe(
+  Schema.filter((value) => isPlausibleDateOfBirth(value), {
+    message: () => 'Date of birth must be a real date between 1900 and today.'
+  })
+);
+
 export const profileUpdateSchema = Schema.Struct({
   firstName: nullableOptionalNonEmptyString,
   lastName: nullableOptionalNonEmptyString,
   gender: Schema.optional(Schema.NullOr(Schema.Literal('male', 'female'))),
   phoneNumber: nullableOptionalNonEmptyString,
-  dateOfBirth: nullableOptionalNonEmptyString,
+  dateOfBirth: Schema.optional(Schema.NullOr(dateOfBirth)),
   address: nullableOptionalNonEmptyString,
   city: nullableOptionalNonEmptyString,
   postalCode: nullableOptionalNonEmptyString,

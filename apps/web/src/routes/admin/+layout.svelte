@@ -52,8 +52,11 @@
 	];
 </script>
 
+<svelte:head>
+	{#if notAuthorized}<title>Not authorized · Poppynz</title>{/if}
+</svelte:head>
+
 {#if notAuthorized}
-	<svelte:head><title>Not authorized · Poppynz</title></svelte:head>
 	<main class="flex min-h-screen items-center justify-center bg-base-200 p-gutter">
 		<div class="max-w-md rounded-xl border border-card-border bg-base-100 p-8 text-center">
 			<i class="las la-lock text-4xl text-outline" aria-hidden="true"></i>

@@ -7,6 +7,7 @@ const stateEndpoint = apiClient.me.onboarding.$get;
 const familyStateEndpoint = apiClient.me.onboarding.family.$get;
 const historyEndpoint = apiClient.me.onboarding.history.$get;
 const submitEndpoint = apiClient['approval-requests'].$post;
+const dismissWelcomeEndpoint = apiClient.me.onboarding.family['welcome-dismissal'].$post;
 
 export type OnboardingState = Extract<
 	Awaited<ReturnType<typeof getOnboardingState>>,
@@ -36,6 +37,11 @@ export async function getFamilyOnboardingState() {
 
 export async function getOnboardingHistory() {
 	return call(historyEndpoint());
+}
+
+/** The family closed the getting-started pop-up (remembered server-side). */
+export async function dismissFamilyWelcome() {
+	return call(dismissWelcomeEndpoint());
 }
 
 export async function submitApprovalRequest() {

@@ -522,3 +522,22 @@ describe('profile programs', () => {
     expect(getFailure(exit)).toBeInstanceOf(ProfileRepoError);
   });
 });
+
+describe('date of birth validation (UAT #13)', () => {
+  it('accepts a real date and rejects six-digit years and impossible dates', async () => {
+    const { isPlausibleDateOfBirth } = await import('./profile.validator');
+    const today = new Date('2026-10-24T12:00:00.000Z');
+    expect(isPlausibleDateOfBirth('1985-01-15', today)).toBe(true);
+    for (const value of ['198501-01-15', '1985-02-30', '1899-12-31', '2027-01-01', '15/01/1985']) {
+      expect(isPlausibleDateOfBirth(value, today)).toBe(false);
+    }
+  });
+
+  it('refuses an implausible date of birth on update', async () => {
+    const { validateProfileUpdateInput } = await import('./profile.validator');
+    const exit = await Effect.runPromiseExit(validateProfileUpdateInput({ dateOfBirth: '198501-01-01' }));
+    expect(Exit.isFailure(exit)).toBe(true);
+    const ok = await Effect.runPromiseExit(validateProfileUpdateInput({ dateOfBirth: '1985-01-01' }));
+    expect(Exit.isSuccess(ok)).toBe(true);
+  });
+});

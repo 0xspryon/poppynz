@@ -7,7 +7,8 @@
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
 	import { relativeDayLabel } from '$lib/date';
-	import { centsToDollars } from '$lib/money';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { notifications } from '$lib/notifications.svelte';
 	import { onMount } from 'svelte';
 
@@ -37,15 +38,15 @@
 	const filters: Array<{ key: FamilyFilter | ProviderFilter; label: string }> = $derived(
 		role === 'family'
 			? [
-					{ key: 'all', label: 'All' },
-					{ key: 'proposed', label: 'Proposed' },
-					{ key: 'active', label: 'Active' },
-					{ key: 'drafts', label: 'Drafts' }
+					{ key: 'all', label: m.contracts_filter_all() },
+					{ key: 'proposed', label: m.contracts_filter_proposed() },
+					{ key: 'active', label: m.contracts_filter_active() },
+					{ key: 'drafts', label: m.contracts_filter_drafts() }
 				]
 			: [
-					{ key: 'all', label: 'All' },
-					{ key: 'awaiting', label: 'Awaiting you' },
-					{ key: 'active', label: 'Active' }
+					{ key: 'all', label: m.contracts_filter_all() },
+					{ key: 'awaiting', label: m.contracts_filter_awaiting() },
+					{ key: 'active', label: m.contracts_filter_active() }
 				]
 	);
 
@@ -123,26 +124,33 @@
 
 	const servicesSummary = (contract: ContractSummary) => {
 		const [first, ...rest] = contract.serviceNames;
-		if (!first) return 'No services yet';
-		const name = rest.length > 0 ? `${first} +${rest.length} more` : first;
+		if (!first) return m.contracts_list_no_services();
+		const name =
+			rest.length > 0 ? m.contracts_list_services_more({ name: first, count: rest.length }) : first;
 		return contract.weeklyEstimateCents !== null && contract.weeklyEstimateCents > 0
-			? `${name} · $${centsToDollars(contract.weeklyEstimateCents)}/wk est.`
+			? m.contracts_list_services_estimate({
+					services: name,
+					amount: formatMoney(contract.weeklyEstimateCents)
+				})
 			: name;
 	};
 </script>
 
 <svelte:head>
-	<title>Contracts · Poppynz</title>
+	<title>{m.contracts_list_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-5xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Contracts</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">
+		{m.contracts_list_title()}
+	</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
 		{#if role === 'family'}
-			Contracts start in <strong class="text-secondary">Messages</strong> — propose terms from a conversation
-			and they appear here.
+			{m.contracts_list_intro_family_before()}
+			<strong class="text-secondary">{m.contracts_list_intro_family_strong()}</strong>
+			{m.contracts_list_intro_family_after()}
 		{:else}
-			Families you're talking with can propose a contract — proposals land here to review and sign.
+			{m.contracts_list_intro_provider()}
 		{/if}
 	</p>
 
@@ -172,7 +180,7 @@
 		<div
 			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
 		>
-			<p class="text-sm font-medium text-error" role="alert">Your contracts didn't load.</p>
+			<p class="text-sm font-medium text-error" role="alert">{m.contracts_list_load_error()}</p>
 			<button
 				type="button"
 				class="btn btn-primary btn-sm"
@@ -182,7 +190,7 @@
 				}}
 			>
 				<i class="las la-redo-alt" aria-hidden="true"></i>
-				Retry
+				{m.contracts_retry()}
 			</button>
 		</div>
 	{:else if contracts.length === 0}
@@ -192,20 +200,21 @@
 			<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
 				<i class="las la-file-signature text-2xl text-neutral" aria-hidden="true"></i>
 			</span>
-			<h2 class="font-display text-lg font-bold text-base-content">Contracts start in Messages</h2>
+			<h2 class="font-display text-lg font-bold text-base-content">
+				{m.contracts_list_empty_title()}
+			</h2>
 			<p class="max-w-sm text-sm text-base-content-muted">
 				{#if role === 'family'}
-					Propose terms from a conversation with a provider — the contract appears here to track and
-					sign.
+					{m.contracts_list_empty_family()}
 				{:else}
-					Families you're talking with can propose a contract — it appears here to review and sign.
+					{m.contracts_list_empty_provider()}
 				{/if}
 			</p>
-			<a href={messagesHref} class="btn btn-primary btn-sm">Go to Messages</a>
+			<a href={messagesHref} class="btn btn-primary btn-sm">{m.contracts_list_go_to_messages()}</a>
 		</div>
 	{:else if visible.length === 0}
 		<div class="rounded-xl border border-card-border bg-base-100 p-8 text-center">
-			<p class="text-sm text-base-content-muted">Nothing under this filter.</p>
+			<p class="text-sm text-base-content-muted">{m.contracts_list_filter_empty()}</p>
 		</div>
 	{:else}
 		<div class="overflow-hidden rounded-xl border border-card-border bg-base-100">

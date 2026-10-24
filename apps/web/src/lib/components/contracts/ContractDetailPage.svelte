@@ -41,7 +41,8 @@
 		noticeLastDay,
 		weeklyMinutes
 	} from '$lib/contract-sessions';
-	import { centsToDollars } from '$lib/money';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { formatDate, formatDateTime, formatDateWithWeekday } from '$lib/date';
 	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
@@ -193,33 +194,51 @@
 		);
 	});
 
+	/** TAX_PROVINCE_REQUIRED names whose address lacks a province; the viewer
+	 * is told to fix their own, or that the other side has to. */
+	const provinceRequiredMessage = (error: { code: string; message: string }) => {
+		const party = (error as { party?: unknown }).party;
+		const viewerSide = contract?.viewerSide ?? (role === 'family' ? 'family' : 'provider');
+		const owner = party === 'family' || party === 'helper' ? party : null;
+		if (owner === null || (owner === 'family') === (viewerSide === 'family')) {
+			return viewerSide === 'family'
+				? m.contracts_error_province_own_family()
+				: m.contracts_error_province_own_helper();
+		}
+		return owner === 'family'
+			? m.contracts_error_province_family()
+			: m.contracts_error_province_helper();
+	};
+
 	const termsErrorToast = (error: { code: string; message: string }) => {
 		if (error.code === 'RATE_BELOW_LISTED') {
-			toast.error(
-				`Some rates are below the base rate for the service — raise them and retry.`
-			);
+			toast.error(m.contracts_error_rate_below_floor());
 		} else if (error.code === 'UNKNOWN_CONTRACT_SERVICE') {
-			toast.error(`Pick services from ${firstName}'s current list.`);
+			toast.error(m.contracts_error_unknown_service({ name: firstName }));
 		} else if (error.code === 'EMPTY_CONTRACT_TERMS') {
-			toast.error('Add at least one service before sending.');
+			toast.error(m.contracts_error_empty_terms());
 		} else if (error.code === 'INVALID_CONTRACT_TERMS') {
-			toast.error('Check the rates and hours — something is out of range.');
+			toast.error(m.contracts_error_invalid_terms());
 		} else if (error.code === 'CONTRACT_STATE_INVALID') {
-			toast.error('This contract has moved on — reloading.');
+			toast.error(m.contracts_error_moved_on());
 			void refresh(contractId);
-		} else if (
-			error.code === 'START_DATE_REQUIRED' ||
-			error.code === 'START_DATE_NOT_IN_FUTURE' ||
-			error.code === 'FAMILY_LOCATION_REQUIRED'
-		) {
-			toast.error(error.message);
+		} else if (error.code === 'START_DATE_REQUIRED') {
+			toast.error(m.contracts_error_start_date_required());
+		} else if (error.code === 'START_DATE_NOT_IN_FUTURE') {
+			toast.error(m.contracts_error_start_date_not_future());
+		} else if (error.code === 'FAMILY_LOCATION_REQUIRED') {
+			toast.error(m.contracts_error_location_required());
 		} else if (error.code === 'PAYMENT_METHOD_REQUIRED') {
-			toast.error(error.message, { title: 'Card needed' });
+			toast.error(m.contracts_error_payment_method_required(), {
+				title: m.contracts_error_card_needed_title()
+			});
 			void refresh(contractId);
 		} else if (error.code === 'TAX_PROVINCE_REQUIRED') {
-			toast.error(error.message, { title: 'Province needed' });
+			toast.error(provinceRequiredMessage(error), {
+				title: m.contracts_error_province_needed_title()
+			});
 		} else {
-			toast.error("That didn't go through. Please try again.");
+			toast.error(m.contracts_error_generic());
 		}
 	};
 
@@ -228,7 +247,7 @@
 	 * flags redraw the page instead. */
 	const actionErrorToast = (error: { code: string; message: string }, fallback: string) => {
 		if (error.code === 'CONTRACT_START_DATE_PASSED') {
-			toast.error(error.message);
+			toast.error(m.contracts_error_start_date_passed());
 			void refresh(contractId);
 			return;
 		}
@@ -237,12 +256,14 @@
 			error.code === 'CONTRACT_NOT_FOUND' ||
 			error.code === 'CONTRACT_PROPOSAL_EXPIRED'
 		) {
-			toast.error('This contract has moved on — reloading.');
+			toast.error(m.contracts_error_moved_on());
 			void refresh(contractId);
 		} else if (error.code === 'COUNTERPART_UNAVAILABLE') {
-			toast.error("The other person can't take on new contracts right now.");
+			toast.error(m.contracts_error_counterpart_unavailable());
 		} else if (error.code === 'TAX_PROVINCE_REQUIRED') {
-			toast.error(error.message, { title: 'Province needed' });
+			toast.error(provinceRequiredMessage(error), {
+				title: m.contracts_error_province_needed_title()
+			});
 		} else {
 			toast.error(fallback);
 		}
@@ -254,7 +275,7 @@
 		const result = await saveContractTerms(contractId, terms);
 		busy = false;
 		if (result.ok) {
-			toast.success('Draft saved — only you can see it.');
+			toast.success(m.contracts_toast_draft_saved());
 			void refresh(contractId);
 		} else {
 			termsErrorToast(result.error);
@@ -287,8 +308,8 @@
 		const sent = await sendContract(contractId);
 		busy = false;
 		if (sent.ok) {
-			toast.success(`You signed and sent it. ${firstName} was notified in Messages and Contracts.`, {
-				title: 'Proposal signed & sent'
+			toast.success(m.contracts_toast_sent({ name: firstName }), {
+				title: m.contracts_toast_sent_title()
 			});
 			void refresh(contractId);
 		} else {
@@ -303,10 +324,10 @@
 		const result = await withdrawContract(contractId);
 		busy = false;
 		if (result.ok) {
-			toast.info('Proposal withdrawn — it returned to a draft only you can see.');
+			toast.info(m.contracts_toast_withdrawn());
 			void refresh(contractId);
 		} else {
-			actionErrorToast(result.error, 'Withdrawing failed. Please try again.');
+			actionErrorToast(result.error, m.contracts_error_withdraw_failed());
 		}
 	}
 
@@ -319,7 +340,7 @@
 		if (result.ok) {
 			void refresh(contractId);
 		} else {
-			actionErrorToast(result.error, 'Editing failed. Please try again.');
+			actionErrorToast(result.error, m.contracts_error_edit_failed());
 		}
 	}
 
@@ -330,10 +351,10 @@
 		const result = await acceptContract(contractId);
 		busy = false;
 		if (result.ok) {
-			toast.success('Contact details are now shared.', { title: 'Contract active' });
+			toast.success(m.contracts_toast_accepted(), { title: m.contracts_toast_accepted_title() });
 			void refresh(contractId);
 		} else {
-			actionErrorToast(result.error, 'Accepting failed. Please try again.');
+			actionErrorToast(result.error, m.contracts_error_accept_failed());
 		}
 	}
 
@@ -345,10 +366,12 @@
 		if (result.ok) {
 			declineOpen = false;
 			declineReason = '';
-			toast.info(`${firstName} was notified. The chat stays open.`, { title: 'Proposal declined' });
+			toast.info(m.contracts_toast_declined({ name: firstName }), {
+				title: m.contracts_proposal_declined()
+			});
 			void refresh(contractId);
 		} else {
-			actionErrorToast(result.error, 'Declining failed. Please try again.');
+			actionErrorToast(result.error, m.contracts_error_decline_failed());
 		}
 	}
 
@@ -359,10 +382,10 @@
 		const result = await requestContractChanges(contractId);
 		busy = false;
 		if (result.ok) {
-			toast.info(`${firstName} was asked to revise the proposal.`);
+			toast.info(m.contracts_toast_changes_requested({ name: firstName }));
 			void goto(withQuery(messagesHref, `c=${encodeURIComponent(result.data.conversationId)}`));
 		} else {
-			actionErrorToast(result.error, 'Requesting changes failed. Please try again.');
+			actionErrorToast(result.error, m.contracts_error_request_changes_failed());
 		}
 	}
 
@@ -374,12 +397,12 @@
 		if (result.ok) {
 			endOpen = false;
 			endNote = '';
-			toast.info(`Last working day: ${formatDateWithWeekday(result.data.endsOn)}.`, {
-				title: 'Notice given'
+			toast.info(m.contracts_toast_notice({ date: formatDateWithWeekday(result.data.endsOn) }), {
+				title: m.contracts_toast_notice_title()
 			});
 			void refresh(contractId);
 		} else {
-			actionErrorToast(result.error, 'Ending failed. Please try again.');
+			actionErrorToast(result.error, m.contracts_error_end_failed());
 		}
 	}
 
@@ -391,7 +414,10 @@
 		if (!endOpen || !contract?.timeZone) return '';
 		const lastDay = noticeLastDay(todayIn(contract.timeZone), contract.acceptedVersion);
 		return lastDay.endsAtMinutes
-			? `${formatDateWithWeekday(lastDay.endsOn)}, until ${formatEndTime(lastDay.endsAtMinutes)}`
+			? m.contracts_date_until({
+					date: formatDateWithWeekday(lastDay.endsOn),
+					time: formatEndTime(lastDay.endsAtMinutes)
+				})
 			: formatDateWithWeekday(lastDay.endsOn);
 	});
 
@@ -425,13 +451,13 @@
 	function suspendedLabel(reason: string | null): string {
 		switch (reason) {
 			case 'card':
-				return 'Suspended · card problem';
+				return m.contracts_suspended_card();
 			case 'helper_not_ready':
-				return 'Suspended · helper payouts';
+				return m.contracts_suspended_helper_payouts();
 			case 'provider_unavailable':
-				return 'Suspended · helper unavailable';
+				return m.contracts_suspended_helper_unavailable();
 			default:
-				return 'Suspended';
+				return m.contracts_suspended();
 		}
 	}
 
@@ -440,34 +466,61 @@
 		const pending = contract.pendingVersion;
 		const accepted = contract.acceptedVersion;
 		const latest = contract.latestVersion;
+		// Parts are joined with " · " — each part is a whole localized phrase.
+		const parts = (...items: Array<string | null | false | undefined>) =>
+			items.filter(Boolean).join(' · ');
 		switch (contract.status) {
 			case 'draft':
-				return `Draft v${latest?.version ?? 1} · started from your conversation`;
+				return m.contracts_subtitle_draft({ version: latest?.version ?? 1 });
 			case 'proposed':
 			case 'expired':
 				return pending
-					? `Proposed ${pending.proposedByMe ? 'by you' : `by ${firstName}`} · v${pending.version}` +
-							(pending.sentAt ? ` · sent ${formatDateTime(pending.sentAt)}` : '')
+					? parts(
+							pending.proposedByMe
+								? m.contracts_subtitle_proposed_by_you({ version: pending.version })
+								: m.contracts_subtitle_proposed_by_name({
+										name: firstName,
+										version: pending.version
+									}),
+							pending.sentAt && m.contracts_subtitle_sent({ date: formatDateTime(pending.sentAt) })
+						)
 					: '';
 			case 'changes_requested':
-				return `v${latest?.version ?? 1} · changes requested`;
+				return m.contracts_subtitle_changes_requested({ version: latest?.version ?? 1 });
 			case 'declined':
 				return latestDeclined
-					? `v${latestDeclined.version} · declined ${latestDeclined.proposedByMe ? `by ${firstName}` : 'by you'}` +
-							(latestDeclined.decidedAt ? ` · ${formatDate(latestDeclined.decidedAt)}` : '')
+					? parts(
+							latestDeclined.proposedByMe
+								? m.contracts_subtitle_declined_by_name({
+										name: firstName,
+										version: latestDeclined.version
+									})
+								: m.contracts_subtitle_declined_by_you({ version: latestDeclined.version }),
+							latestDeclined.decidedAt && formatDate(latestDeclined.decidedAt)
+						)
 					: '';
 			case 'active':
 				return accepted
-					? `v${accepted.version} · signed by both` +
-							(accepted.familySignedAt
-								? ` (family ${formatDate(accepted.familySignedAt)}, helper ${accepted.decidedAt ? formatDate(accepted.decidedAt) : '—'})`
-								: '') +
-							(accepted.decidedAt ? ` · active since ${formatDate(accepted.decidedAt)}` : '')
+					? parts(
+							accepted.familySignedAt
+								? m.contracts_subtitle_signed_both_dates({
+										version: accepted.version,
+										family: formatDate(accepted.familySignedAt),
+										helper: accepted.decidedAt ? formatDate(accepted.decidedAt) : '—'
+									})
+								: m.contracts_subtitle_signed_both({ version: accepted.version }),
+							accepted.decidedAt &&
+								m.contracts_subtitle_active_since({ date: formatDate(accepted.decidedAt) })
+						)
 					: '';
 			case 'ending':
-				return contract.endsOn ? `Ending · last day ${formatDate(contract.endsOn)}` : 'Ending';
+				return contract.endsOn
+					? m.contracts_subtitle_ending_on({ date: formatDate(contract.endsOn) })
+					: m.contracts_subtitle_ending();
 			case 'ended':
-				return contract.endsOn ? `Ended ${formatDate(contract.endsOn)}` : 'Ended';
+				return contract.endsOn
+					? m.contracts_subtitle_ended_on({ date: formatDate(contract.endsOn) })
+					: m.contracts_subtitle_ended();
 			default:
 				return '';
 		}
@@ -504,21 +557,21 @@
 		return {
 			sessions: sessionCount,
 			hours: minutesToHours(minutes),
-			weekly: centsToDollars(pending.weeklyEstimateCents)
+			weekly: formatMoney(pending.weeklyEstimateCents)
 		};
 	});
 	const versionsNewestFirst = $derived([...(contract?.versions ?? [])].reverse());
 
 	const historyLine = (version: NonNullable<typeof contract>['versions'][number]) => {
-		const who = version.proposedByMe ? 'you' : firstName;
+		const who = version.proposedByMe ? m.contracts_history_you() : firstName;
 		const statusLabel: Record<string, string> = {
-			draft: `drafted by ${who}`,
-			proposed: `proposed by ${who}`,
-			accepted: `proposed by ${who} · accepted`,
-			superseded: `superseded`,
-			declined: `proposed by ${who} · declined`,
-			changes_requested: `proposed by ${who} · changes requested`,
-			withdrawn: `proposed by ${who} · withdrawn`
+			draft: m.contracts_history_drafted({ who }),
+			proposed: m.contracts_history_proposed({ who }),
+			accepted: m.contracts_history_accepted({ who }),
+			superseded: m.contracts_history_superseded(),
+			declined: m.contracts_history_declined({ who }),
+			changes_requested: m.contracts_history_changes_requested({ who }),
+			withdrawn: m.contracts_history_withdrawn({ who })
 		};
 		const at = version.decidedAt ?? version.sentAt;
 		return `v${version.version} ${statusLabel[version.status] ?? version.status}${at ? ` · ${formatDate(at)}` : ''}`;
@@ -527,7 +580,9 @@
 
 <svelte:head>
 	<title>
-		{contract ? `Contract with ${contract.counterpart.name} · Poppynz` : 'Contract · Poppynz'}
+		{contract
+			? m.contracts_detail_page_title({ name: contract.counterpart.name })
+			: m.contracts_detail_page_title_loading()}
 	</title>
 </svelte:head>
 
@@ -537,7 +592,7 @@
 		class="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-primary"
 	>
 		<i class="las la-angle-left" aria-hidden="true"></i>
-		Contracts
+		{m.contracts_list_title()}
 	</a>
 
 	{#if loading && !contract}
@@ -548,14 +603,14 @@
 		<div
 			class="flex flex-col items-center gap-3 rounded-xl border border-card-border bg-base-100 px-6 py-14 text-center"
 		>
-			<p class="text-sm font-medium text-error" role="alert">This contract didn't load.</p>
+			<p class="text-sm font-medium text-error" role="alert">{m.contracts_detail_load_error()}</p>
 			<button
 				type="button"
 				class="btn btn-primary btn-sm"
 				onclick={() => (retryTick = retryTick + 1)}
 			>
 				<i class="las la-redo-alt" aria-hidden="true"></i>
-				Retry
+				{m.contracts_retry()}
 			</button>
 		</div>
 	{:else if contract}
@@ -568,7 +623,7 @@
 			</span>
 			<div class="min-w-0 flex-1">
 				<h1 class="truncate font-display text-xl font-bold text-base-content lg:text-2xl">
-					Contract with {contract.counterpart.name}
+					{m.contracts_detail_title({ name: contract.counterpart.name })}
 				</h1>
 				<p class="truncate text-xs text-base-content-muted">{subtitle}</p>
 			</div>
@@ -580,9 +635,9 @@
 			<div class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3">
 				<i class="las la-clock mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-neutral">
-					Waiting for {firstName} — they were notified in Messages and Contracts.
+					{m.contracts_banner_waiting({ name: firstName })}
 					{#if contract.pendingVersion.expiresAt}
-						Expires {formatDate(contract.pendingVersion.expiresAt)}.
+						{m.contracts_banner_expires({ date: formatDate(contract.pendingVersion.expiresAt) })}
 					{/if}
 				</p>
 			</div>
@@ -591,18 +646,18 @@
 				<i class="las la-hourglass-end mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-neutral">
 					{#if contract.acceptBlockedReason === 'start_date_passed'}
-						The start date arrived before this proposal was accepted.
+						{m.contracts_banner_start_passed()}
 						{#if contract.viewerSide === 'family'}
-							Withdraw it below to revise and send new terms with a later start date.
+							{m.contracts_banner_start_passed_family()}
 						{:else}
-							You can't accept it any more — {firstName} can send new terms with a later date.
+							{m.contracts_banner_start_passed_provider({ name: firstName })}
 						{/if}
 					{:else}
-						This proposal expired without a decision.
+						{m.contracts_banner_expired()}
 						{#if contract.viewerSide === 'family'}
-							Withdraw it below to revise and send new terms.
+							{m.contracts_banner_expired_family()}
 						{:else}
-							{firstName} can send new terms from their side.
+							{m.contracts_banner_expired_provider({ name: firstName })}
 						{/if}
 					{/if}
 				</p>
@@ -614,9 +669,9 @@
 				<i class="las la-comment-dots mt-0.5 shrink-0 text-warning" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-warning">
 					{#if contract.viewerSide === 'family'}
-						{firstName} asked for changes — the details are in your chat. Revise the terms below and re-send.
+						{m.contracts_banner_changes_family({ name: firstName })}
 					{:else}
-						You asked {firstName} for changes in chat. The revised proposal will appear here.
+						{m.contracts_banner_changes_provider({ name: firstName })}
 					{/if}
 				</p>
 			</div>
@@ -627,10 +682,13 @@
 				>
 					<i class="las la-times-circle mt-0.5 shrink-0 text-error" aria-hidden="true"></i>
 					<p class="text-[12.5px] leading-relaxed text-error">
-						{firstName} declined{latestDeclined?.declineReason
-							? `: “${latestDeclined.declineReason}”`
-							: ' the proposal.'}
-						Your chat stays open — nothing else changes.
+						{latestDeclined?.declineReason
+							? m.contracts_banner_declined_reason({
+									name: firstName,
+									reason: latestDeclined.declineReason
+								})
+							: m.contracts_banner_declined({ name: firstName })}
+						{m.contracts_banner_declined_chat_open()}
 					</p>
 				</div>
 			{:else}
@@ -640,9 +698,12 @@
 				>
 					<i class="las la-info-circle mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 					<p class="text-[12.5px] leading-relaxed text-neutral">
-						You declined{latestDeclined?.declineReason
-							? ` with the reason “${latestDeclined.declineReason}”`
-							: ''}. {firstName} was notified and can propose new terms; the conversation stays open.
+						{latestDeclined?.declineReason
+							? m.contracts_banner_you_declined_reason({
+									name: firstName,
+									reason: latestDeclined.declineReason
+								})
+							: m.contracts_banner_you_declined({ name: firstName })}
 					</p>
 				</div>
 			{/if}
@@ -653,18 +714,20 @@
 				<i class="las la-check-circle mt-0.5 shrink-0 text-success" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-success">
 					{#if contract.viewerSide === 'family'}
-						Contact details are now shared. Payments run on Poppynz in 3-day billing cycles — each
-						cycle is charged to your card on file.
+						{m.contracts_banner_active_family()}
 					{:else}
-						Contact details are now shared. You're paid on Poppynz for each 3-day billing cycle,
-						after commission and its tax.
+						{m.contracts_banner_active_provider()}
 					{/if}
 					{#if contract.endsOn}
-						The contract runs until <strong
-							>{formatDateWithWeekday(contract.endsOn)}{contract.endsAtMinutes
-								? ` at ${formatEndTime(contract.endsAtMinutes)}`
-								: ''}</strong
-						>.
+						{m.contracts_banner_runs_until_before()}
+						<strong
+							>{contract.endsAtMinutes
+								? m.contracts_date_at_time({
+										date: formatDateWithWeekday(contract.endsOn),
+										time: formatEndTime(contract.endsAtMinutes)
+									})
+								: formatDateWithWeekday(contract.endsOn)}</strong
+						>{m.contracts_banner_runs_until_after()}
 					{/if}
 				</p>
 			</div>
@@ -675,22 +738,33 @@
 				<i class="las la-clock mt-0.5 shrink-0 text-error" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-error">
 					{#if contract.endNoticedAt}
-						{contract.endedByMe ? 'You' : firstName} gave 2 weeks' notice on {formatDate(
-							contract.endNoticedAt
-						)}.
+						{contract.endedByMe
+							? m.contracts_banner_notice_by_you({ date: formatDate(contract.endNoticedAt) })
+							: m.contracts_banner_notice_by_name({
+									name: firstName,
+									date: formatDate(contract.endNoticedAt)
+								})}
 					{:else}
-						This contract {contract.status === 'ended' ? 'reached' : 'reaches'} its agreed end date.
+						{contract.status === 'ended'
+							? m.contracts_banner_reached_end()
+							: m.contracts_banner_reaches_end()}
 					{/if}
 					{#if contract.endsOn}
-						{contract.status === 'ended' ? 'The last working day was' : 'The last working day is'}
+						{contract.status === 'ended'
+							? m.contracts_banner_last_day_was()
+							: m.contracts_banner_last_day_is()}
 						<strong
-							>{formatDateWithWeekday(contract.endsOn)}{#if contract.endsAtMinutes}, until {formatEndTime(
-									contract.endsAtMinutes
-								)}{/if}</strong
-						> — payments run until then and stop after.
+							>{contract.endsAtMinutes
+								? m.contracts_date_until({
+										date: formatDateWithWeekday(contract.endsOn),
+										time: formatEndTime(contract.endsAtMinutes)
+									})
+								: formatDateWithWeekday(contract.endsOn)}</strong
+						>
+						{m.contracts_banner_last_day_after()}
 					{/if}
 					{#if contract.endNote && !contract.endedByMe}
-						Note: “{contract.endNote}”
+						{m.contracts_banner_note({ note: contract.endNote })}
 					{/if}
 				</p>
 			</div>
@@ -701,14 +775,13 @@
 				{#if showEditor}
 					{#if editorServicesError}
 						<p class="rounded-lg bg-base-300 px-4 py-3 text-[12.5px] text-neutral" role="alert">
-							{firstName}'s services didn't load — the editor needs them to add line items. Reload
-							to try again.
+							{m.contracts_detail_services_error({ name: firstName })}
 						</p>
 					{/if}
 					<ContractTermsEditor
 						providerServices={editorServices}
 						initial={contract.pendingVersion ?? contract.latestVersion}
-						listingLabel={`${firstName}'s listing`}
+						listingLabel={m.contracts_listing_label({ name: firstName })}
 						counterpartFirstName={firstName}
 						{chatHref}
 						earliestStartsOn={contract.earliestStartsOn}
@@ -736,8 +809,8 @@
 						terms={displayTerms}
 						dimmed={contract.status === 'declined' || contract.status === 'expired'}
 						heading={contract.status === 'declined'
-							? `Proposed terms — v${displayTerms.version}`
-							: 'Services & sessions'}
+							? m.contracts_detail_declined_terms_heading({ version: displayTerms.version })
+							: m.contracts_terms_heading()}
 						timeZoneLabel={contract.timeZoneLabel}
 						viewerIsFamily={contract.viewerSide === 'family'}
 					/>
@@ -760,11 +833,10 @@
 					>
 						<div class="min-w-0 flex-1">
 							<h3 class="font-display text-[13.5px] font-bold text-base-content">
-								End this contract
+								{m.contracts_end_card_title()}
 							</h3>
 							<p class="mt-0.5 text-[12px] leading-relaxed text-base-content-muted">
-								Either side can end with 2 weeks' notice. Payments run through the notice period,
-								then stop.
+								{m.contracts_end_card_body()}
 							</p>
 						</div>
 						<button
@@ -773,7 +845,7 @@
 							disabled={busy}
 							onclick={() => (endOpen = true)}
 						>
-							End contract…
+							{m.contracts_end_card_button()}
 						</button>
 					</div>
 				{/if}
@@ -789,7 +861,7 @@
 								disabled={busy}
 								onclick={() => (acceptConfirmOpen = true)}
 							>
-								Accept &amp; sign
+								{m.contracts_accept_sign()}
 							</button>
 						{/if}
 						{#if contract.acceptBlockedReason === 'start_date_passed'}
@@ -797,7 +869,7 @@
 								class="rounded-lg bg-base-300 px-3 py-2 text-[12px] leading-relaxed text-neutral"
 								role="status"
 							>
-								The start date has passed — ask {firstName} for new terms with a later date.
+								{m.contracts_start_passed_ask({ name: firstName })}
 							</p>
 						{/if}
 						{#if contract.actions.canRequestChanges}
@@ -807,7 +879,7 @@
 								disabled={busy}
 								onclick={() => (requestChangesConfirmOpen = true)}
 							>
-								Request changes
+								{m.contracts_request_changes()}
 							</button>
 						{/if}
 						{#if contract.actions.canDecline}
@@ -817,20 +889,22 @@
 								disabled={busy}
 								onclick={() => (declineOpen = true)}
 							>
-								Decline
+								{m.contracts_decline()}
 							</button>
 						{/if}
 						{#if reviewTotals}
 							<p class="text-center text-[11px] leading-relaxed text-outline">
-								{reviewTotals.sessions} proposed {reviewTotals.sessions === 1
-									? 'session'
-									: 'sessions'} · {reviewTotals.hours} hrs/wk · ${reviewTotals.weekly}/wk
+								{m.contracts_review_sessions({ count: reviewTotals.sessions })} · {m.contracts_hours_per_week(
+									{ hours: reviewTotals.hours }
+								)} · {m.contracts_per_week({ amount: reviewTotals.weekly })}
 							</p>
 						{/if}
 						<p class="text-center text-[11px] leading-relaxed text-outline">
-							Request changes opens the chat with {firstName}
+							{m.contracts_review_chat_hint({ name: firstName })}
 							{#if contract.pendingVersion?.expiresAt}
-								· expires {formatDate(contract.pendingVersion.expiresAt)}{/if}
+								· {m.contracts_review_expires({
+									date: formatDate(contract.pendingVersion.expiresAt)
+								})}{/if}
 						</p>
 					</div>
 				{/if}
@@ -843,7 +917,7 @@
 							disabled={busy}
 							onclick={handleEditProposal}
 						>
-							Edit proposal
+							{m.contracts_edit_proposal()}
 						</button>
 						<button
 							type="button"
@@ -851,10 +925,10 @@
 							disabled={busy}
 							onclick={() => (withdrawConfirmOpen = true)}
 						>
-							Withdraw
+							{m.contracts_withdraw()}
 						</button>
 						<p class="text-center text-[11px] leading-relaxed text-outline">
-							Editing withdraws the proposal back to a private draft.
+							{m.contracts_withdraw_hint()}
 						</p>
 					</div>
 				{/if}
@@ -862,7 +936,7 @@
 				{#if contract.counterpartContact}
 					<div class="rounded-xl border border-card-border bg-base-100 p-4">
 						<h3 class="mb-2 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
-							{firstName}'s contact details
+							{m.contracts_contact_heading({ name: firstName })}
 						</h3>
 						<p class="flex items-center gap-2 text-[13px] text-base-content">
 							<i class="las la-envelope text-outline" aria-hidden="true"></i>
@@ -886,28 +960,33 @@
 					>
 						<i class="las la-user-shield mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 						<p class="text-[12px] leading-relaxed text-neutral">
-							Signing activates the contract — contact details are shared and payments are set up on
-							Poppynz.
+							{m.contracts_contact_locked()}
 						</p>
 					</div>
 				{/if}
 
 				<div class="flex flex-col gap-2">
 					{#if chatHref}
-						<a href={chatHref} class="btn w-full btn-outline btn-sm">Open chat with {firstName}</a>
+						<a href={chatHref} class="btn w-full btn-outline btn-sm">
+							{m.contracts_open_chat({ name: firstName })}
+						</a>
 					{/if}
 				</div>
 
 				<div class="rounded-xl border border-card-border bg-base-100 p-4">
 					<h3 class="mb-2 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
-						History
+						{m.contracts_history_heading()}
 					</h3>
 					<ul class="flex flex-col gap-1 text-[12px] leading-relaxed text-base-content-muted">
 						{#each versionsNewestFirst as version (version.version)}
 							<li>{historyLine(version)}</li>
 						{/each}
 						{#if contract.conversationStartedAt}
-							<li>Conversation started · {formatDate(contract.conversationStartedAt)}</li>
+							<li>
+								{m.contracts_history_conversation_started({
+									date: formatDate(contract.conversationStartedAt)
+								})}
+							</li>
 						{/if}
 					</ul>
 				</div>
@@ -918,9 +997,9 @@
 
 <ConfirmDialog
 	open={acceptConfirmOpen}
-	title="Accept & sign this contract?"
-	body="Signing activates the contract — contact details are shared and payments run on Poppynz in 3-day billing cycles."
-	confirmLabel="Accept & sign"
+	title={m.contracts_accept_dialog_title()}
+	body={m.contracts_accept_dialog_body()}
+	confirmLabel={m.contracts_accept_sign()}
 	confirmClass="btn-primary"
 	{busy}
 	onconfirm={handleAccept}
@@ -933,9 +1012,9 @@
 
 <ConfirmDialog
 	open={signTerms !== null}
-	title="Sign & send these terms?"
-	body={`By sending, you sign this proposal as the family. ${firstName} can then accept and sign it, which activates the contract.`}
-	confirmLabel="Sign & send"
+	title={m.contracts_sign_dialog_title()}
+	body={m.contracts_sign_dialog_body({ name: firstName })}
+	confirmLabel={m.contracts_sign_send()}
 	confirmClass="btn-primary"
 	{busy}
 	onconfirm={() => void signAndSend()}
@@ -944,9 +1023,9 @@
 
 <ConfirmDialog
 	open={withdrawConfirmOpen}
-	title="Withdraw this proposal?"
-	body={`It returns to a draft only you can see — ${firstName} isn't notified.`}
-	confirmLabel="Withdraw"
+	title={m.contracts_withdraw_dialog_title()}
+	body={m.contracts_withdraw_dialog_body({ name: firstName })}
+	confirmLabel={m.contracts_withdraw()}
 	{busy}
 	onconfirm={handleWithdraw}
 	oncancel={() => (withdrawConfirmOpen = false)}
@@ -954,9 +1033,9 @@
 
 <ConfirmDialog
 	open={requestChangesConfirmOpen}
-	title="Request changes?"
-	body="This doesn't open an editor — it takes you back to the chat with {firstName}, and they revise the proposal from their side."
-	confirmLabel="Request changes"
+	title={m.contracts_request_changes_dialog_title()}
+	body={m.contracts_request_changes_dialog_body({ name: firstName })}
+	confirmLabel={m.contracts_request_changes()}
 	confirmClass="btn-primary"
 	{busy}
 	onconfirm={handleRequestChanges}
@@ -964,24 +1043,26 @@
 />
 
 {#if declineOpen}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Decline proposal">
+	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label={m.contracts_decline_dialog_aria()}>
 		<div class="modal-box max-w-md border border-card-border">
-			<h3 class="font-display text-xl font-bold text-base-content">Decline this proposal?</h3>
+			<h3 class="font-display text-xl font-bold text-base-content">
+				{m.contracts_decline_dialog_title()}
+			</h3>
 			<p class="py-3 text-sm text-base-content-muted">
-				{`${firstName} is notified, and your chat stays open — declining a contract never closes the conversation.`}
+				{m.contracts_decline_dialog_body({ name: firstName })}
 			</p>
 			<label
 				class="mb-1 block text-[11px] font-semibold tracking-[0.08em] text-outline uppercase"
 				for="decline-reason"
 			>
-				Reason (optional, shared)
+				{m.contracts_decline_reason_label()}
 			</label>
 			<textarea
 				id="decline-reason"
 				class="textarea w-full text-[13px]"
 				rows={2}
 				maxlength={1000}
-				placeholder="e.g. Schedule no longer works."
+				placeholder={m.contracts_decline_reason_placeholder()}
 				bind:value={declineReason}
 			></textarea>
 			<div class="modal-action">
@@ -991,11 +1072,11 @@
 					disabled={busy}
 					onclick={() => (declineOpen = false)}
 				>
-					Cancel
+					{m.common_cancel()}
 				</button>
 				<button type="button" class="btn btn-error" disabled={busy} onclick={handleDecline}>
 					{#if busy}<span class="loading loading-sm loading-spinner"></span>{/if}
-					Decline
+					{m.contracts_decline()}
 				</button>
 			</div>
 		</div>
@@ -1003,25 +1084,27 @@
 			type="button"
 			class="modal-backdrop"
 			onclick={() => (declineOpen = false)}
-			aria-label="Close"
+			aria-label={m.common_close()}
 		></button>
 	</div>
 {/if}
 
 {#if endOpen}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="End contract">
+	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label={m.contracts_end_dialog_aria()}>
 		<div class="modal-box max-w-md border border-card-border">
-			<h3 class="font-display text-xl font-bold text-base-content">End this contract?</h3>
+			<h3 class="font-display text-xl font-bold text-base-content">
+				{m.contracts_end_dialog_title()}
+			</h3>
 			<p class="py-3 text-sm text-base-content-muted">
-				Your 2 weeks' notice starts today. The last working day is
-				<strong class="text-base-content">{noticeEndsOn}</strong> — {firstName} is notified now, payments
-				run until then and stop after. This can't be undone.
+				{m.contracts_end_dialog_before()}
+				<strong class="text-base-content">{noticeEndsOn}</strong>
+				{m.contracts_end_dialog_after({ name: firstName })}
 			</p>
 			<textarea
 				class="textarea w-full text-[13px]"
 				rows={2}
 				maxlength={1000}
-				placeholder="Add a note for {firstName} (optional)…"
+				placeholder={m.contracts_end_note_placeholder({ name: firstName })}
 				bind:value={endNote}
 			></textarea>
 			<div class="modal-action">
@@ -1031,11 +1114,11 @@
 					disabled={busy}
 					onclick={() => (endOpen = false)}
 				>
-					Keep contract
+					{m.contracts_keep_contract()}
 				</button>
 				<button type="button" class="btn btn-error" disabled={busy} onclick={handleEnd}>
 					{#if busy}<span class="loading loading-sm loading-spinner"></span>{/if}
-					Give notice &amp; end
+					{m.contracts_give_notice()}
 				</button>
 			</div>
 		</div>
@@ -1043,7 +1126,7 @@
 			type="button"
 			class="modal-backdrop"
 			onclick={() => (endOpen = false)}
-			aria-label="Close"
+			aria-label={m.common_close()}
 		></button>
 	</div>
 {/if}

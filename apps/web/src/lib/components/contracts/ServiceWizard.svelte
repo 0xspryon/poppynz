@@ -27,7 +27,6 @@
 	 * review. Overlaps are warned, never blocked. */
 	import type { ResolvedPathname } from '$app/types';
 	import {
-		WEEKDAY_LABELS,
 		bySessionStart,
 		formatMinutes,
 		formatSessionRange,
@@ -36,11 +35,13 @@
 		serviceCode,
 		serviceWeeklyCents,
 		sessionMinutes,
+		weekdayLabels,
 		weeklyMinutes,
 		type ContractSession
 	} from '$lib/contract-sessions';
 	import { formatDateWithWeekday } from '$lib/date';
-	import { centsToDollars, dollarsToCents } from '$lib/money';
+	import { centsToCompactDollars, centsToDollars, dollarsToCents, formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		/** The provider's current listing — the selectable set and rate floors. */
@@ -192,24 +193,24 @@
 	function validateRate(): number | null {
 		const service = pickedService;
 		if (!service) {
-			rateError = 'This service is no longer available.';
+			rateError = m.contracts_wizard_service_unavailable();
 			return null;
 		}
 		const cents = rateCents;
 		if (cents === null) {
-			rateError = 'Enter a valid hourly rate.';
+			rateError = m.contracts_wizard_rate_invalid();
 			return null;
 		}
 		// Mirrors the API's floor: the service's base rate (UAT #39) — never
 		// half the listed rate. The server re-checks it either way.
 		const minRateCents = floorOf(service);
 		if (cents < minRateCents) {
-			rateError = `Offers start at the $${centsToDollars(minRateCents)}/hr base rate for this service.`;
+			rateError = m.contracts_wizard_rate_below_floor({ rate: formatMoney(minRateCents) });
 			return null;
 		}
 		// Mirrors the API's upper bound so the failure is inline, not a toast.
 		if (cents > 1_000_000) {
-			rateError = 'That rate looks too high — $10,000/hr is the maximum.';
+			rateError = m.contracts_wizard_rate_too_high({ max: centsToCompactDollars(1_000_000) });
 			return null;
 		}
 		rateError = null;
@@ -240,7 +241,7 @@
 			return;
 		}
 		if (sessions.length === 0) {
-			sessionsError = 'Propose at least one weekly session.';
+			sessionsError = m.contracts_wizard_sessions_required();
 			return;
 		}
 		oncommit({
@@ -253,14 +254,19 @@
 		});
 	}
 
-	const stepLabels = ['Service', 'Rate & expectations', 'Propose sessions'] as const;
+	const stepLabels = [
+		m.contracts_wizard_step_service(),
+		m.contracts_wizard_step_rate(),
+		m.contracts_wizard_step_sessions()
+	];
+	const dayLabels = weekdayLabels();
 </script>
 
 <div
 	class="fixed inset-0 z-50 flex flex-col bg-base-200"
 	role="dialog"
 	aria-modal="true"
-	aria-label="Add a service"
+	aria-label={m.contracts_wizard_add_service()}
 >
 	<!-- Stepper header -->
 	<header
@@ -276,14 +282,14 @@
 			</span>
 			<div class="min-w-0">
 				<h2 class="truncate font-display text-base font-bold text-base-content">
-					{editing ? editing.name : 'Add a service'}
+					{editing ? editing.name : m.contracts_wizard_add_service()}
 				</h2>
 				<p class="truncate text-[11px] text-outline">
-					From {listingLabel} · Step {step} of 3
+					{m.contracts_wizard_subtitle({ listing: listingLabel, step })}
 				</p>
 			</div>
 		</div>
-		<nav class="hidden items-center gap-2 md:flex" aria-label="Wizard steps">
+		<nav class="hidden items-center gap-2 md:flex" aria-label={m.contracts_wizard_steps_aria()}>
 			{#each stepLabels as label, index (label)}
 				{@const stepNumber = index + 1}
 				{#if index > 0}
@@ -323,7 +329,7 @@
 		<button
 			type="button"
 			class="btn ml-auto btn-circle btn-ghost btn-sm"
-			aria-label="Close without saving this service"
+			aria-label={m.contracts_wizard_close_aria()}
 			onclick={oncancel}
 		>
 			<i class="las la-times text-lg" aria-hidden="true"></i>
@@ -335,10 +341,10 @@
 		{#if step === 1}
 			<div class="mx-auto w-full max-w-xl px-4 py-8">
 				<h3 class="font-display text-lg font-bold text-base-content">
-					Which of {counterpartFirstName}'s services?
+					{m.contracts_wizard_which_service({ name: counterpartFirstName })}
 				</h3>
 				<p class="mb-4 text-xs text-base-content-muted">
-					Rate, expectations and sessions are set per service in the next two steps.
+					{m.contracts_wizard_which_service_hint()}
 				</p>
 				<div class="rounded-xl border border-card-border bg-base-100 px-5 py-1">
 					{#each providerServices as service (service.id)}
@@ -363,8 +369,8 @@
 								</span>
 								<span class="block text-[11.5px] text-base-content-muted">
 									{taken
-										? 'Already in this contract'
-										: `Listed rate $${centsToDollars(service.hourlyRateCents)}/hr`}
+										? m.contracts_wizard_already_added()
+										: m.contracts_wizard_listed_rate({ rate: formatMoney(service.hourlyRateCents) })}
 								</span>
 							</span>
 						</label>
@@ -375,20 +381,23 @@
 					class="mt-3 text-[13px] font-semibold text-secondary hover:underline"
 					onclick={() => (missingServiceOpen = true)}
 				>
-					You don't see the service you want →
+					{m.contracts_wizard_missing_service_link()}
 				</button>
 			</div>
 		{:else if step === 2}
 			<div class="mx-auto w-full max-w-xl px-4 py-8">
 				<h3 class="font-display text-lg font-bold text-base-content">
-					{pickedService?.name ?? 'This service'} — your terms
+					{m.contracts_wizard_your_terms({
+						service: pickedService?.name ?? m.contracts_wizard_this_service()
+					})}
 				</h3>
 				<p class="mb-4 text-xs text-base-content-muted">
 					{#if pickedService}
-						{counterpartFirstName}'s listed rate is ${centsToDollars(
-							pickedService.hourlyRateCents
-						)}/hr. Offers start at the ${centsToDollars(floorOf(pickedService))}/hr base rate for this
-						service, and you can always offer more.
+						{m.contracts_wizard_rate_intro({
+							name: counterpartFirstName,
+							listed: formatMoney(pickedService.hourlyRateCents),
+							floor: formatMoney(floorOf(pickedService))
+						})}
 					{/if}
 				</p>
 				<div class="flex flex-col gap-4">
@@ -397,10 +406,10 @@
 							class="mb-1.5 block text-[11px] font-semibold tracking-[0.08em] text-outline uppercase"
 							for="wizard-rate"
 						>
-							Your rate
+							{m.contracts_wizard_your_rate()}
 						</label>
 						<label class="input input-sm flex w-44 items-center gap-1 text-[13px]">
-							$
+							{m.contracts_wizard_rate_prefix()}
 							<input
 								id="wizard-rate"
 								type="text"
@@ -408,7 +417,7 @@
 								class="min-w-0 grow"
 								bind:value={rateInput}
 							/>
-							<span class="text-outline">/hr</span>
+							<span class="text-outline">{m.contracts_wizard_rate_suffix()}</span>
 						</label>
 						{#if rateError}
 							<p class="mt-1.5 text-[12px] font-medium text-error" role="alert">{rateError}</p>
@@ -419,22 +428,24 @@
 							class="mb-1.5 block text-[11px] font-semibold tracking-[0.08em] text-outline uppercase"
 							for="wizard-expectations"
 						>
-							Your expectations
+							{m.contracts_wizard_your_expectations()}
 						</label>
 						<textarea
 							id="wizard-expectations"
 							class="textarea w-full text-[13px] leading-relaxed"
 							rows={3}
 							maxlength={2000}
-							placeholder="What does a good week look like for this service?"
+							placeholder={m.contracts_wizard_expectations_placeholder()}
 							bind:value={expectations}
 						></textarea>
-						<p class="mt-1 text-[11px] text-outline">Becomes part of the contract.</p>
+						<p class="mt-1 text-[11px] text-outline">
+							{m.contracts_wizard_expectations_hint()}
+						</p>
 					</div>
 					<div class="flex items-start gap-2.5 rounded-lg bg-base-300 px-3.5 py-2.5">
 						<i class="las la-clock mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 						<p class="text-[12px] leading-relaxed text-neutral">
-							Hours come from the sessions you propose next — no need to guess a weekly number.
+							{m.contracts_wizard_hours_hint()}
 						</p>
 					</div>
 				</div>
@@ -443,18 +454,21 @@
 			<div class="mx-auto w-full max-w-5xl px-4 py-6">
 				<div class="mb-4 flex flex-wrap items-baseline gap-x-3 gap-y-1">
 					<h3 class="font-display text-lg font-bold text-base-content">
-						Propose your weekly schedule
+						{m.contracts_wizard_schedule_title()}
 					</h3>
 					<p class="text-xs text-base-content-muted">
-						You set the times — {counterpartFirstName} publishes no calendar. Repeats weekly{startsOn
-							? ` from ${formatDateWithWeekday(startsOn)}`
-							: ''} · times are in your local time{timeZoneLabel ? ` (${timeZoneLabel})` : ''}.
+						{m.contracts_wizard_schedule_intro({ name: counterpartFirstName })}
+						{startsOn
+							? m.contracts_wizard_repeats_weekly_from({ date: formatDateWithWeekday(startsOn) })
+							: m.contracts_wizard_repeats_weekly()} · {timeZoneLabel
+							? m.contracts_wizard_local_time_zone({ zone: timeZoneLabel })
+							: m.contracts_wizard_local_time()}
 					</p>
 				</div>
 
 				<!-- Week grid: swipeable columns on small screens, full week on lg. -->
 				<div class="flex gap-2.5 overflow-x-auto pb-2 lg:overflow-visible">
-					{#each WEEKDAY_LABELS as dayLabel, weekday (dayLabel)}
+					{#each dayLabels as dayLabel, weekday (weekday)}
 						<div class="flex w-32 flex-none flex-col gap-2 lg:w-auto lg:flex-1">
 							<div
 								class="rounded-lg bg-base-400 py-1.5 text-center text-xs font-bold text-base-content"
@@ -471,11 +485,13 @@
 											{formatSessionRange(entry.session)}
 										</div>
 										<div class="mt-0.5 text-[10.5px] text-neutral">
-											{minutesToHours(sessionMinutes(entry.session))} hrs
+											{m.contracts_hours_short({
+												hours: minutesToHours(sessionMinutes(entry.session))
+											})}
 										</div>
 										{#if clashes.length > 0}
 											<div class="mt-0.5 text-[10.5px] font-medium text-warning">
-												Overlaps another session
+												{m.contracts_wizard_overlaps()}
 											</div>
 										{/if}
 										<button
@@ -483,7 +499,10 @@
 											class="absolute -top-2 -right-2 flex size-[18px] items-center justify-center
 												rounded-full bg-secondary text-[10px] leading-none font-semibold
 												text-secondary-content shadow-[0_0_0_2px_var(--color-base-100)]"
-											aria-label="Remove {dayLabel} {formatSessionRange(entry.session)}"
+											aria-label={m.contracts_wizard_remove_session({
+												day: dayLabel,
+												range: formatSessionRange(entry.session)
+											})}
 											onclick={() => removeSession(entry.index)}
 										>
 											×
@@ -492,7 +511,7 @@
 								{:else}
 									<div
 										class="relative rounded-[10px] border border-base-300 bg-base-200 px-2.5 py-2"
-										title="Proposed for {entry.name} in this contract"
+										title={m.contracts_wizard_other_service_title({ name: entry.name })}
 									>
 										<div class="text-xs font-bold whitespace-nowrap text-base-content-muted">
 											{formatSessionRange(entry.session)}
@@ -513,10 +532,10 @@
 										bg-base-100 p-2 shadow-card"
 								>
 									<div class="text-[9.5px] font-semibold tracking-[0.08em] text-outline uppercase">
-										New session
+										{m.contracts_wizard_new_session()}
 									</div>
 									<label class="flex items-center justify-between gap-1.5 text-[11px]">
-										<span class="text-outline">from</span>
+										<span class="text-outline">{m.contracts_wizard_from()}</span>
 										<select
 											class="select select-xs grow text-[11px] font-semibold"
 											bind:value={editorStart}
@@ -530,7 +549,7 @@
 										</select>
 									</label>
 									<label class="flex items-center justify-between gap-1.5 text-[11px]">
-										<span class="text-outline">to</span>
+										<span class="text-outline">{m.contracts_wizard_to()}</span>
 										<select
 											class="select select-xs grow text-[11px] font-semibold"
 											bind:value={editorEnd}
@@ -542,8 +561,7 @@
 									</label>
 									{#if editorOverlaps.length > 0}
 										<p class="text-[10.5px] leading-snug font-medium text-warning">
-											Overlaps a session already in this draft — allowed, but {counterpartFirstName}
-											sees the whole week.
+											{m.contracts_wizard_overlap_warning({ name: counterpartFirstName })}
 										</p>
 									{/if}
 									<div class="flex items-center gap-1.5">
@@ -552,12 +570,12 @@
 											class="btn btn-primary btn-xs flex-1"
 											onclick={addSession}
 										>
-											Add
+											{m.contracts_wizard_add()}
 										</button>
 										<button
 											type="button"
 											class="btn btn-circle btn-ghost btn-xs"
-											aria-label="Cancel new session"
+											aria-label={m.contracts_wizard_cancel_session()}
 											onclick={() => (editorDay = null)}
 										>
 											×
@@ -572,7 +590,7 @@
 										hover:bg-base-300"
 									onclick={() => openDayEditor(weekday)}
 								>
-									+ Add time
+									{m.contracts_wizard_add_time()}
 								</button>
 							{/if}
 						</div>
@@ -585,14 +603,14 @@
 							class="size-3 rounded-[4px] border-[1.5px] border-primary bg-base-300"
 							aria-hidden="true"
 						></span>
-						Your session
+						{m.contracts_wizard_legend_yours()}
 					</span>
 					{#if otherItems.some((item) => item.sessions.length > 0)}
 						<span class="inline-flex items-center gap-1.5">
 							<span class="rounded-full bg-base-500 px-1.5 py-0.5 text-[9px] font-bold text-info">
 								{serviceCode(otherItems[0]?.name ?? '')}
 							</span>
-							Another service in this draft — so you don't overlap yourself
+							{m.contracts_wizard_legend_other()}
 						</span>
 					{/if}
 				</div>
@@ -615,33 +633,37 @@
 				disabled={!pickedService || inDraft(pickedService.id)}
 				onclick={toStepTwo}
 			>
-				Next — rate &amp; expectations
+				{m.contracts_wizard_next_rate()}
 			</button>
-			<button type="button" class="btn btn-ghost btn-sm" onclick={oncancel}>Cancel</button>
+			<button type="button" class="btn btn-ghost btn-sm" onclick={oncancel}>{m.common_cancel()}</button>
 		{:else if step === 2}
 			<button type="button" class="btn btn-primary btn-sm" onclick={toStepThree}>
-				Next — propose sessions
+				{m.contracts_wizard_next_sessions()}
 			</button>
 			<button
 				type="button"
 				class="btn btn-outline btn-sm"
 				onclick={() => (editing ? oncancel() : (step = 1))}
 			>
-				{editing ? 'Cancel' : 'Back'}
+				{editing ? m.common_cancel() : m.common_back()}
 			</button>
 		{:else}
 			<button type="button" class="btn btn-primary btn-sm" onclick={commit}>
-				{editing ? 'Save changes' : 'Add to contract'}
+				{editing ? m.contracts_wizard_save_changes() : m.contracts_wizard_add_to_contract()}
 			</button>
 			<button type="button" class="btn btn-outline btn-sm" onclick={() => (step = 2)}>
-				Back to rate &amp; expectations
+				{m.contracts_wizard_back_to_rate()}
 			</button>
 			<span class="ml-auto hidden text-[11.5px] text-outline sm:block">
-				{pickedService?.name} · {sessions.length}
-				{sessions.length === 1 ? 'session' : 'sessions'} · {minutesToHours(totalMinutes)} hrs/wk
-				{#if weeklyCents !== null}
-					· adds <strong class="text-secondary">${centsToDollars(weeklyCents)}/wk</strong>
-					at ${rateInput}/hr
+				{pickedService?.name} · {m.contracts_session_count({ count: sessions.length })} · {m.contracts_hours_per_week(
+					{ hours: minutesToHours(totalMinutes) }
+				)}
+				{#if weeklyCents !== null && rateCents !== null}
+					· {m.contracts_wizard_adds_before()}
+					<strong class="text-secondary"
+						>{m.contracts_per_week({ amount: formatMoney(weeklyCents) })}</strong
+					>
+					{m.contracts_wizard_adds_after({ rate: formatMoney(rateCents) })}
 				{/if}
 			</span>
 		{/if}
@@ -654,7 +676,7 @@
 		class="modal modal-open"
 		role="dialog"
 		aria-modal="true"
-		aria-label="Don't see the service you need?"
+		aria-label={m.contracts_wizard_missing_title()}
 	>
 		<div class="modal-box max-w-md border border-card-border">
 			<div class="flex items-start gap-3">
@@ -663,25 +685,27 @@
 				</span>
 				<div class="min-w-0">
 					<h3 class="font-display text-base font-bold text-base-content">
-						Don't see the service you need?
+						{m.contracts_wizard_missing_title()}
 					</h3>
 					<p class="mt-1.5 text-[12.5px] leading-relaxed text-base-content-muted">
-						You can only add services {counterpartFirstName} offers. If something's missing, ask them
-						to add it to their <strong>services list</strong> — as soon as they do, it shows up here and
-						you can select it.
+						{m.contracts_wizard_missing_before({ name: counterpartFirstName })}
+						<strong>{m.contracts_wizard_missing_strong()}</strong>
+						{m.contracts_wizard_missing_after()}
 					</p>
 				</div>
 			</div>
 			<div class="mt-4 flex items-center gap-2.5">
 				{#if chatHref}
-					<a href={chatHref} class="btn btn-primary btn-sm">Message {counterpartFirstName}</a>
+					<a href={chatHref} class="btn btn-primary btn-sm">
+						{m.contracts_wizard_message_name({ name: counterpartFirstName })}
+					</a>
 				{/if}
 				<button
 					type="button"
 					class="btn btn-ghost btn-sm"
 					onclick={() => (missingServiceOpen = false)}
 				>
-					Back to services
+					{m.contracts_wizard_back_to_services()}
 				</button>
 			</div>
 		</div>
@@ -689,7 +713,7 @@
 			type="button"
 			class="modal-backdrop"
 			onclick={() => (missingServiceOpen = false)}
-			aria-label="Close"
+			aria-label={m.common_close()}
 		></button>
 	</div>
 {/if}

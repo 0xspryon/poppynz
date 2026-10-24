@@ -7,7 +7,10 @@
 	import type { ContractBilling, ContractBillingCycle } from '$lib/api/contracts';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { formatDateTime, formatDateWithWeekday } from '$lib/date';
-	import { centsToDollars } from '$lib/money';
+	import { formatNumber } from '$lib/locale';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
+	import { localizeTaxLabel } from '$lib/tax-label';
 
 	interface Props {
 		billing: ContractBilling;
@@ -32,63 +35,63 @@
 			case 'awaiting_payment_readiness': {
 				const by = billing.readinessDeadline
 					? formatDateTime(billing.readinessDeadline)
-					: 'the first payment';
+					: m.contracts_billing_first_payment();
 				return isFamily
 					? {
 							tone: 'info',
-							text: `Waiting for ${counterpartFirstName} to finish setting up payouts. Nothing is charged until then; if it isn't ready by ${by}, the contract is cancelled.`
+							text: m.contracts_billing_awaiting_family({ name: counterpartFirstName, by })
 						}
 					: {
 							tone: 'warning',
-							text: `Set up your payout account by ${by} — until then the family isn't charged and the contract can't start. After that it is cancelled.`,
-							link: { href: payoutsHref, label: 'Set up payouts' }
+							text: m.contracts_billing_awaiting_provider({ by }),
+							link: { href: payoutsHref, label: m.contracts_billing_setup_payouts() }
 						};
 			}
 			case 'scheduled':
 				return {
 					tone: 'info',
 					text: isFamily
-						? "Billing is scheduled: each cycle's amount is held on your card 2 days before it starts."
-						: 'Billing is scheduled: each cycle is charged to the family before it starts.'
+						? m.contracts_billing_scheduled_family()
+						: m.contracts_billing_scheduled_provider()
 				};
 			case 'suspended':
 				if (billing.suspendedReason === 'card') {
 					return isFamily
 						? {
 								tone: 'error',
-								text: 'Your card was declined, so the contract is suspended. Suspended days are never billed. Replace your card to resume — the rest of the current cycle is charged straight away.',
-								link: { href: billingHref, label: 'Update your card' }
+								text: m.contracts_billing_card_declined_family(),
+								link: { href: billingHref, label: m.contracts_billing_update_card() }
 							}
 						: {
 								tone: 'error',
-								text: `The family's payment didn't go through, so the contract is suspended. Don't work suspended days — they are never billed. We'll email you when it resumes.`
+								text: m.contracts_billing_card_declined_provider()
 							};
 				}
 				if (billing.suspendedReason === 'helper_not_ready') {
 					return isFamily
 						? {
 								tone: 'warning',
-								text: `${counterpartFirstName}'s payout account needs attention, so sessions are on hold and you aren't charged. It resumes by itself once their account is ready.`
+								text: m.contracts_billing_helper_not_ready_family({ name: counterpartFirstName })
 							}
 						: {
 								tone: 'error',
-								text: "Your payout account isn't ready, so sessions are on hold and the family isn't charged. Fix it to resume.",
-								link: { href: payoutsHref, label: 'Fix payouts' }
+								text: m.contracts_billing_helper_not_ready_provider(),
+								link: { href: payoutsHref, label: m.contracts_billing_fix_payouts() }
 							};
 				}
 				return {
 					tone: 'warning',
-					text: "We couldn't reach our payment provider in time, so the current sessions are on hold. Nobody needs to do anything — we retry automatically."
+					text: m.contracts_billing_processor_outage()
 				};
 			case 'cancelled':
 				return {
 					tone: 'info',
 					text: isFamily
-						? `Cancelled before it started because ${counterpartFirstName}'s payout account wasn't ready in time. Nothing was charged.`
-						: "Cancelled before it started because your payout account wasn't ready in time. Nothing was charged."
+						? m.contracts_billing_cancelled_family({ name: counterpartFirstName })
+						: m.contracts_billing_cancelled_provider()
 				};
 			case 'ended':
-				return { tone: 'success', text: 'Billing for this contract has finished.' };
+				return { tone: 'success', text: m.contracts_billing_ended() };
 			default:
 				return null;
 		}
@@ -104,36 +107,47 @@
 	const cycleChip = (cycle: ContractBillingCycle): { status: ChipStatus; label: string } => {
 		switch (cycle.status) {
 			case 'scheduled':
-				return { status: 'empty', label: 'Upcoming' };
+				return { status: 'empty', label: m.contracts_cycle_upcoming() };
 			case 'authorising':
 			case 'capturing':
-				return { status: 'in-progress', label: 'Processing' };
+				return { status: 'in-progress', label: m.contracts_cycle_processing() };
 			case 'authorised':
-				return { status: 'in-progress', label: isFamily ? 'On hold' : 'Funds on hold' };
+				return {
+					status: 'in-progress',
+					label: isFamily ? m.contracts_cycle_on_hold() : m.contracts_cycle_funds_on_hold()
+				};
 			case 'grace':
 				return {
 					status: 'missing',
-					label: isFamily ? 'Card declined — retrying' : 'Payment pending'
+					label: isFamily ? m.contracts_cycle_card_declined() : m.contracts_cycle_payment_pending()
 				};
 			case 'captured':
-				return { status: 'approved', label: isFamily ? 'Paid' : 'Funded' };
+				return {
+					status: 'approved',
+					label: isFamily ? m.contracts_cycle_paid() : m.contracts_cycle_funded()
+				};
 			case 'suspended':
-				return { status: 'rejected', label: 'Suspended — not billed' };
+				return { status: 'rejected', label: m.contracts_cycle_suspended() };
 			case 'capture_failed':
-				return { status: 'missing', label: isFamily ? 'Payment issue' : 'Funded by Poppynz' };
+				return {
+					status: 'missing',
+					label: isFamily
+						? m.contracts_cycle_payment_issue()
+						: m.contracts_cycle_funded_by_poppynz()
+				};
 			case 'cancelled':
-				return { status: 'expired', label: 'Cancelled' };
+				return { status: 'expired', label: m.contracts_cycle_cancelled() };
 			case 'carried':
-				return { status: 'empty', label: 'Carried to next cycle' };
+				return { status: 'empty', label: m.contracts_cycle_carried() };
 			case 'empty':
-				return { status: 'empty', label: 'Nothing to bill' };
+				return { status: 'empty', label: m.contracts_cycle_empty() };
 		}
 	};
 
-	const hours = (minutes: number) => {
-		const value = minutes / 60;
-		return Number.isInteger(value) ? `${value}` : value.toFixed(1);
-	};
+	const hours = (minutes: number) => formatNumber(minutes / 60, { maximumFractionDigits: 1 });
+
+	const taxLabels = (cycle: ContractBillingCycle) =>
+		cycle.taxLines.map((line) => localizeTaxLabel(line.label)).join(', ');
 
 	// The most recent cycles first is noisy for a schedule; show the last few
 	// in date order.
@@ -144,7 +158,9 @@
 	class="rounded-xl border border-card-border bg-base-100 px-5 py-4"
 	data-testid="contract-billing"
 >
-	<h3 class="mb-2 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">Billing</h3>
+	<h3 class="mb-2 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
+		{m.contracts_billing_heading()}
+	</h3>
 
 	{#if banner}
 		<div
@@ -159,7 +175,7 @@
 
 	{#if shown.length === 0}
 		<p class="text-[12.5px] text-base-content-muted">
-			Cycles appear here two weeks before they start.
+			{m.contracts_billing_no_cycles()}
 		</p>
 	{:else}
 		<ul class="divide-y divide-base-300">
@@ -171,26 +187,31 @@
 							? ` – ${formatDateWithWeekday(cycle.endsOn)}`
 							: ''}
 						<span class="block text-[11.5px] font-normal text-outline">
-							{cycle.sessionCount}
-							{cycle.sessionCount === 1 ? 'session' : 'sessions'} · {hours(cycle.minutes)} hrs
+							{m.contracts_session_count({ count: cycle.sessionCount })} · {m.contracts_hours_short(
+								{
+									hours: hours(cycle.minutes)
+								}
+							)}
 							{#if cycle.status === 'scheduled'}
-								· {isFamily ? 'held' : 'charged'} from {formatDateTime(cycle.holdAt)}
+								· {isFamily
+									? m.contracts_billing_held_from({ date: formatDateTime(cycle.holdAt) })
+									: m.contracts_billing_charged_from({ date: formatDateTime(cycle.holdAt) })}
 							{/if}
 							{#if cycle.taxLines.length > 0}
 								<!-- B7: the helper's amount is what's left after the deduction — never "incl." -->
 								{#if isFamily}
-									· incl. {cycle.taxLines.map((line) => line.label).join(', ')}
+									· {m.contracts_billing_incl_tax({ taxes: taxLabels(cycle) })}
 								{:else}
-									· your share after Poppynz commission · tax applied: {cycle.taxLines
-										.map((line) => line.label)
-										.join(', ')}
+									· {m.contracts_billing_provider_share()} · {m.contracts_billing_tax_applied({
+										taxes: taxLabels(cycle)
+									})}
 								{/if}
 							{/if}
 						</span>
 					</span>
 					{#if cycle.amountCents !== null}
 						<span class="tabular-nums font-semibold text-base-content">
-							${centsToDollars(cycle.amountCents)}
+							{formatMoney(cycle.amountCents)}
 						</span>
 					{/if}
 					<StatusChip status={chip.status} label={chip.label} />
@@ -199,7 +220,9 @@
 		</ul>
 		{#if isFamily}
 			<p class="mt-2 text-[11px] text-outline">
-				Charges also appear in <a class="underline" href={billingHref}>Billing</a> with their receipts.
+				{m.contracts_billing_receipts_before()}
+				<a class="underline" href={billingHref}>{m.contracts_billing_receipts_link()}</a>
+				{m.contracts_billing_receipts_after()}
 			</p>
 		{/if}
 	{/if}

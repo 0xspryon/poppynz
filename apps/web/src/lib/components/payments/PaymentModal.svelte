@@ -10,6 +10,7 @@
 	import { getLocale } from '$lib/paraglide/runtime';
 	import { toStripeLocale } from '$lib/user-language';
 	import { cardLabel } from '$lib/payment-cards';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		mode: 'payment' | 'setup';
@@ -69,7 +70,7 @@
 		const host = elementHost;
 		void getStripe().then((loaded) => {
 			if (!loaded) {
-				message = 'Card payments are not available right now.';
+				message = m.payments_unavailable();
 				return;
 			}
 			stripe = loaded;
@@ -102,11 +103,11 @@
 				onfailed?.({ alreadySettled: true });
 				return;
 			}
-			message = error.message ?? 'Your card could not be used.';
+			message = error.message ?? m.payments_card_unusable();
 			onfailed?.();
 			return;
 		}
-		message = error.message ?? 'Your card could not be used.';
+		message = error.message ?? m.payments_card_unusable();
 	}
 
 	async function submit() {
@@ -115,7 +116,7 @@
 		message = null;
 		const loaded = stripe ?? (await getStripe());
 		if (!loaded) {
-			message = 'Card payments are not available right now.';
+			message = m.payments_unavailable();
 			submitting = false;
 			return;
 		}
@@ -150,7 +151,7 @@
 				onclick={submit}
 			>
 				{#if submitting}<span class="loading loading-spinner loading-sm"></span>{/if}
-				{submitLabel} with {cardLabel(savedCard)}
+				{m.payments_pay_with_saved({ action: submitLabel, card: cardLabel(savedCard) })}
 			</button>
 			<button
 				type="button"
@@ -158,7 +159,7 @@
 				disabled={submitting || finished}
 				onclick={() => (useSavedCard = false)}
 			>
-				Use another card
+				{m.payments_use_another_card()}
 			</button>
 		{:else}
 			<div class="mt-4 min-h-24" bind:this={elementHost}></div>
@@ -170,7 +171,7 @@
 
 		<div class="modal-action">
 			<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={submitting}>
-				{finished ? 'Close' : 'Cancel'}
+				{finished ? m.common_close() : m.common_cancel()}
 			</button>
 			{#if !useSavedCard && !finished}
 				<button
@@ -190,6 +191,6 @@
 		class="modal-backdrop"
 		onclick={oncancel}
 		disabled={submitting}
-		aria-label="Close"
+		aria-label={m.common_close()}
 	></button>
 </div>

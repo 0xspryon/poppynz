@@ -93,15 +93,19 @@ describe('PaymentModal', () => {
 
 	it('mounts the card form in the active locale (Canadian French for fr)', async () => {
 		locale.current = 'fr';
-		const app = mount(PaymentModal, {
-			target: document.body,
-			props: { ...baseProps, savedCard: { brand: 'visa', last4: '4242' }, onconfirmed: vi.fn() }
-		});
-		flushSync();
-		button('Use another card').click();
-		await settle();
-		unmount(app);
-		locale.current = 'en';
+		try {
+			const app = mount(PaymentModal, {
+				target: document.body,
+				props: { ...baseProps, savedCard: { brand: 'visa', last4: '4242' }, onconfirmed: vi.fn() }
+			});
+			flushSync();
+			// The modal's own copy follows the locale too.
+			button('Utiliser une autre carte').click();
+			await settle();
+			unmount(app);
+		} finally {
+			locale.current = 'en';
+		}
 
 		expect(stripe.elements).toHaveBeenCalledWith({ clientSecret: 'pi_1_secret', locale: 'fr-CA' });
 	});

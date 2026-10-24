@@ -9,6 +9,7 @@
 	 * anywhere except the contracts pages — accept/decline is important enough
 	 * to interrupt, not just toast (mirrors ApprovalDecisionModal). */
 	import type { ResolvedPathname } from '$app/types';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		decision: ContractDecision | null;
@@ -21,7 +22,12 @@
 </script>
 
 {#if decision}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label="Contract update">
+	<div
+		class="modal modal-open"
+		role="dialog"
+		aria-modal="true"
+		aria-label={m.contracts_decision_aria()}
+	>
 		<div class="modal-box max-w-md border border-card-border text-center">
 			{#if decision.kind === 'accepted'}
 				<span
@@ -29,30 +35,39 @@
 				>
 					<i class="las la-file-signature text-3xl text-success" aria-hidden="true"></i>
 				</span>
-				<h3 class="mt-3 font-display text-xl font-bold text-base-content">Contract signed!</h3>
+				<h3 class="mt-3 font-display text-xl font-bold text-base-content">
+					{m.contracts_decision_signed_title()}
+				</h3>
 				<p class="py-3 text-sm text-base-content-muted">
-					{decision.counterpartName} accepted &amp; signed your proposal. Contact details are now shared
-					and payments run on Poppynz.
+					{m.contracts_decision_signed_body({ name: decision.counterpartName })}
 				</p>
 			{:else}
 				<span class="mx-auto flex size-14 items-center justify-center rounded-full bg-base-300">
 					<i class="las la-file-alt text-3xl text-neutral" aria-hidden="true"></i>
 				</span>
-				<h3 class="mt-3 font-display text-xl font-bold text-base-content">Proposal declined</h3>
+				<h3 class="mt-3 font-display text-xl font-bold text-base-content">
+					{m.contracts_proposal_declined()}
+				</h3>
 				<p class="py-3 text-sm text-base-content-muted">
-					{decision.counterpartName} declined your proposal{decision.reason
-						? `: “${decision.reason}”`
-						: '.'}
-					Your chat stays open — you can propose new terms any time.
+					{decision.reason
+						? m.contracts_decision_declined_reason({
+								name: decision.counterpartName,
+								reason: decision.reason
+							})
+						: m.contracts_decision_declined({ name: decision.counterpartName })}
+					{m.contracts_decision_chat_open()}
 				</p>
 			{/if}
 			<div class="modal-action justify-center">
-				<button type="button" class="btn btn-ghost" onclick={onclose}>Close</button>
+				<button type="button" class="btn btn-ghost" onclick={onclose}>{m.common_close()}</button>
 				{#if detailsHref}
-					<a href={detailsHref} class="btn btn-primary" onclick={onclose}>View contract</a>
+					<a href={detailsHref} class="btn btn-primary" onclick={onclose}
+						>{m.contracts_view_contract()}</a
+					>
 				{/if}
 			</div>
 		</div>
-		<button type="button" class="modal-backdrop" onclick={onclose} aria-label="Close"></button>
+		<button type="button" class="modal-backdrop" onclick={onclose} aria-label={m.common_close()}
+		></button>
 	</div>
 {/if}

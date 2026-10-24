@@ -29,10 +29,11 @@
 		minutesToHours,
 		serviceWeeklyCents,
 		weeklyMinutes,
-		WEEKDAY_LABELS
+		weekdayLabel
 	} from '$lib/contract-sessions';
 	import { formatDateWithWeekday } from '$lib/date';
-	import { centsToDollars } from '$lib/money';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		/** The provider's current listing — the selectable set and rate floors. */
@@ -135,8 +136,7 @@
 	const estimateBreakdown = $derived(
 		items
 			.map(
-				(item) =>
-					`${minutesToHours(weeklyMinutes(item.sessions))} × $${centsToDollars(item.rateCents)}`
+				(item) => `${minutesToHours(weeklyMinutes(item.sessions))} × ${formatMoney(item.rateCents)}`
 			)
 			.join(' + ')
 	);
@@ -211,12 +211,12 @@
 
 <section class="rounded-xl border border-card-border bg-base-100 px-5 py-4">
 	<h3 class="mb-2 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
-		Services &amp; sessions — from {listingLabel}
+		{m.contracts_editor_heading({ listing: listingLabel })}
 	</h3>
 
 	{#if items.length === 0}
 		<p class="rounded-lg bg-base-200 px-4 py-3 text-[13px] text-base-content-muted">
-			No services yet — add the first one to build the terms.
+			{m.contracts_editor_empty()}
 		</p>
 	{/if}
 
@@ -227,13 +227,19 @@
 				<div class="min-w-0 flex-1">
 					<div class="text-[13.5px] font-semibold text-base-content">{item.name}</div>
 					<div class="mt-0.5 text-xs text-base-content-muted">
-						${centsToDollars(item.rateCents)}/hr · {minutesToHours(itemMinutes)} hrs/wk from sessions
+						{m.contracts_per_hour({ amount: formatMoney(item.rateCents) })} · {m.contracts_editor_hours_from_sessions(
+							{ hours: minutesToHours(itemMinutes) }
+						)}
 						=
 						<strong class="text-secondary">
-							${centsToDollars(serviceWeeklyCents(item.rateCents, item.sessions))}/wk
+							{m.contracts_per_week({
+								amount: formatMoney(serviceWeeklyCents(item.rateCents, item.sessions))
+							})}
 						</strong>
 						{#if item.rateCents !== item.listedRateCents}
-							<span class="text-outline"> · listed ${centsToDollars(item.listedRateCents)}</span>
+							<span class="text-outline">
+								· {m.contracts_listed_rate({ amount: formatMoney(item.listedRateCents) })}</span
+							>
 						{/if}
 					</div>
 					<div class="mt-2 flex flex-wrap items-center gap-1.5">
@@ -243,12 +249,12 @@
 									text-[11px] font-semibold text-info"
 							>
 								<i class="las la-clock text-[11px]" aria-hidden="true"></i>
-								{WEEKDAY_LABELS[session.weekday]}
+								{weekdayLabel(session.weekday)}
 								{formatSessionRange(session)}
 							</span>
 						{/each}
 						<span class="text-[11px] font-semibold text-outline">
-							proposed · {counterpartFirstName} reviews
+							{m.contracts_editor_item_proposed({ name: counterpartFirstName })}
 						</span>
 					</div>
 					{#if item.expectations}
@@ -261,7 +267,7 @@
 					<button
 						type="button"
 						class="btn btn-square btn-ghost btn-xs"
-						aria-label="Edit {item.name}"
+						aria-label={m.contracts_editor_edit_service({ name: item.name })}
 						onclick={() => openEdit(item)}
 					>
 						<i class="las la-pen text-base" aria-hidden="true"></i>
@@ -269,7 +275,7 @@
 					<button
 						type="button"
 						class="btn btn-square btn-ghost btn-xs text-error"
-						aria-label="Remove {item.name}"
+						aria-label={m.contracts_editor_remove_service({ name: item.name })}
 						onclick={() => (removeCandidate = item)}
 					>
 						<i class="las la-trash-alt text-base" aria-hidden="true"></i>
@@ -285,17 +291,18 @@
 		disabled={items.length >= 20 || providerServices.every((service) => inContract(service.id))}
 		onclick={openAdd}
 	>
-		+ Add {items.length > 0 ? 'another' : 'a'} service
+		{items.length > 0 ? m.contracts_editor_add_another() : m.contracts_editor_add_first()}
 	</button>
 	<p class="mt-0.5 text-[11px] text-outline">
-		Each service is set up in its own 3-step dialog — Edit reopens it pre-filled. You set session
-		times yourself; {counterpartFirstName} confirms they work when reviewing.
+		{m.contracts_editor_help({ name: counterpartFirstName })}
 	</p>
 
 	<div
 		class="mt-3 grid grid-cols-[90px_1fr] items-center gap-x-4 gap-y-2 border-t border-base-300 pt-3"
 	>
-		<label class="text-[13px] text-base-content-muted" for="contract-starts">Starts</label>
+		<label class="text-[13px] text-base-content-muted" for="contract-starts"
+			>{m.contracts_terms_starts()}</label
+		>
 		<input
 			id="contract-starts"
 			type="date"
@@ -304,7 +311,8 @@
 			bind:value={startsOn}
 		/>
 		<span class="text-[13px] text-base-content-muted">
-			Ends <span class="text-[11px] text-outline">(optional)</span>
+			{m.contracts_terms_ends()}
+			<span class="text-[11px] text-outline">{m.contracts_optional_paren()}</span>
 		</span>
 		{#if endsOnOpen}
 			<span class="flex items-center gap-1.5">
@@ -313,13 +321,13 @@
 					type="date"
 					class="input input-sm w-full text-[13px]"
 					min={startsOn || undefined}
-					aria-label="End date"
+					aria-label={m.contracts_editor_end_date_aria()}
 					bind:value={endsOn}
 				/>
 				<button
 					type="button"
 					class="btn btn-circle btn-ghost btn-xs"
-					aria-label="Remove the end date — make the contract ongoing"
+					aria-label={m.contracts_editor_clear_end_date()}
 					onclick={clearEndsOn}
 				>
 					<i class="las la-times" aria-hidden="true"></i>
@@ -332,21 +340,24 @@
 					text-[13px] text-base-content-muted hover:border-primary"
 				onclick={() => (endsOnOpen = true)}
 			>
-				Ongoing · + add an end date
+				{m.contracts_editor_add_end_date()}
 			</button>
 		{/if}
 		{#if endsOnOpen && endsOn}
 			<label class="text-[13px] text-base-content-muted" for="contract-ends-at">
-				Last day <span class="text-[11px] text-outline">(optional)</span>
+				{m.contracts_editor_last_day()}
+				<span class="text-[11px] text-outline">{m.contracts_optional_paren()}</span>
 			</label>
 			<select
 				id="contract-ends-at"
 				class="select select-sm w-full text-[13px]"
 				bind:value={endsAtValue}
 			>
-				<option value="">Full scheduled day</option>
+				<option value="">{m.contracts_editor_full_day()}</option>
 				{#each END_TIME_OPTIONS as minutes (minutes)}
-					<option value={String(minutes)}>until {formatEndTime(minutes)}</option>
+					<option value={String(minutes)}>
+						{m.contracts_until_time({ time: formatEndTime(minutes) })}
+					</option>
 				{/each}
 			</select>
 		{/if}
@@ -355,31 +366,33 @@
 		<p class="mt-1 text-right text-[11px] text-outline">
 			{#if startsOn}{formatDateWithWeekday(startsOn)}{/if}
 			{#if startsOn && endsOn}&nbsp;→&nbsp;{/if}
-			{#if endsOn}{formatDateWithWeekday(endsOn)}{#if endsAtValue}, until {formatEndTime(
-						Number(endsAtValue)
-					)}{/if}{/if}
+			{#if endsOn}{endsAtValue
+					? m.contracts_date_until({
+							date: formatDateWithWeekday(endsOn),
+							time: formatEndTime(Number(endsAtValue))
+						})
+					: formatDateWithWeekday(endsOn)}{/if}
 		</p>
 	{/if}
 
 	<div class="mt-3 flex items-center justify-between rounded-[10px] bg-secondary px-4 py-3">
 		<span class="text-[12.5px] text-secondary-content/80">
-			Weekly estimate
+			{m.contracts_weekly_estimate()}
 			{#if estimateBreakdown}
 				<span class="text-secondary-content-faint">({estimateBreakdown})</span>
 			{/if}
 		</span>
 		<span class="font-display text-base font-bold text-secondary-content">
-			${centsToDollars(weeklyEstimateCents)}
+			{formatMoney(weeklyEstimateCents)}
 		</span>
 	</div>
 
 	<div class="mt-3 border-t border-base-300 pt-3">
 		<div class="text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
-			Included automatically
+			{m.contracts_editor_included_heading()}
 		</div>
 		<p class="mt-1 text-[12.5px] leading-relaxed text-base-content-muted">
-			Payments on Poppynz · contact details shared once active · either side can end with 2 weeks'
-			notice.
+			{m.contracts_editor_included_body()}
 		</p>
 	</div>
 
@@ -388,19 +401,21 @@
 	>
 		<i class="las la-shield-alt mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 		<p class="text-[12px] leading-relaxed text-neutral">
-			All sessions are <strong>proposals</strong>. {counterpartFirstName} reviews the contract as a whole
-			— they accept &amp; sign, or request changes in chat. Nothing is booked automatically.
+			{m.contracts_editor_proposals_before()}
+			<strong>{m.contracts_editor_proposals_strong()}</strong>{m.contracts_editor_proposals_after({
+				name: counterpartFirstName
+			})}
 		</p>
 	</div>
 
 	{#if locationMissing}
 		<p class="mt-3 rounded-lg bg-base-300 px-4 py-3 text-[12.5px] text-neutral" role="alert">
-			Session times follow your local time zone, which comes from your address.
+			{m.contracts_editor_location_text()}
 			{#if profileHref}
 				<a class="font-semibold text-secondary hover:underline" href={profileHref}>
-					Add your address
+					{m.contracts_editor_location_link()}
 				</a>
-				to send.
+				{m.contracts_editor_location_after()}
 			{/if}
 		</p>
 	{/if}
@@ -408,11 +423,13 @@
 	{#if paymentMethodMissing}
 		<p class="mt-3 rounded-lg bg-base-300 px-4 py-3 text-[12.5px] text-neutral" role="alert">
 			{#if billingHref}
-				<a class="font-semibold text-secondary hover:underline" href={billingHref}>Add a card</a>
+				<a class="font-semibold text-secondary hover:underline" href={billingHref}
+					>{m.contracts_editor_card_link()}</a
+				>
 			{:else}
-				Add a card
+				{m.contracts_editor_card_link()}
 			{/if}
-			to send — your card is used for contract billing.
+			{m.contracts_editor_card_after()}
 		</p>
 	{/if}
 
@@ -420,9 +437,9 @@
 		<div class="mt-3" aria-busy={quoting}>
 			<PriceBreakdown pricing={shownPricing} viewerSide="family" />
 			{#if !onquote}
-				<p class="mt-1 text-[11px] text-outline">For your last saved draft — save to update it.</p>
+				<p class="mt-1 text-[11px] text-outline">{m.contracts_editor_saved_draft_price()}</p>
 			{:else if quoting}
-				<p class="mt-1 text-[11px] text-outline">Updating…</p>
+				<p class="mt-1 text-[11px] text-outline">{m.contracts_editor_updating()}</p>
 			{/if}
 		</div>
 	{/if}
@@ -435,7 +452,7 @@
 			onclick={() => onsend(toTerms())}
 		>
 			{#if busy}<span class="loading loading-xs loading-spinner"></span>{/if}
-			Sign & send to {counterpartFirstName}
+			{m.contracts_editor_sign_send({ name: counterpartFirstName })}
 		</button>
 		{#if onsave}
 			<button
@@ -444,7 +461,7 @@
 				disabled={busy}
 				onclick={() => onsave?.(toTerms())}
 			>
-				Save draft
+				{m.contracts_editor_save_draft()}
 			</button>
 		{/if}
 	</div>
@@ -470,11 +487,9 @@
 
 <ConfirmDialog
 	open={removeCandidate !== null}
-	title="Remove this service?"
-	body={removeCandidate
-		? `“${removeCandidate.name}” comes off the terms — its rate, sessions and expectations are discarded.`
-		: ''}
-	confirmLabel="Remove service"
+	title={m.contracts_editor_remove_title()}
+	body={removeCandidate ? m.contracts_editor_remove_body({ name: removeCandidate.name }) : ''}
+	confirmLabel={m.contracts_editor_remove_confirm()}
 	onconfirm={removeConfirmed}
 	oncancel={() => (removeCandidate = null)}
 />

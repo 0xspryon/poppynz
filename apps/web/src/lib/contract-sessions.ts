@@ -1,4 +1,6 @@
 import { addDays } from '@repo/calendar';
+import { formatNumber, getLocale, intlLocale } from '$lib/locale';
+import { m } from '$lib/paraglide/messages';
 
 /** Proposed weekly sessions (Flow F). Times are wall-clock minutes from
  * midnight in the contract's own time zone (the family's) — never UTC — so "3:30–6:00 pm" stays
@@ -10,7 +12,16 @@ export type ContractSession = {
 	endMinutes: number;
 };
 
-export const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+/** Short weekday name in the active locale: 0 → "Mon" / "lun." (Monday-first,
+ * like `ContractSession.weekday`). */
+export function weekdayLabel(weekday: number, style: 'short' | 'long' = 'short'): string {
+	// 2026-01-05 is a Monday.
+	return new Date(2026, 0, 5 + weekday).toLocaleDateString(intlLocale(), { weekday: style });
+}
+
+/** Monday … Sunday, short, in the active locale. */
+export const weekdayLabels = (): string[] =>
+	Array.from({ length: 7 }, (_, weekday) => weekdayLabel(weekday));
 
 export const MINUTES_PER_DAY = 24 * 60;
 
@@ -20,17 +31,22 @@ export const sessionMinutes = (session: ContractSession) =>
 export const weeklyMinutes = (sessions: ReadonlyArray<ContractSession>) =>
 	sessions.reduce((total, session) => total + sessionMinutes(session), 0);
 
-/** "2.5" for 150 minutes, "2" for 120 — no trailing zeros. */
-export const minutesToHours = (minutes: number) => String(Math.round((minutes / 60) * 100) / 100);
+/** "2.5" ("2,5" in French) for 150 minutes, "2" for 120 — no trailing zeros. */
+export const minutesToHours = (minutes: number) =>
+	formatNumber(Math.round((minutes / 60) * 100) / 100, { maximumFractionDigits: 2 });
 
 /** Per-service weekly cost, rounded to whole cents (mirrors the API). */
 export const serviceWeeklyCents = (rateCents: number, sessions: ReadonlyArray<ContractSession>) =>
 	Math.round((rateCents * weeklyMinutes(sessions)) / 60);
 
-/** 930 → "3:30 pm", 720 → "12:00 pm", 0 → "12:00 am". */
+/** 930 → "3:30 pm", 720 → "12:00 pm", 0 → "12:00 am" — in French the
+ * 24-hour Quebec style: "15 h 30", "12 h", "0 h". */
 export function formatMinutes(minutes: number): string {
 	const hours24 = Math.floor(minutes / 60) % 24;
 	const mins = minutes % 60;
+	if (getLocale() === 'fr') {
+		return mins === 0 ? `${hours24} h` : `${hours24} h ${String(mins).padStart(2, '0')}`;
+	}
 	const suffix = hours24 < 12 ? 'am' : 'pm';
 	const hours12 = hours24 % 12 === 0 ? 12 : hours24 % 12;
 	return `${hours12}:${String(mins).padStart(2, '0')} ${suffix}`;
@@ -39,7 +55,7 @@ export function formatMinutes(minutes: number): string {
 /** A last-day end time: like session times, except 1440 is "midnight" (the
  * end of that day, not 12:00 am at its start). */
 export const formatEndTime = (minutes: number): string =>
-	minutes >= MINUTES_PER_DAY ? 'midnight' : formatMinutes(minutes);
+	minutes >= MINUTES_PER_DAY ? m.contracts_time_midnight() : formatMinutes(minutes);
 
 export const END_NOTICE_DAYS = 14;
 
@@ -58,10 +74,12 @@ export function noticeLastDay(
 	return { endsOn: notice, endsAtMinutes: null };
 }
 
-/** "3:30–6:00 pm" — the shared am/pm suffix is dropped from the start. */
+/** "3:30–6:00 pm" — the shared am/pm suffix is dropped from the start
+ * ("15 h 30–18 h" in French, which has no suffix). */
 export function formatSessionRange(session: ContractSession): string {
 	const start = formatMinutes(session.startMinutes);
 	const end = formatMinutes(session.endMinutes);
+	if (getLocale() === 'fr') return `${start}–${end}`;
 	const [startTime, startSuffix] = start.split(' ');
 	const [, endSuffix] = end.split(' ');
 	return startSuffix === endSuffix ? `${startTime}–${end}` : `${start}–${end}`;

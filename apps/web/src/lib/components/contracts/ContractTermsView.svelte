@@ -11,9 +11,10 @@
 		serviceWeeklyCents,
 		sessionMinutes,
 		weeklyMinutes,
-		WEEKDAY_LABELS
+		weekdayLabel
 	} from '$lib/contract-sessions';
-	import { centsToDollars } from '$lib/money';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { formatDateWithWeekday } from '$lib/date';
 	import PriceBreakdown from '$lib/components/contracts/PriceBreakdown.svelte';
 
@@ -30,7 +31,7 @@
 	let {
 		terms,
 		dimmed = false,
-		heading = 'Services & sessions',
+		heading = m.contracts_terms_heading(),
 		timeZoneLabel = null,
 		viewerIsFamily = false
 	}: Props = $props();
@@ -39,12 +40,12 @@
 	// contract's sessions are agreed, not "Proposed".
 	const sessionLabel = $derived(
 		terms.status === 'accepted' || terms.status === 'superseded'
-			? 'Agreed'
+			? m.contracts_session_agreed()
 			: terms.status === 'declined'
-				? 'Declined'
+				? m.contracts_session_declined()
 				: terms.status === 'withdrawn'
-					? 'Withdrawn'
-					: 'Proposed'
+					? m.contracts_session_withdrawn()
+					: m.contracts_session_proposed()
 	);
 </script>
 
@@ -56,7 +57,9 @@
 	</h3>
 	{#if timeZoneLabel}
 		<p class="-mt-1 mb-2 text-[11px] text-outline">
-			Times are in {viewerIsFamily ? 'your' : "the family's"} local time ({timeZoneLabel}).
+			{viewerIsFamily
+				? m.contracts_terms_times_yours({ zone: timeZoneLabel })
+				: m.contracts_terms_times_family({ zone: timeZoneLabel })}
 		</p>
 	{/if}
 	<ul>
@@ -64,15 +67,18 @@
 			<li class="border-b border-base-300 py-2.5 last:border-b-0">
 				<div class="text-[13.5px] font-semibold text-base-content">{service.name}</div>
 				<div class="mt-0.5 text-xs text-base-content-muted">
-					${centsToDollars(service.rateCents)}/hr · {minutesToHours(
-						weeklyMinutes(service.sessions)
-					)}
-					hrs/wk =
+					{m.contracts_per_hour({ amount: formatMoney(service.rateCents) })} · {m.contracts_hours_per_week(
+						{ hours: minutesToHours(weeklyMinutes(service.sessions)) }
+					)} =
 					<strong class="text-secondary">
-						${centsToDollars(serviceWeeklyCents(service.rateCents, service.sessions))}/wk
+						{m.contracts_per_week({
+							amount: formatMoney(serviceWeeklyCents(service.rateCents, service.sessions))
+						})}
 					</strong>
 					{#if service.rateCents > service.listedRateCents}
-						<span class="text-outline"> · listed ${centsToDollars(service.listedRateCents)}</span>
+						<span class="text-outline">
+							· {m.contracts_listed_rate({ amount: formatMoney(service.listedRateCents) })}</span
+						>
 					{/if}
 				</div>
 				{#if service.expectations}
@@ -86,10 +92,10 @@
 							<div class="flex items-center gap-2.5 rounded-lg border border-base-300 px-3 py-1.5">
 								<i class="las la-clock text-neutral" aria-hidden="true"></i>
 								<span class="text-[12.5px] font-semibold text-base-content">
-									{WEEKDAY_LABELS[session.weekday]}
+									{weekdayLabel(session.weekday)}
 									{formatSessionRange(session)}
 									<span class="font-normal text-outline">
-										· {minutesToHours(sessionMinutes(session))} hrs
+										· {m.contracts_hours_short({ hours: minutesToHours(sessionMinutes(session)) })}
 									</span>
 								</span>
 								<span
@@ -112,26 +118,29 @@
 				pt-3 text-[13px]"
 		>
 			{#if terms.startsOn}
-				<span class="text-base-content-muted">Starts</span>
+				<span class="text-base-content-muted">{m.contracts_terms_starts()}</span>
 				<span class="font-medium text-base-content">{formatDateWithWeekday(terms.startsOn)}</span>
 			{/if}
-			<span class="text-base-content-muted">Ends</span>
+			<span class="text-base-content-muted">{m.contracts_terms_ends()}</span>
 			<span class="font-medium text-base-content">
 				{#if terms.endsOn}
-					{formatDateWithWeekday(terms.endsOn)}{#if terms.endsAtMinutes}, until {formatEndTime(
-							terms.endsAtMinutes
-						)}{/if}
+					{terms.endsAtMinutes
+						? m.contracts_date_until({
+								date: formatDateWithWeekday(terms.endsOn),
+								time: formatEndTime(terms.endsAtMinutes)
+							})
+						: formatDateWithWeekday(terms.endsOn)}
 				{:else}
-					Ongoing
+					{m.contracts_terms_ongoing()}
 				{/if}
 			</span>
 		</div>
 	{/if}
 
 	<div class="mt-3 flex items-center justify-between border-t border-base-300 pt-3">
-		<span class="text-[12.5px] text-base-content-muted">Weekly estimate</span>
+		<span class="text-[12.5px] text-base-content-muted">{m.contracts_weekly_estimate()}</span>
 		<span class="font-display text-base font-bold text-secondary">
-			${centsToDollars(terms.weeklyEstimateCents)}
+			{formatMoney(terms.weeklyEstimateCents)}
 		</span>
 	</div>
 

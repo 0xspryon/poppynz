@@ -10,8 +10,9 @@
 		bySessionStart,
 		formatSessionRange,
 		serviceCode,
-		WEEKDAY_LABELS
+		weekdayLabels
 	} from '$lib/contract-sessions';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		services: ContractServiceItem[];
@@ -42,7 +43,7 @@
 	);
 
 	const days = $derived(
-		WEEKDAY_LABELS.map((label, weekday) => ({
+		weekdayLabels().map((label, weekday) => ({
 			label,
 			chips: services
 				.flatMap((service, index) =>
@@ -67,9 +68,9 @@
 <div class="rounded-xl border border-card-border bg-base-100 px-4 py-3.5">
 	<div class="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
 		<h3 class="text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
-			{agreed ? 'Agreed week at a glance' : 'Proposed week at a glance'}
+			{agreed ? m.contracts_week_glance_agreed() : m.contracts_week_glance_proposed()}
 		</h3>
-		<p class="text-[11px] text-outline">all services combined — hold it against your own week</p>
+		<p class="text-[11px] text-outline">{m.contracts_week_glance_hint()}</p>
 	</div>
 	<div class="flex gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
 		{#each days as day, weekday (day.label)}
@@ -82,7 +83,7 @@
 						<div
 							class="rounded-lg border border-dashed border-base-300 py-2.5 text-center text-[10px]
 								text-outline-variant"
-							aria-label="No sessions on {day.label}"
+							aria-label={m.contracts_week_glance_no_sessions({ day: day.label })}
 						>
 							—
 						</div>
@@ -107,7 +108,7 @@
 									text-center text-[10px] font-semibold text-secondary hover:border-primary"
 								onclick={() => (expandedDays = [...expandedDays, weekday])}
 							>
-								+{day.chips.length - VISIBLE_ROWS} more
+								{m.contracts_week_glance_more({ count: day.chips.length - VISIBLE_ROWS })}
 							</button>
 						{/if}
 					{/if}

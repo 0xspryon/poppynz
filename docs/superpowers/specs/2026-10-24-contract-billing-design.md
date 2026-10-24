@@ -105,6 +105,9 @@ scheduled ─hold─▶ authorising ─▶ authorised ─capture─▶ capturing
    └─ contract ended or cancelled ─▶ cancelled (any hold released)
 ```
 
+`resume_from` records the instant a resume charge was quoted at: only the
+sessions starting after it are charged and reactivated.
+
 `charge_mode` records what `authorising` is doing: `hold` (manual capture),
 `immediate` (late booking: authorise and capture at once) or `resume`
 (prorated remainder after suspension, or recovery after a system failure).
@@ -187,7 +190,7 @@ accountant (a later role and portal — not built here) can correct it. Nothing
 tax-related is hard-coded or env-only; the code holds only the rounding rule
 and the resolution algorithm.
 
-### Model (migration `0028_tax_config`)
+### Model (migration `0027_tax_config`)
 
 | Table | Contents |
 |---|---|
@@ -250,8 +253,16 @@ existing charge. Labels read `HST (ON) 13%`, `GST (MB) 5%`, `QST (QC) 9.975%`.
   `[gst, hst, qst]`, `payer_province`; `care_service_value` exempt
   (`contract_location`); `cancellation_compensation` out of scope.
 - Registrations: `gst_hst` (CA, covers `gst` and `hst`) registered, number
-  `PLACEHOLDER-000000000RT0001` with `is_placeholder = true`; `qst` (QC)
-  **not registered** — so QST is not charged until the accountant enables it.
+  `PLACEHOLDER-000000000RT0001`; `qst` (QC) registered, number
+  `PLACEHOLDER-1000000000TQ0001` (user decision 2026-10-24: QST is ON by
+  default) — both `is_placeholder = true`. A Quebec payer is charged GST 5% +
+  QST 9.975% on each taxable supply; switching a registration off stops that
+  component.
+- The defaults live in `@repo/db/tax-defaults`, used by the seed and as test
+  fixtures; runtime code only reads the tables.
+- Permissions: `tax: ['read', 'write']` and `taxReport: ['read']`, granted to
+  admins now and to the accountant role the portal adds later (always checked
+  with `requirePermissions`, never by role).
 
 ### Where the provinces come from
 
@@ -358,7 +369,7 @@ removed. Without a province the summary carries no quote
 and captures at once; a saved card whose reference contains `decline` is
 refused, so tests reach every path.
 
-## 9. Data (migrations `0027_payment_tax_lines`, `0028_tax_config`, `0029_contract_billing`)
+## 9. Data (migrations `0027_tax_config`, `0028_payment_tax_lines`, `0029_contract_billing`)
 
 - `payments.tax_lines` (jsonb), `payments.description`,
   `payments.captured_cents`; `payment_kind` gains `contract_cycle`.
@@ -371,14 +382,17 @@ refused, so tests reach every path.
 
 ## 10. Local verification (dev only)
 
-- `bun --env-file=apps/api/.env apps/worker/src/dev/billing-tick.ts --as-of <ISO instant> [--contract <id>]`
-  runs exactly the worker's tick with "now" set to that instant. It refuses to
+- `docker compose exec worker sh -c 'cd /usr/src/app && ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled bun apps/worker/src/dev/billing-tick.ts --as-of <ISO instant> [--contract <id>]'`
+  runs exactly the worker's tick with "now" set to that instant, and prints
+  each contract's cycles (status, amount, hold/capture/start instants). It refuses to
   start unless `ENVIRONMENT=dev` is set explicitly **and**
   `BILLING_DEV_CLOCK=enabled`; with `ENVIRONMENT=production` it always exits.
   Payment readiness is still checked against Stripe's real state, and holds
   are real test-mode authorisations placed at the real time.
-- `bun --env-file=apps/api/.env apps/worker/src/dev/billing-fixture.ts [--payout-account <acct_…>]`
-  creates (idempotently) a test family (Ontario) and a test helper (Manitoba),
+- `docker compose exec worker sh -c 'cd /usr/src/app && ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled bun apps/worker/src/dev/billing-fixture.ts [--payout-account <acct_…>]'`
+  creates (idempotently) a test family (`billing-family@example.test`,
+  Toronto, Ontario) and a test helper (`billing-helper@example.test`,
+  Winnipeg, Manitoba),
   both approved and verified, with a helper service and an active
   conversation, so a contract can be created in the UI. `--payout-account`
   links the helper to a test Connect account made with

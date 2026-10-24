@@ -184,10 +184,13 @@ accepted weekly pattern.
     later by an accountant role (follow-up work): effective-dated rates per
     jurisdiction and component (GST, HST, PST, QST, RST), a treatment per
     supply type (taxable / exempt / zero-rated / out of scope, which
-    components, place of supply), and Poppynz's registrations (GST/HST
-    number; QST not registered by default, so QST is not charged). Edits
+    components, place of supply), and Poppynz's registrations (GST/HST and
+    QST, both registered by default with placeholder numbers, so a Quebec
+    payer is charged GST + QST). Edits
     close the row in force and insert a new one; every change is audited.
-    PST/QST/RST rates are seeded but not applied by default.
+    PST/RST rates are seeded but not applied by default.
+  - The tax configuration is managed by admins and, later, an accountant
+    role, through the `tax` / `taxReport` permissions.
   - The amounts are **frozen per line** (supply type, jurisdiction,
     component, rate, amount) on each payment and cycle at quote time. Lines
     are labelled by type and province ("HST (ON) 13%").
@@ -350,8 +353,8 @@ start in the contract zone.
 **Launch checks (founder):**
 - Accountant: review the seeded tax configuration (GST/HST applied by
   province to the family fee, the helper commission and background checks;
-  the care service value exempt; PST/QST/RST not applied), replace the
-  placeholder GST/HST registration number, decide on QST registration, and
+  the care service value exempt; PST/RST not applied), replace the
+  placeholder GST/HST and QST registration numbers, and
   confirm whether the CRA reporting rules for digital platform operators
   (since 2024) apply — if so, collect helper tax details (SIN or business
   number) and file annually. Corrections are made in the tax configuration

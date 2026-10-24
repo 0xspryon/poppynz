@@ -16,7 +16,7 @@
 - Nothing outside `packages/payments` names Stripe.
 - AGENTS.md: route error types derived from programs; mappers switch on `_tag` and end with `handleNever`; repo errors piped (`repo.x().pipe((errors) => mapXError(errors))`); permissions via `requirePermissions`; soft delete with `deletedAt`; focused unit tests for every route/domain program; toasts for success/error messages.
 - Integer cents; one rounding rule (`roundHalfUp`); tax lines frozen on the payment row and the cycle.
-- Migrations are hand-written SQL plus a `meta/_journal.json` entry: `0027_payment_tax_lines` (when 1788180000000), `0028_tax_config` (1788190000000), `0029_contract_billing` (1788200000000). Every new FK `ON DELETE restrict`.
+- Migrations are hand-written SQL plus a `meta/_journal.json` entry: `0027_tax_config` (when 1788180000000), `0028_payment_tax_lines` (1788190000000), `0029_contract_billing` (1788200000000). Every new FK `ON DELETE restrict`.
 - Pre-existing baseline (not ours): `apps/api` 2 failing tests in `src/lib/mailer.unit.test.ts`; `bunx tsc --noEmit -p tsconfig.json --moduleResolution bundler --module ESNext --target ES2022` in `apps/api` reports 52 errors, all in test files. Compare against that.
 - `apps/api/.env` carries a real Credibled key: never pay for a background check in the local stack.
 - Commit after every task, conventional message, trailer `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -70,14 +70,14 @@
 - [ ] `cd packages/billing && bun test src` → pass. Commit `feat(billing): shared pricing, rounding and tax resolution`.
 
 ### Task 2: Tax configuration tables, repo and seeds
-- [ ] `0028_tax_config.sql`: `btree_gist`, enums, the six tables, exclusion constraints, FKs restrict; schema.ts mirrors it.
+- [ ] `0027_tax_config.sql`: `btree_gist`, enums, the six tables, exclusion constraints, FKs restrict; schema.ts mirrors it.
 - [ ] `TaxConfigRepo` (live + `makeInMemoryTaxConfigRepo`), `TaxConfigOverlapError`, `TaxConfigNotFoundError`; supersede/delete write the audit row in the same transaction.
 - [ ] Seed `0004_tax_config` (registry in `seeds/index.ts`), data from spec §3a.
 - [ ] Tests: in-memory repo semantics (`bun test`), and the live repo against the docker Postgres (`DATABASE_URL` set, skipped otherwise).
-- [ ] Commit `feat(db): tax configuration tables, repo and seeded defaults (0028)`.
+- [ ] Commit `feat(db): tax configuration tables, repo and seeded defaults (0027)`.
 
 ### Task 3: Tax on background-check payments
-- [ ] `0027_payment_tax_lines.sql`: `payments.tax_lines jsonb not null default '[]'`, `description`, `captured_cents`; `payment_kind` + `contract_cycle`; `payments.user_id` → restrict.
+- [ ] `0028_payment_tax_lines.sql`: `payments.tax_lines jsonb not null default '[]'`, `description`, `captured_cents`; `payment_kind` + `contract_cycle`; `payments.user_id` → restrict.
 - [ ] Port: `QuotePolicy` becomes `{ adminFeeCents, tax: { checks, adminFee } }` (pre-resolved lines from `@repo/billing/pricing`); `Money` gains `taxLines`; `startPayment` takes `description`.
 - [ ] API: resolve the payer's province, `TaxProvinceRequiredError` → `422 TAX_PROVINCE_REQUIRED`; GET summary `quote: null` + `quoteBlockedReason`; freeze `taxLines` on the row; description into the intent. Remove `SAFETY_VERIFICATION_TAX_RATE_BASIS_POINTS`.
 - [ ] Web: SafetyCheckPanel lists each tax line by label; billing history shows them.
@@ -127,13 +127,13 @@
 
 ## Local end-to-end (Stripe test mode)
 
-Prerequisites: `apps/api/.env` has `PAYMENTS_PROVIDER=stripe` and test keys; `apps/web/.env` the publishable key; Stripe CLI at `~/.bun/bin/stripe`.
+Prerequisites: `apps/api/.env` has `PAYMENTS_PROVIDER=stripe`, the test keys and `APP_WEB_ORIGIN=http://localhost:5173`; `apps/web/.env` the publishable key; Stripe CLI at `~/.bun/bin/stripe`. Never pay for a background check here (real Credibled key).
 
-1. Stack: `docker compose up -d postgres redis typesense rustfs && docker compose up migrations seeds && docker compose up -d api worker`; web: `cd apps/web && bun run dev -- --port 5173`.
-2. Webhooks: `stripe listen --forward-to localhost:3000/webhooks/stripe --forward-connect-to localhost:3000/webhooks/stripe`; put the printed `whsec_…` in `apps/api/.env` as `STRIPE_WEBHOOK_SECRET` and restart `api`.
+1. Stack: `docker compose up -d postgres redis typesense rustfs && docker compose up migrations seeds && docker compose up -d api worker`; web: `cd apps/web && PORT=5173 bun run dev`.
+2. Webhooks: `stripe listen --forward-to localhost:3000/webhooks/stripe --forward-connect-to localhost:3000/webhooks/stripe`; put the printed `whsec_…` in `apps/api/.env` as `STRIPE_WEBHOOK_SECRET` and `docker compose restart api`.
 3. Payout-ready helper account: `bun --env-file=apps/api/.env packages/payments/scripts/e2e-payout-account.ts create-ready` → `acct_…`.
-4. Fixture: `ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled bun --env-file=apps/api/.env apps/worker/src/dev/billing-fixture.ts --payout-account acct_…` → prints the two test logins (magic link; the link is printed by `docker logs api`).
-5. Family: sign in, Billing → Add a card → `4242 4242 4242 4242` (or `4000 0000 0000 0341` for the decline path: it saves, then every charge is declined); Contracts → the helper → terms with a start date 4+ days out → Send. The family sees service + 5% fee + HST (ON) 13%.
-6. Helper: sign in, open the proposal (commission 15% + GST (MB) 5% deducted) → Accept & sign. Detail shows Billing "Scheduled" with cycles.
-7. Advance the clock: `ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled bun --env-file=apps/api/.env apps/worker/src/dev/billing-tick.ts --as-of <cycle 1 hold_at>` → cycle 1 "On hold" (Stripe dashboard: uncaptured PaymentIntent); `--as-of <capture_at>` → "Paid".
-8. Decline path: with the 0341 card, `--as-of <hold_at>` → "Payment failed — retrying" (grace; family emailed); Billing → Replace card with 4242 → the hold is retried at once. Without replacing: `--as-of <starts_at>` → contract "Suspended"; replace the card → the prorated rest is charged and the contract resumes.
+4. Fixture: `docker compose exec worker sh -c 'cd /usr/src/app && ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled bun apps/worker/src/dev/billing-fixture.ts --payout-account acct_…'` → `billing-family@example.test` (Toronto, ON) and `billing-helper@example.test` (Winnipeg, MB). Sign in with a magic link: `docker logs api 2>&1 | grep 'Magic link for'`.
+5. Family: Billing → Add a card → `4242 4242 4242 4242` (or `4000 0000 0000 0341` for the decline path: it saves, then every charge is declined); Contracts → the conversation with Hana → terms with a start date 4+ days out → Save draft (the breakdown shows the 5% fee + HST (ON) 13%) → Send.
+6. Helper: open the proposal (15% commission + GST (MB) 5% deducted) → Accept & sign. The detail's Billing panel shows "scheduled" and the cycles with their hold times.
+7. Advance the clock: `docker compose exec worker sh -c 'cd /usr/src/app && ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled bun apps/worker/src/dev/billing-tick.ts --as-of <cycle 1 hold_at>'` → cycle 1 "On hold" (Stripe: an uncaptured PaymentIntent); `--as-of <capture_at>` → "Paid".
+8. Decline path (0341 card): `--as-of <hold_at>` → "Card declined — retrying" (grace; the family is emailed — logged by the api/worker in dev); Billing → Replace card with 4242 → the hold is retried at once. Or, without replacing: `--as-of <starts_at>` → "Suspended"; then replace the card → the remaining sessions are charged at once and the contract resumes.

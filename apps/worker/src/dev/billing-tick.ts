@@ -3,15 +3,20 @@
  * contract go hold → capture, or decline → grace → suspension → resume,
  * without waiting days. Exactly the worker's tick, with `now` replaced.
  *
- *   ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled \
- *     bun --env-file=apps/api/.env apps/worker/src/dev/billing-tick.ts \
- *       --as-of 2026-11-02T12:00:00Z [--contract <contract id>]
+ *   docker compose exec worker sh -c 'cd /usr/src/app && ENVIRONMENT=dev \
+ *     BILLING_DEV_CLOCK=enabled bun apps/worker/src/dev/billing-tick.ts \
+ *     --as-of 2026-11-02T12:00:00Z [--contract <contract id>]'
+ *
+ * or from the host, against the docker Postgres:
+ *
+ *   TZ=UTC ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled \
+ *     DATABASE_URL=postgres://user:pass@localhost:5432/poppynz_dev \
+ *     bun --env-file=apps/api/.env apps/worker/src/dev/billing-tick.ts --as-of …
  *
  * Without --as-of it prints the schedule only. Refuses to start outside a
  * local dev stack (see ./guard.ts). Holds and charges are real Stripe
  * test-mode calls made at the real time; payout readiness is Stripe's real
- * state. Run from the worktree root against the docker Postgres
- * (DATABASE_URL must reach it from the host, e.g. localhost:5432).
+ * state. Must run in UTC, like the containers (see ./guard.ts).
  */
 import { ContractBillingRepo } from '@repo/db';
 import { runContractBillingTick } from '@repo/billing';

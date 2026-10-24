@@ -3,7 +3,7 @@ import { checkDevClock } from './guard';
 
 describe('checkDevClock', () => {
   it('runs only with ENVIRONMENT=dev set explicitly and BILLING_DEV_CLOCK=enabled', () => {
-    expect(checkDevClock({ ENVIRONMENT: 'dev', BILLING_DEV_CLOCK: 'enabled' })).toEqual({
+    expect(checkDevClock({ ENVIRONMENT: 'dev', BILLING_DEV_CLOCK: 'enabled' }, 0)).toEqual({
       ok: true
     });
   });
@@ -26,5 +26,12 @@ describe('checkDevClock', () => {
       checkDevClock({ ENVIRONMENT: 'dev', NODE_ENV: 'production', BILLING_DEV_CLOCK: 'enabled' }).ok
     ).toBe(false);
     expect(checkDevClock({ ENVIRONMENT: 'staging', BILLING_DEV_CLOCK: 'enabled' }).ok).toBe(false);
+  });
+
+  it('refuses outside UTC, where zone-less timestamps would shift', () => {
+    expect(checkDevClock({ ENVIRONMENT: 'dev', BILLING_DEV_CLOCK: 'enabled' }, -60)).toEqual({
+      ok: false,
+      reason: 'run with TZ=UTC, like the API and worker containers'
+    });
   });
 });

@@ -8,11 +8,19 @@
  *   - BILLING_DEV_CLOCK must be `enabled`;
  *   - ENVIRONMENT=production or NODE_ENV=production always refuses.
  *
+ *   - the process must run in UTC (TZ=UTC), as the API and worker containers
+ *     do: the database's `timestamp` and `date` columns carry no zone, so a
+ *     tool running in another zone would read and write instants shifted
+ *     by its offset.
+ *
  * PaymentsLive additionally refuses any live Stripe key.
  */
 export type DevGuardResult = { ok: true } | { ok: false; reason: string };
 
-export const checkDevClock = (env: Record<string, string | undefined>): DevGuardResult => {
+export const checkDevClock = (
+  env: Record<string, string | undefined>,
+  utcOffsetMinutes: number = new Date().getTimezoneOffset()
+): DevGuardResult => {
   if (env.ENVIRONMENT === 'production' || env.NODE_ENV === 'production') {
     return { ok: false, reason: 'refusing to run in production' };
   }
@@ -21,6 +29,9 @@ export const checkDevClock = (env: Record<string, string | undefined>): DevGuard
   }
   if (env.BILLING_DEV_CLOCK !== 'enabled') {
     return { ok: false, reason: 'set BILLING_DEV_CLOCK=enabled to use the dev billing tools' };
+  }
+  if (utcOffsetMinutes !== 0) {
+    return { ok: false, reason: 'run with TZ=UTC, like the API and worker containers' };
   }
   return { ok: true };
 };

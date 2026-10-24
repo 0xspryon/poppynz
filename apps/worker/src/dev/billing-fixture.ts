@@ -5,7 +5,7 @@
  *
  * From the host (worktree root, docker Postgres published on localhost):
  *
- *   ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled \
+ *   TZ=UTC ENVIRONMENT=dev BILLING_DEV_CLOCK=enabled \
  *     DATABASE_URL=postgres://user:pass@localhost:5432/poppynz_dev \
  *     bun apps/worker/src/dev/billing-fixture.ts [--payout-account acct_…]
  *

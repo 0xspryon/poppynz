@@ -371,7 +371,13 @@ type ChargeMode = 'hold' | 'immediate' | 'resume';
 const describeCycle = (ctx: BillingContext, cycle: ContractCycle, mode: ChargeMode) =>
   Effect.gen(function* () {
     const helper = yield* personName(ctx.contract.providerUserId);
-    return `${mode === 'resume' ? 'Care (resumed)' : 'Care'} with ${helper.name} · ${cycleDates(cycle)}`;
+    const label =
+      mode !== 'resume'
+        ? 'Care'
+        : cycle.status === 'capture_failed'
+          ? 'Care (recovery)'
+          : 'Care (resumed)';
+    return `${label} with ${helper.name} · ${cycleDates(cycle)}`;
   });
 
 /** Calls the provider for the cycle's current attempt and settles what it

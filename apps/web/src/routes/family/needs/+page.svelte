@@ -14,9 +14,10 @@
 	} from '$lib/api/services-needed';
 	import BrowseServicesDialog from '$lib/components/BrowseServicesDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.family_needs_retry();
 	const COMMON_COUNT = 6;
 
 	let catalogue = $state<Array<CatalogueItem>>([]);
@@ -63,9 +64,7 @@
 	);
 	const commonServices = $derived(catalogue.slice(0, COMMON_COUNT));
 	const limitReached = $derived(services.length >= maxServices);
-	const limitMessage = $derived(
-		`You can list up to ${maxServices} services — remove one to add another.`
-	);
+	const limitMessage = $derived(m.family_needs_limit({ max: maxServices }));
 
 	async function addCatalogueService(item: CatalogueItem) {
 		if (linkedCatalogueIds.has(item.id) || busyIds.has(item.id) || limitReached) return;
@@ -75,12 +74,12 @@
 			catalogueServiceId: item.id
 		});
 		if (result.ok) {
-			toast.success(`${item.name} added to your needs.`);
+			toast.success(m.family_needs_added({ name: item.name }));
 			await load();
 		} else if (result.error.code === 'SERVICES_NEEDED_LIMIT_REACHED') {
-			toast.error(result.error.message, { title: `Could not add ${item.name}` });
+			toast.error(limitMessage, { title: m.family_needs_could_not_add({ name: item.name }) });
 		} else {
-			toast.error(RETRY_MESSAGE, { title: `Could not add ${item.name}` });
+			toast.error(RETRY_MESSAGE, { title: m.family_needs_could_not_add({ name: item.name }) });
 		}
 		busyIds.delete(item.id);
 	}
@@ -91,11 +90,13 @@
 		const result = await removeServiceNeeded(deleting.id);
 		deleteBusy = false;
 		if (result.ok) {
-			toast.success(`${deleting.name} removed from your needs.`);
+			toast.success(m.family_needs_removed({ name: deleting.name }));
 			deleting = null;
 			await load();
 		} else {
-			toast.error(RETRY_MESSAGE, { title: `Could not remove ${deleting.name}` });
+			toast.error(RETRY_MESSAGE, {
+				title: m.family_needs_could_not_remove({ name: deleting.name })
+			});
 			deleting = null;
 		}
 	}
@@ -113,12 +114,10 @@
 			});
 			if (!result.ok) {
 				const reason =
-					result.error.code === 'SERVICES_NEEDED_LIMIT_REACHED'
-						? result.error.message
-						: RETRY_MESSAGE;
+					result.error.code === 'SERVICES_NEEDED_LIMIT_REACHED' ? limitMessage : RETRY_MESSAGE;
 				toast.error(
-					added > 0 ? `Only ${added} of ${ids.length} services were added. ${reason}` : reason,
-					{ title: 'Could not add services' }
+					added > 0 ? m.family_needs_partial_added({ added, total: ids.length, reason }) : reason,
+					{ title: m.family_needs_could_not_add_services() }
 				);
 				browseBusy = false;
 				await load();
@@ -128,18 +127,20 @@
 		}
 		browseOpen = false;
 		browseBusy = false;
-		toast.success(added === 1 ? '1 service added.' : `${added} services added.`);
+		toast.success(m.family_needs_added_count({ count: added }));
 		await load();
 	}
 </script>
 
 <svelte:head>
-	<title>Services I need · Poppynz</title>
+	<title>{m.family_needs_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-4xl">
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Services I need</h1>
+		<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">
+			{m.family_needs_title()}
+		</h1>
 		{#if limitReached && !loading}
 			<span
 				class="btn btn-outline btn-secondary btn-disabled"
@@ -147,18 +148,17 @@
 				aria-disabled="true"
 			>
 				<i class="las la-plus" aria-hidden="true"></i>
-				Add something else
+				{m.family_needs_add_something_else()}
 			</span>
 		{:else}
 			<a href={resolve('/family/needs/custom')} class="btn btn-outline btn-secondary">
 				<i class="las la-plus" aria-hidden="true"></i>
-				Add something else
+				{m.family_needs_add_something_else()}
 			</a>
 		{/if}
 	</div>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		Tell helpers what you're looking for — vetted helpers near you can find your family by these
-		needs.
+		{m.family_needs_subtitle()}
 	</p>
 
 	{#if loading}
@@ -169,7 +169,7 @@
 		<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
 	{:else}
 		<div class="mb-2.5 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-			Common services
+			{m.family_needs_common_services()}
 		</div>
 		<div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3">
 			{#each commonServices as item (item.id)}
@@ -200,7 +200,9 @@
 					<div class="text-[13px] font-semibold text-base-content">{item.name}</div>
 					<div class="text-xs text-base-content-muted">{item.category}</div>
 					{#if inList}
-						<div class="mt-1 text-[10.5px] text-success">✓ In your list</div>
+						<div class="mt-1 text-[10.5px] text-success">
+							{m.family_needs_in_your_list()}
+						</div>
 					{/if}
 				</button>
 			{/each}
@@ -216,18 +218,20 @@
 					<i class="las la-search text-base text-secondary" aria-hidden="true"></i>
 				</span>
 				<span class="text-[13px] font-semibold text-secondary">
-					Browse all {catalogue.length} services
+					{m.family_needs_browse_all({ count: catalogue.length })}
 				</span>
-				<span class="text-[11px] text-base-content-muted">See the full list of services</span>
+				<span class="text-[11px] text-base-content-muted">
+					{m.family_needs_browse_all_hint()}
+				</span>
 			</button>
 		</div>
 
 		<div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
 			<span class="text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-				Your needs · {services.length} / {maxServices}
+				{m.family_needs_your_needs({ count: services.length, max: maxServices })}
 			</span>
 			<span class="text-xs text-outline">
-				Helpers set their own rates — each service has a minimum (base) rate
+				{m.family_needs_rates_hint()}
 			</span>
 		</div>
 
@@ -245,8 +249,7 @@
 			<p
 				class="rounded-lg border border-card-border bg-base-100 p-6 text-sm text-base-content-muted"
 			>
-				Nothing listed yet — pick a common service above or add your own. Listing at least one need
-				(plus a saved home location) lets vetted helpers find your family.
+				{m.family_needs_empty()}
 			</p>
 		{:else}
 			<div class="flex flex-col gap-2.5">
@@ -260,9 +263,9 @@
 								<div class="text-sm font-semibold text-base-content">{service.name}</div>
 								<div class="text-xs text-base-content-muted">
 									{#if service.catalogueServiceId !== null}
-										From the common list
+										{m.family_needs_from_common_list()}
 									{:else}
-										Your own request
+										{m.family_needs_own_request()}
 									{/if}
 									{#if service.description}
 										· {service.description}
@@ -277,7 +280,7 @@
 								class="flex size-8 items-center justify-center rounded-[7px] border
 									border-card-border text-outline transition-colors hover:border-error
 									hover:text-error"
-								aria-label="Remove {service.name}"
+								aria-label={m.family_needs_remove_aria({ name: service.name })}
 								onclick={() => (deleting = service)}
 							>
 								<i class="las la-trash-alt text-base" aria-hidden="true"></i>
@@ -295,7 +298,7 @@
 	{catalogue}
 	linkedIds={linkedCatalogueIds}
 	busy={browseBusy}
-	subtitle="Select the services your family is looking for. Rates shown are where helpers' rates start."
+	subtitle={m.family_needs_browse_subtitle()}
 	ratesAreStartingPrices
 	onadd={(ids) => void addSelected(ids)}
 	oncancel={() => (browseOpen = false)}
@@ -303,9 +306,9 @@
 
 <ConfirmDialog
 	open={deleting !== null}
-	title="Remove service"
-	body="Remove “{deleting?.name}” from your needs? Helpers will no longer find you by it."
-	confirmLabel="Remove"
+	title={m.family_needs_remove_title()}
+	body={m.family_needs_remove_body({ name: deleting?.name ?? '' })}
+	confirmLabel={m.family_needs_remove_confirm()}
 	busy={deleteBusy}
 	onconfirm={() => void confirmDelete()}
 	oncancel={() => (deleting = null)}

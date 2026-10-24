@@ -1,13 +1,14 @@
 <script lang="ts">
 	import ProfileSettings from '$lib/components/ProfileSettings.svelte';
+	import { m } from '$lib/paraglide/messages';
 </script>
 
 <svelte:head>
-	<title>Profile · Poppynz</title>
+	<title>{m.family_profile_page_title()}</title>
 </svelte:head>
 
 <ProfileSettings
 	audience="family"
-	description="Contact details, location & bio — helpers near you are matched by your area."
-	bioPlaceholder="Tell helpers a bit about your family and what you're looking for."
+	description={m.family_profile_description()}
+	bioPlaceholder={m.family_profile_bio_placeholder()}
 />

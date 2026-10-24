@@ -6,6 +6,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { ProviderHit } from '$lib/api/providers';
 	import { rateRangeLabel } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		provider: ProviderHit;
@@ -14,7 +15,9 @@
 
 	let { provider, href }: Props = $props();
 
-	const name = $derived(provider.displayName ?? `Provider in ${provider.location.city}`);
+	const name = $derived(
+		provider.displayName ?? m.family_provider_in_city({ city: provider.location.city })
+	);
 	const anonymous = $derived(provider.displayName == null);
 	const initials = $derived(
 		(provider.displayName ?? '')
@@ -63,7 +66,7 @@
 						text-[10px] font-bold text-success"
 				>
 					<i class="las la-user-shield" aria-hidden="true"></i>
-					Vetted
+					{m.family_card_vetted()}
 				</span>
 			</div>
 			<div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-base-content-muted">
@@ -97,7 +100,7 @@
 				class="rounded-pill border border-dashed border-outline-variant px-2.5 py-1 text-[11px]
 					font-semibold text-base-content-muted"
 			>
-				+{overflow} more
+				{m.family_card_more({ count: overflow })}
 			</span>
 		{/if}
 	</div>

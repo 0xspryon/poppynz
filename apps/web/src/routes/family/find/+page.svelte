@@ -25,7 +25,8 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import ProviderCard from '$lib/components/ProviderCard.svelte';
 	import RequestSearchHelpModal from '$lib/components/RequestSearchHelpModal.svelte';
-	import { centsToDollars, dollarsToCents } from '$lib/money';
+	import { centsToDollars, dollarsToCents, formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 	import { withQuery } from '$lib/nav';
 	import { startTourOnce } from '$lib/tour';
@@ -38,35 +39,33 @@
 	const TOUR_STEPS = [
 		{
 			selector: '[data-tour="search"]',
-			title: 'Search anything',
-			description: 'Look up services, helper names, or keywords — "newborn", "after school pickup"…'
+			title: m.family_find_tour_search_title(),
+			description: m.family_find_tour_search_body()
 		},
 		{
 			selector: '[data-tour="radius"]',
-			title: 'Search near home',
-			description:
-				'Results center on your saved home location. Widen the radius to see more helpers.'
+			title: m.family_find_tour_radius_title(),
+			description: m.family_find_tour_radius_body()
 		},
 		{
 			selector: '[data-tour="filters"]',
-			title: 'Narrow it down',
-			description: 'Filter by service, hourly rate, or city.'
+			title: m.family_find_tour_filters_title(),
+			description: m.family_find_tour_filters_body()
 		},
 		{
 			selector: '[data-tour="filters-mobile"]',
-			title: 'Narrow it down',
-			description: 'Filter by service, hourly rate, or city.'
+			title: m.family_find_tour_filters_title(),
+			description: m.family_find_tour_filters_body()
 		},
 		{
 			selector: '[data-tour="sort"]',
-			title: 'Order results',
-			description: 'Sort by distance, price, or newest.'
+			title: m.family_find_tour_sort_title(),
+			description: m.family_find_tour_sort_body()
 		},
 		{
 			selector: '[data-tour="results"]',
-			title: 'Vetted helpers',
-			description:
-				'Everyone listed passed Poppynz identity and background checks. Tap a card for the full profile.'
+			title: m.family_find_tour_results_title(),
+			description: m.family_find_tour_results_body()
 		}
 	];
 
@@ -345,19 +344,27 @@
 		assistBusy = false;
 		if (result.ok) {
 			assistOpen = false;
-			toast.success('Our team has been notified and will reach out to help with your search.');
+			toast.success(m.family_find_assist_success());
 		} else {
-			toast.error(result.error.message || 'Please try again in a moment.', {
-				title: "Couldn't notify our team"
+			toast.error(m.family_find_assist_error_body(), {
+				title: m.family_find_assist_error_title()
 			});
 		}
 	}
 
 	const rateChipLabel = $derived.by(() => {
 		if (minCents != null && maxCents != null)
-			return `$${centsToDollars(minCents)}–$${centsToDollars(maxCents)}/hr`;
-		if (minCents != null) return `From $${centsToDollars(minCents)}/hr`;
-		if (maxCents != null) return `Up to $${centsToDollars(maxCents)}/hr`;
+			return m.money_per_hour({
+				amount: m.money_range({ min: formatMoney(minCents), max: formatMoney(maxCents) })
+			});
+		if (minCents != null)
+			return m.family_find_rate_from({
+				amount: m.money_per_hour({ amount: formatMoney(minCents) })
+			});
+		if (maxCents != null)
+			return m.family_find_rate_up_to({
+				amount: m.money_per_hour({ amount: formatMoney(maxCents) })
+			});
 		return '';
 	});
 
@@ -370,19 +377,24 @@
 </script>
 
 <svelte:head>
-	<title>Find help · Poppynz</title>
+	<title>{m.family_find_page_title()}</title>
 </svelte:head>
 
 {#snippet filterControls()}
 	<!-- Service facet: single-select — the search API filters one service at a time. -->
 	<fieldset class="min-w-0 rounded-xl border border-card-border bg-base-100 p-4">
-		<legend class="sr-only">Service</legend>
+		<legend class="sr-only">{m.family_find_service()}</legend>
 		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-			Service
+			{m.family_find_service()}
 		</div>
 		<label class="input input-sm mb-2 flex w-full items-center gap-2">
 			<i class="las la-search text-outline" aria-hidden="true"></i>
-			<input type="search" class="grow" placeholder="Filter services…" bind:value={serviceQuery} />
+			<input
+				type="search"
+				class="grow"
+				placeholder={m.family_find_filter_services_placeholder()}
+				bind:value={serviceQuery}
+			/>
 		</label>
 		{#if exactServiceOption}
 			<label
@@ -400,7 +412,7 @@
 						“{exactServiceOption}”
 					</span>
 					<span class="mt-0.5 block text-[11px] leading-snug text-neutral">
-						Select to search for this exact service
+						{m.family_find_exact_service_hint()}
 					</span>
 				</span>
 			</label>
@@ -422,16 +434,18 @@
 				</label>
 			{:else}
 				{#if !exactServiceOption}
-					<p class="px-1 py-1 text-xs text-base-content-muted">No services match.</p>
+					<p class="px-1 py-1 text-xs text-base-content-muted">
+						{m.family_find_no_services_match()}
+					</p>
 				{/if}
 			{/each}
 		</div>
 	</fieldset>
 
 	<fieldset class="min-w-0 rounded-xl border border-card-border bg-base-100 p-4">
-		<legend class="sr-only">Hourly rate</legend>
+		<legend class="sr-only">{m.family_find_hourly_rate()}</legend>
 		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-			Hourly rate (CAD)
+			{m.family_find_hourly_rate_cad()}
 		</div>
 		<div class="flex items-center gap-2">
 			<label class="input input-sm flex min-w-0 flex-1 items-center gap-1">
@@ -441,12 +455,12 @@
 					inputmode="decimal"
 					class="w-full min-w-0"
 					placeholder="20"
-					aria-label="Minimum hourly rate"
+					aria-label={m.family_find_min_rate()}
 					bind:value={rateMinInput}
 					onchange={applyRates}
 				/>
 			</label>
-			<span class="text-xs text-base-content-muted">to</span>
+			<span class="text-xs text-base-content-muted">{m.family_find_rate_to()}</span>
 			<label class="input input-sm flex min-w-0 flex-1 items-center gap-1">
 				<span class="text-base-content-muted">$</span>
 				<input
@@ -454,7 +468,7 @@
 					inputmode="decimal"
 					class="w-full min-w-0"
 					placeholder="45"
-					aria-label="Maximum hourly rate"
+					aria-label={m.family_find_max_rate()}
 					bind:value={rateMaxInput}
 					onchange={applyRates}
 				/>
@@ -463,15 +477,17 @@
 	</fieldset>
 
 	<fieldset class="min-w-0 rounded-xl border border-card-border bg-base-100 p-4">
-		<legend class="sr-only">City</legend>
-		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">City</div>
+		<legend class="sr-only">{m.family_find_city()}</legend>
+		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
+			{m.family_find_city()}
+		</div>
 		<select
 			class="select select-sm w-full"
-			aria-label="City"
+			aria-label={m.family_find_city()}
 			value={city}
 			onchange={(event) => selectCity(event.currentTarget.value)}
 		>
-			<option value="">All cities</option>
+			<option value="">{m.family_find_all_cities()}</option>
 			{#each cityOptions as option (option.value)}
 				<option value={option.value}>
 					{option.value}{option.count ? ` (${option.count})` : ''}
@@ -482,7 +498,7 @@
 
 	<div class="rounded-xl bg-success-content p-4 text-[13px] leading-relaxed text-success">
 		<i class="las la-user-shield mr-1" aria-hidden="true"></i>
-		Everyone you see here has been identity- and background-vetted by Poppynz.
+		{m.family_find_vetted_note()}
 	</div>
 {/snippet}
 
@@ -495,14 +511,13 @@
 				<i class="las la-user-shield text-2xl text-warning" aria-hidden="true"></i>
 			</span>
 			<h1 class="font-display text-lg font-bold text-base-content">
-				Finding help unlocks once you're approved
+				{m.family_find_not_approved_title()}
 			</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
-				Upload your documents, then submit your profile for review. When the Poppynz team has
-				approved it, you'll be able to browse and contact helpers near you.
+				{m.family_find_not_approved_body()}
 			</p>
 			<a href={resolve('/family/approval')} class="btn btn-primary btn-sm">
-				Check your approval status
+				{m.family_find_check_approval()}
 			</a>
 		</div>
 	{:else}
@@ -517,12 +532,14 @@
 					<input
 						type="search"
 						class="grow"
-						placeholder="Search by service, name or keyword…"
-						aria-label="Search providers"
+						placeholder={m.family_find_search_placeholder()}
+						aria-label={m.family_find_search_aria()}
 						bind:value={qInput}
 					/>
 				</label>
-				<button type="submit" class="btn btn-primary lg:w-auto">Search</button>
+				<button type="submit" class="btn btn-primary lg:w-auto">
+					{m.family_find_search_button()}
+				</button>
 			</div>
 
 			<div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -531,38 +548,42 @@
 					{#if !profileLoaded}
 						<span class="skeleton h-4 w-40"></span>
 					{:else if city}
-						<span class="truncate">In <strong class="text-base-content">{city}</strong></span>
+						<span class="truncate"
+							>{m.family_find_location_in_before()}
+							<strong class="text-base-content">{city}</strong></span
+						>
 						{#if hasLocation}
 							<button
 								type="button"
 								class="shrink-0 text-xs font-semibold text-primary"
 								onclick={() => selectCity('')}
 							>
-								Search near me
+								{m.family_find_search_near_me()}
 							</button>
 						{/if}
 					{:else if hasLocation}
 						<span class="truncate"
-							>Near <strong class="text-base-content">{originLabel}</strong></span
+							>{m.family_find_location_near_before()}
+							<strong class="text-base-content">{originLabel}</strong></span
 						>
 						<a
 							href={resolve('/family/profile')}
 							class="shrink-0 text-xs font-semibold text-primary"
 						>
-							Change
+							{m.family_find_change_location()}
 						</a>
 					{:else}
-						<span>No home location saved.</span>
+						<span>{m.family_find_no_location()}</span>
 						<a
 							href={resolve('/family/profile')}
 							class="shrink-0 text-xs font-semibold text-primary"
 						>
-							Set your location
+							{m.family_find_set_location()}
 						</a>
 					{/if}
 				</div>
 
-				<div class="join" role="group" aria-label="Search radius" data-tour="radius">
+				<div class="join" role="group" aria-label={m.family_find_radius_aria()} data-tour="radius">
 					<button
 						type="button"
 						class="btn join-item btn-sm {radiusKm == null
@@ -570,7 +591,7 @@
 							: 'btn-ghost border border-outline-variant'}"
 						onclick={() => pickRadius(null)}
 					>
-						Anywhere
+						{m.family_find_anywhere()}
 					</button>
 					{#each RADIUS_PRESETS as preset (preset)}
 						<button
@@ -598,13 +619,13 @@
 				<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 					<h1 class="font-display text-xl font-bold text-base-content">
 						{#if loading && !data}
-							Searching…
+							{m.family_find_searching()}
+						{:else if radiusKm != null}
+							{m.family_find_results_count_near({ count: total })}
+						{:else if city}
+							{m.family_find_results_count_city({ count: total, city })}
 						{:else}
-							{total} vetted {total === 1 ? 'helper' : 'helpers'}{radiusKm != null
-								? ' near you'
-								: city
-									? ` in ${city}`
-									: ''}
+							{m.family_find_results_count({ count: total })}
 						{/if}
 					</h1>
 					<div class="flex items-center gap-2">
@@ -615,7 +636,7 @@
 							onclick={() => (sheetOpen = true)}
 						>
 							<i class="las la-sliders-h" aria-hidden="true"></i>
-							Filters
+							{m.family_find_filters()}
 							{#if activeFilterCount > 0}
 								<span
 									class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center
@@ -629,15 +650,15 @@
 							class="flex items-center gap-1.5 text-xs text-base-content-muted"
 							data-tour="sort"
 						>
-							Sort by
+							{m.family_find_sort_by()}
 							<select class="select select-sm w-auto" bind:value={sort} onchange={resetToFirstPage}>
-								<option value="relevance">Relevance</option>
+								<option value="relevance">{m.family_find_sort_relevance()}</option>
 								{#if radiusKm != null}
-									<option value="distance">Distance (nearest)</option>
+									<option value="distance">{m.family_find_sort_distance()}</option>
 								{/if}
-								<option value="price_asc">Price: low to high</option>
-								<option value="price_desc">Price: high to low</option>
-								<option value="newest">Newest</option>
+								<option value="price_asc">{m.family_find_sort_price_asc()}</option>
+								<option value="price_desc">{m.family_find_sort_price_desc()}</option>
+								<option value="newest">{m.family_find_sort_newest()}</option>
 							</select>
 						</label>
 					</div>
@@ -695,7 +716,7 @@
 							</button>
 						{/if}
 						<button type="button" class="text-xs font-semibold text-primary" onclick={clearFilters}>
-							Clear all
+							{m.family_find_clear_all()}
 						</button>
 					</div>
 				{/if}
@@ -728,10 +749,10 @@
 							<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
 						</span>
 						<h2 class="font-display text-lg font-bold text-base-content">
-							Something went wrong on our side
+							{m.family_find_error_title()}
 						</h2>
 						<p class="max-w-sm text-sm text-base-content-muted">
-							Your search didn't load. Your filters are safe — try again in a moment.
+							{m.family_find_error_body()}
 						</p>
 						<button
 							type="button"
@@ -739,7 +760,7 @@
 							onclick={() => (retryTick = retryTick + 1)}
 						>
 							<i class="las la-redo-alt" aria-hidden="true"></i>
-							Retry search
+							{m.family_find_retry_search()}
 						</button>
 					</div>
 				{:else if total === 0 && filtersActive}
@@ -750,34 +771,37 @@
 							<i class="las la-search text-2xl text-neutral" aria-hidden="true"></i>
 						</span>
 						<h2 class="font-display text-lg font-bold text-base-content">
-							No helpers match this search
+							{m.family_find_no_match_title()}
 						</h2>
 						<p class="max-w-sm text-sm text-base-content-muted">
 							{#if city}
-								Try another city, removing a filter, or searching a different term.
+								{m.family_find_no_match_body_city()}
 							{:else}
-								Try widening your radius, removing a filter, or searching a different term.
+								{m.family_find_no_match_body()}
 							{/if}
 						</p>
 						<div class="flex flex-wrap justify-center gap-2">
 							{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
 								<button type="button" class="btn btn-primary btn-sm" onclick={expandRadius}>
-									Expand radius to {RADIUS_PRESETS.find((preset) => preset > (radiusKm ?? 0))} km
+									{m.family_find_expand_radius({
+										km: RADIUS_PRESETS.find((preset) => preset > (radiusKm ?? 0)) ?? 0
+									})}
 								</button>
 							{:else if city && hasLocation}
 								<button type="button" class="btn btn-primary btn-sm" onclick={() => selectCity('')}>
-									Search near me instead
+									{m.family_find_search_near_me_instead()}
 								</button>
 							{/if}
-							<button type="button" class="btn btn-sm" onclick={clearFilters}>Clear filters</button>
+							<button type="button" class="btn btn-sm" onclick={clearFilters}>
+								{m.family_find_clear_filters()}
+							</button>
 						</div>
 						<div
 							class="mt-2 flex w-full max-w-sm flex-col items-center gap-2 border-t
 							border-card-border pt-4"
 						>
 							<p class="text-xs text-base-content-muted">
-								Still stuck? Tell us — a Poppynz administrator will be informed of your search and
-								reach out to help.
+								{m.family_find_still_stuck()}
 							</p>
 							<button
 								type="button"
@@ -785,7 +809,7 @@
 								onclick={() => (assistOpen = true)}
 							>
 								<i class="las la-hands-helping" aria-hidden="true"></i>
-								Get help from our team
+								{m.family_find_get_help()}
 							</button>
 						</div>
 					</div>
@@ -797,11 +821,10 @@
 							<i class="las la-seedling text-2xl text-warning" aria-hidden="true"></i>
 						</span>
 						<h2 class="font-display text-lg font-bold text-base-content">
-							We're growing in your area
+							{m.family_find_growing_title()}
 						</h2>
 						<p class="max-w-sm text-sm text-base-content-muted">
-							Poppynz is new around here — vetted helpers near you are joining every week. Widen the
-							radius to see who's a little further out.
+							{m.family_find_growing_body()}
 						</p>
 						{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
 							<button
@@ -809,7 +832,7 @@
 								class="btn btn-primary btn-sm"
 								onclick={() => pickRadius(RADIUS_PRESETS[RADIUS_PRESETS.length - 1])}
 							>
-								Search within {RADIUS_PRESETS[RADIUS_PRESETS.length - 1]} km
+								{m.family_find_search_within({ km: RADIUS_PRESETS[RADIUS_PRESETS.length - 1] })}
 							</button>
 						{/if}
 					</div>
@@ -830,7 +853,7 @@
 						<Pagination
 							page={pageNumber}
 							{totalPages}
-							label="Search result pages"
+							label={m.family_find_pagination_label()}
 							onselect={(next) => (pageNumber = next)}
 						/>
 					</div>
@@ -857,19 +880,21 @@
 		class="modal modal-bottom modal-open lg:hidden"
 		role="dialog"
 		aria-modal="true"
-		aria-label="Filters"
+		aria-label={m.family_find_filters()}
 	>
 		<div class="modal-box rounded-t-2xl">
 			<div class="mx-auto mb-3 h-1 w-10 rounded-pill bg-outline-variant"></div>
 			<div class="mb-3 flex items-center justify-between">
-				<h2 class="font-display text-lg font-bold text-base-content">Filters</h2>
+				<h2 class="font-display text-lg font-bold text-base-content">
+					{m.family_find_filters()}
+				</h2>
 				<button type="button" class="text-xs font-semibold text-primary" onclick={clearFilters}>
-					Clear all
+					{m.family_find_clear_all()}
 				</button>
 			</div>
 			<div class="flex flex-col gap-3">
 				{#if hasLocation}
-					<div class="join" role="group" aria-label="Search radius">
+					<div class="join" role="group" aria-label={m.family_find_radius_aria()}>
 						<button
 							type="button"
 							class="btn join-item btn-sm {radiusKm == null
@@ -877,7 +902,7 @@
 								: 'btn-ghost border border-outline-variant'}"
 							onclick={() => pickRadius(null)}
 						>
-							Anywhere
+							{m.family_find_anywhere()}
 						</button>
 						{#each RADIUS_PRESETS as preset (preset)}
 							<button
@@ -899,7 +924,7 @@
 					{#if loading}
 						<span class="loading loading-sm loading-spinner"></span>
 					{:else}
-						Show {total} {total === 1 ? 'helper' : 'helpers'}
+						{m.family_find_show_helpers({ count: total })}
 					{/if}
 				</button>
 			</div>
@@ -908,7 +933,7 @@
 			type="button"
 			class="modal-backdrop"
 			onclick={() => (sheetOpen = false)}
-			aria-label="Close filters"
+			aria-label={m.family_find_close_filters()}
 		></button>
 	</div>
 {/if}

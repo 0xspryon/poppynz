@@ -4,7 +4,8 @@
 	 * query/filter/selection; emits the selected catalogue ids. */
 	import { SvelteSet } from 'svelte/reactivity';
 	import type { CatalogueItem } from '$lib/api/service-catalogue';
-	import { centsToDollars } from '$lib/money';
+	import { formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		open: boolean;
@@ -26,7 +27,7 @@
 		catalogue,
 		linkedIds,
 		busy = false,
-		subtitle = 'Select any service to add it — its base rate is the floor for your rate.',
+		subtitle = m.family_browse_default_subtitle(),
 		ratesAreStartingPrices = false,
 		onadd,
 		oncancel
@@ -64,15 +65,15 @@
 </script>
 
 {#if open}
-	<div class="modal modal-open" role="dialog" aria-label="All services">
+	<div class="modal modal-open" role="dialog" aria-label={m.family_browse_title()}>
 		<div class="modal-box max-w-2xl p-0">
 			<div class="px-6 pt-5">
 				<div class="flex items-center justify-between">
-					<h2 class="text-lg font-bold">All services</h2>
+					<h2 class="text-lg font-bold">{m.family_browse_title()}</h2>
 					<button
 						type="button"
 						class="btn btn-square btn-ghost btn-sm"
-						aria-label="Close"
+						aria-label={m.common_close()}
 						onclick={oncancel}
 					>
 						<i class="las la-times text-lg" aria-hidden="true"></i>
@@ -83,7 +84,11 @@
 				</p>
 				<label class="input mb-3 w-full">
 					<i class="las la-search text-base text-outline" aria-hidden="true"></i>
-					<input type="search" placeholder="Search services…" bind:value={query} />
+					<input
+						type="search"
+						placeholder={m.family_browse_search_placeholder()}
+						bind:value={query}
+					/>
 				</label>
 				<div class="mb-2 flex flex-wrap gap-1.5">
 					<button
@@ -94,7 +99,7 @@
 							: 'border border-outline-variant bg-base-100 text-base-content-muted'}"
 						onclick={() => (category = null)}
 					>
-						All · {catalogue.length}
+						{m.family_browse_all_count({ count: catalogue.length })}
 					</button>
 					{#each categories as entry (entry)}
 						<button
@@ -136,25 +141,32 @@
 								{item.name}
 							</span>
 							{#if inList}
-								<span class="ml-2 text-[11px] text-success">already in your list</span>
+								<span class="ml-2 text-[11px] text-success">
+									{m.family_browse_already_in_list()}
+								</span>
 							{/if}
 						</span>
 						<span class="shrink-0 font-display text-[13.5px] font-bold text-secondary">
 							{#if ratesAreStartingPrices}<span class="text-[10.5px] font-normal text-outline"
-									>from
-								</span>{/if}${centsToDollars(item.baseHourlyRateCents)}<span
-								class="text-[10.5px] font-normal text-outline">/hr</span
+									>{m.family_browse_rate_from()}
+								</span>{/if}{formatMoney(item.baseHourlyRateCents)}<span
+								class="text-[10.5px] font-normal text-outline">{m.family_browse_per_hour()}</span
 							>
 						</span>
 					</button>
 				{:else}
-					<p class="px-5 py-6 text-sm text-base-content-muted">No services match your search.</p>
+					<p class="px-5 py-6 text-sm text-base-content-muted">
+						{m.family_browse_no_match()}
+					</p>
 				{/each}
 			</div>
 			<div class="flex items-center justify-between bg-base-200 px-6 py-4">
-				<span class="text-[13px] text-base-content-muted">{selected.size} selected</span>
+				<span class="text-[13px] text-base-content-muted">
+					{m.family_browse_selected({ count: selected.size })}
+				</span>
 				<div class="flex gap-2.5">
-					<button type="button" class="btn btn-ghost" onclick={oncancel}>Cancel</button>
+					<button type="button" class="btn btn-ghost" onclick={oncancel}>{m.common_cancel()}</button
+					>
 					<button
 						type="button"
 						class="btn btn-primary"
@@ -164,12 +176,12 @@
 						{#if busy}
 							<span class="loading loading-spinner loading-sm"></span>
 						{/if}
-						Add {selected.size}
-						{selected.size === 1 ? 'service' : 'services'}
+						{m.family_browse_add({ count: selected.size })}
 					</button>
 				</div>
 			</div>
 		</div>
-		<button type="button" class="modal-backdrop" aria-label="Close" onclick={oncancel}></button>
+		<button type="button" class="modal-backdrop" aria-label={m.common_close()} onclick={oncancel}
+		></button>
 	</div>
 {/if}

@@ -13,11 +13,14 @@
 	import PaymentModal from '$lib/components/payments/PaymentModal.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { formatDate } from '$lib/date';
+	import { intlLocale } from '$lib/locale';
+	import { m } from '$lib/paraglide/messages';
 	import { cardExpiry, cardLabel } from '$lib/payment-cards';
 	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
+	import { localizeTaxLabel } from '$lib/tax-label';
 
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+	const RETRY_MESSAGE = m.family_billing_retry();
 
 	let billing = $state<BillingData | null>(null);
 	let loading = $state(true);
@@ -52,8 +55,10 @@
 		starting = false;
 		if (!result.ok) {
 			toast.error(
-				result.error.code === 'BILLING_PROVIDER_UNAVAILABLE' ? result.error.message : RETRY_MESSAGE,
-				{ title: 'Card not added' }
+				result.error.code === 'BILLING_PROVIDER_UNAVAILABLE'
+					? m.family_billing_provider_unavailable()
+					: RETRY_MESSAGE,
+				{ title: m.family_billing_card_not_added_title() }
 			);
 			return;
 		}
@@ -68,55 +73,60 @@
 		const result = await confirmCardSetup(current.setupId);
 		setup = null;
 		if (result.ok) {
-			toast.success(`${cardLabel(result.data.card)} is now your card on file.`, {
-				title: 'Card saved'
+			toast.success(m.family_billing_card_saved_body({ card: cardLabel(result.data.card) }), {
+				title: m.family_billing_card_saved_title()
 			});
 			await load();
 		} else {
 			toast.error(
 				result.error.code === 'BILLING_CARD_SETUP_INCOMPLETE'
-					? result.error.message
+					? m.family_billing_card_setup_incomplete()
 					: RETRY_MESSAGE,
-				{ title: 'Card not saved' }
+				{ title: m.family_billing_card_not_saved_title() }
 			);
 		}
 	}
 
 	const chip: Record<BillingPayment['status'], { status: ChipStatus; label: string }> = {
-		paid: { status: 'approved', label: 'Paid' },
+		paid: { status: 'approved', label: m.family_billing_status_paid() },
 		// A hold Poppynz released: nothing was taken.
-		released: { status: 'empty', label: 'Not charged' },
-		refunded: { status: 'expired', label: 'Refunded' },
-		failed: { status: 'rejected', label: 'Failed' },
-		pending: { status: 'in-progress', label: 'Pending' },
-		on_hold: { status: 'in-progress', label: 'On hold' }
+		released: { status: 'empty', label: m.family_billing_status_released() },
+		refunded: { status: 'expired', label: m.family_billing_status_refunded() },
+		failed: { status: 'rejected', label: m.family_billing_status_failed() },
+		pending: { status: 'in-progress', label: m.family_billing_status_pending() },
+		on_hold: { status: 'in-progress', label: m.family_billing_status_on_hold() }
 	};
 
 	const money = (cents: number, currency: string) =>
-		new Intl.NumberFormat('en-CA', { style: 'currency', currency }).format(cents / 100);
+		new Intl.NumberFormat(intlLocale(), { style: 'currency', currency }).format(cents / 100);
 
 	/** What saving the card does: nothing is charged — unless it resumes a
 	 * suspended contract, whose rest of the cycle is charged at once. */
 	const cardNotice = $derived.by(() => {
 		const charges = billing?.resumeCharges ?? [];
 		if (charges.length === 0) {
-			return 'Your card is kept for Poppynz payments such as contract billing. Nothing is charged now.';
+			return m.family_billing_card_notice();
 		}
 		const items = charges
-			.map((charge) => `${money(charge.amountCents, 'CAD')} for ${charge.dates}`)
+			.map((charge) =>
+				m.family_billing_resume_charge_item({
+					amount: money(charge.amountCents, 'CAD'),
+					dates: charge.dates
+				})
+			)
 			.join(', ');
-		return `Your card is kept for Poppynz payments such as contract billing. Saving it resumes your suspended contract: ${items} is charged straight away.`;
+		return m.family_billing_card_notice_resume({ items });
 	});
 </script>
 
 <svelte:head>
-	<title>Billing · Poppynz</title>
+	<title>{m.family_billing_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Billing</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.family_billing_title()}</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		Your card on file and what you have paid through Poppynz.
+		{m.family_billing_subtitle()}
 	</p>
 
 	{#if loading}
@@ -127,12 +137,16 @@
 		<p role="alert" class="text-sm font-medium text-error">{RETRY_MESSAGE}</p>
 	{:else}
 		<section class="rounded-xl border border-card-border bg-base-100 p-5">
-			<h2 class="text-base font-semibold text-base-content">Card on file</h2>
+			<h2 class="text-base font-semibold text-base-content">
+				{m.family_billing_card_on_file()}
+			</h2>
 			{#if billing.card}
 				<div class="mt-3 flex flex-wrap items-center justify-between gap-3">
 					<div>
 						<p class="text-sm font-medium text-base-content">{cardLabel(billing.card)}</p>
-						<p class="text-xs text-base-content-muted">Expires {cardExpiry(billing.card)}</p>
+						<p class="text-xs text-base-content-muted">
+							{m.family_billing_card_expires({ expiry: cardExpiry(billing.card) })}
+						</p>
 					</div>
 					<button
 						type="button"
@@ -141,12 +155,12 @@
 						onclick={addCard}
 					>
 						{#if starting}<span class="loading loading-spinner loading-xs"></span>{/if}
-						Replace card
+						{m.family_billing_replace_card()}
 					</button>
 				</div>
 			{:else}
 				<p class="mt-1 text-sm text-base-content-muted">
-					No card yet. Your card is used for contract billing — you need one to send contract terms.
+					{m.family_billing_no_card()}
 				</p>
 				<button
 					type="button"
@@ -155,24 +169,26 @@
 					onclick={addCard}
 				>
 					{#if starting}<span class="loading loading-spinner loading-xs"></span>{/if}
-					Add a card
+					{m.family_billing_add_card()}
 				</button>
 			{/if}
 		</section>
 
-		<h2 class="mt-8 mb-3 text-lg font-semibold text-base-content">Payment history</h2>
+		<h2 class="mt-8 mb-3 text-lg font-semibold text-base-content">
+			{m.family_billing_history_title()}
+		</h2>
 		{#if billing.payments.length === 0}
-			<p class="text-sm text-base-content-muted">No payments yet.</p>
+			<p class="text-sm text-base-content-muted">{m.family_billing_no_payments()}</p>
 		{:else}
 			<div class="overflow-x-auto rounded-xl border border-card-border bg-base-100">
 				<table class="table">
 					<thead>
 						<tr>
-							<th>Date</th>
-							<th>Description</th>
-							<th class="text-right">Amount</th>
-							<th>Status</th>
-							<th><span class="sr-only">Receipt</span></th>
+							<th>{m.family_billing_col_date()}</th>
+							<th>{m.family_billing_col_description()}</th>
+							<th class="text-right">{m.family_billing_col_amount()}</th>
+							<th>{m.family_billing_col_status()}</th>
+							<th><span class="sr-only">{m.family_billing_col_receipt()}</span></th>
 						</tr>
 					</thead>
 					<tbody>
@@ -183,9 +199,14 @@
 									{row.description}
 									{#if row.taxLines.length > 0}
 										<div class="text-xs text-base-content-muted">
-											Incl. {row.taxLines
-												.map((line) => `${line.label} ${money(line.taxCents, row.currency)}`)
-												.join(' · ')}
+											{m.family_billing_taxes_included({
+												taxes: row.taxLines
+													.map(
+														(line) =>
+															`${localizeTaxLabel(line.label)} ${money(line.taxCents, row.currency)}`
+													)
+													.join(' · ')
+											})}
 										</div>
 									{/if}
 								</td>
@@ -201,7 +222,7 @@
 											target="_blank"
 											rel="external noopener noreferrer"
 										>
-											Receipt
+											{m.family_billing_receipt()}
 										</a>
 									{/if}
 								</td>
@@ -220,8 +241,8 @@
 		<PaymentModal
 			mode="setup"
 			clientSecret={opened.clientSecret}
-			title={billing?.card ? 'Replace your card' : 'Add a card'}
-			submitLabel="Save card"
+			title={billing?.card ? m.family_billing_replace_your_card() : m.family_billing_add_card()}
+			submitLabel={m.family_billing_save_card()}
 			notice={cardNotice}
 			onconfirmed={() => setupConfirmed(opened)}
 			oncancel={() => (setup = null)}

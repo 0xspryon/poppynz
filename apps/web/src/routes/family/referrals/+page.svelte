@@ -1,9 +1,10 @@
 <script lang="ts">
 	import ReferralsPanel from '$lib/components/ReferralsPanel.svelte';
+	import { m } from '$lib/paraglide/messages';
 </script>
 
 <svelte:head>
-	<title>Referrals · Poppynz</title>
+	<title>{m.family_referrals_page_title()}</title>
 </svelte:head>
 
 <ReferralsPanel />

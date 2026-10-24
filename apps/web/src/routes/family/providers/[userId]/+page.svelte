@@ -14,6 +14,7 @@
 	import ReachoutComposerModal from '$lib/components/messages/ReachoutComposerModal.svelte';
 	import { centsToCompactDollars, rateRangeLabel } from '$lib/money';
 	import { withQuery } from '$lib/nav';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 
 	let provider = $state<ProviderDetail | null>(null);
@@ -89,14 +90,18 @@
 		} else if (result.error.code === 'CONTRACT_EXISTS') {
 			void goto(resolve('/family/contracts/[id]', { id: result.error.contractId }));
 		} else {
-			toast.error('Starting the contract failed. Please try again.');
+			toast.error(m.family_provider_contract_failed());
 		}
 	}
 
 	const name = $derived(
-		provider ? (provider.displayName ?? `Provider in ${provider.location.city}`) : ''
+		provider
+			? (provider.displayName ?? m.family_provider_in_city({ city: provider.location.city }))
+			: ''
 	);
-	const firstName = $derived(provider?.displayName?.split(/\s+/)[0] ?? 'this helper');
+	/** The first name, or null for an anonymous profile. */
+	const knownFirstName = $derived(provider?.displayName?.split(/\s+/)[0] ?? null);
+	const firstName = $derived(knownFirstName ?? m.family_provider_this_helper());
 	const initials = $derived(
 		(provider?.displayName ?? '')
 			.split(/\s+/)
@@ -107,12 +112,18 @@
 	);
 	const rates = $derived(provider?.services.map((service) => service.hourlyRateCents) ?? []);
 	const rateSummary = $derived(
-		rates.length > 0 ? `From ${centsToCompactDollars(Math.min(...rates))}/hr` : ''
+		rates.length > 0
+			? m.family_provider_rate_from({
+					amount: m.money_per_hour({ amount: centsToCompactDollars(Math.min(...rates)) })
+				})
+			: ''
 	);
 </script>
 
 <svelte:head>
-	<title>{name ? `${name} · Poppynz` : 'Helper profile · Poppynz'}</title>
+	<title>
+		{name ? m.family_provider_page_title({ name }) : m.family_provider_page_title_fallback()}
+	</title>
 </svelte:head>
 
 <div class="mx-auto flex max-w-5xl flex-col gap-5 pb-24 lg:pb-0">
@@ -121,7 +132,7 @@
 		class="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-primary"
 	>
 		<i class="las la-angle-left" aria-hidden="true"></i>
-		Back to results
+		{m.family_provider_back()}
 	</a>
 
 	{#if loading}
@@ -144,14 +155,13 @@
 				<i class="las la-user-shield text-2xl text-warning" aria-hidden="true"></i>
 			</span>
 			<h1 class="font-display text-lg font-bold text-base-content">
-				Helper profiles unlock once you're approved
+				{m.family_provider_not_approved_title()}
 			</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
-				Submit your profile for review; once the Poppynz team approves it you can view and contact
-				helpers.
+				{m.family_provider_not_approved_body()}
 			</p>
 			<a href={resolve('/family/approval')} class="btn btn-primary btn-sm">
-				Check your approval status
+				{m.family_provider_check_approval()}
 			</a>
 		</div>
 	{:else if notFound}
@@ -161,11 +171,13 @@
 			<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
 				<i class="las la-user-slash text-2xl text-neutral" aria-hidden="true"></i>
 			</span>
-			<h1 class="font-display text-lg font-bold text-base-content">This helper isn't available</h1>
+			<h1 class="font-display text-lg font-bold text-base-content">
+				{m.family_provider_not_found_title()}
+			</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
-				They may have paused their profile. Head back to the results to keep browsing.
+				{m.family_provider_not_found_body()}
 			</p>
-			<a href={backHref} class="btn btn-primary btn-sm"> Back to results </a>
+			<a href={backHref} class="btn btn-primary btn-sm">{m.family_provider_back()}</a>
 		</div>
 	{:else if loadError}
 		<div
@@ -175,10 +187,10 @@
 				<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
 			</span>
 			<h1 class="font-display text-lg font-bold text-base-content">
-				Something went wrong on our side
+				{m.family_provider_error_title()}
 			</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
-				This profile didn't load. Try again in a moment.
+				{m.family_provider_error_body()}
 			</p>
 			<button
 				type="button"
@@ -186,7 +198,7 @@
 				onclick={() => (retryTick = retryTick + 1)}
 			>
 				<i class="las la-redo-alt" aria-hidden="true"></i>
-				Retry
+				{m.family_provider_retry()}
 			</button>
 		</div>
 	{:else if provider}
@@ -222,7 +234,7 @@
 								text-xs font-bold text-success"
 						>
 							<i class="las la-user-shield" aria-hidden="true"></i>
-							Vetted by Poppynz
+							{m.family_provider_vetted_badge()}
 						</span>
 						<span class="inline-flex items-center gap-1 text-sm text-base-content-muted">
 							<i class="las la-map-marker" aria-hidden="true"></i>
@@ -230,7 +242,7 @@
 						</span>
 						{#if distanceKm != null}
 							<span class="rounded-pill bg-base-500 px-2.5 py-1 text-xs font-semibold text-info">
-								{distanceKm} km from you
+								{m.family_provider_distance({ km: distanceKm })}
 							</span>
 						{/if}
 					</div>
@@ -248,13 +260,15 @@
 							)}
 							class="btn btn-primary"
 						>
-							Message {firstName}
+							{m.family_provider_message({ name: firstName })}
 						</a>
 						{#if conversation.status === 'pending'}
 							<span
 								class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning"
 							>
-								{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
+								{conversation.awaitingMyResponse
+									? m.family_provider_awaiting_you()
+									: m.family_provider_awaiting_response()}
 							</span>
 						{:else if conversation.status === 'active'}
 							<button
@@ -264,12 +278,12 @@
 								onclick={handleProposeTerms}
 							>
 								{#if proposingTerms}<span class="loading loading-xs loading-spinner"></span>{/if}
-								Propose terms
+								{m.family_provider_propose_terms()}
 							</button>
 						{/if}
 					{:else}
 						<button type="button" class="btn btn-primary" onclick={() => (composerOpen = true)}>
-							Contact {firstName}
+							{m.family_provider_contact({ name: firstName })}
 						</button>
 					{/if}
 				</div>
@@ -281,7 +295,7 @@
 				{#if provider.shortBio}
 					<section class="rounded-xl border border-card-border bg-base-100 p-6">
 						<h2 class="mb-3 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-							About {firstName}
+							{m.family_provider_about({ name: firstName })}
 						</h2>
 						<p class="text-sm leading-relaxed whitespace-pre-line text-base-content">
 							{provider.shortBio}
@@ -291,7 +305,7 @@
 
 				<section class="rounded-xl border border-card-border bg-base-100 p-6">
 					<h2 class="mb-3 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-						Services &amp; rates
+						{m.family_provider_services_rates()}
 					</h2>
 					<ul class="flex flex-col gap-2.5">
 						{#each provider.services as service (service.id)}
@@ -316,41 +330,42 @@
 			<div class="flex flex-col gap-5">
 				<section class="rounded-xl border border-card-border bg-base-100 p-6">
 					<h2 class="mb-3 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-						Location
+						{m.family_provider_location()}
 					</h2>
 					<!-- Approximate area only — never an exact pin or street address. -->
 					<div
 						class="relative flex h-40 items-center justify-center overflow-hidden rounded-lg
 							bg-base-300"
 						role="img"
-						aria-label="Approximate area around {provider.location.city}"
+						aria-label={m.family_provider_area_aria({ city: provider.location.city })}
 					>
 						<span class="absolute size-24 rounded-full bg-primary/20"></span>
 						<span class="absolute size-12 rounded-full bg-primary/25"></span>
 						<span
 							class="relative z-10 rounded-pill bg-base-100 px-2.5 py-1 text-[11px] font-semibold text-neutral"
 						>
-							Approximate area
+							{m.family_provider_approximate_area()}
 						</span>
 					</div>
 					<p class="mt-3 text-[13px] leading-relaxed text-base-content-muted">
-						{firstName === 'this helper' ? 'This helper works' : `${firstName} works`} around
+						{knownFirstName
+							? m.family_provider_works_around_before({ name: knownFirstName })
+							: m.family_provider_works_around_before_anon()}
 						<strong class="text-base-content">
 							{provider.location.city}, {provider.location.stateProvince}</strong
-						>. For everyone's safety, Poppynz only ever shows an approximate area — never a street
-						address.
+						>{m.family_provider_works_around_after()}
 					</p>
 				</section>
 
 				<section class="rounded-xl bg-success-content p-5">
 					<h2 class="mb-2 flex items-center gap-1.5 text-sm font-bold text-success">
 						<i class="las la-user-shield" aria-hidden="true"></i>
-						What “Vetted” means
+						{m.family_provider_vetted_title()}
 					</h2>
 					<p class="text-[13px] leading-relaxed text-success">
-						{firstName === 'this helper' ? "This helper's" : `${firstName}'s`} identity and background
-						documents were reviewed and approved by the Poppynz team before their profile went live. Every
-						helper you can find here has passed the same checks.
+						{knownFirstName
+							? m.family_provider_vetted_body({ name: knownFirstName })
+							: m.family_provider_vetted_body_anon()}
 					</p>
 				</section>
 			</div>
@@ -366,7 +381,9 @@
 					<span
 						class="rounded-pill bg-warning-content px-2.5 py-0.5 text-[11px] font-bold text-warning"
 					>
-						{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
+						{conversation.awaitingMyResponse
+							? m.family_provider_awaiting_you()
+							: m.family_provider_awaiting_response()}
 					</span>
 				{/if}
 				<div class="flex w-full gap-2">
@@ -377,7 +394,7 @@
 						)}
 						class="btn flex-1 btn-primary"
 					>
-						Message {firstName}
+						{m.family_provider_message({ name: firstName })}
 					</a>
 					{#if conversation.status === 'active'}
 						<button
@@ -386,13 +403,13 @@
 							disabled={proposingTerms}
 							onclick={handleProposeTerms}
 						>
-							Propose terms
+							{m.family_provider_propose_terms()}
 						</button>
 					{/if}
 				</div>
 			{:else}
 				<button type="button" class="btn w-full btn-primary" onclick={() => (composerOpen = true)}>
-					Contact {firstName}
+					{m.family_provider_contact({ name: firstName })}
 				</button>
 			{/if}
 		</div>

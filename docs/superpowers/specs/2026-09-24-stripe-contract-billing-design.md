@@ -165,13 +165,35 @@ accepted weekly pattern.
   - Poppynz gross revenue = 20% of service value, before Stripe processing and
     payout costs, taxes, credits and refunds. Stripe costs come out of it.
   - Example: $600 of service → family charged $630, helper receives $510,
-    Poppynz grosses $120 (≈ $99.90 after illustrative Stripe fees).
+    Poppynz grosses $120 (≈ $99.90 after illustrative Stripe fees). These figures
+    are before GST/HST on the fee and the commission (see Tax).
   - Use the account's live Stripe pricing; the figures in §11 are
     illustrative.
-- **Tax:** build **configurable tax treatment per supply type** — the family
-  fee, the helper commission and cancellation compensation — by jurisdiction.
-  Do not assume they share a treatment. **No taxable charge goes live at a
-  default 0% without the accountant's written sign-off.**
+- **Tax** (user decisions, 2026-10-24 — they replace the earlier "untaxed by
+  default until the accountant signs off" rule for this build):
+  - **GST/HST by province is applied now** to Poppynz's own supplies: the
+    family service fee, the helper commission, and the background-check price
+    and administration fee. The care service value (hours × rate, the helper's
+    supply) is exempt by default; cancellation compensation is out of scope.
+  - **Place of supply:** the family fee uses the contract's location (the
+    family's province); a check and its admin fee use the payer's province;
+    the helper commission uses the helper's province, and its tax is deducted
+    from the helper's share with the commission. The helper sees it before
+    accepting, the family on the price breakdown.
+  - **Configuration is database state**, seeded with defaults and corrected
+    later by an accountant role (follow-up work): effective-dated rates per
+    jurisdiction and component (GST, HST, PST, QST, RST), a treatment per
+    supply type (taxable / exempt / zero-rated / out of scope, which
+    components, place of supply), and Poppynz's registrations (GST/HST
+    number; QST not registered by default, so QST is not charged). Edits
+    close the row in force and insert a new one; every change is audited.
+    PST/QST/RST rates are seeded but not applied by default.
+  - The amounts are **frozen per line** (supply type, jurisdiction,
+    component, rate, amount) on each payment and cycle at quote time. Lines
+    are labelled by type and province ("HST (ON) 13%").
+  - **A missing province, or no rate for a taxable supply, refuses the quote
+    with a typed error** — never a silent 0.
+  - Detail: [piece 3 spec §3a](2026-10-24-contract-billing-design.md).
 - Integer cents throughout; one rounding rule shared by holds, captures and
   displays.
 - **Below Stripe's CAD $0.50 minimum:** carry into the next cycle; with no
@@ -326,11 +348,14 @@ start in the contract zone.
 ## 12. Open items
 
 **Launch checks (founder):**
-- Accountant: GST/HST/PST/QST on the family fee, the helper commission and
-  cancellation compensation (jurisdiction, registration); whether childcare
-  and personal-care hours are exempt; whether the CRA reporting rules for
-  digital platform operators (since 2024) apply — if so, collect helper tax
-  details (SIN or business number) and file annually.
+- Accountant: review the seeded tax configuration (GST/HST applied by
+  province to the family fee, the helper commission and background checks;
+  the care service value exempt; PST/QST/RST not applied), replace the
+  placeholder GST/HST registration number, decide on QST registration, and
+  confirm whether the CRA reporting rules for digital platform operators
+  (since 2024) apply — if so, collect helper tax details (SIN or business
+  number) and file annually. Corrections are made in the tax configuration
+  (an accountant portal is follow-up work), never in code.
 - Stripe test mode: the verifications listed in §3.
 
 **Open business decisions (founder):**

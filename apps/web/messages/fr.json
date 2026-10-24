@@ -746,7 +746,8 @@
 	"approval_incomplete": "Avant de soumettre : {items}.",
 	"approval_incomplete_generic": "Certains éléments obligatoires manquent encore avant que vous puissiez soumettre votre demande.",
 	"approval_intro": "L’état de votre vérification, ainsi que l’historique de vos demandes et approbations.",
-	"approval_not_submitted_detail": "Vous pouvez soumettre votre demande avant que tout soit complet. Nous vous aviserons s’il manque quoi que ce soit avant l’approbation.",
+	"approval_not_submitted_detail_family": "Pour soumettre votre demande, chaque document requis doit être téléversé (ou sa vérification Credibled payée), et ceux qui ont été refusés ou qui sont expirés doivent être remplacés. Les documents en attente de notre examen ne vous empêchent pas de soumettre.",
+	"approval_not_submitted_detail_provider": "Pour soumettre votre demande, ajoutez votre photo de profil et téléversez chaque document requis (ou payez sa vérification Credibled), en remplaçant ceux qui ont été refusés ou qui sont expirés. Les documents en attente de notre examen ne vous empêchent pas de soumettre.",
 	"approval_not_submitted_heading": "Pas encore soumise",
 	"approval_nudge_body": [
 		{
@@ -1884,7 +1885,7 @@
 	"provider_dashboard_profile_title": "Présentez-vous aux familles",
 	"provider_dashboard_readiness_aria": "Progression du profil",
 	"provider_dashboard_ready_body_complete": "Tout est là. Soumettez votre profil pour que l’équipe Poppynz l’examine.",
-	"provider_dashboard_ready_body_incomplete": "Vous pouvez soumettre votre profil avant que tout soit terminé. Nous vous dirons si autre chose est nécessaire avant l’approbation.",
+	"provider_dashboard_ready_body_incomplete": "Avant de soumettre, ajoutez votre photo de profil et chaque document requis — les documents en attente de notre examen ne posent pas problème.",
 	"provider_dashboard_ready_title": "Prêt(e) quand vous l’êtes",
 	"provider_dashboard_rejected_body": "Votre dernière demande n’a pas été approuvée — consultez la raison, corrigez le problème et soumettez-la de nouveau.",
 	"provider_dashboard_rejected_title": "Corrigez et soumettez de nouveau",

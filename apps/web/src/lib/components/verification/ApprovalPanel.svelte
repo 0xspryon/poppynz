@@ -284,7 +284,9 @@
 				>{m.approval_not_submitted_heading()}</span
 			>
 			<p class="mt-0.5 text-[13px] text-base-content-muted">
-				{m.approval_not_submitted_detail()}
+				{role === 'family'
+					? m.approval_not_submitted_detail_family()
+					: m.approval_not_submitted_detail_provider()}
 			</p>
 		</div>
 		<button type="button" class="btn btn-primary" disabled={submitting} onclick={requestSubmit}>

@@ -746,7 +746,8 @@
 	"approval_incomplete": "Before you submit: {items}.",
 	"approval_incomplete_generic": "Some required items are still missing before you can submit.",
 	"approval_intro": "Your verification status, and every request and approval over time.",
-	"approval_not_submitted_detail": "You can submit before everything is complete. We'll let you know if anything else is needed before approval.",
+	"approval_not_submitted_detail_family": "To submit, every required document must be uploaded (or its Credibled check paid for), and any that were rejected or have expired replaced. Documents still waiting for our review don't hold you back.",
+	"approval_not_submitted_detail_provider": "To submit, add your profile photo and upload every required document (or pay for its Credibled check), replacing any that were rejected or have expired. Documents still waiting for our review don't hold you back.",
 	"approval_not_submitted_heading": "Not submitted yet",
 	"approval_nudge_body": [
 		{
@@ -1884,7 +1885,7 @@
 	"provider_dashboard_profile_title": "Tell families about yourself",
 	"provider_dashboard_readiness_aria": "Profile readiness",
 	"provider_dashboard_ready_body_complete": "Everything is in. Submit your profile for the Poppynz team to review.",
-	"provider_dashboard_ready_body_incomplete": "You can submit your profile before everything is complete. We'll let you know if anything else is needed before approval.",
+	"provider_dashboard_ready_body_incomplete": "Before you can submit, add your profile photo and every required document — documents waiting for our review are fine.",
 	"provider_dashboard_ready_title": "Ready when you are",
 	"provider_dashboard_rejected_body": "Your last application wasn't approved — check the reason, fix it, and resubmit.",
 	"provider_dashboard_rejected_title": "Fix & resubmit",

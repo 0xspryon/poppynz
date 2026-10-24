@@ -25,7 +25,8 @@ import {
   type Payment,
   type SafetyVerificationRole
 } from '@repo/db';
-import { safetyVerificationConfig } from '@repo/env';
+import { objectBucketsConfig, safetyVerificationConfig } from '@repo/env';
+import { ObjectStorage } from '@repo/objs';
 import {
   Payments,
   describeQuote,
@@ -89,6 +90,9 @@ class SafetyVerificationPaymentError extends Data.TaggedError('SafetyVerificatio
 }> {}
 class SafetyVerificationVendorError extends Data.TaggedError('SafetyVerificationVendorError')<{
   reason: string;
+}> {}
+class SafetyVerificationFileError extends Data.TaggedError('SafetyVerificationFileError')<{
+  cause: unknown;
 }> {}
 class SafetyVerificationQueueingError extends Data.TaggedError('SafetyVerificationQueueingError')<{
   cause: unknown;
@@ -990,14 +994,49 @@ export const listSafetyVerificationsForReviewRouteProgram = (headers: Headers) =
     const withItems = yield* mapRepoError(orders.listWithItems(orderIds));
     const currentDate = today();
 
-    const verifications = records
-      .map((record) =>
-        toAdminSummary(
-          record,
-          currentDate,
-          withItems.find((order) => order.id === record.checkOrderId) ?? null
-        )
+    // UAT #29: the reviewer sees WHO this is and WHAT document it is, not
+    // a bare user id. One profile lookup per distinct applicant; a missing
+    // profile degrades to the email-less placeholder instead of failing.
+    const profiles = yield* UserProfileRepo;
+    const userIds = [...new Set(records.map((record) => record.userId))];
+    const applicants = new Map(
+      yield* Effect.forEach(
+        userIds,
+        (userId) =>
+          profiles.findByUserId(userId).pipe(
+            Effect.map((profile) => [userId, profile] as const),
+            Effect.catchTag('DBNotFoundError', () => Effect.succeed([userId, null] as const)),
+            (errors) => mapRepoError(errors)
+          ),
+        { concurrency: 5 }
       )
+    );
+    const types = yield* KycDocumentTypeRepo.pipe(
+      Effect.flatMap((repo) => repo.listActive()),
+      (errors) => mapRepoError(errors)
+    );
+
+    const verifications = records
+      .map((record) => {
+        const order = withItems.find((candidate) => candidate.id === record.checkOrderId) ?? null;
+        const profile = applicants.get(record.userId) ?? null;
+        const name = [profile?.firstName, profile?.lastName].filter(Boolean).join(' ');
+        const gate = types.find((type) => type.isSafetyGate && type.appliesToRole === record.role);
+        return {
+          ...toAdminSummary(record, currentDate, order),
+          applicant: {
+            name: name.length > 0 ? name : null,
+            email: profile?.email ?? null
+          },
+          documentTypeName:
+            record.route === 'credibled'
+              ? order?.items
+                  .map((item) => credibledCheckTypeLabel(item.credibledCheckTypeValue))
+                  .join(', ') || 'Credibled background check'
+              : (gate?.name ?? 'Safety document'),
+          hasFile: record.route === 'uploaded_document' && record.fileKey !== null
+        };
+      })
       .sort(byReviewPriority);
 
     return { verifications };
@@ -1103,6 +1142,39 @@ export const decideSafetyVerificationRouteProgram = (
   });
 
 /**
+ * A short-lived inline link to an UPLOADED safety document, for the admin
+ * viewer (UAT #29). Credibled reports go through /report instead.
+ */
+export const getSafetyVerificationFileUrlRouteProgram = (headers: Headers, id: string) =>
+  Effect.gen(function* () {
+    const authenticated = yield* authenticate(headers);
+    yield* requirePermissions(headers, { safetyVerification: ['review'] })(authenticated);
+    const repo = yield* SafetyVerificationRepo;
+    const record = yield* repo.findById(id).pipe((errors) => mapRepoError(errors));
+    if (record.route !== 'uploaded_document' || !record.fileKey) {
+      return yield* Effect.fail(new SafetyVerificationNotFoundError());
+    }
+    const fileKey = record.fileKey;
+    const buckets = yield* objectBucketsConfig.pipe(
+      Effect.mapError((cause) => new SafetyVerificationFileError({ cause }))
+    );
+    const storage = yield* ObjectStorage;
+    const presigned = yield* storage
+      .createPresignedGetUrl({
+        bucket: buckets.kycBucket,
+        key: fileKey,
+        expiresInSeconds: 5 * 60,
+        contentDisposition: 'inline'
+      })
+      .pipe(Effect.mapError((cause) => new SafetyVerificationFileError({ cause })));
+    return {
+      url: presigned.url,
+      expiresAt: presigned.expiresAt.toISOString(),
+      filename: record.filename
+    };
+  });
+
+/**
  * Report bytes for an administrator.
  *
  * Fetched from Credibled on demand and streamed straight through — never
@@ -1158,7 +1230,8 @@ type SafetyVerificationRouteError =
   | Effect.Effect.Error<ReturnType<typeof submitSafetyDocumentRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof listSafetyVerificationsForReviewRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof decideSafetyVerificationRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof getSafetyVerificationReportRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof getSafetyVerificationReportRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof getSafetyVerificationFileUrlRouteProgram>>;
 
 const errorToResponse = (c: HonoContext<HonoEnv>, error: SafetyVerificationRouteError) => {
   if (isAuthError(error)) {
@@ -1230,6 +1303,16 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: SafetyVerificationRoute
           }
         },
         503
+      );
+    case 'SafetyVerificationFileError':
+      return c.json(
+        {
+          error: {
+            code: 'SAFETY_VERIFICATION_FILE_URL_FAILED' as const,
+            message: 'Unable to create a file view link.'
+          }
+        },
+        502
       );
     case 'SafetyVerificationQueueingError':
     case 'SafetyVerificationRepoError':
@@ -1352,4 +1435,13 @@ export async function getSafetyVerificationReportHandler(c: HonoContext<HonoEnv>
       );
     }
   });
+}
+
+export async function getSafetyVerificationFileUrlHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const id = c.req.param('id') ?? '';
+  const exit = await runtime.runPromiseExit(
+    getSafetyVerificationFileUrlRouteProgram(c.req.raw.headers, id)
+  );
+  return exitToResponse(c, exit);
 }

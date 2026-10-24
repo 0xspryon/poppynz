@@ -66,4 +66,15 @@ describe('service-provider dashboard', () => {
 		unmount(app);
 		expect(calls).toBe(1);
 	});
+
+	it('says what the profile step is missing (UAT #21)', async () => {
+		const state = freshOnboardingState();
+		state.steps.profile.missingFields = ['photo'];
+		getOnboardingState.mockResolvedValue({ ok: true, data: state });
+		const app = mount(DashboardPage, { target: document.body });
+		await settle();
+		const text = document.body.textContent ?? '';
+		unmount(app);
+		expect(text).toContain('Still missing: profile photo');
+	});
 });

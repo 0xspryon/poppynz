@@ -1,6 +1,12 @@
 <script lang="ts" module>
 	/** One selectable service from the provider's current listing. */
-	export type EditorService = { id: string; name: string; hourlyRateCents: number };
+	export type EditorService = {
+		id: string;
+		name: string;
+		hourlyRateCents: number;
+		/** The lowest offer — the service's base rate (UAT #39). */
+		floorRateCents?: number;
+	};
 </script>
 
 <script lang="ts">
@@ -53,6 +59,9 @@
 		/** The last saved draft's weekly price with the fee and its tax
 		 * (computed by the server). Unsaved edits aren't in it. */
 		pricing?: ContractPricing | null;
+		/** Prices the editor's current, unsaved terms (B6). When given, the
+		 * price box follows every edit instead of the last saved draft. */
+		onquote?: (terms: ContractTermsInput) => Promise<ContractPricing | null>;
 		busy?: boolean;
 		onsave?: (terms: ContractTermsInput) => void;
 		onsend: (terms: ContractTermsInput) => void;
@@ -71,6 +80,7 @@
 		paymentMethodMissing = false,
 		billingHref = null,
 		pricing = null,
+		onquote,
 		busy = false,
 		onsave,
 		onsend
@@ -172,6 +182,31 @@
 		endsOn: endsOn || null,
 		endsAtMinutes: endsOn && endsAtValue ? Number(endsAtValue) : null
 	});
+
+	// Live price box (B6): re-quoted shortly after each edit; only the newest
+	// answer lands. Falls back to the saved draft's price until one arrives.
+	let livePricing = $state<ContractPricing | null>(null);
+	let quoting = $state(false);
+	let quoteRequest = 0;
+	$effect(() => {
+		const terms = toTerms();
+		if (!onquote) return;
+		if (terms.services.length === 0) {
+			livePricing = null;
+			return;
+		}
+		const id = ++quoteRequest;
+		const timer = setTimeout(() => {
+			quoting = true;
+			void onquote(terms).then((next) => {
+				if (id !== quoteRequest) return;
+				livePricing = next;
+				quoting = false;
+			});
+		}, 350);
+		return () => clearTimeout(timer);
+	});
+	const shownPricing = $derived(onquote ? (livePricing ?? pricing) : pricing);
 </script>
 
 <section class="rounded-xl border border-card-border bg-base-100 px-5 py-4">
@@ -381,10 +416,14 @@
 		</p>
 	{/if}
 
-	{#if pricing}
-		<div class="mt-3">
-			<PriceBreakdown {pricing} viewerSide="family" />
-			<p class="mt-1 text-[11px] text-outline">For your last saved draft — save to update it.</p>
+	{#if shownPricing}
+		<div class="mt-3" aria-busy={quoting}>
+			<PriceBreakdown pricing={shownPricing} viewerSide="family" />
+			{#if !onquote}
+				<p class="mt-1 text-[11px] text-outline">For your last saved draft — save to update it.</p>
+			{:else if quoting}
+				<p class="mt-1 text-[11px] text-outline">Updating…</p>
+			{/if}
 		</div>
 	{/if}
 
@@ -396,7 +435,7 @@
 			onclick={() => onsend(toTerms())}
 		>
 			{#if busy}<span class="loading loading-xs loading-spinner"></span>{/if}
-			Send to {counterpartFirstName}
+			Sign & send to {counterpartFirstName}
 		</button>
 		{#if onsave}
 			<button

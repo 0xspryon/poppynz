@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import LangToggle from '$lib/components/LangToggle.svelte';
+	import ToastHost from '$lib/components/ToastHost.svelte';
 	import type { AuthPanel } from '$lib/auth-panel';
 
 	let { children } = $props();
@@ -117,3 +118,5 @@
 		{/if}
 	</div>
 </div>
+
+<ToastHost />

@@ -39,7 +39,7 @@
 		void submit();
 	}
 
-	const verifiedLabel = $derived(role === 'family' ? 'Verified family' : 'Verified Mom Helper');
+	const verifiedLabel = $derived(role === 'family' ? 'Verified family' : 'Verified helper');
 
 	async function submit() {
 		if (submitting) return;
@@ -57,8 +57,11 @@
 			toast.error(
 				result.error.code === 'APPROVAL_REQUEST_ALREADY_SUBMITTED'
 					? 'Your application is already with our review team.'
-					: RETRY_MESSAGE,
-				{ title: 'Submission failed' }
+					: result.error.code === 'APPROVAL_REQUEST_INCOMPLETE'
+						? // UAT #12: say what is still needed before it can be submitted.
+							result.error.message
+						: RETRY_MESSAGE,
+				{ title: 'Not submitted yet' }
 			);
 		}
 		submitting = false;

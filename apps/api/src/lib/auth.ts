@@ -1,6 +1,7 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { magicLink } from 'better-auth/plugins';
+import { rememberDevMagicLink } from './dev-magic-links';
 import { admin } from 'better-auth/plugins';
 import { apiKey } from '@better-auth/api-key';
 import { organization } from 'better-auth/plugins';
@@ -240,6 +241,8 @@ export const auth = betterAuth({
         await authHookRuntime.runPromise(
           Effect.flatMap(Mailer, (mailer) => mailer.sendMagicLink({ email, link: link.toString() }))
         );
+        // Dev only: the check-email page's mock inbox opens this real link.
+        rememberDevMagicLink(email, link.toString());
       }
     })
   ],

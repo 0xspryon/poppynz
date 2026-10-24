@@ -12,7 +12,7 @@
 		{
 			role: 'service-provider',
 			icon: 'la-heart',
-			title: 'A caregiver',
+			title: 'A helper',
 			blurb: 'I offer in-home care'
 		}
 	];

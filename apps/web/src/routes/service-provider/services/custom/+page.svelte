@@ -1,8 +1,9 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
-	import { createServiceOffered } from '$lib/api/services-offered';
-	import { dollarsToCents } from '$lib/money';
+	import { createServiceOffered, listServicesOffered } from '$lib/api/services-offered';
+	import { centsToDollars, dollarsToCents } from '$lib/money';
 	import { toast } from '$lib/toast.svelte';
 
 	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
@@ -12,6 +13,14 @@
 	let rate = $state('');
 	let saving = $state(false);
 	let errorMessage = $state('');
+	// Custom services can't go below the platform base rate (UAT #34).
+	let baseRateCents = $state<number | null>(null);
+
+	onMount(() => {
+		void listServicesOffered().then((result) => {
+			if (result.ok) baseRateCents = result.data.customServiceBaseRateCents;
+		});
+	});
 
 	const canSave = $derived(name.trim().length > 0 && dollarsToCents(rate) !== null);
 
@@ -29,9 +38,15 @@
 		});
 		if (result.ok) {
 			// The toast store is module-level, so this survives the navigation.
-			toast.success(`${name.trim()} added to your services.`);
+			toast.success(
+				`${name.trim()} was sent for review — families see it once an administrator approves it.`,
+				{ title: 'Service added' }
+			);
 			await goto(resolve('/service-provider/services'));
-		} else if (result.error.code === 'INVALID_SERVICE_OFFERED_INPUT') {
+		} else if (
+			result.error.code === 'INVALID_SERVICE_OFFERED_INPUT' ||
+			result.error.code === 'SERVICE_RATE_BELOW_FLOOR'
+		) {
 			// Server-side form validation stays next to the fields.
 			errorMessage = result.error.message;
 			saving = false;
@@ -60,8 +75,9 @@
 
 	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Add a custom service</h1>
 	<p class="mt-1 mb-6 max-w-xl text-sm text-base-content-muted">
-		Offer something not on the common list. Describe it in your own words — families see this
-		exactly as you write it.
+		Offer something not on the common list. Describe it in your own words. A Poppynz administrator
+		reviews every custom service before families can see it — personal care needs the PSW service
+		and an approved PSW credential instead.
 	</p>
 
 	<form
@@ -114,7 +130,11 @@
 					CAD
 				</span>
 			</div>
-			<p class="label text-xs">Most helpers charge $18–$30/hr.</p>
+			<p class="label text-xs">
+				{baseRateCents === null
+					? 'Most helpers charge $18–$30/hr.'
+					: `Starts at the $${centsToDollars(baseRateCents)}/hr base rate. Most helpers charge $18–$30/hr.`}
+			</p>
 		</fieldset>
 
 		{#if errorMessage}

@@ -8,6 +8,7 @@
 		type CatalogueItem
 	} from '$lib/api/service-catalogue';
 	import { centsToDollars } from '$lib/money';
+	import { listDocumentTypes } from '$lib/api/document-types';
 	import CatalogueItemDialog, {
 		type CatalogueItemDraft
 	} from '$lib/components/admin/CatalogueItemDialog.svelte';
@@ -32,6 +33,8 @@
 	let deleting: CatalogueItem | null = $state(null);
 	let deleteBusy = $state(false);
 
+	let credentialTypes = $state<Array<{ id: string; name: string }>>([]);
+
 	const categories = $derived([...new Set(items.map((item) => item.category))].sort());
 
 	const errorText = (error: { code: string; message: string }) =>
@@ -55,6 +58,13 @@
 
 	onMount(() => {
 		void load();
+		void listDocumentTypes().then((result) => {
+			if (result.ok) {
+				credentialTypes = result.data
+					.filter((type) => type.appliesToRole === 'service-provider' && !type.isSafetyGate)
+					.map((type) => ({ id: type.id, name: type.name }));
+			}
+		});
 	});
 
 	function openCreate() {
@@ -84,6 +94,8 @@
 			// Field validation stays next to the inputs inside the dialog.
 			modalError =
 				'Check the fields — name and category are required, and the base rate must be a positive amount.';
+		} else if (result.error.code === 'SERVICE_CATALOGUE_CREDENTIAL_INVALID') {
+			modalError = result.error.message;
 		} else {
 			toast.error(errorText(result.error), {
 				title: editing ? 'Service not updated' : 'Service not created'
@@ -188,6 +200,13 @@
 			>
 				<div class="mb-1 flex items-center justify-between lg:mb-0 lg:block">
 					<span class="text-sm font-semibold text-base-content">{item.name}</span>
+					{#if item.requiredDocumentTypeId}
+						<span class="text-[11px] text-outline">
+							<i class="las la-certificate" aria-hidden="true"></i>
+							Needs {credentialTypes.find((type) => type.id === item.requiredDocumentTypeId)?.name ??
+								'an approved credential'}
+						</span>
+					{/if}
 					<span class="text-sm font-semibold text-base-content lg:hidden">
 						${centsToDollars(item.baseHourlyRateCents)}<span
 							class="text-xs font-normal text-outline"
@@ -248,6 +267,7 @@
 	open={modalOpen}
 	{editing}
 	{categories}
+	{credentialTypes}
 	busy={saving}
 	error={modalError}
 	onsave={(draft) => void save(draft)}

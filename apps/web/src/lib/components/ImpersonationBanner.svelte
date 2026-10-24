@@ -6,6 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { stopImpersonating } from '$lib/api/admin-users';
 	import { fetchSession, type MockSession } from '$lib/api/profile';
+	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
 
 	interface Props {
@@ -32,23 +33,32 @@
 		return `${minutes}:${String(seconds).padStart(2, '0')}`;
 	});
 
+	// UAT #20 hardening: the tab once stopped responding after "Stop
+	// impersonating". Close the impersonated session's realtime stream first,
+	// never leave the button stuck on "Stopping…", and replace the history
+	// entry so Back can't return into the ended session.
 	async function stop() {
 		if (stopping) return;
 		stopping = true;
-		const result = await stopImpersonating();
-		// Whether the call succeeded or the session already lapsed, re-read who
-		// we are now — the session is the source of truth for where we land.
-		const fresh = await fetchSession();
-		if (fresh?.impersonatedBy != null) {
-			// Still impersonating: the stop didn't take — stay put and say so.
-			toast.error('Could not stop impersonating. Please try again.');
+		try {
+			notifications.disconnect();
+			const result = await stopImpersonating();
+			// Whether the call succeeded or the session already lapsed, re-read who
+			// we are now — the session is the source of truth for where we land.
+			const fresh = await fetchSession();
+			if (fresh?.impersonatedBy != null) {
+				// Still impersonating: the stop didn't take — stay put and say so.
+				toast.error('Could not stop impersonating. Please try again.');
+				notifications.connect();
+				return;
+			}
+			if (result.ok) {
+				toast.success(`Stopped impersonating ${session.email}.`);
+			}
+			await goto(resolve('/admin/users'), { replaceState: true });
+		} finally {
 			stopping = false;
-			return;
 		}
-		if (result.ok) {
-			toast.success(`Stopped impersonating ${session.email}.`);
-		}
-		await goto(resolve('/admin/users'));
 	}
 </script>
 

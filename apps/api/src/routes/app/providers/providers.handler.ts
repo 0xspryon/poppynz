@@ -4,7 +4,7 @@ import {
   buildProviderSearchDocument,
   getProviderSearchMinRadiusKm
 } from '@repo/typesense';
-import { DBNotFoundError, ProviderSearchRepo, UserProfileRepo } from '@repo/db';
+import { DBNotFoundError, offerFloorCents, ProviderSearchRepo, UserProfileRepo } from '@repo/db';
 import { Cause, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
@@ -88,6 +88,8 @@ const publicProviderDetail = (
         name: service.name,
         description: service.description,
         hourlyRateCents: service.hourlyRateCents,
+        // The lowest offer a family may make (UAT #39): the base rate.
+        floorRateCents: offerFloorCents(service),
         currency: service.currency
       }))
   };
@@ -204,6 +206,13 @@ export const searchProvidersRouteProgram = (
       pageOfProviders,
       (provider) =>
         presignProfileImageUrl(provider.image).pipe(
+          // A photo link that can't be signed (storage/env trouble) must not
+          // take the whole search down — show initials instead (UAT #26).
+          Effect.catchTag('ProfileImageUrlError', (error) =>
+            Effect.logWarning('search: profile photo could not be signed', error.cause).pipe(
+              Effect.as(null)
+            )
+          ),
           Effect.map((imageUrl) => publicProvider(provider, imageUrl))
         ),
       { concurrency: 5 }
@@ -211,6 +220,8 @@ export const searchProvidersRouteProgram = (
 
     // City facet options for the filter dropdown, respecting the other active
     // filters (q/service/rate/radius) but not city itself.
+    // The filter dropdown is a nicety: a facet failure leaves it empty
+    // rather than failing the results the family asked for.
     const cityFacets = yield* index.listCityFacets({
       q: input.q,
       service: input.service,
@@ -221,7 +232,13 @@ export const searchProvidersRouteProgram = (
       page: 1,
       perPage: input.perPage,
       sort: input.sort
-    });
+    }).pipe(
+      Effect.catchAll((error) =>
+        Effect.logWarning('search: city facets unavailable', error.cause).pipe(
+          Effect.as([] as Array<{ value: string; count: number }>)
+        )
+      )
+    );
 
     return {
       providers,
@@ -277,7 +294,9 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: ProvidersRouteError) =>
         {
           error: { code: 'PROVIDER_SEARCH_FAILED' as const, message: 'Unable to search providers.' }
         },
-        502
+        // 503, not 502: ours, retryable, and distinguishable in logs from a
+        // reverse-proxy 502 (see docs/staging-search.md).
+        503
       );
     case 'ProfileImageUrlError':
       return c.json(

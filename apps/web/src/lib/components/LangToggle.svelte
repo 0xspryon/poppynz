@@ -6,10 +6,10 @@
 
 	let { tone = 'light' }: Props = $props();
 
-	// Visual-only for now — real i18n wiring comes with the API integration.
-	let lang: 'en' | 'es' = $state('en');
+	// Visual-only for now — the Paraglide EN/FR wiring replaces this (UAT #3).
+	let lang: 'en' | 'fr' = $state('en');
 
-	const options = ['en', 'es'] as const;
+	const options = ['en', 'fr'] as const;
 </script>
 
 <span

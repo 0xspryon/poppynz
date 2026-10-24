@@ -226,7 +226,9 @@
 			<span class="text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
 				Your needs · {services.length} / {maxServices}
 			</span>
-			<span class="text-xs text-outline">Helpers set their own rates for these services</span>
+			<span class="text-xs text-outline">
+				Helpers set their own rates — each service has a minimum (base) rate
+			</span>
 		</div>
 
 		{#if limitReached}
@@ -293,7 +295,8 @@
 	{catalogue}
 	linkedIds={linkedCatalogueIds}
 	busy={browseBusy}
-	subtitle="Select the services your family is looking for."
+	subtitle="Select the services your family is looking for. Rates shown are where helpers' rates start."
+	ratesAreStartingPrices
 	onadd={(ids) => void addSelected(ids)}
 	oncancel={() => (browseOpen = false)}
 />

@@ -34,6 +34,18 @@
 		timeZoneLabel = null,
 		viewerIsFamily = false
 	}: Props = $props();
+
+	// Each session is labelled by where the terms stand (UAT #40): an active
+	// contract's sessions are agreed, not "Proposed".
+	const sessionLabel = $derived(
+		terms.status === 'accepted' || terms.status === 'superseded'
+			? 'Agreed'
+			: terms.status === 'declined'
+				? 'Declined'
+				: terms.status === 'withdrawn'
+					? 'Withdrawn'
+					: 'Proposed'
+	);
 </script>
 
 <section
@@ -84,7 +96,7 @@
 									class="ml-auto rounded-full bg-base-500 px-2.5 py-0.5 text-[10.5px]
 										font-semibold text-info"
 								>
-									Proposed
+									{sessionLabel}
 								</span>
 							</div>
 						{/each}

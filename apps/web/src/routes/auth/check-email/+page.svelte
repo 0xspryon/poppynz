@@ -1,7 +1,30 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { resolve } from '$app/paths';
-	import { getPendingAuth, resendMagicLink, type PendingAuth } from '$lib/api/auth';
+	import { getDevMagicLink, getPendingAuth, resendMagicLink, type PendingAuth } from '$lib/api/auth';
+	import { toast } from '$lib/toast.svelte';
+
+	// The mock inbox exists only in local dev builds (UAT #32).
+	const devInbox = import.meta.env.DEV;
+	let openingLink = $state(false);
+
+	/** Opens the real link the API just mailed — not a placeholder token. */
+	async function openLatestLink() {
+		if (!pending || openingLink) return;
+		openingLink = true;
+		const result = await getDevMagicLink(pending.email);
+		openingLink = false;
+		if (result.ok) {
+			window.location.assign(result.data.link);
+		} else {
+			toast.error(
+				result.error.code === 'DEV_INBOX_EMPTY'
+					? 'No magic link has been sent to this address since the API started — use Resend.'
+					: 'The mock inbox is only available against a local dev API.',
+				{ title: 'No link to open' }
+			);
+		}
+	}
 	import { matchError } from '$lib/api/client';
 
 	const RESEND_COOLDOWN_S = 60;
@@ -105,21 +128,29 @@
 		{pending?.email ?? 'your email'} is spelled right.
 	</p>
 
-	<!-- Dev-only stand-in for the real email while the API is mocked -->
-	<div class="mt-10 rounded-lg border-2 border-dashed border-outline-variant p-4">
-		<p
-			class="mb-3 flex items-center gap-2 text-xs font-semibold tracking-widest text-outline uppercase"
-		>
-			<i class="las la-flask text-base" aria-hidden="true"></i>
-			Mock inbox — dev only
-		</p>
-		<div class="flex flex-wrap gap-3">
-			<a href="{resolve('/auth/verify')}?token=demo" class="btn btn-sm btn-soft btn-secondary">
-				<i class="las la-external-link-alt" aria-hidden="true"></i> Open magic link
-			</a>
-			<a href="{resolve('/auth/verify')}?token=expired" class="btn btn-sm btn-soft btn-error">
-				<i class="las la-hourglass-end" aria-hidden="true"></i> Open expired link
-			</a>
+	{#if devInbox}
+		<!-- Dev-only stand-in for the mailbox: opens the real link the API sent. -->
+		<div class="mt-10 rounded-lg border-2 border-dashed border-outline-variant p-4">
+			<p
+				class="mb-3 flex items-center gap-2 text-xs font-semibold tracking-widest text-outline uppercase"
+			>
+				<i class="las la-flask text-base" aria-hidden="true"></i>
+				Mock inbox — dev only
+			</p>
+			<div class="flex flex-wrap gap-3">
+				<button
+					type="button"
+					class="btn btn-sm btn-soft btn-secondary"
+					disabled={!pending || openingLink}
+					onclick={() => void openLatestLink()}
+				>
+					<i class="las la-external-link-alt" aria-hidden="true"></i> Open magic link
+				</button>
+				<a href="{resolve('/auth/verify')}?token=expired" class="btn btn-sm btn-soft btn-error">
+					<i class="las la-hourglass-end" aria-hidden="true"></i> Open expired link
+				</a>
+			</div>
 		</div>
-	</div>
+	{/if}
+
 </div>

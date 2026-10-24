@@ -8,6 +8,7 @@ import {
   makeSafetyVerificationRepoTest,
   makeServiceNeededRepoTest,
   makeUserProfileRepoTest,
+  makeInMemoryUserDismissalRepo,
   type KycDocumentType,
   type SafeUserProfile,
   type SafetyVerification,
@@ -16,7 +17,12 @@ import {
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import type { UserAndSession } from '@/api/lib/effect-auth';
-import { getFamilyOnboardingProgram } from './onboarding.handler';
+import { SqlError } from '@effect/sql/SqlError';
+import { makeUserDismissalRepoTest } from '@repo/db';
+import {
+  dismissFamilyWelcomeProgram,
+  getFamilyOnboardingProgram
+} from './onboarding.handler';
 
 const userAndSession = (role: UserAndSession['user']['role'] = 'family'): UserAndSession => ({
   user: {
@@ -126,9 +132,11 @@ const makeLayer = (
     /** Document types owed by SOME role — the program filters to family. */
     types?: Array<KycDocumentType>;
     verification?: SafetyVerification | null;
+    dismissals?: ReturnType<typeof makeInMemoryUserDismissalRepo>;
   } = {}
 ) =>
   Layer.mergeAll(
+    (options.dismissals ?? makeInMemoryUserDismissalRepo()).layer,
     // The checklist reads the gate's status from the verdict, never from
     // kyc_documents.
     EmptyKycDocumentRepoTest,
@@ -289,5 +297,66 @@ describe('family onboarding program', () => {
     );
 
     expect(getFailure(exit)._tag).toBe('OnboardingRoleError');
+  });
+});
+
+describe('family getting-started pop-up (UAT #16)', () => {
+  it('shows while setup is incomplete and nothing has been dismissed or submitted', async () => {
+    const result = await Effect.runPromise(
+      getFamilyOnboardingProgram(userAndSession()).pipe(
+        Effect.provide(makeLayer({ needs: [] }))
+      )
+    );
+    expect(result.welcome).toEqual({ dismissed: false, show: true });
+  });
+
+  it('stays closed once dismissed — recorded server-side', async () => {
+    const dismissals = makeInMemoryUserDismissalRepo();
+    await Effect.runPromise(
+      dismissFamilyWelcomeProgram(userAndSession()).pipe(
+        Effect.provide(makeLayer({ dismissals }))
+      )
+    );
+    const result = await Effect.runPromise(
+      getFamilyOnboardingProgram(userAndSession()).pipe(
+        Effect.provide(makeLayer({ needs: [], dismissals }))
+      )
+    );
+    expect(result.welcome).toEqual({ dismissed: true, show: false });
+  });
+
+  it('does not show once every step is complete', async () => {
+    const result = await Effect.runPromise(
+      getFamilyOnboardingProgram(userAndSession()).pipe(Effect.provide(makeLayer()))
+    );
+    expect(result.welcome.show).toBe(false);
+  });
+
+  it('only a family can dismiss it', async () => {
+    const exit = await Effect.runPromise(
+      dismissFamilyWelcomeProgram(userAndSession('service-provider')).pipe(
+        Effect.provide(makeLayer()),
+        Effect.exit
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('OnboardingRoleError');
+  });
+
+  it('translates a dismissal write failure', async () => {
+    const exit = await Effect.runPromise(
+      dismissFamilyWelcomeProgram(userAndSession()).pipe(
+        Effect.provide(
+          Layer.merge(
+            makeLayer(),
+            makeUserDismissalRepoTest({
+              listKeys: () => Effect.succeed([]),
+              dismiss: () => Effect.fail(new SqlError({ cause: new Error('x'), message: 'x' }))
+            })
+          )
+        ),
+        Effect.exit
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('OnboardingRepoError');
   });
 });

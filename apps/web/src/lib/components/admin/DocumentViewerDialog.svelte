@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatCalendarDate, formatDate as formatInstant } from '$lib/date';
 	/** Fullscreen PII-safe document viewer (design 8b): view in-browser only,
 	 * edit the expiry date in the sidebar. Shows a loading modal while the
 	 * signed URL is fetched; owns the expiry-save flow and calls `onsaved`
@@ -36,13 +37,9 @@
 		return 'submitted';
 	}
 
+	// Document dates are calendar dates — never shifted by the viewer's zone (UAT #28).
 	function formatDate(iso: string | null): string {
-		if (!iso) return '—';
-		return new Date(iso).toLocaleDateString('en-CA', {
-			day: 'numeric',
-			month: 'short',
-			year: 'numeric'
-		});
+		return iso ? formatCalendarDate(iso) : '—';
 	}
 
 	async function saveExpiry(event: SubmitEvent) {
@@ -129,7 +126,11 @@
 					<span class="truncate font-medium text-base-content">{viewer.document.filename}</span>
 					<span class="text-outline">Submitted</span>
 					<span class="font-medium text-base-content">
-						{formatDate(viewer.document.submittedAt)}
+						{formatInstant(viewer.document.submittedAt)}
+					</span>
+					<span class="text-outline">Issued</span>
+					<span class="font-medium text-base-content">
+						{formatDate(viewer.document.issuedOn)}
 					</span>
 				</div>
 
@@ -139,7 +140,9 @@
 						<input type="date" class="input w-full" bind:value={expiry} />
 					</fieldset>
 					<p class="mt-1.5 mb-3.5 text-[11.5px] leading-relaxed text-outline">
-						Entered by the provider — correct it here if it doesn't match the file.
+						{viewer.document.expiryDate
+							? 'Entered by the applicant at upload — correct it here if it does not match the file.'
+							: 'No expiry date was entered at upload — add one if the document has one.'}
 					</p>
 					<button type="submit" class="btn w-full btn-primary" disabled={saving}>
 						{#if saving}

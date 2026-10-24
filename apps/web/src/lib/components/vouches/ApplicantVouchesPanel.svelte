@@ -29,15 +29,13 @@
 		formError = '';
 		const result = await requestVouch({ email, relationship });
 		if (result.ok) {
-			toast.success('Request sent. We’ve let them know.');
+			// The same answer whoever the email belongs to (UAT #36).
+			toast.success(result.data.message, { title: 'Request sent' });
 			email = '';
 			relationship = '';
 			await onchanged();
 		} else {
 			formError = matchError(result.error, {
-				VOUCHER_UNAVAILABLE: () =>
-					"We couldn't send a request to that email. Check it belongs to an approved Poppynz member.",
-				VOUCH_ALREADY_REQUESTED: () => 'You already have an open request with this person.',
 				VOUCH_APPLICANT_ONLY: () => 'Only helpers can ask for vouches.',
 				VOUCH_RATE_LIMITED: (error) => error.message,
 				INVALID_VOUCH_INPUT: () => 'Check the email and how you know them, then try again.',
@@ -118,10 +116,13 @@
 			{#each data.vouches as vouch (vouch.id)}
 				<div class="flex items-center gap-3 rounded-[10px] border border-card-border px-4 py-3">
 					<div class="min-w-0 flex-1">
+						<!-- The name shows once they answer; until then only the email you typed. -->
 						<div class="truncate text-[13.5px] font-semibold text-base-content">
-							{vouch.voucherName}
+							{vouch.voucherName ?? vouch.voucherEmail}
 						</div>
-						<div class="truncate text-[11.5px] text-outline">{vouch.voucherEmail}</div>
+						{#if vouch.voucherName}
+							<div class="truncate text-[11.5px] text-outline">{vouch.voucherEmail}</div>
+						{/if}
 					</div>
 					<span
 						class="rounded-[5px] px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap

@@ -97,6 +97,9 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
 });
 
 const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
+  issuedOn: null,
+  reviewedBy: null,
+  reviewedAt: null,
   id: 'kyc-document-1',
   userId: 'provider-1',
   documentTypeId: 'document-type-1',
@@ -113,6 +116,10 @@ const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
 });
 
 const serviceOffered = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
+  reviewStatus: 'approved',
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewReason: null,
   id: 'service-1',
   userId: 'provider-1',
   name: 'Childcare',
@@ -144,6 +151,7 @@ const profile = (overrides: Partial<SafeUserProfile> = {}): SafeUserProfile => (
   googlePlaceId: null,
   latitude: null,
   longitude: null,
+  image: 'users/provider-1/public/profile-pictures/me.jpg',
   ...overrides
 });
 
@@ -432,17 +440,49 @@ describe('createApprovalRequestRouteProgram', () => {
     expect(createdFor).toEqual(['provider-1']);
   });
 
-  it('returns warnings for missing required documents and services', async () => {
-    const result = await Effect.runPromise(
+  it('refuses to submit while a required document is missing (UAT #12)', async () => {
+    const created: Array<string> = [];
+    const exit = await Effect.runPromise(
       createApprovalRequestRouteProgram(new Headers()).pipe(
-        Effect.provide(makeLayer({ documents: [], services: [] }))
+        Effect.provide(
+          makeLayer({
+            documents: [],
+            services: [],
+            onCreateSubmitted: (userId) => created.push(userId)
+          })
+        ),
+        Effect.exit
       )
     );
-
-    expect(result.warnings).toEqual({
-      missingRequiredDocuments: [{ documentTypeId: 'document-type-1', name: 'Identity document' }],
-      missingServicesOffered: true
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ApprovalRequestIncompleteError',
+      blockers: [
+        { kind: 'document_missing', documentTypeId: 'document-type-1', name: 'Identity document' }
+      ]
     });
+    expect(created).toEqual([]);
+  });
+
+  it("refuses a helper's submission without the required profile photo", async () => {
+    const exit = await Effect.runPromise(
+      createApprovalRequestRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ profile: profile({ image: null }) })),
+        Effect.exit
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ApprovalRequestIncompleteError',
+      blockers: [{ kind: 'photo_missing' }]
+    });
+  });
+
+  it('still reports the missing-services warning on a complete submission', async () => {
+    const result = await Effect.runPromise(
+      createApprovalRequestRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ services: [] }))
+      )
+    );
+    expect(result.warnings).toEqual({ missingRequiredDocuments: [], missingServicesOffered: true });
   });
 
   it('sends a submitted confirmation mail to the provider', async () => {
@@ -470,43 +510,57 @@ describe('createApprovalRequestRouteProgram', () => {
     ]);
   });
 
-  it('lets a family submit, judged on family documents and never on services', async () => {
-    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+  it('judges a family on family documents only, and never on services or a photo', async () => {
     const family = user({
       id: 'family-1',
       role: 'family',
       name: 'Priya K',
       email: 'priya@example.com'
     });
+    const familyTypes = [
+      documentType(),
+      documentType({ id: 'gate-1', name: 'Vulnerable Sector Check', appliesToRole: 'family' })
+    ];
+    const familyProfile = profile({ userId: 'family-1', role: 'family', image: null });
 
+    // Missing their own required document: refused, naming only that one —
+    // the helper's identity document never shows up for a family.
+    const exit = await Effect.runPromise(
+      createApprovalRequestRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            user: family,
+            profile: familyProfile,
+            documentTypes: familyTypes,
+            documents: [],
+            services: []
+          })
+        ),
+        Effect.exit
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ApprovalRequestIncompleteError',
+      blockers: [{ kind: 'document_missing', documentTypeId: 'gate-1' }]
+    });
+
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
     const result = await Effect.runPromise(
       createApprovalRequestRouteProgram(new Headers()).pipe(
         Effect.provide(
           makeLayer({
             user: family,
+            profile: familyProfile,
             sentMails,
-            // Only the family-owed type counts; the helper's identity document
-            // must not show up as missing on a family's request.
-            documentTypes: [
-              documentType(),
-              documentType({
-                id: 'gate-1',
-                name: 'Vulnerable Sector Check',
-                appliesToRole: 'family'
-              })
-            ],
-            documents: [],
+            documentTypes: familyTypes,
+            documents: [kycDocument({ userId: 'family-1', documentTypeId: 'gate-1' })],
             services: []
           })
         )
       )
     );
-
     expect(result.status).toBe('submitted');
-    expect(result.warnings).toEqual({
-      missingRequiredDocuments: [{ documentTypeId: 'gate-1', name: 'Vulnerable Sector Check' }],
-      missingServicesOffered: false
-    });
+    expect(result.warnings).toEqual({ missingRequiredDocuments: [], missingServicesOffered: false });
     expect(sentMails.map((entry) => entry.mail)).toEqual([
       { email: 'priya@example.com', name: 'Priya K', role: 'family' },
       { applicantName: 'Priya K', applicantEmail: 'priya@example.com', role: 'family' }
@@ -637,6 +691,49 @@ describe('admin approval request review route programs', () => {
       missingRequiredDocuments: [{ documentTypeId: 'document-type-1', name: 'Identity document' }],
       missingServicesOffered: true
     });
+    // The same blockers the approve action refuses on, worded for the UI.
+    expect(result.approvalBlockers).toEqual([
+      expect.objectContaining({
+        kind: 'document_missing',
+        name: 'Identity document',
+        message: 'Identity document has not been submitted'
+      })
+    ]);
+  });
+
+  it('lists an unreviewed document and a missing photo as approval blockers', async () => {
+    const result = await Effect.runPromise(
+      getAdminApprovalRequestRouteProgram(new Headers(), REQUEST_ID).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            profile: profile({ image: null }),
+            documents: [kycDocument({ status: 'submitted' })]
+          })
+        )
+      )
+    );
+    expect(result.approvalBlockers.map((blocker) => blocker.kind)).toEqual([
+      'photo_missing',
+      'document_unreviewed'
+    ]);
+  });
+
+  it('flags blocked requests in the admin queue', async () => {
+    const result = await Effect.runPromise(
+      listAdminApprovalRequestsRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            approvalRequests: [approvalRequest({ id: REQUEST_ID })],
+            documents: []
+          })
+        )
+      )
+    );
+    expect(result.requests[0]?.approvalBlockers).toEqual([
+      expect.objectContaining({ kind: 'document_missing' })
+    ]);
   });
 
   it('rejects an approval request with reason', async () => {

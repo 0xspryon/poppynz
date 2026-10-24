@@ -158,7 +158,7 @@
 			class="sticky top-(--nav-top) hidden h-[calc(100dvh-var(--nav-top))] w-[250px] shrink-0
 				flex-col gap-1 bg-secondary p-5 lg:flex"
 		>
-			<SidebarNav kicker="Mom Helper" {items} {email} roleLabel="Mom Helper" {impersonated} />
+			<SidebarNav kicker="Helper" {items} {email} roleLabel="Helper" {impersonated} />
 		</aside>
 
 		<div class="flex min-w-0 flex-1 flex-col">
@@ -188,10 +188,10 @@
 	<MobileNavDrawer
 		open={drawerOpen}
 		onclose={() => (drawerOpen = false)}
-		kicker="Mom Helper"
+		kicker="Helper"
 		{items}
 		{email}
-		roleLabel="Mom Helper"
+		roleLabel="Helper"
 		{impersonated}
 	/>
 

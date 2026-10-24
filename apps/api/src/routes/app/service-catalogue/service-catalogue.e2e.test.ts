@@ -58,6 +58,7 @@ const makeSession = (overrides: Partial<Session> = {}): Session => ({
 });
 
 const makeItem = (overrides: Partial<ServiceCatalogueItem> = {}): ServiceCatalogueItem => ({
+  requiredDocumentTypeId: null,
   id: `item-${crypto.randomUUID()}`,
   name: 'Babysitting',
   category: 'Childcare',

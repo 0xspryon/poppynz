@@ -20,6 +20,12 @@ import {
 import { applicantRoleOf, type ApplicantRole } from '@/api/lib/approval-gate';
 import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
 import { loadChecklist, loadChecklistWithTypes } from '@/api/lib/onboarding-checklist';
+import {
+  type ApprovalBlocker,
+  approvalBlockers,
+  describeBlocker,
+  submissionBlockers
+} from '@/api/lib/approval-readiness';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import { summariseVouches } from '@/api/lib/vouches';
 import { toAdminVouch } from '../vouches/vouches.handler';
@@ -36,6 +42,11 @@ class ApprovalRequestValidationError extends Data.TaggedError('ApprovalRequestVa
 class ApprovalRequestAlreadySubmittedError extends Data.TaggedError(
   'ApprovalRequestAlreadySubmittedError'
 )<{}> {}
+/** UAT #12: submitting with a required document (or a helper's photo)
+ * missing is refused — the request could only be rejected. */
+export class ApprovalRequestIncompleteError extends Data.TaggedError(
+  'ApprovalRequestIncompleteError'
+)<{ blockers: Array<ApprovalBlocker> }> {}
 
 // Families and helpers go through the same approval; admins never apply.
 const ensureApplicant = <T extends { user: { role: string | null } }>(userAndSession: T) => {
@@ -71,8 +82,6 @@ const toRequestResponse = <
   generalRemarksUpdatedAt: request.generalRemarksUpdatedAt?.toISOString() ?? null
 });
 
-const buildWarnings = (userId: string, role: ApplicantRole) =>
-  loadChecklist(userId, role).pipe(Effect.map((state) => state.warnings));
 
 export const createApprovalRequestRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
@@ -92,10 +101,16 @@ export const createApprovalRequestRouteProgram = (headers: Headers) =>
       return yield* Effect.fail(new ApprovalRequestAlreadySubmittedError());
     }
 
-    const [request, warnings] = yield* Effect.all(
-      [repo.createSubmitted(provider.user.id), buildWarnings(provider.user.id, role)],
+    const profileRepo = yield* UserProfileRepo;
+    const [profile, { checklist, warnings }] = yield* Effect.all(
+      [profileRepo.findByUserId(provider.user.id), loadChecklist(provider.user.id, role)],
       { concurrency: 'unbounded' }
     );
+    const blockers = submissionBlockers({ role, profile, checklist });
+    if (blockers.length > 0) {
+      return yield* Effect.fail(new ApprovalRequestIncompleteError({ blockers }));
+    }
+    const request = yield* repo.createSubmitted(provider.user.id);
 
     const mailer = yield* Mailer;
     yield* sendMailBestEffort(
@@ -135,14 +150,33 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
     const roleByUser = new Map(
       requests.map((request) => [request.userId, roleOrProvider(request.applicant.role)] as const)
     );
-    const warningsByUser = new Map(
+    const profileRepo = yield* UserProfileRepo;
+    const stateByUser = new Map(
       yield* Effect.forEach(
         [...roleByUser.entries()],
         ([userId, role]) =>
-          loadChecklistWithTypes(
-            types,
-            role
-          )(userId).pipe(Effect.map((state) => [userId, state.warnings] as const)),
+          Effect.all([
+            loadChecklistWithTypes(types, role)(userId),
+            profileRepo
+              .findByUserId(userId)
+              .pipe(Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)))
+          ]).pipe(
+            Effect.map(
+              ([state, profile]) =>
+                [
+                  userId,
+                  {
+                    warnings: state.warnings,
+                    // Flag, don't approve: the queue shows what blocks it.
+                    blockers: approvalBlockers({
+                      role,
+                      profile: { image: profile?.image ?? null },
+                      checklist: state.checklist
+                    })
+                  }
+                ] as const
+            )
+          ),
         { concurrency: 5 }
       )
     );
@@ -168,10 +202,14 @@ export const listAdminApprovalRequestsRouteProgram = (headers: Headers) =>
       requests: requests.map((request) => ({
         ...toRequestResponse(request),
         applicant: { ...request.applicant, role: roleOrProvider(request.applicant.role) },
-        warnings: warningsByUser.get(request.userId) ?? {
+        warnings: stateByUser.get(request.userId)?.warnings ?? {
           missingRequiredDocuments: [],
           missingServicesOffered: false
         },
+        approvalBlockers: (stateByUser.get(request.userId)?.blockers ?? []).map((blocker) => ({
+          ...blocker,
+          message: describeBlocker(blocker)
+        })),
         vouches: vouchesByUser.get(request.userId) ?? { counting: 0, hasConcern: false },
         hasGeneralRemarks: (request.generalRemarks ?? '').trim().length > 0
       })),
@@ -233,6 +271,11 @@ export const getAdminApprovalRequestRouteProgram = (headers: Headers, id: string
       profile,
       documents: checklist,
       missingRequiredDocuments: warnings.missingRequiredDocuments,
+      // What the approve action will refuse on (UAT #25/#30), worded.
+      approvalBlockers: approvalBlockers({ role, profile, checklist }).map((blocker) => ({
+        ...blocker,
+        message: describeBlocker(blocker)
+      })),
       optionalDocumentTypes: checklist
         .filter((entry) => entry.isOptional)
         .map((entry) => ({ id: entry.documentTypeId, name: entry.name })),
@@ -372,6 +415,17 @@ const approvalRequestsErrorToResponse = (
           }
         },
         409
+      );
+    case 'ApprovalRequestIncompleteError':
+      return c.json(
+        {
+          error: {
+            code: 'APPROVAL_REQUEST_INCOMPLETE' as const,
+            message: `Before you submit: ${error.blockers.map(describeBlocker).join('; ')}.`,
+            blockers: error.blockers
+          }
+        },
+        422
       );
     case 'DBNotFoundError':
     case 'SqlError':

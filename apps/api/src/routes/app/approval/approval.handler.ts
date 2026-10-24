@@ -34,6 +34,8 @@ import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
 import { scheduleProviderSearchReconcile } from '@/api/lib/provider-search-jobs';
 import { scheduleFamilySearchReconcile } from '@/api/lib/family-search-jobs';
 import { applicantRoleOf, type ApplicantRole } from '@/api/lib/approval-gate';
+import { type ApprovalBlocker, approvalBlockers, describeBlocker } from '@/api/lib/approval-readiness';
+import { loadChecklist } from '@/api/lib/onboarding-checklist';
 import { publishNotificationBestEffort } from '@repo/notify';
 
 export class ApprovalRepoError extends Data.TaggedError('ApprovalRepoError')<{ cause: SqlError }> {}
@@ -45,6 +47,12 @@ export class ApprovalRequestNotFoundError extends Data.TaggedError('ApprovalRequ
 }> {}
 export class ApprovalEligibilityError extends Data.TaggedError('ApprovalEligibilityError')<{
   message: string;
+}> {}
+/** UAT #25/#30: a required document (missing, rejected or not yet reviewed)
+ * or the helper's required photo stands in the way. The request stays in the
+ * queue, flagged; nothing is approved. */
+export class ApprovalIncompleteError extends Data.TaggedError('ApprovalIncompleteError')<{
+  blockers: Array<ApprovalBlocker>;
 }> {}
 
 /** Approval and approval-request ids are UUIDs; anything else names nothing.
@@ -79,7 +87,12 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
     const profileRepo = yield* UserProfileRepo;
     const serviceRepo = yield* ServiceOfferedRepo;
     const [profile, services] = yield* Effect.all(
-      [profileRepo.findByUserId(input.userId), serviceRepo.listByUserId(input.userId)],
+      [
+        profileRepo.findByUserId(input.userId),
+        // Only services families can actually see count towards "something
+        // to offer" — a custom service still awaiting review does not.
+        serviceRepo.listPublishableByUserIds([input.userId])
+      ],
       { concurrency: 'unbounded' }
     ).pipe(
       Effect.catchTags({
@@ -117,6 +130,14 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
           })
         );
       }
+    }
+
+    const { checklist } = yield* loadChecklist(input.userId, role).pipe(
+      Effect.catchTag('SqlError', (cause) => Effect.fail(new ApprovalRepoError({ cause })))
+    );
+    const blockers = approvalBlockers({ role, profile, checklist });
+    if (blockers.length > 0) {
+      return yield* Effect.fail(new ApprovalIncompleteError({ blockers }));
     }
 
     // Nobody becomes approved — and therefore searchable — without a current
@@ -271,6 +292,19 @@ const approvalErrorToResponse = (c: HonoContext<HonoEnv>, error: ApprovalError) 
         { error: { code: 'APPROVAL_ELIGIBILITY_FAILED' as const, message: error.message } },
         400
       );
+    case 'ApprovalIncompleteError':
+      return c.json(
+        {
+          error: {
+            code: 'APPROVAL_INCOMPLETE' as const,
+            message: `This account can't be approved yet: ${error.blockers
+              .map(describeBlocker)
+              .join('; ')}.`,
+            blockers: error.blockers
+          }
+        },
+        422
+      );
     case 'ApprovalRepoError':
       return c.json(
         { error: { code: 'APPROVAL_FAILED' as const, message: 'Unable to create approval.' } },
@@ -285,7 +319,8 @@ const isApprovalError = (error: unknown): error is ApprovalError =>
   error instanceof ApprovalRepoError ||
   error instanceof ApprovalRequestMismatchError ||
   error instanceof ApprovalRequestNotFoundError ||
-  error instanceof ApprovalEligibilityError;
+  error instanceof ApprovalEligibilityError ||
+  error instanceof ApprovalIncompleteError;
 
 export async function revokeApprovalHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');

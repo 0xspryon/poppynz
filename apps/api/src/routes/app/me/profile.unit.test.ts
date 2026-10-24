@@ -146,6 +146,9 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
 });
 
 const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
+  issuedOn: null,
+  reviewedBy: null,
+  reviewedAt: null,
   id: 'kyc-document-1',
   userId: 'user-1',
   documentTypeId: 'document-type-1',
@@ -162,6 +165,10 @@ const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
 });
 
 const service = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
+  reviewStatus: 'approved',
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewReason: null,
   id: 'service-1',
   userId: 'user-1',
   name: 'Childcare',
@@ -338,6 +345,23 @@ describe('profile programs', () => {
     );
   });
 
+  it('reports a saved location from coordinates, even without a place id (B9)', async () => {
+    const withCoordinates = await Effect.runPromise(
+      getProfileProgram(userAndSession).pipe(
+        Effect.provide(
+          makeLayer({ profile: profile({ googlePlaceId: null, latitude: 43.6, longitude: -79.4 }) })
+        )
+      )
+    );
+    expect(withCoordinates.hasLocation).toBe(true);
+    const without = await Effect.runPromise(
+      getProfileProgram(userAndSession).pipe(
+        Effect.provide(makeLayer({ profile: profile({ latitude: null, longitude: null }) }))
+      )
+    );
+    expect(without.hasLocation).toBe(false);
+  });
+
   it('returns a null image when no profile picture is stored', async () => {
     const result = await Effect.runPromise(
       getProfileProgram(userAndSession).pipe(Effect.provide(makeLayer()))
@@ -496,5 +520,24 @@ describe('profile programs', () => {
       )
     );
     expect(getFailure(exit)).toBeInstanceOf(ProfileRepoError);
+  });
+});
+
+describe('date of birth validation (UAT #13)', () => {
+  it('accepts a real date and rejects six-digit years and impossible dates', async () => {
+    const { isPlausibleDateOfBirth } = await import('./profile.validator');
+    const today = new Date('2026-10-24T12:00:00.000Z');
+    expect(isPlausibleDateOfBirth('1985-01-15', today)).toBe(true);
+    for (const value of ['198501-01-15', '1985-02-30', '1899-12-31', '2027-01-01', '15/01/1985']) {
+      expect(isPlausibleDateOfBirth(value, today)).toBe(false);
+    }
+  });
+
+  it('refuses an implausible date of birth on update', async () => {
+    const { validateProfileUpdateInput } = await import('./profile.validator');
+    const exit = await Effect.runPromiseExit(validateProfileUpdateInput({ dateOfBirth: '198501-01-01' }));
+    expect(Exit.isFailure(exit)).toBe(true);
+    const ok = await Effect.runPromiseExit(validateProfileUpdateInput({ dateOfBirth: '1985-01-01' }));
+    expect(Exit.isSuccess(ok)).toBe(true);
   });
 });

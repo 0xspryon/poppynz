@@ -9,10 +9,13 @@ export type ServiceCatalogueItem = InferSelectModel<typeof serviceCatalogueItem>
 export type ServiceCatalogueItemInsert = InferInsertModel<typeof serviceCatalogueItem>;
 export type ServiceCatalogueItemCreateInput = Pick<
   ServiceCatalogueItemInsert,
-  'name' | 'category' | 'baseHourlyRateCents' | 'currency' | 'isLive'
+  'name' | 'category' | 'baseHourlyRateCents' | 'currency' | 'isLive' | 'requiredDocumentTypeId'
 >;
 export type ServiceCatalogueItemUpdateInput = Partial<
-  Pick<ServiceCatalogueItem, 'name' | 'category' | 'baseHourlyRateCents' | 'currency' | 'isLive'>
+  Pick<
+    ServiceCatalogueItem,
+    'name' | 'category' | 'baseHourlyRateCents' | 'currency' | 'isLive' | 'requiredDocumentTypeId'
+  >
 >;
 
 export class ServiceCatalogueRepo extends Context.Tag('@repo/db/ServiceCatalogueRepo')<

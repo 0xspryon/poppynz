@@ -18,6 +18,7 @@ async function submitKycDocument(input: {
 	filename: string;
 	fileKey: string;
 	expiryDate: string | null;
+	issuedOn?: string | null;
 }) {
 	return call(submitEndpoint({ json: input }));
 }
@@ -31,6 +32,8 @@ export async function uploadKycDocument(input: {
 	file: File;
 	/** ISO date string; required when the document type requires an expiry. */
 	expiryDate: string | null;
+	/** YYYY-MM-DD as printed on the document (UAT #31). */
+	issuedOn?: string | null;
 }): Promise<ApiResult<SubmittedKycDocument, KycUploadError>> {
 	const presigned = await call(
 		presignEndpoint({
@@ -72,7 +75,8 @@ export async function uploadKycDocument(input: {
 		documentTypeId: input.documentTypeId,
 		filename: input.file.name,
 		fileKey: presigned.data.fileKey,
-		expiryDate: input.expiryDate
+		expiryDate: input.expiryDate,
+		issuedOn: input.issuedOn ?? null
 	});
 }
 

@@ -275,7 +275,15 @@
 						<StatusChip status={entry.status} />
 					</div>
 					<div class="mt-2 text-xs lg:mt-0 lg:text-[12.5px]">
-						{#if warnings}
+						{#if entry.status === 'submitted' && entry.approvalBlockers.length > 0}
+							<!-- Flagged, not approvable (UAT #25): says what blocks it. -->
+							<span class="flex items-center gap-1 font-semibold text-error">
+								<i class="las la-ban" aria-hidden="true"></i>
+								Can't approve: {entry.approvalBlockers.length === 1
+									? entry.approvalBlockers[0].message.toLowerCase()
+									: `${entry.approvalBlockers.length} items outstanding`}
+							</span>
+						{:else if warnings}
 							<span class="text-warning">{warnings}</span>
 						{:else}
 							<span class="text-base-content-muted">No warnings</span>

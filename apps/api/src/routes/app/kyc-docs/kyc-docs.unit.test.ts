@@ -15,6 +15,8 @@ import {
   type Session,
   type User
 } from '@repo/db';
+import { makeProviderSearchOutboxRepoTest } from '@repo/db';
+import { makeProviderSearchQueueTest } from '@repo/queue';
 import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { describe, expect, it } from 'vitest';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
@@ -24,6 +26,7 @@ import {
   createKycDocumentTypeRouteProgram,
   deleteKycDocumentTypeRouteProgram,
   listKycDocumentTypesRouteProgram,
+  reviewAdminKycDocumentRouteProgram,
   submitKycDocumentRouteProgram,
   updateAdminKycDocumentRouteProgram,
   updateKycDocumentTypeRouteProgram
@@ -77,6 +80,9 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
 });
 
 const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
+  issuedOn: null,
+  reviewedBy: null,
+  reviewedAt: null,
   id: 'kyc-document-1',
   userId: 'provider-1',
   documentTypeId: 'document-type-1',
@@ -120,6 +126,8 @@ const makeLayer = (
     openOrder?: { id: string; status: string } | null;
     orderItems?: Array<{ id: string; documentTypeId: string }>;
     onRemoveItem?: (itemId: string) => void;
+    onReview?: (id: string, input: { status: string; reason: string | null; reviewedBy: string }) => void;
+    reconciled?: Array<string>;
   } = {}
 ) => {
   const currentUser = options.user ?? user();
@@ -128,6 +136,31 @@ const makeLayer = (
   const currentDocument = options.document === undefined ? kycDocument() : options.document;
 
   return Layer.mergeAll(
+    makeProviderSearchQueueTest({
+      enqueueReconcile: (job) => {
+        options.reconciled?.push(job.userId);
+        return Effect.succeed({ id: 'job-1', name: 'reconcile-provider' });
+      },
+      enqueueReindex: () => Effect.succeed({ id: 'job-2', name: 'reindex-all-providers' })
+    }),
+    makeProviderSearchOutboxRepoTest({
+      createPending: (userId) =>
+        Effect.succeed({
+          id: 'outbox-1',
+          userId,
+          status: 'pending',
+          attempts: 0,
+          lastError: null,
+          processedAt: null,
+          createdAt: new Date('2026-06-12T00:00:00.000Z'),
+          updatedAt: new Date('2026-06-12T00:00:00.000Z')
+        }),
+      listUnresolved: () => Effect.succeed([]),
+      markProcessing: () => Effect.die('not used'),
+      markProcessed: () => Effect.die('not used'),
+      markFailed: () => Effect.die('not used'),
+      markSupersededBefore: () => Effect.succeed(0)
+    }),
     // The checklist reads a gate type's status from the verification record.
     makeSafetyVerificationRepoTest({
       findLive: () => Effect.succeed(null),
@@ -225,7 +258,19 @@ const makeLayer = (
         currentDocument?.id === id
           ? Effect.succeed({ ...currentDocument, expiryDate })
           : Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: id })),
-      approveSubmittedByUserId: () => Effect.succeed([])
+      approveSubmittedByUserId: () => Effect.succeed([]),
+      review: (id, input) => {
+        options.onReview?.(id, input);
+        return currentDocument?.id === id
+          ? Effect.succeed({
+              ...currentDocument,
+              status: input.status,
+              reason: input.reason,
+              reviewedBy: input.reviewedBy,
+              reviewedAt: new Date('2026-06-14T00:00:00.000Z')
+            })
+          : Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: id }));
+      }
     })
   );
 };
@@ -712,5 +757,134 @@ describe('KYC route programs', () => {
 
     expect(getFailure(missingType)._tag).toBe('KycNotFoundError');
     expect(getFailure(repoFailure)._tag).toBe('KycRepoError');
+  });
+});
+
+describe('admin per-document review (UAT #27)', () => {
+  const admin = user({ id: 'admin-1', role: 'admin' });
+
+  it('approves a document and records reviewer and time', async () => {
+    const reviews: Array<{ id: string; status: string; reviewedBy: string }> = [];
+    const reconciled: Array<string> = [];
+    const result = await Effect.runPromise(
+      reviewAdminKycDocumentRouteProgram(
+        contextWithJson({ decision: 'approve' }),
+        new Headers(),
+        'kyc-document-1'
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: admin,
+            reconciled,
+            onReview: (id, input) => reviews.push({ id, ...input })
+          })
+        )
+      )
+    );
+    expect(reviews[0]).toMatchObject({
+      id: 'kyc-document-1',
+      status: 'approved',
+      reviewedBy: 'admin-1'
+    });
+    expect(result).toMatchObject({
+      status: 'approved',
+      reviewedBy: 'admin-1',
+      reviewedAt: '2026-06-14T00:00:00.000Z'
+    });
+    // A helper credential can unlock a gated service: re-index the helper.
+    expect(reconciled).toEqual(['provider-1']);
+  });
+
+  it('rejects with a reason and refuses a rejection without one', async () => {
+    const rejected = await Effect.runPromise(
+      reviewAdminKycDocumentRouteProgram(
+        contextWithJson({ decision: 'reject', reason: 'The photo is unreadable.' }),
+        new Headers(),
+        'kyc-document-1'
+      ).pipe(Effect.provide(makeLayer({ user: admin })))
+    );
+    expect(rejected).toMatchObject({ status: 'rejected', reason: 'The photo is unreadable.' });
+
+    const exit = await Effect.runPromise(
+      reviewAdminKycDocumentRouteProgram(
+        contextWithJson({ decision: 'reject' }),
+        new Headers(),
+        'kyc-document-1'
+      ).pipe(Effect.provide(makeLayer({ user: admin })), Effect.exit)
+    );
+    expect(getFailure(exit)._tag).toBe('KycValidationError');
+  });
+
+  it('rejects invalid input and unknown documents', async () => {
+    const invalid = await Effect.runPromise(
+      reviewAdminKycDocumentRouteProgram(
+        contextWithJson({ decision: 'maybe' }),
+        new Headers(),
+        'kyc-document-1'
+      ).pipe(Effect.provide(makeLayer({ user: admin })), Effect.exit)
+    );
+    expect(getFailure(invalid)._tag).toBe('RequestValidationError');
+
+    const missing = await Effect.runPromise(
+      reviewAdminKycDocumentRouteProgram(
+        contextWithJson({ decision: 'approve' }),
+        new Headers(),
+        'nope'
+      ).pipe(Effect.provide(makeLayer({ user: admin })), Effect.exit)
+    );
+    expect(getFailure(missing)).toMatchObject({ _tag: 'KycNotFoundError', entity: 'document' });
+  });
+
+  it('is denied to applicants, who lack kycDocument review', async () => {
+    for (const role of [spRole, familyRole]) {
+      const exit = await Effect.runPromise(
+        reviewAdminKycDocumentRouteProgram(
+          contextWithJson({ decision: 'approve' }),
+          new Headers(),
+          'kyc-document-1'
+        ).pipe(Effect.provide(makeLayer({ grantedBy: role })), Effect.exit)
+      );
+      expect(getFailure(exit)._tag).toBe('ForbiddenError');
+    }
+    const allowed = await Effect.runPromise(
+      reviewAdminKycDocumentRouteProgram(
+        contextWithJson({ decision: 'approve' }),
+        new Headers(),
+        'kyc-document-1'
+      ).pipe(Effect.provide(makeLayer({ user: admin, grantedBy: adminRole })))
+    );
+    expect(allowed.status).toBe('approved');
+  });
+});
+
+describe('document issue date (UAT #31)', () => {
+  const body = {
+    documentTypeId: 'document-type-1',
+    filename: 'government-id.pdf',
+    fileKey: 'users/provider-1/kyc/document-type-1/government-id.pdf',
+    expiryDate: '2099-01-15'
+  };
+
+  it('stores the issue date as a plain date', async () => {
+    const submitted: Array<KycDocumentSubmitInput> = [];
+    await Effect.runPromise(
+      submitKycDocumentRouteProgram(
+        contextWithJson({ ...body, issuedOn: '2024-03-01' }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ onSubmit: (input) => submitted.push(input) })))
+    );
+    expect(submitted[0]?.issuedOn).toBe('2024-03-01');
+  });
+
+  it('refuses an issue date in the future or that does not exist', async () => {
+    for (const issuedOn of ['2999-01-01', '2024-02-31']) {
+      const exit = await Effect.runPromise(
+        submitKycDocumentRouteProgram(contextWithJson({ ...body, issuedOn }), new Headers()).pipe(
+          Effect.provide(makeLayer()),
+          Effect.exit
+        )
+      );
+      expect(getFailure(exit)._tag).toBe('KycValidationError');
+    }
   });
 });

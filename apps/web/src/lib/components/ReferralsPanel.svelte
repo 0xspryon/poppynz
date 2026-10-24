@@ -98,7 +98,7 @@
 		if (entry.status === 'joined' && entry.joinedAt) {
 			const joined = `Joined ${formatDate(entry.joinedAt)}`;
 			if (entry.verified) return `${joined} · now a verified helper`;
-			return `${joined} · ${entry.role === 'family' ? 'family' : 'caregiver'}`;
+			return `${joined} · ${entry.role === 'family' ? 'family' : 'helper'}`;
 		}
 		if (entry.status === 'expired') return 'Invite expired';
 		return `Invited ${formatDate(entry.invitedAt)}`;
@@ -132,7 +132,7 @@
 				<input type="email" placeholder="their.email@example.com" required bind:value={email} />
 			</label>
 			<select class="select sm:w-44" bind:value={role} aria-label="Invite as">
-				<option value="service-provider">As a caregiver</option>
+				<option value="service-provider">As a helper</option>
 				<option value="family">As a family</option>
 			</select>
 			<button type="submit" class="btn btn-primary" disabled={!canSend}>

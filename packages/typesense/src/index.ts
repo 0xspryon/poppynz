@@ -1,3 +1,4 @@
+import { recoverFromMissingCollection } from './recover';
 import { providerSearchConfig, typesenseConfig } from '@repo/env';
 import {
   DBNotFoundError,
@@ -332,7 +333,7 @@ const makeProviderSearchIndex = (config: {
         yield* upsertProvider(document);
       });
 
-    const searchProviders = (input: ProviderSearchInput) =>
+    const rawSearchProviders = (input: ProviderSearchInput) =>
       Effect.tryPromise({
         try: async () => {
           const searchParams = {
@@ -361,7 +362,7 @@ const makeProviderSearchIndex = (config: {
         catch: (cause) => new ProviderSearchIndexError({ operation: 'search', cause })
       });
 
-    const listCityFacets = (input: ProviderSearchInput) =>
+    const rawListCityFacets = (input: ProviderSearchInput) =>
       Effect.tryPromise({
         try: async () => {
           const response = await client
@@ -396,6 +397,31 @@ const makeProviderSearchIndex = (config: {
         catch: (cause) => new ProviderSearchIndexError({ operation: 'search', cause })
       });
 
+
+    const whenCollectionMissing =
+      <A>(empty: A) =>
+      (error: ProviderSearchIndexError) =>
+        recoverFromMissingCollection({
+          error,
+          empty,
+          collection: readCollection,
+          ensureCollection
+        });
+
+    const searchProviders = (input: ProviderSearchInput) =>
+      rawSearchProviders(input).pipe(
+        Effect.catchAll(
+          whenCollectionMissing({
+            providers: [],
+            pagination: { page: input.page, perPage: input.perPage, total: 0 }
+          })
+        )
+      );
+
+    const listCityFacets = (input: ProviderSearchInput) =>
+      rawListCityFacets(input).pipe(
+        Effect.catchAll(whenCollectionMissing<Array<{ value: string; count: number }>>([]))
+      );
     const getProvider = (userId: string) =>
       Effect.tryPromise({
         try: async () => {
@@ -516,3 +542,4 @@ export const getProviderSearchMinRadiusKm = providerSearchConfig.pipe(
 );
 
 export * from './family';
+export { recoverFromMissingCollection } from './recover';

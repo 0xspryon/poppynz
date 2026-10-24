@@ -16,7 +16,9 @@
 		| 'active'
 		| 'declined'
 		| 'ending'
-		| 'ended';
+		| 'ended'
+		// Billing paused on an active contract (B5).
+		| 'suspended';
 </script>
 
 <script lang="ts">
@@ -47,7 +49,8 @@
 		active: 'bg-success-content text-success',
 		declined: 'bg-error-content text-error',
 		ending: 'bg-warning-content text-warning',
-		ended: 'bg-base-300 text-base-content-muted'
+		ended: 'bg-base-300 text-base-content-muted',
+		suspended: 'bg-warning-content text-warning'
 	};
 
 	const defaultLabels: Record<ChipStatus, string> = {
@@ -66,7 +69,8 @@
 		active: 'Active',
 		declined: 'Declined',
 		ending: 'Ending',
-		ended: 'Ended'
+		ended: 'Ended',
+		suspended: 'Suspended'
 	};
 </script>
 

@@ -36,7 +36,8 @@ export const appAc = createAccessControl({
   safetyVerification: ['read', 'write', 'review'],
   serviceCatalogue: ['read', 'write'],
   serviceNeeded: ['read', 'write'],
-  serviceOffered: ['read', 'write'],
+  // `review` is the admin-only decision on a helper's custom service.
+  serviceOffered: ['read', 'write', 'review'],
   // Sales-tax configuration (rates, supply-type treatments, registrations)
   // and its reports — the tax portal. Granted to admins and to the
   // accountant role; always checked as a permission, never a role.
@@ -100,7 +101,7 @@ export const adminRole = appAc.newRole({
   safetyVerification: ['read', 'write', 'review'],
   serviceCatalogue: ['read', 'write'],
   serviceNeeded: ['read', 'write'],
-  serviceOffered: ['read', 'write'],
+  serviceOffered: ['read', 'write', 'review'],
   tax: ['read', 'write'],
   taxReport: ['read'],
   tcs: ['read', 'accept', 'write'],

@@ -60,6 +60,10 @@ const makeService = (
   input: ServiceOfferedCreateInput,
   overrides: Partial<ServiceOffered> = {}
 ): ServiceOffered => ({
+  reviewStatus: 'approved',
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewReason: null,
   id: overrides.id ?? `service-${crypto.randomUUID()}`,
   userId: input.userId,
   catalogueServiceId: input.catalogueServiceId ?? null,

@@ -22,6 +22,7 @@ import {
   ContractRepo,
   ConversationRepo,
   ServiceOfferedRepo,
+  offerFloorCents,
   UserProfileRepo,
   UserRepo,
   type Contract,
@@ -67,7 +68,9 @@ import {
   validateContractEndInput,
   validateContractId,
   validateContractTermsInput,
-  type ContractTermsInput
+  type ContractTermsInput,
+  contractSendJsonError,
+  validateContractSendInput
 } from './contracts.validator';
 
 export class ContractRepoError extends Data.TaggedError('ContractRepoError')<{ cause: SqlError }> {}
@@ -94,15 +97,13 @@ export class UnknownContractServiceError extends Data.TaggedError(
   'UnknownContractServiceError'
 )<{}> {}
 
-/** Rates floor at half the provider's listed rate; violations name the
- * offending line items so the editor can point at the right rows. */
+/** Offers floor at the service's BASE rate (UAT #39) — its catalogue rate,
+ * or the platform base rate for a custom service — never at a fraction of
+ * what the helper lists. Violations name the offending line items (and the
+ * floor) so the editor can point at the right rows. */
 export class RateBelowListedError extends Data.TaggedError('RateBelowListedError')<{
-  violations: Array<{ serviceId: string; listedRateCents: number }>;
+  violations: Array<{ serviceId: string; listedRateCents: number; floorRateCents: number }>;
 }> {}
-
-/** Half the listed rate, rounded up to whole cents — mirrored by the terms
- * editor's inline check. */
-const minAllowedRateCents = (listedRateCents: number) => Math.ceil(listedRateCents / 2);
 
 export class EmptyContractTermsError extends Data.TaggedError('EmptyContractTermsError')<{}> {}
 
@@ -413,7 +414,10 @@ type PricingInputs = {
 /** One week of the pattern, priced for the viewer's side only: the family
  * sees the service fee and its tax added, the helper sees the commission and
  * its tax deducted. Rounded per session by the one rule billing uses. */
-export const weeklyPricing = (version: ContractVersion, inputs: PricingInputs) => {
+export const weeklyPricing = (
+  version: Pick<ContractVersion, 'services' | 'startsOn'>,
+  inputs: PricingInputs
+) => {
   const serviceCents = weeklyServiceCents(version.services);
   const on =
     version.startsOn && (inputs.today === null || version.startsOn > inputs.today)
@@ -549,6 +553,9 @@ const toTermsResponse = (
   weeklyEstimateCents: weeklyEstimateCents(version.services),
   currency: version.services[0]?.currency ?? 'CAD',
   sentAt: version.sentAt?.toISOString() ?? null,
+  // When the family signed with "Sign & send" (null for terms sent before
+  // signatures were recorded).
+  familySignedAt: version.familySignedAt?.toISOString() ?? null,
   expiresAt:
     version.status === 'proposed' && version.sentAt !== null
       ? new Date(version.sentAt.getTime() + expiryDays * 24 * 60 * 60 * 1000).toISOString()
@@ -666,22 +673,34 @@ const loadPendingVersion = (contractId: string) =>
  * with the offending rows. */
 const snapshotTerms = (providerUserId: string, input: ContractTermsInput) =>
   Effect.gen(function* () {
+    // Only services families may see can be contracted — a custom service
+    // awaiting review, or a PSW service without an approved credential, is
+    // as good as unlisted.
     const listed = yield* ServiceOfferedRepo.pipe(
-      Effect.flatMap((repo) => repo.listByUserId(providerUserId)),
+      Effect.flatMap((repo) => repo.listPublishableByUserIds([providerUserId])),
       (errors) => mapContractRepoError(errors)
     );
     const listedById = new Map(listed.map((service) => [service.id, service]));
     const seen = new Set<string>();
     const services: Array<ContractServiceItem> = [];
-    const violations: Array<{ serviceId: string; listedRateCents: number }> = [];
+    const violations: Array<{
+      serviceId: string;
+      listedRateCents: number;
+      floorRateCents: number;
+    }> = [];
     for (const item of input.services) {
       const service = listedById.get(item.serviceId);
       if (!service || seen.has(item.serviceId)) {
         return yield* Effect.fail(new UnknownContractServiceError());
       }
       seen.add(item.serviceId);
-      if (item.rateCents < minAllowedRateCents(service.hourlyRateCents)) {
-        violations.push({ serviceId: service.id, listedRateCents: service.hourlyRateCents });
+      const floorRateCents = offerFloorCents(service);
+      if (item.rateCents < floorRateCents) {
+        violations.push({
+          serviceId: service.id,
+          listedRateCents: service.hourlyRateCents,
+          floorRateCents
+        });
         continue;
       }
       services.push({
@@ -856,16 +875,25 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     // do items whose listing switched currency (cents in different currencies
     // are not comparable).
     const listed = yield* ServiceOfferedRepo.pipe(
-      Effect.flatMap((repo) => repo.listByUserId(contract.providerUserId)),
+      Effect.flatMap((repo) => repo.listPublishableByUserIds([contract.providerUserId])),
       (errors) => mapContractRepoError(errors)
     );
     const listedById = new Map(listed.map((service) => [service.id, service]));
-    const violations: Array<{ serviceId: string; listedRateCents: number }> = [];
+    const violations: Array<{
+      serviceId: string;
+      listedRateCents: number;
+      floorRateCents: number;
+    }> = [];
     const refreshed = pending.services.map((item) => {
       const current = listedById.get(item.serviceId);
       if (!current || current.currency !== item.currency) return item;
-      if (item.rateCents < minAllowedRateCents(current.hourlyRateCents)) {
-        violations.push({ serviceId: item.serviceId, listedRateCents: current.hourlyRateCents });
+      const floorRateCents = offerFloorCents(current);
+      if (item.rateCents < floorRateCents) {
+        violations.push({
+          serviceId: item.serviceId,
+          listedRateCents: current.hourlyRateCents,
+          floorRateCents
+        });
       }
       return { ...item, listedRateCents: current.hourlyRateCents };
     });
@@ -1223,8 +1251,29 @@ export const listContractsProgram = (userAndSession: UserAndSession) =>
       .listForUser(viewer.id)
       .pipe((errors) => mapContractRepoError(errors));
     const visible = rows.filter((row) => !hiddenFromViewer(row, viewer.id));
+    // B5: a suspended contract must read "Suspended" in the list too, not
+    // "Active" — so active rows carry their billing state.
+    const billingRepo = yield* ContractBillingRepo;
+    const billingById = new Map(
+      yield* Effect.forEach(
+        visible.filter((row) => row.status === 'active' || row.status === 'ending'),
+        (row) =>
+          billingRepo.findBilling(row.id).pipe(
+            (errors) => mapContractRepoError(errors),
+            Effect.map((billing) => [row.id, billing] as const)
+          ),
+        { concurrency: 5 }
+      )
+    );
     return {
-      contracts: visible.map((row) => toContractListItem(row, viewer.id, cutoff))
+      contracts: visible.map((row) => {
+        const billing = billingById.get(row.id) ?? null;
+        return {
+          ...toContractListItem(row, viewer.id, cutoff),
+          billingStatus: billing?.status ?? null,
+          billingSuspendedReason: billing?.suspendedReason ?? null
+        };
+      })
     };
   });
 
@@ -1481,6 +1530,53 @@ export const getContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Header
     return yield* getContractProgram(userAndSession, contractId);
   });
 
+/**
+ * B6: the draft editor's price box, live. Prices the family's UNSAVED terms
+ * exactly as a saved draft would be priced (same validation, floor and tax),
+ * without writing anything.
+ */
+export const quoteTermsProgram = (
+  userAndSession: UserAndSession,
+  contractId: string,
+  input: ContractTermsInput
+) =>
+  Effect.gen(function* () {
+    const viewer = userAndSession.user;
+    const contract = yield* loadParticipantContract(contractId, viewer.id);
+    if (sideOf(contract, viewer.id) !== 'family') {
+      return yield* Effect.fail(new NotContractActorError());
+    }
+    const services = yield* snapshotTerms(contract.providerUserId, input);
+    const policy = yield* contractBillingPolicy;
+    const snapshot = yield* loadTaxSnapshot.pipe((errors) => mapContractRepoError(errors));
+    const timeZone = yield* familyTimeZone(contract.familyUserId);
+    const pricing = weeklyPricing(
+      { services, startsOn: input.startsOn ?? null },
+      {
+        snapshot,
+        familyFeeBps: policy.familyCommissionBps,
+        providerCommissionBps: policy.providerCommissionBps,
+        familyProvince: yield* profileProvince(contract.familyUserId),
+        helperProvince: yield* profileProvince(contract.providerUserId),
+        side: 'family',
+        today: timeZone ? todayIn(timeZone) : null
+      }
+    );
+    return { pricing, weeklyEstimateCents: weeklyEstimateCents(services) };
+  });
+
+export const quoteTermsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function* () {
+    const contractId = yield* validateContractId(c.req.param('id'));
+    const rawBody = yield* parseJsonBody(c, contractTermsJsonError);
+    const input = yield* validateContractTermsInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['read'] })(
+      authenticated
+    );
+    return yield* quoteTermsProgram(userAndSession, contractId, input);
+  });
+
 export const saveTermsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const contractId = yield* validateContractId(c.req.param('id'));
@@ -1496,6 +1592,7 @@ export const saveTermsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers)
 export const sendContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const contractId = yield* validateContractId(c.req.param('id'));
+    yield* validateContractSendInput(yield* parseJsonBody(c, contractSendJsonError));
     const authenticated = yield* authenticate(headers);
     const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
       authenticated
@@ -1574,6 +1671,7 @@ export const markContractSeenRouteProgram = (c: HonoContext<HonoEnv>, headers: H
 export type ContractRouteError =
   | Effect.Effect.Error<ReturnType<typeof createContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof listContractsRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof quoteTermsRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof contractsBadgeCountRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof getContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof saveTermsRouteProgram>>
@@ -1655,7 +1753,8 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
         {
           error: {
             code: 'RATE_BELOW_LISTED' as const,
-            message: "Rates start at half the provider's listed rate — you can always offer more.",
+            message:
+              "Offers start at the service's base rate — the lowest rate helpers can charge for it.",
             violations: error.violations
           }
         },
@@ -1858,6 +1957,12 @@ export async function getContractHandler(c: HonoContext<HonoEnv>) {
 export async function saveTermsHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(saveTermsRouteProgram(c, c.req.raw.headers));
+  return exitToResponse(c, exit);
+}
+
+export async function quoteTermsHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(quoteTermsRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 

@@ -107,14 +107,11 @@
 	onMount(() => {
 		void getProfile().then((result) => {
 			if (result.ok) {
-				// The profile response never exposes lat/lng; a saved googlePlaceId
-				// means the API has coordinates for radius search.
-				const profile = result.data as {
-					city?: string | null;
-					stateProvince?: string | null;
-					googlePlaceId?: string | null;
-				};
-				hasLocation = Boolean(profile.googlePlaceId);
+				// The profile never exposes lat/lng; `hasLocation` says whether the
+				// API holds coordinates for radius search (B9: a place id is not
+				// required — seeded locations have coordinates without one).
+				const profile = result.data;
+				hasLocation = profile.hasLocation;
 				originLabel = [profile.city, profile.stateProvince].filter(Boolean).join(', ');
 				// Nearby-first default: providers with a saved location start on a
 				// 10 km distance search unless the URL already carries a search.

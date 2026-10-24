@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { signupRoute } from './auth/signup/signup';
 import { signinRoute } from './auth/signin/signin';
+import { devInboxRoute } from './auth/dev-inbox/dev-inbox';
 import type { HonoEnv } from '../../app-env';
 import { profileRoute } from './me/profile';
 import { onboardingRoute } from './me/onboarding';
@@ -20,6 +21,7 @@ import { adminProviderSearchRoute } from './admin/provider-search';
 import { adminFamilySearchRoute } from './admin/family-search';
 import { serviceCatalogueRoute } from './service-catalogue/service-catalogue';
 import { adminServiceCatalogueRoute } from './admin/service-catalogue';
+import { adminServicesOfferedRoute } from './admin/services-offered';
 import { adminUsersRoute } from './admin/users';
 import { adminUserSearchesRoute } from './admin/user-searches';
 import { userSearchesRoute } from './user-searches/user-searches';
@@ -40,6 +42,7 @@ import { adminTcsRoute } from './admin/tcs';
 export const appRoutes = new Hono<HonoEnv>()
   .route('/auth', signupRoute)
   .route('/auth', signinRoute)
+  .route('/auth', devInboxRoute)
   .route('/me/profile', profileRoute)
   .route('/me/onboarding', onboardingRoute)
   .route('/me/services-offered', servicesOfferedRoute)
@@ -56,6 +59,7 @@ export const appRoutes = new Hono<HonoEnv>()
   .route('/admin/family-search', adminFamilySearchRoute)
   .route('/service-catalogue', serviceCatalogueRoute)
   .route('/admin/service-catalogue', adminServiceCatalogueRoute)
+  .route('/admin/services-offered', adminServicesOfferedRoute)
   .route('/admin/users', adminUsersRoute)
   .route('/admin/user-searches', adminUserSearchesRoute)
   .route('/user-searches', userSearchesRoute)

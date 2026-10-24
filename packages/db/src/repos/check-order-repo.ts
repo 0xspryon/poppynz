@@ -350,6 +350,8 @@ export const CheckOrderRepoLive = Layer.effect(
                     status: 'submitted',
                     source: 'credibled',
                     reason: null,
+                    reviewedBy: null,
+                    reviewedAt: null,
                     deletedAt: null,
                     updatedAt: new Date()
                   },

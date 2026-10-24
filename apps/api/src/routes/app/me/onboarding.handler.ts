@@ -5,6 +5,7 @@ import {
   type DBNotFoundError,
   SafetyVerificationRepo,
   ServiceNeededRepo,
+  UserDismissalRepo,
   UserProfileRepo,
   type Approval,
   type ApprovalRequest,
@@ -178,6 +179,10 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
     const approvalRepo = yield* ApprovalRepo;
     const approvalRequestRepo = yield* ApprovalRequestRepo;
 
+    const dismissals = yield* UserDismissalRepo.pipe(
+      Effect.flatMap((repo) => repo.listKeys(userId)),
+      (errors) => mapRepoError(errors)
+    );
     const [profile, needs, { checklist, warnings }, verification, approval, latestRequest] =
       yield* Effect.all(
         [
@@ -202,13 +207,24 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
     const requiredEntries = checklist.filter((entry) => !entry.isOptional);
     const requiredSubmitted = requiredEntries.filter((entry) => entry.status !== 'missing').length;
     const today = toDateOnly(new Date());
+    const completed = (locationComplete ? 1 : 0) + (needsComplete ? 1 : 0) + requiredSubmitted;
+    const total = 2 + requiredEntries.length;
 
     return {
       userId,
       firstName: profile.firstName,
-      progress: {
-        completed: (locationComplete ? 1 : 0) + (needsComplete ? 1 : 0) + requiredSubmitted,
-        total: 2 + requiredEntries.length
+      progress: { completed, total },
+      // UAT #16: the getting-started pop-up shows only until the family
+      // closes it (recorded server-side, so it holds across devices) or has
+      // nothing left to do — finished every step, or already sent their
+      // profile for review.
+      welcome: {
+        dismissed: dismissals.includes(FAMILY_WELCOME_KEY),
+        show:
+          !dismissals.includes(FAMILY_WELCOME_KEY) &&
+          completed < total &&
+          latestRequest === null &&
+          approval === null
       },
       steps: {
         location: { complete: locationComplete },
@@ -235,6 +251,28 @@ export const getFamilyOnboardingProgram = (userAndSession: UserAndSession) =>
       canSubmit: latestRequest?.status !== 'submitted',
       warnings
     };
+  });
+
+export const FAMILY_WELCOME_KEY = 'family-getting-started';
+
+/** The family closed the getting-started pop-up. */
+export const dismissFamilyWelcomeProgram = (userAndSession: UserAndSession) =>
+  Effect.gen(function* () {
+    const family = yield* ensureFamily(userAndSession);
+    yield* UserDismissalRepo.pipe(
+      Effect.flatMap((repo) => repo.dismiss(family.user.id, FAMILY_WELCOME_KEY)),
+      (errors) => mapRepoError(errors)
+    );
+    return { dismissed: true as const };
+  });
+
+export const dismissFamilyWelcomeRouteProgram = (headers: Headers) =>
+  Effect.gen(function* () {
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, { profile: ['update'] })(
+      authenticated
+    );
+    return yield* dismissFamilyWelcomeProgram(userAndSession);
   });
 
 export const getFamilyOnboardingRouteProgram = (headers: Headers) =>
@@ -291,7 +329,8 @@ export const getOnboardingHistoryRouteProgram = (headers: Headers) =>
 export type OnboardingRouteError =
   | Effect.Effect.Error<ReturnType<typeof getOnboardingRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof getFamilyOnboardingRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof getOnboardingHistoryRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof getOnboardingHistoryRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof dismissFamilyWelcomeRouteProgram>>;
 
 const onboardingErrorToResponse = (c: HonoContext<HonoEnv>, error: OnboardingRouteError) => {
   switch (error._tag) {
@@ -364,5 +403,11 @@ export async function getOnboardingHistoryHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const headers = c.req.raw.headers;
   const exit = await runtime.runPromiseExit(getOnboardingHistoryRouteProgram(headers));
+  return exitToResponse(c, exit);
+}
+
+export async function dismissFamilyWelcomeHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(dismissFamilyWelcomeRouteProgram(c.req.raw.headers));
   return exitToResponse(c, exit);
 }

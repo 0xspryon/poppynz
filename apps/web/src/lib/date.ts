@@ -49,3 +49,24 @@ export function relativeDayLabel(value: string, now: Date = new Date()): string 
 		...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' })
 	});
 }
+
+/**
+ * A CALENDAR date — a document's expiry or issue date, a check's "valid
+ * until" — which has no time of day. The API sends these either as
+ * "YYYY-MM-DD" or as a UTC-midnight timestamp ("2030-01-15T00:00:00.000Z"),
+ * and formatting either through `new Date()` in a zone west of Greenwich
+ * showed the day before (UAT #28). Only the date part is ever read here.
+ */
+export function formatCalendarDate(value: string): string {
+	const datePart = /^(\d{4}-\d{2}-\d{2})/.exec(value)?.[1];
+	return formatDate(datePart ?? value);
+}
+
+/** "YYYY-MM-DD" for a date input, in the viewer's own zone (never UTC). */
+export function toDateInputValue(date: Date): string {
+	const pad = (n: number) => String(n).padStart(2, '0');
+	return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/** Today as "YYYY-MM-DD" in the viewer's zone. */
+export const todayInputValue = (now: Date = new Date()) => toDateInputValue(now);

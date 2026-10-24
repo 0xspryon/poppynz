@@ -86,6 +86,13 @@ describe('ContractBillingPanel', () => {
 		unmount(app);
 	});
 
+	it("words the helper's cycle as a share after commission, never 'incl.' (B7)", () => {
+		const app = render({ cycles: [cycle()] }, 'provider');
+		expect(text()).toContain('your share after Poppynz commission');
+		expect(text()).not.toContain('incl.');
+		unmount(app);
+	});
+
 	it('tells the helper not to work suspended days', () => {
 		const app = render({ status: 'suspended', suspendedReason: 'card' }, 'provider');
 		expect(text()).toContain("Don't work suspended days");

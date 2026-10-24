@@ -243,7 +243,8 @@ const makeApp = (
             shortBio: null,
             googlePlaceId: 'place-1',
             latitude: 43.6532,
-            longitude: -79.3832
+            longitude: -79.3832,
+            image: 'users/provider-1/public/profile-pictures/me.jpg'
           }),
         updateByUserId: (userId) =>
           Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId })),
@@ -260,6 +261,11 @@ const makeApp = (
               description: null,
               hourlyRateCents: 2500,
               currency: 'CAD',
+              catalogueServiceId: null,
+              reviewStatus: 'approved' as const,
+              reviewedBy: null,
+              reviewedAt: null,
+              reviewReason: null,
               deletedAt: null,
               createdAt: new Date('2026-06-12T00:00:00.000Z'),
               updatedAt: new Date('2026-06-12T00:00:00.000Z')

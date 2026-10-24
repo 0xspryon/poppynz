@@ -1,9 +1,10 @@
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
-import { and, desc, eq, gt, inArray, type InferSelectModel, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, type InferSelectModel, sql } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
-import { approval, serviceOffered, user, userProfile } from '../schema';
+import { approval, user, userProfile } from '../schema';
+import { type PublishableService, selectPublishableServices } from './service-offered-repo';
 
 export type ProviderSearchProfile = InferSelectModel<typeof userProfile> & {
   email: string;
@@ -14,7 +15,9 @@ export type ProviderSearchProfile = InferSelectModel<typeof userProfile> & {
 };
 
 export type ProviderSearchApproval = InferSelectModel<typeof approval>;
-export type ProviderSearchService = InferSelectModel<typeof serviceOffered>;
+/** Only publishable services (approved, credential satisfied) ever reach the
+ * index or a family's view of a helper. */
+export type ProviderSearchService = PublishableService;
 
 export type ProviderSearchCandidate = {
   profile: ProviderSearchProfile;
@@ -95,11 +98,7 @@ export const ProviderSearchRepoLive = Layer.effect(
         .limit(1)
         .pipe(Effect.map((rows) => rows[0] ?? null));
 
-    const listServices = (userId: string) =>
-      db
-        .select()
-        .from(serviceOffered)
-        .where(and(eq(serviceOffered.userId, userId), isNull(serviceOffered.deletedAt)));
+    const listServices = (userId: string) => selectPublishableServices(db, [userId]);
 
     const listCandidatesByUserIds = (
       userIds: Array<string>
@@ -124,10 +123,7 @@ export const ProviderSearchRepoLive = Layer.effect(
               )
             )
             .orderBy(desc(approval.expiresAt)),
-          services: db
-            .select()
-            .from(serviceOffered)
-            .where(and(inArray(serviceOffered.userId, userIds), isNull(serviceOffered.deletedAt)))
+          services: selectPublishableServices(db, userIds)
         },
         { concurrency: 'unbounded' }
       ).pipe(

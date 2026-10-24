@@ -18,6 +18,7 @@
 		requestContractChanges,
 		saveContractTerms,
 		sendContract,
+		quoteContractTerms,
 		withdrawContract,
 		type ContractDetail,
 		type ContractTermsInput
@@ -63,6 +64,8 @@
 
 	let busy = $state(false);
 	let acceptConfirmOpen = $state(false);
+	// The family's explicit "Sign & send" (UAT #41): terms wait here until confirmed.
+	let signTerms = $state<ContractTermsInput | null>(null);
 	let withdrawConfirmOpen = $state(false);
 	let requestChangesConfirmOpen = $state(false);
 	let declineOpen = $state(false);
@@ -165,13 +168,19 @@
 		// still owning the key may land. A failure clears the key so the next
 		// render (or Retry) refetches instead of demanding a full reload.
 		const applyServices = (
-			services: Array<{ id: string; name: string; hourlyRateCents: number }>
+			services: Array<{
+				id: string;
+				name: string;
+				hourlyRateCents: number;
+				floorRateCents: number;
+			}>
 		) => {
 			if (loadedServicesFor !== key) return;
 			editorServices = services.map((service) => ({
 				id: service.id,
 				name: service.name,
-				hourlyRateCents: service.hourlyRateCents
+				hourlyRateCents: service.hourlyRateCents,
+				floorRateCents: service.floorRateCents
 			}));
 		};
 		const applyFailure = () => {
@@ -187,7 +196,7 @@
 	const termsErrorToast = (error: { code: string; message: string }) => {
 		if (error.code === 'RATE_BELOW_LISTED') {
 			toast.error(
-				`Some rates are below ${firstName}'s current listed rate — raise them and retry.`
+				`Some rates are below the base rate for the service — raise them and retry.`
 			);
 		} else if (error.code === 'UNKNOWN_CONTRACT_SERVICE') {
 			toast.error(`Pick services from ${firstName}'s current list.`);
@@ -252,8 +261,22 @@
 		}
 	}
 
-	async function handleSendTerms(terms: ContractTermsInput) {
+	/** B6: the price box follows the unsaved draft. An invalid draft (a rate
+	 * below the floor, a half-built session) simply shows no price yet. */
+	async function quoteDraft(terms: ContractTermsInput) {
+		const result = await quoteContractTerms(contractId, terms);
+		return result.ok ? result.data.pricing : null;
+	}
+
+	function handleSendTerms(terms: ContractTermsInput) {
 		if (busy) return;
+		signTerms = terms;
+	}
+
+	async function signAndSend() {
+		const terms = signTerms;
+		if (busy || !terms) return;
+		signTerms = null;
 		busy = true;
 		const saved = await saveContractTerms(contractId, terms);
 		if (!saved.ok) {
@@ -264,8 +287,8 @@
 		const sent = await sendContract(contractId);
 		busy = false;
 		if (sent.ok) {
-			toast.success(`${firstName} was notified in Messages and Contracts.`, {
-				title: 'Proposal sent'
+			toast.success(`You signed and sent it. ${firstName} was notified in Messages and Contracts.`, {
+				title: 'Proposal signed & sent'
 			});
 			void refresh(contractId);
 		} else {
@@ -392,8 +415,25 @@
 			return { status: 'awaiting-you' };
 		}
 		if (contract.status === 'changes_requested') return { status: 'changes-requested' };
+		// B5: billing paused — never show "Active" for a suspended contract.
+		if (contract.status === 'active' && contract.billing?.status === 'suspended') {
+			return { status: 'suspended', label: suspendedLabel(contract.billing.suspendedReason) };
+		}
 		return { status: contract.status as ChipStatus };
 	});
+
+	function suspendedLabel(reason: string | null): string {
+		switch (reason) {
+			case 'card':
+				return 'Suspended · card problem';
+			case 'helper_not_ready':
+				return 'Suspended · helper payouts';
+			case 'provider_unavailable':
+				return 'Suspended · helper unavailable';
+			default:
+				return 'Suspended';
+		}
+	}
 
 	const subtitle = $derived.by(() => {
 		if (!contract) return '';
@@ -419,6 +459,9 @@
 			case 'active':
 				return accepted
 					? `v${accepted.version} · signed by both` +
+							(accepted.familySignedAt
+								? ` (family ${formatDate(accepted.familySignedAt)}, helper ${accepted.decidedAt ? formatDate(accepted.decidedAt) : '—'})`
+								: '') +
 							(accepted.decidedAt ? ` · active since ${formatDate(accepted.decidedAt)}` : '')
 					: '';
 			case 'ending':
@@ -610,9 +653,11 @@
 				<i class="las la-check-circle mt-0.5 shrink-0 text-success" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-success">
 					{#if contract.viewerSide === 'family'}
-						Contact details are now shared and weekly payments run on Poppynz.
+						Contact details are now shared. Payments run on Poppynz in 3-day billing cycles — each
+						cycle is charged to your card on file.
 					{:else}
-						Contact details are now shared and you get paid weekly on Poppynz.
+						Contact details are now shared. You're paid on Poppynz for each 3-day billing cycle,
+						after commission and its tax.
 					{/if}
 					{#if contract.endsOn}
 						The contract runs until <strong
@@ -675,13 +720,17 @@
 						pricing={contract.pendingVersion?.status === 'draft'
 							? contract.pendingVersion.pricing
 							: null}
+						onquote={quoteDraft}
 						{busy}
 						onsave={handleSaveDraft}
 						onsend={handleSendTerms}
 					/>
 				{:else if displayTerms}
 					{#if weekGlanceServices.length > 0}
-						<WeekAtAGlance services={weekGlanceServices} />
+						<WeekAtAGlance
+							services={weekGlanceServices}
+							agreed={displayTerms.status === 'accepted'}
+						/>
 					{/if}
 					<ContractTermsView
 						terms={displayTerms}
@@ -870,7 +919,7 @@
 <ConfirmDialog
 	open={acceptConfirmOpen}
 	title="Accept & sign this contract?"
-	body="Signing activates the contract — contact details are shared and weekly payments are set up on Poppynz."
+	body="Signing activates the contract — contact details are shared and payments run on Poppynz in 3-day billing cycles."
 	confirmLabel="Accept & sign"
 	confirmClass="btn-primary"
 	{busy}
@@ -881,6 +930,17 @@
 		<PayoutsReminder />
 	{/if}
 </ConfirmDialog>
+
+<ConfirmDialog
+	open={signTerms !== null}
+	title="Sign & send these terms?"
+	body={`By sending, you sign this proposal as the family. ${firstName} can then accept and sign it, which activates the contract.`}
+	confirmLabel="Sign & send"
+	confirmClass="btn-primary"
+	{busy}
+	onconfirm={() => void signAndSend()}
+	oncancel={() => (signTerms = null)}
+/>
 
 <ConfirmDialog
 	open={withdrawConfirmOpen}

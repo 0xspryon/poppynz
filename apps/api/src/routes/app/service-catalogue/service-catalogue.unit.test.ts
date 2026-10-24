@@ -1,6 +1,8 @@
 import { SqlError } from '@effect/sql/SqlError';
 import {
   DBNotFoundError,
+  type KycDocumentType,
+  makeKycDocumentTypeRepoTest,
   makeServiceCatalogueRepoTest,
   makeSessionRepoTest,
   makeUserRepoTest,
@@ -52,6 +54,7 @@ const session = (): Session => ({
 });
 
 const item = (overrides: Partial<ServiceCatalogueItem> = {}): ServiceCatalogueItem => ({
+  requiredDocumentTypeId: null,
   id: 'item-1',
   name: 'Babysitting',
   category: 'Childcare',
@@ -61,6 +64,21 @@ const item = (overrides: Partial<ServiceCatalogueItem> = {}): ServiceCatalogueIt
   createdAt: new Date('2026-07-01T00:00:00.000Z'),
   updatedAt: new Date('2026-07-01T00:00:00.000Z'),
   deletedAt: null,
+  ...overrides
+});
+
+const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType => ({
+  id: '0197b3a0-0000-7000-8000-0000000000d1',
+  name: 'Personal Support Worker (PSW)',
+  appliesToRole: 'service-provider',
+  isOptional: true,
+  requiresExpiryDate: false,
+  credibledCheckTypeValue: null,
+  credibledCostCents: null,
+  isSafetyGate: false,
+  deletedAt: null,
+  createdAt: new Date('2026-07-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-07-01T00:00:00.000Z'),
   ...overrides
 });
 
@@ -77,6 +95,7 @@ const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
 const makeLayer = (
   options: {
     items?: Array<ServiceCatalogueItem>;
+    documentTypes?: Array<KycDocumentType>;
     hasPermission?: boolean;
     createError?: SqlError;
     onCreate?: (input: {
@@ -92,7 +111,20 @@ const makeLayer = (
   const currentUser = user();
   const currentSession = session();
   const items = options.items ?? [item()];
+  const documentTypes = options.documentTypes ?? [documentType()];
   return Layer.mergeAll(
+    makeKycDocumentTypeRepoTest({
+      listActive: () => Effect.succeed(documentTypes),
+      findActiveById: (id) => {
+        const found = documentTypes.find((type) => type.id === id);
+        return found
+          ? Effect.succeed(found)
+          : Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id }));
+      },
+      create: () => Effect.fail(new SqlError({ message: 'not used' })),
+      update: (id) => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id })),
+      softDelete: (id) => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id }))
+    }),
     makeAuthServiceTest({
       getSession: () =>
         Effect.succeed({ user: { id: currentUser.id }, session: { id: currentSession.id } }),
@@ -271,5 +303,61 @@ describe('service catalogue route programs', () => {
       )
     );
     expect(getFailure(exit)._tag).toBe('ServiceCatalogueRepoError');
+  });
+
+  it('links a required credential when creating an item (PSW gate)', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const result = await Effect.runPromise(
+      createServiceCatalogueItemRouteProgram(
+        contextWithJson({
+          name: 'Personal support (PSW)',
+          category: 'Elderly Care',
+          baseHourlyRateCents: 2500,
+          requiredDocumentTypeId: documentType().id
+        }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ onCreate: (input) => created.push(input) })))
+    );
+    expect(result.requiredDocumentTypeId).toBe(documentType().id);
+    expect(created[0]).toMatchObject({ requiredDocumentTypeId: documentType().id });
+  });
+
+  it('rejects a credential that is not a live helper document type', async () => {
+    const familyType = documentType({
+      id: '0197b3a0-0000-7000-8000-0000000000d2',
+      appliesToRole: 'family'
+    });
+    for (const requiredDocumentTypeId of [
+      '0197b3a0-0000-7000-8000-0000000000ff',
+      familyType.id
+    ]) {
+      const exit = await Effect.runPromise(
+        updateServiceCatalogueItemRouteProgram(
+          contextWithJson({ requiredDocumentTypeId }),
+          new Headers(),
+          'item-1'
+        ).pipe(
+          Effect.provide(makeLayer({ documentTypes: [documentType(), familyType] })),
+          Effect.exit
+        )
+      );
+      expect(getFailure(exit)._tag).toBe('ServiceCatalogueCredentialInvalidError');
+    }
+  });
+
+  it('clears a credential requirement with null without a lookup', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    await Effect.runPromise(
+      updateServiceCatalogueItemRouteProgram(
+        contextWithJson({ requiredDocumentTypeId: null }),
+        new Headers(),
+        'item-1'
+      ).pipe(
+        Effect.provide(
+          makeLayer({ documentTypes: [], onUpdate: (_id, input) => updates.push(input) })
+        )
+      )
+    );
+    expect(updates).toEqual([{ requiredDocumentTypeId: null }]);
   });
 });

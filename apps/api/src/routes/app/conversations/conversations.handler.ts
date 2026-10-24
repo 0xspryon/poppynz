@@ -7,6 +7,7 @@ import {
   UserProfileRepo,
   UserRepo,
   type Conversation,
+  type ContactDetailKind,
   type ConversationMessage,
   type ConversationWithContext,
   type ReachoutService,
@@ -15,6 +16,7 @@ import {
 import { reachoutConfig } from '@repo/env';
 import { publishNotificationBestEffort } from '@repo/notify';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
+import { detectContactDetails } from '@/api/lib/contact-details';
 import type { HonoContext, HonoEnv } from '../../../app-env';
 import {
   authenticate,
@@ -181,11 +183,18 @@ export const toConversationResponse = (row: ConversationWithContext, viewerUserI
   };
 };
 
-const toMessageResponse = (message: ConversationMessage, viewerUserId: string) => ({
+const toMessageResponse = (
+  message: ConversationMessage,
+  viewerUserId: string,
+  contactWarning: Array<ContactDetailKind> | null = null
+) => ({
   id: message.id,
   body: message.body,
   at: message.createdAt.toISOString(),
-  sentByMe: message.senderUserId === viewerUserId
+  sentByMe: message.senderUserId === viewerUserId,
+  // Contact details were detected: both sides see the off-platform warning
+  // under this message (UAT #38). Never masked — sharing stays allowed.
+  contactWarning
 });
 
 const hasUnread = (response: ReturnType<typeof toConversationResponse>) =>
@@ -287,7 +296,9 @@ export const createReachoutProgram = (
     const selectableServices =
       sender.role === 'family'
         ? yield* ServiceOfferedRepo.pipe(
-            Effect.flatMap((repo) => repo.listByUserId(pair.providerUserId)),
+            // Only what families can see: no pending custom services, no
+            // credential-gated service without its approved credential.
+            Effect.flatMap((repo) => repo.listPublishableByUserIds([pair.providerUserId])),
             (errors) => mapConversationRepoError(errors)
           )
         : yield* ServiceNeededRepo.pipe(
@@ -417,9 +428,11 @@ export const getConversationProgram = (userAndSession: UserAndSession, conversat
     if (!row) {
       return yield* Effect.fail(new ConversationNotFoundError());
     }
-    const messages = yield* conversationRepo
-      .listMessages(conversationId)
-      .pipe((errors) => mapConversationRepoError(errors));
+    const [messages, warnings] = yield* Effect.all([
+      conversationRepo.listMessages(conversationId),
+      conversationRepo.listContactWarnings(conversationId)
+    ]).pipe((errors) => mapConversationRepoError(errors));
+    const warningByMessage = new Map(warnings.map((warning) => [warning.messageId, warning.kinds]));
 
     // The thread renders contract state (the 16h/16j pills) from this summary
     // — contract rows never enter conversation_messages.
@@ -438,7 +451,9 @@ export const getConversationProgram = (userAndSession: UserAndSession, conversat
 
     return {
       conversation: toConversationResponse(row, viewer.id),
-      messages: messages.map((message) => toMessageResponse(message, viewer.id)),
+      messages: messages.map((message) =>
+        toMessageResponse(message, viewer.id, warningByMessage.get(message.id) ?? null)
+      ),
       contract
     };
   });
@@ -550,8 +565,21 @@ export const sendMessageProgram = (
     }
     yield* requireConversationCounterpartApproval(conversation, viewer.id);
 
+    const recipientUserId =
+      conversation.familyUserId === viewer.id
+        ? conversation.providerUserId
+        : conversation.familyUserId;
+    const contactKinds = detectContactDetails(input.body);
     const message = yield* conversationRepo
-      .createMessage({ conversationId, senderUserId: viewer.id, body: input.body })
+      .createMessage({
+        conversationId,
+        senderUserId: viewer.id,
+        body: input.body,
+        // Recorded with the message: date, time, sender, recipient and
+        // conversation, as evidence if a complaint follows.
+        contactWarning:
+          contactKinds.length > 0 ? { recipientUserId, kinds: contactKinds } : undefined
+      })
       .pipe((errors) => mapConversationRepoError(errors));
     // Sending implies the sender has the thread open — keep their read marker
     // current so their own list never flags this conversation as unread.
@@ -560,10 +588,6 @@ export const sendMessageProgram = (
       .pipe((errors) => mapConversationRepoError(errors));
 
     const senderProfile = yield* loadProfileOrNull(viewer.id);
-    const recipientUserId =
-      conversation.familyUserId === viewer.id
-        ? conversation.providerUserId
-        : conversation.familyUserId;
     yield* publishNotificationBestEffort(recipientUserId, {
       type: 'conversation.message',
       payload: {
@@ -571,11 +595,12 @@ export const sendMessageProgram = (
         messageId: message.id,
         senderUserId: viewer.id,
         senderName: displayName(senderProfile, viewer.name),
-        preview: message.body.slice(0, 140)
+        preview: message.body.slice(0, 140),
+        contactWarning: contactKinds.length > 0 ? contactKinds : null
       }
     });
 
-    return toMessageResponse(message, viewer.id);
+    return toMessageResponse(message, viewer.id, contactKinds.length > 0 ? contactKinds : null);
   });
 
 export const markConversationReadProgram = (

@@ -177,7 +177,14 @@
 								· {isFamily ? 'held' : 'charged'} from {formatDateTime(cycle.holdAt)}
 							{/if}
 							{#if cycle.taxLines.length > 0}
-								· incl. {cycle.taxLines.map((line) => line.label).join(', ')}
+								<!-- B7: the helper's amount is what's left after the deduction — never "incl." -->
+								{#if isFamily}
+									· incl. {cycle.taxLines.map((line) => line.label).join(', ')}
+								{:else}
+									· your share after Poppynz commission · tax applied: {cycle.taxLines
+										.map((line) => line.label)
+										.join(', ')}
+								{/if}
 							{/if}
 						</span>
 					</span>

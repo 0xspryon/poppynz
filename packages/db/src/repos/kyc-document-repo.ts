@@ -17,6 +17,13 @@ export type KycDocumentSubmitInput = {
   filename: string;
   fileKey: string;
   expiryDate: Date | null;
+  issuedOn?: string | null;
+};
+
+export type KycDocumentReviewInput = {
+  status: 'approved' | 'rejected';
+  reason: string | null;
+  reviewedBy: string;
 };
 
 export class KycDocumentRepo extends Context.Tag('@repo/db/KycDocumentRepo')<
@@ -33,6 +40,11 @@ export class KycDocumentRepo extends Context.Tag('@repo/db/KycDocumentRepo')<
       expiryDate: Date | null
     ) => Effect.Effect<KycDocument, SqlError | DBNotFoundError>;
     approveSubmittedByUserId: (userId: string) => Effect.Effect<Array<KycDocument>, SqlError>;
+    /** Records an admin decision on one live document (UAT #27). */
+    review: (
+      id: string,
+      input: KycDocumentReviewInput
+    ) => Effect.Effect<KycDocument, SqlError | DBNotFoundError>;
   }
 >() {}
 
@@ -89,9 +101,12 @@ export const KycDocumentRepoLive = Layer.effect(
             filename: input.filename,
             fileKey: input.fileKey,
             expiryDate: input.expiryDate,
+            issuedOn: input.issuedOn ?? null,
             status: 'submitted',
             source: 'upload',
             reason: null,
+            reviewedBy: null,
+            reviewedAt: null,
             deletedAt: null
           })
           .onConflictDoUpdate({
@@ -102,9 +117,13 @@ export const KycDocumentRepoLive = Layer.effect(
               filename: input.filename,
               fileKey: input.fileKey,
               expiryDate: input.expiryDate,
+              issuedOn: input.issuedOn ?? null,
               status: 'submitted',
               source: 'upload',
               reason: null,
+              // A new file is a new review.
+              reviewedBy: null,
+              reviewedAt: null,
               deletedAt: null,
               updatedAt: new Date()
             }
@@ -131,15 +150,42 @@ export const KycDocumentRepoLive = Layer.effect(
           .update(kycDocument)
           .set({ status: 'approved', reason: null, updatedAt: new Date() })
           .where(and(eq(kycDocument.userId, userId), eq(kycDocument.status, 'submitted')))
+          .returning(),
+      review: (id, input) =>
+        db
+          .update(kycDocument)
+          .set({
+            status: input.status,
+            reason: input.reason,
+            reviewedBy: input.reviewedBy,
+            reviewedAt: new Date(),
+            updatedAt: new Date()
+          })
+          .where(and(eq(kycDocument.id, id), isNull(kycDocument.deletedAt)))
           .returning()
+          .pipe(
+            Effect.flatMap((rows) =>
+              rows[0]
+                ? Effect.succeed(rows[0])
+                : Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: id }))
+            )
+          )
     };
   })
 );
 
 export const KycDocumentRepoDefault = KycDocumentRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makeKycDocumentRepoTest = (implementation: Context.Tag.Service<KycDocumentRepo>) =>
-  Layer.succeed(KycDocumentRepo, implementation);
+type KycDocumentService = Context.Tag.Service<KycDocumentRepo>;
+
+/** `review` defaults to not-found so older tests compile unchanged. */
+export const makeKycDocumentRepoTest = (
+  implementation: Omit<KycDocumentService, 'review'> & Partial<Pick<KycDocumentService, 'review'>>
+) =>
+  Layer.succeed(KycDocumentRepo, {
+    review: (id) => Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: id })),
+    ...implementation
+  });
 
 export const EmptyKycDocumentRepoTest = makeKycDocumentRepoTest({
   findByIdWithType: () => Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: '' })),

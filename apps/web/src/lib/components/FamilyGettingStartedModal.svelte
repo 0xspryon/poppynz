@@ -15,6 +15,7 @@
 
 	let { open, state, onclose }: Props = $props();
 
+	const approved = $derived(state.approval !== null);
 	const greeting = $derived(
 		state.firstName ? `Welcome, ${state.firstName}!` : 'Welcome to Poppynz!'
 	);
@@ -44,9 +45,9 @@
 					? 'Submitted — a Poppynz administrator is reviewing it.'
 					: state.safetyVerification.verified
 						? 'Verified. Helpers can find your family.'
-						: 'Upload your vulnerable-sector check. Helpers only see verified families.',
+						: 'Add your criminal record check. Helpers only see verified families.',
 			href: resolve('/family/documents'),
-			cta: 'Upload documents'
+			cta: 'Add your check'
 		}
 	]);
 </script>
@@ -56,7 +57,8 @@
 		<div class="modal-box max-w-lg">
 			<h2 class="font-display text-xl font-bold text-base-content">{greeting}</h2>
 			<p class="mt-1 mb-4 text-sm text-base-content-muted">
-				Three quick steps and you're set — then browse vetted helpers near you.
+				A few quick steps and you're set. Once a Poppynz administrator approves your profile, you can
+				browse vetted helpers near you.
 			</p>
 
 			<ol class="flex flex-col gap-2.5">
@@ -108,15 +110,21 @@
 					<span class="min-w-0 flex-1">
 						<span class="block text-sm font-semibold text-base-content">Find the right helper</span>
 						<span class="mt-0.5 block text-[12.5px] leading-snug text-base-content-muted">
-							Search vetted helpers near you and see their services and rates.
+							{approved
+								? 'Search vetted helpers near you and see their services and rates.'
+								: 'Unlocks once your profile is approved — submit it for review from the Approval page.'}
 						</span>
 					</span>
 				</li>
 			</ol>
 
 			<div class="modal-action">
-				<button type="button" class="btn btn-ghost" onclick={onclose}>Maybe later</button>
-				<button type="button" class="btn btn-primary" onclick={onclose}>Start browsing</button>
+				{#if approved}
+					<button type="button" class="btn btn-ghost" onclick={onclose}>Maybe later</button>
+					<button type="button" class="btn btn-primary" onclick={onclose}>Start browsing</button>
+				{:else}
+					<button type="button" class="btn btn-primary" onclick={onclose}>Got it</button>
+				{/if}
 			</div>
 		</div>
 		<button type="button" class="modal-backdrop" aria-label="Close" onclick={onclose}></button>

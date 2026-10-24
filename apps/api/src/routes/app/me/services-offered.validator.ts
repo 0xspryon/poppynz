@@ -21,6 +21,22 @@ export const serviceOfferedCreateSchema = Schema.Struct({
 
 export const serviceOfferedUpdateSchema = Schema.partial(serviceOfferedCreateSchema);
 
+const serviceReviewValidationError = {
+  code: 'INVALID_SERVICE_REVIEW_INPUT',
+  message: 'Service review input contains invalid or unsupported fields.'
+} as const;
+
+export const serviceOfferedReviewSchema = Schema.Struct({
+  decision: Schema.Literal('approve', 'reject'),
+  reason: Schema.optional(Schema.NullOr(Schema.Trim.pipe(Schema.maxLength(500))))
+});
+
+export const validateServiceOfferedReviewInput = validateInput(
+  serviceOfferedReviewSchema,
+  serviceReviewValidationError
+);
+export const serviceOfferedReviewJsonError = serviceReviewValidationError;
+
 export type ServiceOfferedCreateInput = Schema.Schema.Type<typeof serviceOfferedCreateSchema>;
 export type ServiceOfferedUpdateInput = Schema.Schema.Type<typeof serviceOfferedUpdateSchema>;
 

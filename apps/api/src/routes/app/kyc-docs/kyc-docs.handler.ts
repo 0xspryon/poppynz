@@ -19,6 +19,7 @@ import {
   isAuthError,
   requirePermissions
 } from '@/api/lib/effect-auth';
+import { scheduleProviderSearchReconcile } from '@/api/lib/provider-search-jobs';
 import {
   isRequestValidationError,
   parseJsonBody,
@@ -28,6 +29,7 @@ import {
   kycDocJsonError,
   kycDocTypeJsonError,
   validateKycDocumentExpiryUpdateInput,
+  validateKycDocumentReviewInput,
   validateKycDocumentSubmitInput,
   validateKycDocumentTypeCreateInput,
   validateKycDocumentTypeUpdateInput
@@ -47,6 +49,20 @@ class KycFileUrlError extends Data.TaggedError('KycFileUrlError')<{
 }> {}
 
 const fileViewUrlTtlSeconds = 5 * 60;
+
+/** Date-only YYYY-MM-DD; an issue date can't be in the future. Compared as
+ * strings so no time zone can shift it (UAT #28). */
+const parseIssuedOn = (value: string | null | undefined) => {
+  if (!value) return Effect.succeed(null);
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    return Effect.fail(new KycValidationError({ message: 'Issue date must be a valid date.' }));
+  }
+  if (value > new Date().toISOString().slice(0, 10)) {
+    return Effect.fail(new KycValidationError({ message: 'Issue date cannot be in the future.' }));
+  }
+  return Effect.succeed(value);
+};
 
 function mapKycRepoError<A, R>(
   effect: Effect.Effect<A, SqlError, R>
@@ -114,6 +130,7 @@ const toKycTypeResponse = (type: KycDocumentType) => ({
 });
 const toKycDocResponse = (doc: KycDocument) => ({
   ...doc,
+  reviewedAt: toDateString(doc.reviewedAt),
   expiryDate: toDateString(doc.expiryDate),
   createdAt: doc.createdAt.toISOString(),
   updatedAt: doc.updatedAt.toISOString(),
@@ -298,6 +315,7 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
 
     yield* ensureOwnFileKey(applicant.user.id, input.fileKey);
     const expiryDate = yield* parseFutureDate(input.expiryDate, documentType.requiresExpiryDate);
+    const issuedOn = yield* parseIssuedOn(input.issuedOn);
     const docRepo = yield* KycDocumentRepo;
     const doc = yield* mapKycRepoError(
       docRepo.submit({
@@ -305,9 +323,14 @@ export const submitKycDocumentRouteProgram = (c: HonoContext<HonoEnv>, headers: 
         documentTypeId: input.documentTypeId,
         filename: input.filename,
         fileKey: input.fileKey,
-        expiryDate
+        expiryDate,
+        issuedOn
       })
     );
+    // A re-upload resets review, which can hide a credential-gated service.
+    if (applicant.user.role === 'service-provider') {
+      yield* scheduleProviderSearchReconcile(applicant.user.id);
+    }
 
     // Uploading it yourself supersedes having Credibled fetch it: drop the
     // matching item from the unpaid basket so nobody is charged for a check
@@ -350,6 +373,47 @@ export const updateAdminKycDocumentRouteProgram = (
     return toKycDocResponse(doc);
   });
 
+/**
+ * An admin approves or rejects ONE document (UAT #27): the reviewer and the
+ * time are recorded, a rejection carries a reason the applicant sees.
+ * Approval of the whole account then requires every required document to be
+ * approved (see approval-readiness). Approving a credential can make a
+ * gated service (PSW) visible, so the helper is re-indexed.
+ */
+export const reviewAdminKycDocumentRouteProgram = (
+  c: HonoContext<HonoEnv>,
+  headers: Headers,
+  id: string
+) =>
+  Effect.gen(function* () {
+    const rawBody = yield* parseJsonBody(c, kycDocJsonError);
+    const input = yield* validateKycDocumentReviewInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    const admin = yield* requirePermissions(headers, { kycDocument: ['review'] })(authenticated);
+    const reason = input.reason?.trim() ?? '';
+    if (input.decision === 'reject' && reason.length === 0) {
+      return yield* Effect.fail(
+        new KycValidationError({ message: 'A rejection must say why — the applicant sees this.' })
+      );
+    }
+    const docRepo = yield* KycDocumentRepo;
+    const existing = yield* docRepo.findByIdWithType(id).pipe((errors) => mapKycRepoError(errors));
+    if (existing.deletedAt !== null) {
+      return yield* Effect.fail(new KycNotFoundError({ entity: 'document' }));
+    }
+    const doc = yield* docRepo
+      .review(id, {
+        status: input.decision === 'approve' ? 'approved' : 'rejected',
+        reason: reason.length > 0 ? reason : null,
+        reviewedBy: admin.user.id
+      })
+      .pipe((errors) => mapKycRepoError(errors));
+    if (existing.documentType.appliesToRole === 'service-provider') {
+      yield* scheduleProviderSearchReconcile(doc.userId);
+    }
+    return toKycDocResponse(doc);
+  });
+
 // The admin document viewer renders the file in-browser only: short-lived
 // presigned URL, inline disposition — no download affordance on our side.
 export const getAdminKycDocumentFileUrlRouteProgram = (headers: Headers, id: string) =>
@@ -383,6 +447,8 @@ export const getAdminKycDocumentFileUrlRouteProgram = (headers: Headers, id: str
         filename: doc.filename,
         status: doc.status,
         expiryDate: toDateString(doc.expiryDate),
+        issuedOn: doc.issuedOn,
+        reviewedAt: toDateString(doc.reviewedAt),
         submittedAt: doc.createdAt.toISOString()
       },
       documentType: {
@@ -400,7 +466,8 @@ export type KycDocsRouteError =
   | Effect.Effect.Error<ReturnType<typeof deleteKycDocumentTypeRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof submitKycDocumentRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof updateAdminKycDocumentRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof getAdminKycDocumentFileUrlRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof getAdminKycDocumentFileUrlRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof reviewAdminKycDocumentRouteProgram>>;
 
 const kycDocsErrorToResponse = (c: HonoContext<HonoEnv>, error: KycDocsRouteError) => {
   if (isAuthError(error)) return authErrorToResponse(c, error);
@@ -533,5 +600,14 @@ export async function getAdminKycDocumentFileUrlHandler(c: HonoContext<HonoEnv>)
   const headers = c.req.raw.headers;
   const id = c.req.param('id') ?? '';
   const exit = await runtime.runPromiseExit(getAdminKycDocumentFileUrlRouteProgram(headers, id));
+  return exitToResponse(c, exit);
+}
+
+export async function reviewAdminKycDocumentHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const id = c.req.param('id') ?? '';
+  const exit = await runtime.runPromiseExit(
+    reviewAdminKycDocumentRouteProgram(c, c.req.raw.headers, id)
+  );
   return exitToResponse(c, exit);
 }

@@ -46,6 +46,7 @@ import {
   endContractRouteProgram,
   getContractRouteProgram,
   listContractsRouteProgram,
+  quoteTermsRouteProgram,
   markContractSeenRouteProgram,
   requestChangesRouteProgram,
   saveTermsRouteProgram,
@@ -141,6 +142,10 @@ const profile = (
 });
 
 const offeredService = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
+  reviewStatus: 'approved',
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewReason: null,
   id: SERVICE_ID,
   userId: 'provider-1',
   catalogueServiceId: null,
@@ -216,6 +221,8 @@ const activeConversation = (overrides: Partial<Conversation> = {}): Conversation
   ...overrides
 });
 
+const SIGNED = { signed: true };
+
 const makeContext = (options: { body?: unknown; params?: Record<string, string> } = {}) =>
   ({
     req: {
@@ -245,6 +252,8 @@ const makeLayer = (
     contracts?: Array<ContractWithContext>;
     versions?: Array<ContractVersion>;
     offered?: Array<ServiceOffered>;
+    /** The catalogue base rate behind every offered service (null = custom). */
+    catalogueBaseRateCents?: number | null;
     createFailsWith?: SqlError;
     listForUserFailsWith?: SqlError;
     /** Per-call findByConversationId results (consumed in order). */
@@ -363,6 +372,15 @@ const makeLayer = (
     }),
     makeServiceOfferedRepoTest({
       listByUserId: () => Effect.succeed(options.offered ?? [offeredService()]),
+      listPublishableByUserIds: () =>
+        Effect.succeed(
+          (options.offered ?? [offeredService()])
+            .filter((service) => service.reviewStatus === 'approved')
+            .map((service) => ({
+              ...service,
+              catalogueBaseRateCents: options.catalogueBaseRateCents ?? null
+            }))
+        ),
       findByIdForUser: () => Effect.die('not used'),
       create: () => Effect.die('not used'),
       updateByIdForUser: () => Effect.die('not used'),
@@ -685,12 +703,14 @@ describe('PUT /contracts/:id/terms', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'UnknownContractServiceError' });
   });
 
-  it('floors rates at half the listed rate and names the offending rows', async () => {
+  it('floors offers at the base rate, not half the listed rate (UAT #39)', async () => {
+    // Listed at $25, custom service: the floor is the $20 platform base rate,
+    // so the old half-the-listing $12.50 offer is refused.
     const exit = await Effect.runPromiseExit(
       saveTermsRouteProgram(
         makeContext({
           params: { id: CONTRACT_ID },
-          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 1249 }] }
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 1250 }] }
         }),
         new Headers()
       ).pipe(
@@ -699,11 +719,53 @@ describe('PUT /contracts/:id/terms', () => {
     );
     expect(getFailure(exit)).toMatchObject({
       _tag: 'RateBelowListedError',
-      violations: [{ serviceId: SERVICE_ID, listedRateCents: 2500 }]
+      violations: [{ serviceId: SERVICE_ID, listedRateCents: 2500, floorRateCents: 2000 }]
     });
   });
 
-  it('accepts a rate at exactly half the listed rate', async () => {
+  it("uses the catalogue item's base rate as the floor for a linked service", async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 2399 }] }
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            catalogueBaseRateCents: 2400
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'RateBelowListedError',
+      violations: [{ serviceId: SERVICE_ID, floorRateCents: 2400 }]
+    });
+  });
+
+  it('treats a service awaiting review as not on the listing', async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            offered: [offeredService({ reviewStatus: 'pending' })]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'UnknownContractServiceError' });
+  });
+
+  it('accepts a rate at exactly the base rate', async () => {
     const updates: Array<any> = [];
     const layer = makeLayer({
       contractById: baseContract(),
@@ -714,14 +776,14 @@ describe('PUT /contracts/:id/terms', () => {
       saveTermsRouteProgram(
         makeContext({
           params: { id: CONTRACT_ID },
-          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 1250 }] }
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 2000 }] }
         }),
         new Headers()
       ).pipe(Effect.provide(layer))
     );
     expect(result).toEqual({ id: CONTRACT_ID, version: 1 });
     expect(updates[0][1]).toMatchObject({
-      services: [{ serviceId: SERVICE_ID, listedRateCents: 2500, rateCents: 1250 }]
+      services: [{ serviceId: SERVICE_ID, listedRateCents: 2500, rateCents: 2000 }]
     });
   });
 
@@ -953,7 +1015,7 @@ describe('POST /contracts/:id/send', () => {
   it('refuses to send without the family province — the service fee is taxed by it', async () => {
     const calls: Array<string> = [];
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             familyProvince: null,
@@ -983,7 +1045,7 @@ describe('POST /contracts/:id/send', () => {
     });
 
     const result = await Effect.runPromise(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(layer)
       )
     );
@@ -1003,9 +1065,23 @@ describe('POST /contracts/:id/send', () => {
     ]);
   });
 
+  it('refuses to send without the explicit Sign & send confirmation (UAT #41)', async () => {
+    for (const body of [undefined, {}, { signed: false }]) {
+      const exit = await Effect.runPromiseExit(
+        sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body }), new Headers()).pipe(
+          Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] }))
+        )
+      );
+      expect(getFailure(exit)).toMatchObject({
+        _tag: 'RequestValidationError',
+        code: 'CONTRACT_SIGNATURE_REQUIRED'
+      });
+    }
+  });
+
   it('refuses an empty draft', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({ contractById: baseContract(), versions: [draftVersion({ services: [] })] })
         )
@@ -1016,27 +1092,28 @@ describe('POST /contracts/:id/send', () => {
 
   it("re-checks the floor against the provider's current listing at send time", async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
             versions: [draftVersion()],
-            // Provider raised their rate enough that the drafted 2600 is now
-            // below the half-the-listing floor (ceil(6000 / 2) = 3000).
-            offered: [offeredService({ hourlyRateCents: 6000 })]
+            // The catalogue base rate rose above the drafted 2600 since the
+            // draft was saved: the floor is re-read at send time.
+            offered: [offeredService({ hourlyRateCents: 6000 })],
+            catalogueBaseRateCents: 3000
           })
         )
       )
     );
     expect(getFailure(exit)).toMatchObject({
       _tag: 'RateBelowListedError',
-      violations: [{ serviceId: SERVICE_ID, listedRateCents: 6000 }]
+      violations: [{ serviceId: SERVICE_ID, listedRateCents: 6000, floorRateCents: 3000 }]
     });
   });
 
   it('fails without a pending draft', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(makeLayer({ contractById: baseContract(), versions: [] }))
       )
     );
@@ -1047,7 +1124,7 @@ describe('POST /contracts/:id/send', () => {
     // A declined contract is provider-visible; the family's revision draft is
     // not theirs to send. (A draft-only contract would 404 instead.)
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1063,7 +1140,7 @@ describe('POST /contracts/:id/send', () => {
   it('refuses to send without a card on file — contract billing charges it', async () => {
     const calls: Array<string> = [];
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1089,7 +1166,7 @@ describe('POST /contracts/:id/send', () => {
     });
 
     await Effect.runPromise(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(layer)
       )
     );
@@ -1106,7 +1183,7 @@ describe('POST /contracts/:id/send', () => {
 
   it('refuses to send without a start date', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({ contractById: baseContract(), versions: [draftVersion({ startsOn: null })] })
         )
@@ -1117,7 +1194,7 @@ describe('POST /contracts/:id/send', () => {
 
   it('refuses to send while the family has no saved location', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1133,7 +1210,7 @@ describe('POST /contracts/:id/send', () => {
   it("refuses a start date that is today in the family's zone", async () => {
     freezeNow('2026-09-10T05:30:00Z'); // Sep 10, 00:30 in Winnipeg
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1148,7 +1225,7 @@ describe('POST /contracts/:id/send', () => {
   it("allows tomorrow in the family's zone even when UTC is already there", async () => {
     freezeNow('2026-09-10T04:30:00Z'); // still Sep 9, 23:30 in Winnipeg
     const result = await Effect.runPromise(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1462,7 +1539,7 @@ describe('POST /contracts/:id/accept', () => {
 describe('contract approval gates', () => {
   it('blocks sending terms to a provider without a live approval', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -1477,7 +1554,7 @@ describe('contract approval gates', () => {
 
   it('blocks a family without a live approval from sending terms', async () => {
     const exit = await Effect.runPromiseExit(
-      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract(),
@@ -2869,7 +2946,7 @@ describe('authorization', () => {
     ],
     [
       'send',
-      () => sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers())
+      () => sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers())
     ],
     [
       'withdraw',
@@ -2914,4 +2991,115 @@ describe('authorization', () => {
       expect(getFailure(exit)).toMatchObject({ _tag: 'ForbiddenError' });
     }
   );
+});
+
+describe('contract list billing state (B5)', () => {
+  it('carries the billing status so a suspended contract is not shown as active', async () => {
+    const billing = makeInMemoryContractBillingRepo({
+      billing: [
+        dummyContractBilling({
+          contractId: CONTRACT_ID,
+          status: 'suspended',
+          suspendedReason: 'card'
+        })
+      ]
+    });
+    const result = await Effect.runPromise(
+      listContractsRouteProgram(new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            billing,
+            contracts: [withContext(baseContract({ status: 'active' }), [], 'family-1')]
+          })
+        )
+      )
+    );
+    expect(result.contracts[0]).toMatchObject({
+      billingStatus: 'suspended',
+      billingSuspendedReason: 'card'
+    });
+  });
+});
+
+describe('live quote for unsaved terms (B6)', () => {
+  const termsBody = {
+    services: [
+      {
+        serviceId: SERVICE_ID,
+        rateCents: 2600,
+        sessions: twoWeekdaySessions,
+        expectations: 'Reading practice.'
+      }
+    ],
+    startsOn: '2026-08-24',
+    endsOn: null
+  };
+  it('prices unsaved terms for the family without writing anything', async () => {
+    const updates: Array<unknown> = [];
+    const result = await Effect.runPromise(
+      quoteTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            onUpdateTerms: (versionId, input) => updates.push([versionId, input])
+          })
+        )
+      )
+    );
+    expect(result.weeklyEstimateCents).toBeGreaterThan(0);
+    expect(result.pricing).toHaveProperty('available');
+    expect(updates).toEqual([]);
+  });
+
+  it('applies the same floor as saving', async () => {
+    const exit = await Effect.runPromiseExit(
+      quoteTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 100 }] }
+        }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] })))
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'RateBelowListedError' });
+  });
+
+  it('is for the family only', async () => {
+    const exit = await Effect.runPromiseExit(
+      quoteTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            viewer: providerUser(),
+            contractById: baseContract({ status: 'declined' }),
+            versions: [draftVersion()]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'NotContractActorError' });
+  });
+
+  it('rejects invalid terms and denies callers without contract read', async () => {
+    const invalid = await Effect.runPromiseExit(
+      quoteTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: { services: 'x' } }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ contractById: baseContract() })))
+    );
+    expect(getFailure(invalid)).toMatchObject({ _tag: 'RequestValidationError' });
+    const denied = await Effect.runPromiseExit(
+      quoteTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ contractById: baseContract(), hasPermission: false })))
+    );
+    expect(getFailure(denied)).toMatchObject({ _tag: 'ForbiddenError' });
+  });
 });

@@ -9,6 +9,8 @@ const approveEndpoint = apiClient.approvals.$post;
 const revokeEndpoint = apiClient.approvals[':id'].revoke.$post;
 const fileUrlEndpoint = apiClient.admin['kyc-docs'][':id']['file-url'].$get;
 const expiryEndpoint = apiClient.admin['kyc-docs'][':id'].$patch;
+const reviewDocumentEndpoint = apiClient.admin['kyc-docs'][':id'].review.$post;
+const safetyFileUrlEndpoint = apiClient.admin['safety-verifications'][':id']['file-url'].$get;
 const remarksEndpoint = apiClient.admin['approval-requests'][':id'].remarks.$put;
 const flagVouchEndpoint = apiClient.admin.vouches[':id'].flag.$post;
 const revokeVouchEndpoint = apiClient.admin.vouches[':id'].revoke.$post;
@@ -35,6 +37,8 @@ export type ApprovalApproveError = ErrorsOf<typeof approveEndpoint>;
 export type ApprovalRevokeError = ErrorsOf<typeof revokeEndpoint>;
 export type KycFileUrlError = ErrorsOf<typeof fileUrlEndpoint>;
 export type KycExpiryUpdateError = ErrorsOf<typeof expiryEndpoint>;
+export type KycReviewError = ErrorsOf<typeof reviewDocumentEndpoint>;
+export type ApprovalBlocker = ApprovalRequestDetail['approvalBlockers'][number];
 
 export async function listApprovalRequests() {
 	return call(listEndpoint());
@@ -83,6 +87,22 @@ export async function updateKycDocumentExpiry(documentId: string, expiryDate: st
 		typeof expiryEndpoint
 	>[0];
 	return call(expiryEndpoint(args));
+}
+
+/** Approve or reject one submitted document (UAT #27). A rejection needs a reason. */
+export async function reviewKycDocument(
+	documentId: string,
+	input: { decision: 'approve' | 'reject'; reason?: string | null }
+) {
+	const args = { param: { id: documentId }, json: input } as unknown as Parameters<
+		typeof reviewDocumentEndpoint
+	>[0];
+	return call(reviewDocumentEndpoint(args));
+}
+
+/** Short-lived inline link to an uploaded safety-gate document (UAT #29). */
+export async function getSafetyDocumentFileUrl(verificationId: string) {
+	return call(safetyFileUrlEndpoint({ param: { id: verificationId } }));
 }
 
 export async function saveGeneralRemarks(id: string, generalRemarks: string) {

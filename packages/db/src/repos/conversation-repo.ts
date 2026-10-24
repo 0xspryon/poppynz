@@ -2,11 +2,20 @@ import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
 import { and, asc, count, eq, inArray, isNull, ne, sql, type InferSelectModel } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
+import * as SqlClient from '@effect/sql/SqlClient';
 import { DrizzleLive } from '../effect-db';
-import { conversation, conversationMessage, userProfile, type ReachoutService } from '../schema';
+import {
+  contactDetailWarning,
+  conversation,
+  conversationMessage,
+  userProfile,
+  type ContactDetailKind,
+  type ReachoutService
+} from '../schema';
 
 export type Conversation = InferSelectModel<typeof conversation>;
 export type ConversationMessage = InferSelectModel<typeof conversationMessage>;
+export type ContactDetailWarning = InferSelectModel<typeof contactDetailWarning>;
 
 /** A conversation row joined with what a viewer's list/thread needs to render:
  * the counterpart's profile, the latest message preview and how many messages
@@ -49,11 +58,17 @@ export class ConversationRepo extends Context.Tag('@repo/db/ConversationRepo')<
       ignoredCutoff: Date
     ) => Effect.Effect<Array<ConversationWithContext>, SqlError>;
     listMessages: (conversationId: string) => Effect.Effect<Array<ConversationMessage>, SqlError>;
+    /** With `contactWarning`, the message and its warning record are
+     * written in one transaction — the evidence can't go missing (UAT #38). */
     createMessage: (input: {
       conversationId: string;
       senderUserId: string;
       body: string;
+      contactWarning?: { recipientUserId: string; kinds: Array<ContactDetailKind> };
     }) => Effect.Effect<ConversationMessage, SqlError>;
+    listContactWarnings: (
+      conversationId: string
+    ) => Effect.Effect<Array<ContactDetailWarning>, SqlError>;
     /** pending|ignored → active (an ignorer may revive by responding within
      * the cool-down); resolves null when the conversation was already active. */
     markResponded: (id: string) => Effect.Effect<Conversation | null, SqlError>;
@@ -68,6 +83,7 @@ export const ConversationRepoLive = Layer.effect(
   ConversationRepo,
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle;
+    const sqlClient = yield* SqlClient.SqlClient;
 
     const counterpartId = (viewerUserId: string) =>
       sql<string>`case when ${conversation.familyUserId} = ${viewerUserId} then ${conversation.providerUserId} else ${conversation.familyUserId} end`;
@@ -227,24 +243,40 @@ export const ConversationRepoLive = Layer.effect(
           )
           .orderBy(asc(conversationMessage.createdAt)),
       createMessage: (input) =>
-        db
-          .insert(conversationMessage)
-          .values({
-            conversationId: input.conversationId,
-            senderUserId: input.senderUserId,
-            body: input.body
+        sqlClient.withTransaction(
+          Effect.gen(function* () {
+            const rows = yield* db
+              .insert(conversationMessage)
+              .values({
+                conversationId: input.conversationId,
+                senderUserId: input.senderUserId,
+                body: input.body
+              })
+              .returning();
+            const message = rows[0]!;
+            if (input.contactWarning && input.contactWarning.kinds.length > 0) {
+              yield* db.insert(contactDetailWarning).values({
+                conversationId: input.conversationId,
+                messageId: message.id,
+                senderUserId: input.senderUserId,
+                recipientUserId: input.contactWarning.recipientUserId,
+                kinds: input.contactWarning.kinds
+              });
+            }
+            // Bump the conversation so list ordering follows activity.
+            yield* db
+              .update(conversation)
+              .set({ updatedAt: new Date() })
+              .where(eq(conversation.id, input.conversationId));
+            return message;
           })
-          .returning()
-          .pipe(
-            Effect.map((rows) => rows[0]),
-            Effect.tap(() =>
-              // Bump the conversation so list ordering follows activity.
-              db
-                .update(conversation)
-                .set({ updatedAt: new Date() })
-                .where(eq(conversation.id, input.conversationId))
-            )
-          ),
+        ),
+      listContactWarnings: (conversationId) =>
+        db
+          .select()
+          .from(contactDetailWarning)
+          .where(eq(contactDetailWarning.conversationId, conversationId))
+          .orderBy(asc(contactDetailWarning.createdAt)),
       markResponded: (id) =>
         db
           .update(conversation)
@@ -289,8 +321,17 @@ export const ConversationRepoLive = Layer.effect(
 
 export const ConversationRepoDefault = ConversationRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makeConversationRepoTest = (implementation: Context.Tag.Service<ConversationRepo>) =>
-  Layer.succeed(ConversationRepo, implementation);
+type ConversationService = Context.Tag.Service<ConversationRepo>;
+
+/** `listContactWarnings` defaults to none so older tests compile unchanged. */
+export const makeConversationRepoTest = (
+  implementation: Omit<ConversationService, 'listContactWarnings'> &
+    Partial<Pick<ConversationService, 'listContactWarnings'>>
+) =>
+  Layer.succeed(ConversationRepo, {
+    listContactWarnings: () => Effect.succeed([]),
+    ...implementation
+  });
 
 export const dummyConversation: Conversation = {
   id: 'conversation-1',

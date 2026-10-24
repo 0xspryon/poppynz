@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatCalendarDate } from '$lib/date';
 	/** Where an applicant's safety check stands, plus the Credibled check list
 	 * they pay for in one go. Data-in: the caller loads the summary and
 	 * refetches through `onchanged`. "Documents" links either navigate
@@ -122,10 +123,13 @@
 	};
 
 	const statusHelp: Record<string, string> = $derived({
+		// UAT #15: once something is on the list, stop asking to add documents.
 		not_started:
-			summary.orderableCheckTypes.length > 0
-				? `Add documents from ${documentsPlace}, then pay for them together here.`
-				: `Upload your vulnerable-sector check from ${documentsPlace} to get started.`,
+			basket.length > 0
+				? 'Your check list is ready — review it below, then pay to start your check.'
+				: summary.orderableCheckTypes.length > 0
+					? `Add documents from ${documentsPlace}, then pay for them together here.`
+					: `Upload your safety document from ${documentsPlace} to get started.`,
 		payment_pending: 'We are confirming your payment. This usually takes a moment.',
 		invited: 'We emailed you a secure link to finish your check — you can also continue below.',
 		in_progress: 'Your check is being processed. We will let you know when it is done.',
@@ -234,7 +238,7 @@
 		<StatusChip status={chip[status] ?? 'missing'} label={statusLabel[status]} />
 		{#if summary.verification.expiresOn && status === 'verified'}
 			<span class="text-xs text-base-content-muted">
-				Valid until {summary.verification.expiresOn}
+				Valid until {formatCalendarDate(summary.verification.expiresOn)}
 			</span>
 		{/if}
 	</div>
@@ -305,7 +309,10 @@
 						<li class="flex items-start justify-between gap-3">
 							<div class="min-w-0">
 								<p class="text-sm font-medium text-base-content">{item.name}</p>
-								<p class="text-xs text-base-content-muted">{item.credibledLabel}</p>
+								<!-- UAT #15: the check's name was printed twice. -->
+								{#if item.credibledLabel.trim().toLowerCase() !== item.name.trim().toLowerCase()}
+									<p class="text-xs text-base-content-muted">{item.credibledLabel}</p>
+								{/if}
 							</div>
 							<div class="flex shrink-0 items-center gap-2">
 								<span class="text-sm tabular-nums text-base-content">

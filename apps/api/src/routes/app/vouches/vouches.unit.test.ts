@@ -10,6 +10,7 @@ import {
   type Approval,
   type Session,
   type User,
+  type UndeliveredVouchRequest,
   type Vouch,
   type VouchTransition,
   type VouchWithApplicant,
@@ -105,6 +106,8 @@ const makeLayer = (
     sent?: Array<VouchRequestMail>;
     /** Profile languages by user id; everyone else has no profile. */
     languages?: Record<string, string>;
+    /** In-memory undelivered requests (R11); shared across calls when passed. */
+    undelivered?: Array<UndeliveredVouchRequest>;
   } = {}
 ) =>
   Layer.mergeAll(
@@ -166,6 +169,28 @@ const makeLayer = (
         return Effect.succeed(options.recent ?? { pendingOpen: 0, createdSince: 0 });
       },
       listForApplicants: () => Effect.succeed(options.listed ?? []),
+      createUndelivered: (input) => {
+        const row = {
+          id: `undelivered-${(options.undelivered?.length ?? 0) + 1}`,
+          createdAt: new Date(),
+          ...input
+        };
+        options.undelivered?.push(row);
+        return Effect.succeed(row);
+      },
+      findOpenUndelivered: (applicantUserId, email) =>
+        Effect.succeed(
+          options.undelivered?.find(
+            (row) =>
+              row.applicantUserId === applicantUserId &&
+              row.voucherEmail === email &&
+              row.expiresAt > new Date()
+          ) ?? null
+        ),
+      listUndeliveredForApplicant: (applicantUserId) =>
+        Effect.succeed(
+          (options.undelivered ?? []).filter((row) => row.applicantUserId === applicantUserId)
+        ),
       listForVoucher: () => Effect.succeed(options.voucherListed ?? []),
       transition: (input) => {
         options.onRepoTouch?.();
@@ -773,6 +798,89 @@ describe('vouch privacy and photos (UAT #35, #36)', () => {
       voucherName: null,
       voucherEmail: 'vera@example.com'
     });
+  });
+
+  it("lists a request to a non-member exactly like an unanswered member's (R11)", async () => {
+    const listFor = async (email: string) => {
+      const undelivered: Array<UndeliveredVouchRequest> = [];
+      const created: Array<unknown> = [];
+      const layer = makeLayer({ undelivered, onCreate: (input) => created.push(input) });
+      await Effect.runPromise(
+        requestVouchRouteProgram(
+          contextWithJson({ email, relationship: 'Neighbour' }),
+          new Headers()
+        ).pipe(Effect.provide(layer))
+      );
+      // A member's request is stored as a vouch; replay it into the listing.
+      const listed: Array<VouchWithVoucher> = created.map((input) => ({
+        ...dummyVouch,
+        ...(input as object),
+        createdAt: new Date(),
+        voucher: {
+          name: voucher.name,
+          email: voucher.email,
+          firstName: null,
+          lastName: null,
+          banned: false,
+          banExpires: null,
+          emailVerified: true,
+          hasLiveApproval: true
+        }
+      }));
+      const result = await Effect.runPromise(
+        listMyVouchesProgram(asSession(applicant)).pipe(
+          Effect.provide(makeLayer({ undelivered, listed }))
+        )
+      );
+      return { result, undelivered, created };
+    };
+
+    const member = await listFor(voucher.email);
+    const stranger = await listFor('nobody@x.dev');
+    expect(member.created).toHaveLength(1);
+    expect(stranger.created).toHaveLength(0);
+    expect(stranger.undelivered).toHaveLength(1);
+    const shape = (entry: Record<string, unknown>) => ({
+      ...entry,
+      id: '<id>',
+      voucherEmail: '<email>',
+      requestedAt: '<at>'
+    });
+    expect(stranger.result.vouches.map(shape)).toEqual(member.result.vouches.map(shape));
+    expect(stranger.result.vouches[0]).toMatchObject({
+      voucherName: null,
+      voucherEmail: 'nobody@x.dev',
+      status: 'pending',
+      relationship: 'Neighbour'
+    });
+  });
+
+  it('never delivers to an ineligible member and does not duplicate an open request', async () => {
+    const undelivered: Array<UndeliveredVouchRequest> = [];
+    const sent: Array<VouchRequestMail> = [];
+    const layer = makeLayer({ undelivered, sent, approved: { [voucher.id]: false } });
+    const ask = () =>
+      Effect.runPromiseExit(
+        requestVouchProgram(
+          asSession(applicant),
+          { email: voucher.email, relationship: 'X' },
+          ctx
+        ).pipe(Effect.provide(layer))
+      );
+    expect(failureOf(await ask())).toMatchObject({ _tag: 'VoucherUnavailableError' });
+    expect(failureOf(await ask())).toMatchObject({ _tag: 'VouchAlreadyRequestedError' });
+    expect(undelivered).toHaveLength(1);
+    expect(sent).toEqual([]);
+  });
+
+  it('records nothing when the applicant names themself', async () => {
+    const undelivered: Array<UndeliveredVouchRequest> = [];
+    await Effect.runPromiseExit(
+      requestVouchProgram(asSession(applicant), { email: applicant.email, relationship: 'Me' }, ctx).pipe(
+        Effect.provide(makeLayer({ undelivered }))
+      )
+    );
+    expect(undelivered).toEqual([]);
   });
 
   it('signs the applicant photo instead of returning the storage key', async () => {

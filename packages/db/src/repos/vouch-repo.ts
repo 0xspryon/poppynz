@@ -14,11 +14,12 @@ import {
 } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DBNotFoundError, DrizzleLive } from '../effect-db';
-import { approval, user, userProfile, vouch } from '../schema';
+import { approval, undeliveredVouchRequest, user, userProfile, vouch } from '../schema';
 
 export type Vouch = InferSelectModel<typeof vouch>;
 export type NewVouch = InferInsertModel<typeof vouch>;
 export type VouchStatus = Vouch['status'];
+export type UndeliveredVouchRequest = InferSelectModel<typeof undeliveredVouchRequest>;
 
 /** What decides whether a voucher's word counts right now. */
 export type VoucherStanding = {
@@ -82,8 +83,25 @@ export class VouchRepo extends Context.Tag('@repo/db/VouchRepo')<
       applicantUserId: string,
       voucherUserId: string
     ) => Effect.Effect<Array<Vouch>, SqlError>;
+    /** Records a request that is never delivered (see the table's comment). */
+    createUndelivered: (input: {
+      applicantUserId: string;
+      voucherEmail: string;
+      relationship: string;
+      expiresAt: Date;
+    }) => Effect.Effect<UndeliveredVouchRequest, SqlError>;
+    /** An unexpired undelivered request from this applicant to this email. */
+    findOpenUndelivered: (
+      applicantUserId: string,
+      voucherEmail: string
+    ) => Effect.Effect<UndeliveredVouchRequest | null, SqlError>;
+    listUndeliveredForApplicant: (
+      applicantUserId: string
+    ) => Effect.Effect<Array<UndeliveredVouchRequest>, SqlError>;
     /** For the request rate limit: open (pending, unexpired) requests now,
-     * and requests created at or after `since`, whatever their status. */
+     * and requests created at or after `since`, whatever their status —
+     * undelivered requests included, so the limit behaves the same whoever
+     * the email belongs to. */
     countRecentByApplicant: (
       applicantUserId: string,
       since: Date
@@ -146,6 +164,31 @@ export const VouchRepoLive = Layer.effect(
             and(eq(vouch.applicantUserId, applicantUserId), eq(vouch.voucherUserId, voucherUserId))
           )
           .orderBy(desc(vouch.createdAt)),
+      createUndelivered: (input) =>
+        db
+          .insert(undeliveredVouchRequest)
+          .values(input)
+          .returning()
+          .pipe(Effect.map((rows) => rows[0])),
+      findOpenUndelivered: (applicantUserId, voucherEmail) =>
+        db
+          .select()
+          .from(undeliveredVouchRequest)
+          .where(
+            and(
+              eq(undeliveredVouchRequest.applicantUserId, applicantUserId),
+              eq(undeliveredVouchRequest.voucherEmail, voucherEmail),
+              gt(undeliveredVouchRequest.expiresAt, new Date())
+            )
+          )
+          .limit(1)
+          .pipe(Effect.map((rows) => rows[0] ?? null)),
+      listUndeliveredForApplicant: (applicantUserId) =>
+        db
+          .select()
+          .from(undeliveredVouchRequest)
+          .where(eq(undeliveredVouchRequest.applicantUserId, applicantUserId))
+          .orderBy(desc(undeliveredVouchRequest.createdAt)),
       countRecentByApplicant: (applicantUserId, since) =>
         Effect.all([
           db
@@ -161,11 +204,29 @@ export const VouchRepoLive = Layer.effect(
           db
             .select({ total: count() })
             .from(vouch)
-            .where(and(eq(vouch.applicantUserId, applicantUserId), gte(vouch.createdAt, since)))
+            .where(and(eq(vouch.applicantUserId, applicantUserId), gte(vouch.createdAt, since))),
+          db
+            .select({ total: count() })
+            .from(undeliveredVouchRequest)
+            .where(
+              and(
+                eq(undeliveredVouchRequest.applicantUserId, applicantUserId),
+                gt(undeliveredVouchRequest.expiresAt, new Date())
+              )
+            ),
+          db
+            .select({ total: count() })
+            .from(undeliveredVouchRequest)
+            .where(
+              and(
+                eq(undeliveredVouchRequest.applicantUserId, applicantUserId),
+                gte(undeliveredVouchRequest.createdAt, since)
+              )
+            )
         ]).pipe(
-          Effect.map(([pending, created]) => ({
-            pendingOpen: pending[0]?.total ?? 0,
-            createdSince: created[0]?.total ?? 0
+          Effect.map(([pending, created, undeliveredOpen, undeliveredCreated]) => ({
+            pendingOpen: (pending[0]?.total ?? 0) + (undeliveredOpen[0]?.total ?? 0),
+            createdSince: (created[0]?.total ?? 0) + (undeliveredCreated[0]?.total ?? 0)
           }))
         ),
       listForApplicants: (applicantUserIds) =>
@@ -290,8 +351,22 @@ export const VouchRepoLive = Layer.effect(
 
 export const VouchRepoDefault = VouchRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makeVouchRepoTest = (implementation: Context.Tag.Service<VouchRepo>) =>
-  Layer.succeed(VouchRepo, implementation);
+type VouchRepoService = Context.Tag.Service<VouchRepo>;
+type UndeliveredMethods = 'createUndelivered' | 'findOpenUndelivered' | 'listUndeliveredForApplicant';
+
+/** The undelivered-request methods default to an empty table so older tests
+ * compile unchanged. */
+export const makeVouchRepoTest = (
+  implementation: Omit<VouchRepoService, UndeliveredMethods> &
+    Partial<Pick<VouchRepoService, UndeliveredMethods>>
+) =>
+  Layer.succeed(VouchRepo, {
+    createUndelivered: (input) =>
+      Effect.succeed({ id: 'undelivered-1', createdAt: new Date(), ...input }),
+    findOpenUndelivered: () => Effect.succeed(null),
+    listUndeliveredForApplicant: () => Effect.succeed([]),
+    ...implementation
+  });
 
 export const dummyVouch: Vouch = {
   id: 'vouch-1',

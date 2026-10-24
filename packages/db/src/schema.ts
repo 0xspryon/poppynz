@@ -320,6 +320,29 @@ export const vouch = appDb.table(
   ]
 );
 
+// A vouch request whose email names nobody who can vouch (no account, the
+// wrong role, not in good standing, or a pair that is closed). It is kept so
+// the applicant's own list shows it exactly like a delivered request — the
+// list must not reveal who is a member (R11, UAT #36) — but it is never
+// delivered to anyone and simply expires. Delivered requests live in vouches.
+export const undeliveredVouchRequest = appDb.table(
+  'undelivered_vouch_requests',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    applicantUserId: text('applicant_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    // As the applicant typed it (normalised to lowercase by the validator).
+    voucherEmail: text('voucher_email').notNull(),
+    relationship: text('relationship').notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [index('undelivered_vouch_requests_applicant_idx').on(table.applicantUserId)]
+);
+
 export const kycDocumentType = appDb.table(
   'kyc_document_types',
   {

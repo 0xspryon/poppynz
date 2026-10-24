@@ -4,6 +4,7 @@ import {
   UserProfileRepo,
   UserRepo,
   VouchRepo,
+  type UndeliveredVouchRequest,
   type VouchWithVoucher
 } from '@repo/db';
 import { publishNotificationBestEffort } from '@repo/notify';
@@ -91,6 +92,19 @@ const toApplicantVouch = (vouch: VouchWithVoucher, now: Date) => ({
   requestedAt: vouch.createdAt.toISOString()
 });
 
+/** An undelivered request (R11) reads exactly like a delivered one nobody
+ * has answered yet: pending until it expires, no name. */
+const toApplicantUndeliveredVouch = (request: UndeliveredVouchRequest, now: Date) => ({
+  id: request.id,
+  voucherName: null,
+  voucherEmail: request.voucherEmail,
+  relationship: request.relationship,
+  status: (request.expiresAt <= now ? 'expired' : 'pending') as ReturnType<
+    typeof applicantVouchStatus
+  >,
+  requestedAt: request.createdAt.toISOString()
+});
+
 /** The admin's full view of one vouch — answers included. Used by the
  * approval-request detail; never returned from an applicant route. */
 export const toAdminVouch = (vouch: VouchWithVoucher, now: Date) => ({
@@ -155,6 +169,45 @@ export const requestVouchProgram = (
       return yield* Effect.fail(new VouchRateLimitedError());
     }
 
+    // From here on, an email that can't receive the request is recorded as
+    // an undelivered request instead (R11): the applicant's list then shows
+    // it exactly as it would a member's, so it can't be used to learn who is
+    // on Poppynz. The route still answers with the same vague confirmation.
+    return yield* deliverVouchRequest(applicant, input, context).pipe(
+      Effect.catchTag('VoucherUnavailableError', (unavailable) =>
+        recordUndeliveredRequest(applicant.id, input).pipe(
+          Effect.zipRight(Effect.fail(unavailable))
+        )
+      )
+    );
+  });
+
+const recordUndeliveredRequest = (applicantUserId: string, input: VouchRequestInput) =>
+  Effect.gen(function* () {
+    const vouchRepo = yield* VouchRepo;
+    const open = yield* vouchRepo
+      .findOpenUndelivered(applicantUserId, input.email)
+      .pipe(Effect.mapError(repoError));
+    if (open) {
+      return yield* Effect.fail(new VouchAlreadyRequestedError());
+    }
+    yield* vouchRepo
+      .createUndelivered({
+        applicantUserId,
+        voucherEmail: input.email,
+        relationship: input.relationship,
+        expiresAt: new Date(Date.now() + vouchRequestTtlMs)
+      })
+      .pipe(Effect.mapError(repoError));
+  });
+
+const deliverVouchRequest = (
+  applicant: UserAndSession['user'],
+  input: VouchRequestInput,
+  context: { uiOrigin: string }
+) =>
+  Effect.gen(function* () {
+    const vouchRepo = yield* VouchRepo;
     const userRepo = yield* UserRepo;
     const voucher = yield* userRepo.findByEmail(input.email).pipe(
       Effect.catchTags({
@@ -250,12 +303,18 @@ export const requestVouchProgram = (
 export const listMyVouchesProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const vouchRepo = yield* VouchRepo;
-    const vouches = yield* vouchRepo
-      .listForApplicants([userAndSession.user.id])
-      .pipe(Effect.mapError(repoError));
+    const [vouches, undelivered] = yield* Effect.all([
+      vouchRepo.listForApplicants([userAndSession.user.id]),
+      vouchRepo.listUndeliveredForApplicant(userAndSession.user.id)
+    ]).pipe(Effect.mapError(repoError));
     const now = new Date();
+    // Newest first across both kinds, as the delivered list already is.
+    const listed = [
+      ...vouches.map((vouch) => toApplicantVouch(vouch, now)),
+      ...undelivered.map((request) => toApplicantUndeliveredVouch(request, now))
+    ].sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
     return {
-      vouches: vouches.map((vouch) => toApplicantVouch(vouch, now)),
+      vouches: listed,
       counting: summariseVouches(vouches, now).counting,
       recommended: RECOMMENDED_VOUCHES
     };
@@ -459,8 +518,9 @@ export const requestVouchRouteProgram = (c: HonoContext<HonoEnv>, headers: Heade
     // UAT #36: the answer must not reveal whether the email belongs to a
     // member — no name, and the same confirmation whether a request was
     // created, the address is unknown or ineligible, or one is already open.
-    // The vouch itself shows up in the applicant's list only once sent, and
-    // without the voucher's name until they respond.
+    // The request shows up in the applicant's list either way (undelivered
+    // when the email can't vouch), without the voucher's name until they
+    // respond.
     yield* requestVouchProgram(userAndSession, input, {
       uiOrigin: resolveUiOrigin(headers)
     }).pipe(

@@ -310,11 +310,6 @@ If anyone appears to be in immediate danger, contact emergency services first. S
 
 **27.6** If the Platform provides a translation, the English version governs to the extent permitted by law unless applicable law requires otherwise.
 
-<!-- DRAFT — PENDING LEGAL REVIEW (UAT #38, 2026-10-24). Do not publish a new
-     Terms version containing 27.7 until legal has approved the wording. -->
-
-**27.7** Poppynz’s protections, including identity and background vetting, payment protection and dispute support, apply only to communications, contracts and payments made through the Poppynz platform. If you choose to communicate, make arrangements or pay outside the platform, you do so at your own risk, and Poppynz is not responsible for any loss, dispute or harm arising from those dealings.
-
 # **28\. Contact**
 
 Full St3am Ahead Inc. dba Poppynz

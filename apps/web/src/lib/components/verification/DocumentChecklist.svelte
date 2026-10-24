@@ -113,7 +113,8 @@
 			: await uploadKycDocument({
 					documentTypeId: uploadTarget.documentTypeId,
 					file: input.file,
-					expiryDate: input.expiryDate
+					expiryDate: input.expiryDate,
+					issuedOn: input.issuedOn ?? null
 				});
 
 		if (result.ok) {

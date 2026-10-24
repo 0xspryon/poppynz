@@ -307,3 +307,35 @@ describe('SafetyCheckPanel sales tax', () => {
 		unmount(app);
 	});
 });
+
+describe('SafetyCheckPanel check list (UAT #15)', () => {
+	afterEach(() => {
+		document.body.innerHTML = '';
+	});
+
+	it('prints the check name once and stops asking to add documents', () => {
+		const app = mount(SafetyCheckPanel, {
+			target: document.body,
+			props: {
+				summary: summary({
+					basket: [
+						{
+							id: 'item-1',
+							documentTypeId: 'type-1',
+							name: 'Enhanced Canadian Criminal Record Check',
+							credibledLabel: 'Enhanced Canadian Criminal Record Check',
+							costCents: 5500
+						}
+					]
+				}),
+				onchanged: vi.fn(async () => {})
+			}
+		});
+		flushSync();
+		const text = document.body.textContent ?? '';
+		unmount(app);
+		expect(text.split('Enhanced Canadian Criminal Record Check').length - 1).toBe(1);
+		expect(text).not.toContain('Add documents from');
+		expect(text).toContain('Your check list is ready');
+	});
+});

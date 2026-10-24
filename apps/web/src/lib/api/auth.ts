@@ -138,3 +138,11 @@ export async function signOut(): Promise<void> {
 	const { endSession } = await import('./profile');
 	endSession();
 }
+
+const devMagicLinkEndpoint = apiClient.auth.dev['magic-link'].$get;
+
+/** Dev only (UAT #32, B10): the latest real magic link sent to `email`, for
+ * the check-email page's mock inbox. The API answers 404 outside dev. */
+export async function getDevMagicLink(email: string) {
+	return call(devMagicLinkEndpoint({ query: { email } } as never));
+}

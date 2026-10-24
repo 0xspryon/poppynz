@@ -15,9 +15,11 @@
 
 	interface Props {
 		services: ContractServiceItem[];
+		/** Signed terms read "Agreed", not "Proposed" (UAT #40). */
+		agreed?: boolean;
 	}
 
-	let { services }: Props = $props();
+	let { services, agreed = false }: Props = $props();
 
 	/** Chip palette by service order — soft tint + readable label color, cycled
 	 * (the design shows three; four covers the 20-service cap without repeats
@@ -65,7 +67,7 @@
 <div class="rounded-xl border border-card-border bg-base-100 px-4 py-3.5">
 	<div class="mb-2.5 flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
 		<h3 class="text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
-			Proposed week at a glance
+			{agreed ? 'Agreed week at a glance' : 'Proposed week at a glance'}
 		</h3>
 		<p class="text-[11px] text-outline">all services combined — hold it against your own week</p>
 	</div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { CONTACT_DETAILS_WARNING, STANDING_CHAT_NOTICE } from '$lib/off-platform-notice';
 	/** Shared Messages screen for both roles (design 16b/16c). Desktop shows the
 	 * conversation list and the thread side by side; on mobile the `?c=` query
 	 * param switches between the list screen and the chat screen, so the back
@@ -191,6 +192,9 @@
 		sending = false;
 		if (result.ok) {
 			draft = '';
+			if (result.data.contactWarning) {
+				toast.info(CONTACT_DETAILS_WARNING, { title: 'Contact details shared' });
+			}
 			thread = thread && {
 				...thread,
 				messages: [...thread.messages, result.data]
@@ -616,6 +620,17 @@
 							>
 								{message.body}
 							</div>
+							{#if message.contactWarning}
+								<!-- UAT #38: both people see this; the API recorded it. -->
+								<p
+									class="mt-1.5 flex items-start gap-1.5 rounded-md border border-warning-border
+										bg-warning-content/40 px-2.5 py-1.5 text-[11px] leading-snug text-warning"
+									role="note"
+								>
+									<i class="las la-exclamation-triangle mt-0.5 shrink-0" aria-hidden="true"></i>
+									{CONTACT_DETAILS_WARNING}
+								</p>
+							{/if}
 							<div
 								class={[
 									'mt-1 text-[10.5px] text-outline',
@@ -631,6 +646,10 @@
 			</div>
 
 			<div class="px-4 pt-2 pb-4 lg:px-6">
+				<p class="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-outline">
+					<i class="las la-shield-alt mt-0.5 shrink-0" aria-hidden="true"></i>
+					{STANDING_CHAT_NOTICE}
+				</p>
 				{#if composerState === 'active'}
 					<form
 						class="flex items-center gap-2 rounded-pill border-[1.5px] border-outline-variant

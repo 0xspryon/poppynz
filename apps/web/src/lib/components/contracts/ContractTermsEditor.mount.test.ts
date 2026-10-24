@@ -39,7 +39,7 @@ const baseProps = {
 
 const sendButton = () =>
 	[...document.querySelectorAll('button')].find((button) =>
-		button.textContent?.includes('Send to Maria')
+		button.textContent?.includes('Sign & send to Maria')
 	) as HTMLButtonElement;
 
 describe('ContractTermsEditor', () => {

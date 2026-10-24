@@ -83,6 +83,15 @@
 	const requestStatus = $derived(onboarding?.latestApprovalRequest?.status ?? null);
 	const approved = $derived(onboarding?.approval != null);
 
+	const PROFILE_FIELD_LABELS: Record<string, string> = {
+		photo: 'profile photo',
+		firstName: 'first name',
+		lastName: 'last name',
+		phoneNumber: 'phone number',
+		location: 'location',
+		shortBio: 'short bio'
+	};
+
 	const cards = $derived.by((): Array<StepCard> => {
 		if (!onboarding) return [];
 		const { profile, documents, services } = onboarding.steps;
@@ -94,7 +103,11 @@
 				tint: 'bg-base-400 text-neutral',
 				title: 'Tell families about yourself',
 				body: 'Add your photo, location and a short introduction.',
-				detail: null,
+				// UAT #21: say exactly what is still missing (it was the photo).
+				detail:
+					!profile.complete && profile.missingFields.length > 0
+						? `Still missing: ${profile.missingFields.map((field) => PROFILE_FIELD_LABELS[field]).join(', ')}`
+						: null,
 				complete: profile.complete,
 				href: resolve('/service-provider/profile'),
 				cta: profile.complete ? 'Edit profile' : 'Complete profile'
@@ -105,7 +118,7 @@
 				icon: 'la-id-card',
 				tint: 'bg-warning-content text-accent',
 				title: 'Verify your identity',
-				body: "Upload a government-issued ID. It's never shown to families.",
+				body: "Upload a government-issued ID and add your criminal record check. They're never shown to families.",
 				detail:
 					!documents.complete && documents.requiredTotal > 1
 						? `${documents.requiredSubmitted} of ${documents.requiredTotal} documents submitted`

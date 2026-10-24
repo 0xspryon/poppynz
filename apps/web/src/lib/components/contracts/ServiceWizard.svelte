@@ -1,6 +1,12 @@
 <script lang="ts" module>
 	/** One selectable service from the provider's current listing. */
-	export type WizardService = { id: string; name: string; hourlyRateCents: number };
+	/** `floorRateCents`: the lowest offer — the service's base rate (UAT #39). */
+	export type WizardService = {
+		id: string;
+		name: string;
+		hourlyRateCents: number;
+		floorRateCents?: number;
+	};
 
 	/** One configured line item — the wizard's result and the draft's rows. */
 	export type ServiceLineItem = {
@@ -118,6 +124,8 @@
 			: null;
 	});
 
+	const floorOf = (service: WizardService) => service.floorRateCents ?? service.hourlyRateCents;
+
 	const rateCents = $derived(dollarsToCents(rateInput));
 	const totalMinutes = $derived(weeklyMinutes(sessions));
 	const weeklyCents = $derived(rateCents !== null ? serviceWeeklyCents(rateCents, sessions) : null);
@@ -192,10 +200,11 @@
 			rateError = 'Enter a valid hourly rate.';
 			return null;
 		}
-		// Mirrors the API's floor: half the listed rate, rounded up to whole cents.
-		const minRateCents = Math.ceil(service.hourlyRateCents / 2);
+		// Mirrors the API's floor: the service's base rate (UAT #39) — never
+		// half the listed rate. The server re-checks it either way.
+		const minRateCents = floorOf(service);
 		if (cents < minRateCents) {
-			rateError = `Starts at half the listed rate — $${centsToDollars(minRateCents)}/hr or more.`;
+			rateError = `Offers start at the $${centsToDollars(minRateCents)}/hr base rate for this service.`;
 			return null;
 		}
 		// Mirrors the API's upper bound so the failure is inline, not a toast.
@@ -378,7 +387,8 @@
 					{#if pickedService}
 						{counterpartFirstName}'s listed rate is ${centsToDollars(
 							pickedService.hourlyRateCents
-						)}/hr — offers start at half that, and you can always offer more.
+						)}/hr. Offers start at the ${centsToDollars(floorOf(pickedService))}/hr base rate for this
+						service, and you can always offer more.
 					{/if}
 				</p>
 				<div class="flex flex-col gap-4">

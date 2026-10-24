@@ -27,7 +27,7 @@
 	import LangToggle from '$lib/components/LangToggle.svelte';
 
 	interface Props {
-		/** Uppercase kicker under the brand, e.g. "Mom Helper" / "Admin console". */
+		/** Uppercase kicker under the brand, e.g. "Helper" / "Admin console". */
 		kicker: string;
 		items: Array<SidebarItem>;
 		email: string;

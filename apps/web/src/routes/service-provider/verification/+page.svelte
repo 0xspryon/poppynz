@@ -83,12 +83,17 @@
 	const documents = $derived(onboarding?.documents ?? []);
 	// The safety-gate type is the background check's own evidence, so it sits
 	// with the check rather than with the identity documents.
-	const identityDocs = $derived(documents.filter((doc) => !doc.isSafetyGate));
-	const gateDocs = $derived(documents.filter((doc) => doc.isSafetyGate));
+	// UAT #24: the criminal record check is background evidence, so it is
+	// listed under Background check (with the gate), not under Identity.
+	const isBackgroundDoc = (doc: (typeof documents)[number]) =>
+		doc.isSafetyGate || (doc.credibledCheckTypeValue ?? '').includes('criminal_record');
+	const identityDocs = $derived(documents.filter((doc) => !isBackgroundDoc(doc)));
+	const gateDocs = $derived(documents.filter(isBackgroundDoc));
 	const queuedTypeIds = $derived(safety?.basket.map((entry) => entry.documentTypeId) ?? []);
 
 	const identityState = $derived.by((): StepState => {
 		const required = identityDocs.filter((doc) => !doc.isOptional);
+		if (required.length === 0) return 'done';
 		if (required.some((doc) => doc.status === 'rejected')) return 'attention';
 		const submitted = required.filter((doc) => doc.status !== 'missing').length;
 		if (submitted === required.length) return 'done';
@@ -229,7 +234,7 @@
 			{@render sectionHeading(
 				1,
 				'Background check',
-				'Every Poppynz helper completes a safety check before taking bookings.'
+				'Every Poppynz helper completes the required criminal record check before taking bookings. A Vulnerable Sector Check is optional.'
 			)}
 			{#if gateDocs.length > 0}
 				<div class="mb-4">
@@ -239,7 +244,6 @@
 						onchanged={load}
 						oncheckList={() => scrollToStep('background-check')}
 						checkListPlace="your check list below"
-						showRequiredHeading={false}
 						emptyRequiredText=""
 					/>
 				</div>

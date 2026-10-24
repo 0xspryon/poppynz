@@ -193,7 +193,8 @@
 					<p class="text-xs leading-relaxed text-neutral">
 						{firstName} will see your
 						<strong>{senderRole === 'family' ? 'family profile' : 'profile'}</strong>
-						and the services you selected. Your contact details stay hidden until you have an active contract.
+						and the services you selected. You can share contact details in chat, but conversations,
+						arrangements and payments made outside Poppynz aren't covered by our guarantees.
 					</p>
 				</div>
 			</div>

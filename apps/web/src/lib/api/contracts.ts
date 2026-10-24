@@ -11,6 +11,7 @@ const badgeCountEndpoint = apiClient.contracts.me['badge-count'].$get;
 const detailEndpoint = apiClient.contracts[':id'].$get;
 const termsEndpoint = apiClient.contracts[':id'].terms.$put;
 const sendEndpoint = apiClient.contracts[':id'].send.$post;
+const quoteEndpoint = apiClient.contracts[':id'].quote.$post;
 const withdrawEndpoint = apiClient.contracts[':id'].withdraw.$post;
 const acceptEndpoint = apiClient.contracts[':id'].accept.$post;
 const declineEndpoint = apiClient.contracts[':id'].decline.$post;
@@ -74,8 +75,23 @@ export async function saveContractTerms(id: string, terms: ContractTermsInput) {
 	return call(termsEndpoint(args));
 }
 
+/** B6: prices unsaved draft terms, exactly as saving them would. */
+export async function quoteContractTerms(id: string, terms: ContractTermsInput) {
+	// The API reads the body via parseJsonBody (no hono validator), so the
+	// RPC input type omits `json` — the client still serializes it at runtime.
+	const args = { param: { id }, json: terms } as unknown as Parameters<typeof quoteEndpoint>[0];
+	return call(quoteEndpoint(args));
+}
+
+/** Sending is the family's signature (UAT #41): the API only accepts it
+ * with the explicit "Sign & send" confirmation. */
 export async function sendContract(id: string) {
-	return call(sendEndpoint({ param: { id } }));
+	// The API reads the body via parseJsonBody (no hono validator), so the
+	// RPC input type omits `json` — the client still serializes it at runtime.
+	const args = { param: { id }, json: { signed: true } } as unknown as Parameters<
+		typeof sendEndpoint
+	>[0];
+	return call(sendEndpoint(args));
 }
 
 export async function withdrawContract(id: string) {

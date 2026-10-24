@@ -101,6 +101,10 @@
 
 	const chipFor = (contract: ContractSummary): { status: ChipStatus; label?: string } => {
 		if (contract.awaitingYou) return { status: 'awaiting-you' };
+		// B5: a contract whose billing is paused reads "Suspended", not "Active".
+		if (contract.status === 'active' && contract.billingStatus === 'suspended') {
+			return { status: 'suspended' };
+		}
 		switch (contract.status) {
 			case 'changes_requested':
 				return { status: 'changes-requested' };

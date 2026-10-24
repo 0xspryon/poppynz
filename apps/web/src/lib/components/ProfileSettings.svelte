@@ -348,7 +348,7 @@
 						bind:value={dateOfBirth}
 					/>
 					{#if dateOfBirthError}
-						<p class="label text-xs text-error">{dateOfBirthError}</p>
+						<p class="label text-xs whitespace-normal text-error">{dateOfBirthError}</p>
 					{/if}
 				</fieldset>
 			</div>

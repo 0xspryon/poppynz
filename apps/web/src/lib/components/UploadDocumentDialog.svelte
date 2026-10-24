@@ -3,6 +3,7 @@
 	 * Owns the file + expiry inputs; emits them on submit. Opens while
 	 * `target` is set. */
 	import type { OnboardingDocument } from '$lib/api/onboarding';
+	import { todayInputValue } from '$lib/date';
 
 	const ACCEPTED_TYPES = 'application/pdf,image/jpeg,image/png,image/webp';
 
@@ -68,15 +69,20 @@
 						documentNumber: documentNumber.trim(),
 						issuedOn
 					}
-				: {})
+				: issuedOn
+					? { issuedOn }
+					: {})
 		});
 	}
 </script>
 
 {#if target}
 	<div class="modal modal-open" role="dialog" aria-label="Upload document">
-		<form class="modal-box" onsubmit={submit}>
-			<h2 class="text-lg font-bold">
+		<!-- UAT #33: daisyUI's .label doesn't wrap, which pushed the box wider
+		     than the window on the Vulnerable Sector Check; cap the width and
+		     let every hint wrap. -->
+		<form class="modal-box w-full max-w-lg overflow-x-hidden" onsubmit={submit}>
+			<h2 class="text-lg font-bold break-words">
 				{target.document ? 'Replace' : 'Upload'} — {target.name}
 			</h2>
 			<p class="mt-1 text-xs text-base-content-muted">
@@ -115,13 +121,21 @@
 				</fieldset>
 			{/if}
 
+			{#if !needsIssuingDetails}
+				<!-- UAT #31: the issue date as printed on the document. -->
+				<fieldset class="fieldset mt-2">
+					<legend class="fieldset-legend">Issued on · optional</legend>
+					<input type="date" class="input w-full" max={todayInputValue()} bind:value={issuedOn} />
+				</fieldset>
+			{/if}
+
 			{#if target.requiresExpiryDate}
 				<fieldset class="fieldset mt-2">
 					<legend class="fieldset-legend">
 						{needsIssuingDetails ? 'Valid until' : 'Expiry date'}
 					</legend>
 					<input type="date" class="input w-full" bind:value={expiry} />
-					<p class="label text-xs">
+					<p class="label text-xs whitespace-normal">
 						{needsIssuingDetails
 							? 'A Poppynz administrator reviews this — submitting is not the same as being verified.'
 							: 'This document type requires a future expiry date.'}

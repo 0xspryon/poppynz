@@ -11,6 +11,8 @@
 		const session = getSession() ?? (await fetchSession());
 		if (session?.role === 'admin') {
 			await goto(resolve('/admin'), { replaceState: true });
+		} else if (session?.role === 'accountant') {
+			await goto(resolve('/accountant'), { replaceState: true });
 		} else if (session?.role === 'service-provider') {
 			await goto(resolve('/service-provider/dashboard'), { replaceState: true });
 		} else if (session?.role === 'family') {

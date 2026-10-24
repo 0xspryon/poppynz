@@ -6,9 +6,9 @@
 import { browser } from '$app/environment';
 import type { Role } from './auth';
 
-/** Roles a session can carry. Sign-up stays limited to `Role`; admins are
- * provisioned out-of-band (SQL promote in dev). */
-export type SessionRole = Role | 'admin';
+/** Roles a session can carry. Sign-up stays limited to `Role`; admins and
+ * the accountant are provisioned out-of-band (seeds, SQL promote in dev). */
+export type SessionRole = Role | 'admin' | 'accountant';
 
 export interface MockSession {
 	email: string;
@@ -22,7 +22,7 @@ export interface MockSession {
 const SESSION_KEY = 'poppynz:session';
 
 const isSessionRole = (value: unknown): value is SessionRole =>
-	value === 'family' || value === 'service-provider' || value === 'admin';
+	value === 'family' || value === 'service-provider' || value === 'admin' || value === 'accountant';
 
 /**
  * Ask the API who is signed in (better-auth cookie) and refresh the local

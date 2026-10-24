@@ -2,22 +2,20 @@
 import { flushSync, mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-const { getBilling, startCardSetup, confirmCardSetup, getStripe, confirmSetup } = vi.hoisted(
-	() => {
-		const confirmSetup = vi.fn(async () => ({}));
-		return {
-			getBilling: vi.fn(),
-			startCardSetup: vi.fn(),
-			confirmCardSetup: vi.fn(),
-			confirmSetup,
-			getStripe: vi.fn(async () => ({
-				elements: () => ({ create: () => ({ mount: vi.fn() }) }),
-				confirmPayment: vi.fn(),
-				confirmSetup
-			}))
-		};
-	}
-);
+const { getBilling, startCardSetup, confirmCardSetup, getStripe, confirmSetup } = vi.hoisted(() => {
+	const confirmSetup = vi.fn(async () => ({}));
+	return {
+		getBilling: vi.fn(),
+		startCardSetup: vi.fn(),
+		confirmCardSetup: vi.fn(),
+		confirmSetup,
+		getStripe: vi.fn(async () => ({
+			elements: () => ({ create: () => ({ mount: vi.fn() }) }),
+			confirmPayment: vi.fn(),
+			confirmSetup
+		}))
+	};
+});
 
 vi.mock('$lib/api/billing', () => ({ getBilling, startCardSetup, confirmCardSetup }));
 vi.mock('$lib/stripe', () => ({ getStripe }));

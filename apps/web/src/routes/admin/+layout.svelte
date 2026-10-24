@@ -3,6 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { fetchSession, getSession } from '$lib/api/profile';
+	import { getTaxAccess } from '$lib/api/tax';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
@@ -16,11 +17,16 @@
 	let { children }: Props = $props();
 	let authorized = $state(false);
 	let drawerOpen = $state(false);
+	/** The accountant area is shown by permission (tax read), not by role. */
+	let taxAccess = $state(false);
 
 	onMount(() => {
 		void fetchSession().then((session) => {
 			if (session?.role === 'admin') {
 				authorized = true;
+				void getTaxAccess().then((result) => {
+					taxAccess = result.ok && (result.data.canRead || result.data.canReport);
+				});
 			} else {
 				void goto(resolve('/auth/sign-in'));
 			}
@@ -31,7 +37,7 @@
 	const email = $derived(session?.email ?? 'admin');
 	const initial = $derived(email.charAt(0).toUpperCase());
 
-	const items: Array<SidebarItem> = [
+	const baseItems: Array<SidebarItem> = [
 		{ href: resolve('/admin/approval-requests'), label: 'Approval queue', icon: 'la-user-check' },
 		{
 			href: resolve('/admin/safety-verifications'),
@@ -44,6 +50,11 @@
 		{ href: resolve('/admin/service-catalogue'), label: 'Service catalogue', icon: 'la-heart' },
 		{ href: resolve('/admin/tcs'), label: 'Terms & conditions', icon: 'la-file-contract' }
 	];
+	const items = $derived<Array<SidebarItem>>(
+		taxAccess
+			? [...baseItems, { href: resolve('/accountant'), label: 'Accountant', icon: 'la-calculator' }]
+			: baseItems
+	);
 </script>
 
 {#if authorized}

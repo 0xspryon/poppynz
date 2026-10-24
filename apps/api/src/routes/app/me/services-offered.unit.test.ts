@@ -769,6 +769,114 @@ describe('custom services and the credential gate (UAT #1, #18, #34)', () => {
     expect(getFailure(exit)._tag).toBe('ServiceCredentialRequiredError');
   });
 
+  it('renames a custom PSW-named service to the catalogue item it is relinked to (R2)', async () => {
+    const companionship = catalogueItem({
+      id: '0197b3a0-0000-7000-8000-000000000020',
+      name: 'Companionship',
+      category: 'Elderly Care',
+      baseHourlyRateCents: 1800
+    });
+    const existing = service({
+      name: 'Personal support (PSW)',
+      description: 'Bathing and personal care',
+      reviewStatus: 'rejected',
+      reviewReason: 'Needs a PSW credential'
+    });
+    const updates: Array<Record<string, unknown>> = [];
+    const result = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(
+        contextWithJson({ catalogueServiceId: companionship.id, name: 'Personal support (PSW)' }),
+        new Headers(),
+        existing.id
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            existingService: existing,
+            catalogueItems: [companionship],
+            onUpdate: (input) => updates.push(input)
+          })
+        )
+      )
+    );
+    expect(updates[0]).toMatchObject({
+      catalogueServiceId: companionship.id,
+      name: 'Companionship',
+      description: null,
+      reviewStatus: 'approved',
+      reviewReason: null
+    });
+    expect(result).toMatchObject({ name: 'Companionship', description: null });
+  });
+
+  it('renames a linked service when it is relinked to another catalogue item', async () => {
+    const babysitting = catalogueItem();
+    const companionship = catalogueItem({
+      id: '0197b3a0-0000-7000-8000-000000000020',
+      name: 'Companionship',
+      baseHourlyRateCents: 1800
+    });
+    const existing = service({ catalogueServiceId: babysitting.id, name: 'Babysitting' });
+    const updates: Array<Record<string, unknown>> = [];
+    await Effect.runPromise(
+      updateServiceOfferedRouteProgram(
+        contextWithJson({ catalogueServiceId: companionship.id }),
+        new Headers(),
+        existing.id
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            existingService: existing,
+            catalogueItems: [babysitting, companionship],
+            onUpdate: (input) => updates.push(input)
+          })
+        )
+      )
+    );
+    expect(updates[0]).toMatchObject({ name: 'Companionship', reviewStatus: 'approved' });
+  });
+
+  it('ignores a free-text description on a linked service', async () => {
+    const liveItem = catalogueItem();
+    const created: Array<Record<string, unknown>> = [];
+    await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({
+          name: 'Babysitting',
+          description: 'Also PSW personal care',
+          hourlyRateCents: 1800,
+          catalogueServiceId: liveItem.id
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({ catalogueItems: [liveItem], onCreate: (input) => created.push(input) })
+        )
+      )
+    );
+    expect(created[0]).toMatchObject({ description: null, reviewStatus: 'approved' });
+
+    const updates: Array<Record<string, unknown>> = [];
+    const existing = service({ catalogueServiceId: liveItem.id, name: 'Babysitting' });
+    await Effect.runPromise(
+      updateServiceOfferedRouteProgram(
+        contextWithJson({ description: 'Also PSW personal care', name: 'PSW' }),
+        new Headers(),
+        existing.id
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            existingService: existing,
+            catalogueItems: [liveItem],
+            onUpdate: (input) => updates.push(input)
+          })
+        )
+      )
+    );
+    expect(updates[0]).toMatchObject({ description: null });
+    expect(updates[0]).not.toHaveProperty('name');
+    expect(updates[0]).not.toHaveProperty('reviewStatus');
+  });
+
   it('surfaces a document lookup failure as a repo error', async () => {
     const exit = await Effect.runPromise(
       createServiceOfferedRouteProgram(

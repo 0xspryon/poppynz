@@ -180,10 +180,12 @@ export const createServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
       authenticated
     );
     const currency = input.currency ?? 'CAD';
-    // A catalogue-linked service carries the catalogue's name — free text
-    // under a catalogue link would dodge the custom-service review — and is
-    // approved on creation. A custom one waits for an admin (UAT #34).
+    // A catalogue-linked service carries the catalogue's name and no free-text
+    // description — free text under a catalogue link would dodge the
+    // custom-service review — and is approved on creation. A custom one waits
+    // for an admin (UAT #34).
     let name = input.name;
+    let description = input.description ?? null;
     let reviewStatus: 'pending' | 'approved' = 'pending';
     if (input.catalogueServiceId != null) {
       const item = yield* findCatalogueItem(input.catalogueServiceId);
@@ -191,6 +193,7 @@ export const createServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
       yield* ensureRateMeetsFloor(item, input.hourlyRateCents);
       yield* ensureCredentialApproved(userAndSession.user.id, item);
       name = item.name;
+      description = null;
       reviewStatus = 'approved';
     } else {
       yield* ensureCustomRateMeetsFloor(input.hourlyRateCents, currency);
@@ -205,7 +208,7 @@ export const createServiceOfferedRouteProgram = (c: HonoContext<HonoEnv>, header
       userId: userAndSession.user.id,
       catalogueServiceId: input.catalogueServiceId ?? null,
       name,
-      description: input.description ?? null,
+      description,
       hourlyRateCents: input.hourlyRateCents,
       currency,
       reviewStatus
@@ -238,6 +241,7 @@ export const updateServiceOfferedRouteProgram = (
       input.catalogueServiceId === undefined
         ? existing.catalogueServiceId
         : input.catalogueServiceId;
+    let linkedItem: ServiceCatalogueItem | null = null;
     if (
       effectiveLink != null &&
       (input.hourlyRateCents !== undefined || input.catalogueServiceId !== undefined)
@@ -253,6 +257,7 @@ export const updateServiceOfferedRouteProgram = (
         yield* ensureCredentialApproved(userAndSession.user.id, item);
       }
       yield* ensureRateMeetsFloor(item, input.hourlyRateCents ?? existing.hourlyRateCents);
+      linkedItem = item;
     }
     if (effectiveLink == null && input.hourlyRateCents !== undefined) {
       yield* ensureCustomRateMeetsFloor(
@@ -263,7 +268,7 @@ export const updateServiceOfferedRouteProgram = (
     const service = yield* repo.updateByIdForUser(
       serviceId,
       userAndSession.user.id,
-      reviewFieldsForUpdate(existing, input, effectiveLink)
+      reviewFieldsForUpdate(existing, input, effectiveLink, linkedItem?.name ?? null)
     );
     yield* scheduleProviderSearchReconcile(service.userId);
 
@@ -274,8 +279,13 @@ export const updateServiceOfferedRouteProgram = (
  * What an edit does to a service's review. A custom service whose wording
  * changes (or that is unlinked from the catalogue) goes back to the admin —
  * a reviewed "Tutoring" can't quietly become something else. A rate change
- * alone keeps the decision: the floor is enforced separately. A service that
- * becomes catalogue-linked takes the catalogue's name and is approved.
+ * alone keeps the decision: the floor is enforced separately.
+ *
+ * A catalogue-linked service's wording is the catalogue's: it carries the
+ * item's name and no free-text description. One that becomes linked (or is
+ * relinked) is renamed to the item it now points at and approved — otherwise
+ * a custom "Personal support (PSW)" relinked to a credential-free item would
+ * be published under the PSW name.
  */
 export const reviewFieldsForUpdate = (
   existing: ServiceOffered,
@@ -286,15 +296,29 @@ export const reviewFieldsForUpdate = (
     currency?: string;
     catalogueServiceId?: string | null;
   },
-  effectiveLink: string | null
+  effectiveLink: string | null,
+  linkedItemName: string | null = null
 ) => {
   const base = { ...input, description: input.description };
   if (effectiveLink != null) {
-    // Linked: the wording is the catalogue's; drop any free-text rename.
-    const { name: _ignored, ...rest } = base;
+    // Linked: drop any free-text rename or description.
+    const { name: _ignored, description: _alsoIgnored, ...rest } = base;
+    const linkedWording = {
+      ...(linkedItemName !== null ? { name: linkedItemName } : {}),
+      ...(existing.description !== null || input.description !== undefined
+        ? { description: null }
+        : {})
+    };
     return existing.catalogueServiceId === effectiveLink
-      ? rest
-      : { ...rest, reviewStatus: 'approved' as const, reviewReason: null };
+      ? { ...rest, ...linkedWording }
+      : {
+          ...rest,
+          ...linkedWording,
+          reviewStatus: 'approved' as const,
+          reviewedBy: null,
+          reviewedAt: null,
+          reviewReason: null
+        };
   }
   const reworded =
     (input.name !== undefined && input.name !== existing.name) ||

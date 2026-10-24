@@ -576,6 +576,137 @@ export const payoutAccount = appDb.table(
   (table) => [uniqueIndex('payout_accounts_account_reference_uidx').on(table.accountReference)]
 );
 
+// ---------------------------------------------------------------------------
+// Sales-tax configuration (piece 3, spec §3a). DATA, seeded with defaults and
+// corrected later by an accountant: nothing tax-related is hard-coded. Every
+// effective-dated row covers [effective_from, effective_to); an edit closes
+// the row in force and inserts a new one (never rewrites history), a removal
+// sets deleted_at, and every change appends a tax_config_audit row. Overlaps
+// between live rows are refused by EXCLUDE constraints (see 0027_tax_config).
+
+export const taxJurisdictionKind = appDb.enum('tax_jurisdiction_kind', [
+  'federal',
+  'province',
+  'territory'
+]);
+export const taxComponent = appDb.enum('tax_component', ['gst', 'hst', 'pst', 'qst', 'rst']);
+export const taxTreatment = appDb.enum('tax_treatment', [
+  'taxable',
+  'exempt',
+  'zero_rated',
+  'out_of_scope'
+]);
+export const taxPlaceOfSupply = appDb.enum('tax_place_of_supply', [
+  'payer_province',
+  'helper_province',
+  'contract_location'
+]);
+export const taxConfigAuditAction = appDb.enum('tax_config_audit_action', [
+  'create',
+  'close',
+  'delete'
+]);
+
+/** `CA` (federal) and the 13 provinces and territories. */
+export const taxJurisdiction = appDb.table('tax_jurisdictions', {
+  code: text('code').primaryKey(),
+  name: text('name').notNull(),
+  kind: taxJurisdictionKind('kind').notNull()
+});
+
+/** One rate per jurisdiction and component at any date. `rate_millipercent`
+ * is thousandths of a percent (basis points × 10): 5% = 5000, 9.975% = 9975. */
+export const taxRate = appDb.table(
+  'tax_rates',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    jurisdictionCode: text('jurisdiction_code')
+      .notNull()
+      .references(() => taxJurisdiction.code, { onDelete: 'restrict' }),
+    component: taxComponent('component').notNull(),
+    rateMillipercent: integer('rate_millipercent').notNull(),
+    effectiveFrom: date('effective_from').notNull(),
+    effectiveTo: date('effective_to'),
+    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    index('tax_rates_jurisdiction_component_idx').on(table.jurisdictionCode, table.component)
+  ]
+);
+
+/** What Poppynz charges for, each with its treatment over time. */
+export const taxSupplyType = appDb.table('tax_supply_types', {
+  code: text('code').primaryKey(),
+  name: text('name').notNull()
+});
+
+export const taxSupplyTreatment = appDb.table(
+  'tax_supply_treatments',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    supplyTypeCode: text('supply_type_code')
+      .notNull()
+      .references(() => taxSupplyType.code, { onDelete: 'restrict' }),
+    treatment: taxTreatment('treatment').notNull(),
+    components: taxComponent('components').array().notNull(),
+    placeOfSupply: taxPlaceOfSupply('place_of_supply').notNull(),
+    effectiveFrom: date('effective_from').notNull(),
+    effectiveTo: date('effective_to'),
+    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [index('tax_supply_treatments_supply_type_idx').on(table.supplyTypeCode)]
+);
+
+/** Poppynz's own registrations. A component is charged only while a
+ * registration in force with registered = true covers it. */
+export const taxRegistration = appDb.table(
+  'tax_registrations',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    jurisdictionCode: text('jurisdiction_code')
+      .notNull()
+      .references(() => taxJurisdiction.code, { onDelete: 'restrict' }),
+    program: text('program').notNull(),
+    components: taxComponent('components').array().notNull(),
+    registrationNumber: text('registration_number'),
+    registered: boolean('registered').notNull(),
+    isPlaceholder: boolean('is_placeholder').notNull().default(false),
+    effectiveFrom: date('effective_from').notNull(),
+    effectiveTo: date('effective_to'),
+    deletedAt: timestamp('deleted_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [index('tax_registrations_program_idx').on(table.jurisdictionCode, table.program)]
+);
+
+/** Append-only history of every tax configuration change. */
+export const taxConfigAudit = appDb.table(
+  'tax_config_audit',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    entity: text('entity').notNull(),
+    recordId: text('record_id').notNull(),
+    action: taxConfigAuditAction('action').notNull(),
+    // Null for the seed and system changes.
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'restrict' }),
+    reason: text('reason').notNull(),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [index('tax_config_audit_record_idx').on(table.entity, table.recordId)]
+);
+
 // A Credibled order: the basket, the charge it settled with, and the vendor's
 // progress on it. Deliberately NOT the safety verdict — an order that
 // completes creates a `safety_verifications` row in `review_required`, which

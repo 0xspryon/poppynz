@@ -13,6 +13,7 @@ export * from './repos/payment-repo';
 export * from './repos/billing-customer-repo';
 export * from './repos/stripe-webhook-event-repo';
 export * from './repos/payout-account-repo';
+export * from './repos/tax-config-repo';
 export * from './repos/check-order-repo';
 export * from './repos/service-offered-repo';
 export * from './repos/service-needed-repo';

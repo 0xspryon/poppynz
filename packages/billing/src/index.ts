@@ -3,3 +3,4 @@
 // Speaks only to the Payments port; never to Stripe.
 export * from './cards';
 export * from './settle';
+export * from './tax';

@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import PayoutsPage from '$lib/components/payouts/PayoutsPage.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	// Stripe returns helpers here: ?from=stripe after onboarding, ?refresh=1
 	// when the onboarding link expired. Read once on arrival.
@@ -23,7 +24,7 @@
 </script>
 
 <svelte:head>
-	<title>Payouts · Poppynz</title>
+	<title>{m.payouts_page_title()}</title>
 </svelte:head>
 
 <PayoutsPage {returnState} onreturnhandled={dropQuery} />

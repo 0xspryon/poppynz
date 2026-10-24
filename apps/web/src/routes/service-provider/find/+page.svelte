@@ -15,6 +15,7 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import FamilyCard from '$lib/components/FamilyCard.svelte';
 	import { withQuery } from '$lib/nav';
+	import { m } from '$lib/paraglide/messages';
 	import { startTourOnce } from '$lib/tour';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 
@@ -25,33 +26,33 @@
 	const TOUR_STEPS = [
 		{
 			selector: '[data-tour="search"]',
-			title: 'Find the right family',
-			description: 'Search by the services families need, their name, or keywords.'
+			title: m.provider_find_tour_search_title(),
+			description: m.provider_find_tour_search_desc()
 		},
 		{
 			selector: '[data-tour="radius"]',
-			title: 'Families near you',
-			description: 'Results center on your saved location. Widen the radius to see more families.'
+			title: m.provider_find_tour_radius_title(),
+			description: m.provider_find_tour_radius_desc()
 		},
 		{
 			selector: '[data-tour="filters"]',
-			title: 'Narrow it down',
-			description: 'Filter by the service a family needs, or by city.'
+			title: m.provider_find_tour_filters_title(),
+			description: m.provider_find_tour_filters_desc()
 		},
 		{
 			selector: '[data-tour="filters-mobile"]',
-			title: 'Narrow it down',
-			description: 'Filter by the service a family needs, or by city.'
+			title: m.provider_find_tour_filters_title(),
+			description: m.provider_find_tour_filters_desc()
 		},
 		{
 			selector: '[data-tour="sort"]',
-			title: 'Order results',
-			description: 'Sort by distance or newest.'
+			title: m.provider_find_tour_sort_title(),
+			description: m.provider_find_tour_sort_desc()
 		},
 		{
 			selector: '[data-tour="results"]',
-			title: 'Families looking for help',
-			description: 'Each card shows what a family is looking for. Tap one for the details.'
+			title: m.provider_find_tour_results_title(),
+			description: m.provider_find_tour_results_desc()
 		}
 	];
 
@@ -266,19 +267,24 @@
 </script>
 
 <svelte:head>
-	<title>Find families · Poppynz</title>
+	<title>{m.provider_find_page_title()}</title>
 </svelte:head>
 
 {#snippet filterControls()}
 	<!-- Service facet: single-select — the search API filters one service at a time. -->
 	<fieldset class="min-w-0 rounded-xl border border-card-border bg-base-100 p-4">
-		<legend class="sr-only">Service</legend>
+		<legend class="sr-only">{m.provider_find_service_legend()}</legend>
 		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-			Service needed
+			{m.provider_find_service_needed()}
 		</div>
 		<label class="input input-sm mb-2 flex w-full items-center gap-2">
 			<i class="las la-search text-outline" aria-hidden="true"></i>
-			<input type="search" class="grow" placeholder="Filter services…" bind:value={serviceQuery} />
+			<input
+				type="search"
+				class="grow"
+				placeholder={m.provider_find_filter_services_placeholder()}
+				bind:value={serviceQuery}
+			/>
 		</label>
 		{#if exactServiceOption}
 			<label
@@ -296,7 +302,7 @@
 						“{exactServiceOption}”
 					</span>
 					<span class="mt-0.5 block text-[11px] leading-snug text-neutral">
-						Select to search for this exact service
+						{m.provider_find_exact_service_hint()}
 					</span>
 				</span>
 			</label>
@@ -318,25 +324,31 @@
 				</label>
 			{:else}
 				{#if !exactServiceOption}
-					<p class="px-1 py-1 text-xs text-base-content-muted">No services match.</p>
+					<p class="px-1 py-1 text-xs text-base-content-muted">
+						{m.provider_find_no_services_match()}
+					</p>
 				{/if}
 			{/each}
 		</div>
 	</fieldset>
 
 	<fieldset class="min-w-0 rounded-xl border border-card-border bg-base-100 p-4">
-		<legend class="sr-only">City</legend>
-		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">City</div>
+		<legend class="sr-only">{m.provider_find_city()}</legend>
+		<div class="mb-2 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
+			{m.provider_find_city()}
+		</div>
 		<select
 			class="select select-sm w-full"
-			aria-label="City"
+			aria-label={m.provider_find_city()}
 			value={city}
 			onchange={(event) => selectCity(event.currentTarget.value)}
 		>
-			<option value="">All cities</option>
+			<option value="">{m.provider_find_all_cities()}</option>
 			{#each cityOptions as option (option.value)}
 				<option value={option.value}>
-					{option.value}{option.count ? ` (${option.count})` : ''}
+					{option.count
+						? m.provider_find_city_option({ city: option.value, count: option.count })
+						: option.value}
 				</option>
 			{/each}
 		</select>
@@ -344,7 +356,7 @@
 
 	<div class="rounded-xl bg-success-content p-4 text-[13px] leading-relaxed text-success">
 		<i class="las la-home mr-1" aria-hidden="true"></i>
-		Every family here has told us what help they're looking for near them.
+		{m.provider_find_every_family_note()}
 	</div>
 {/snippet}
 
@@ -357,14 +369,13 @@
 				<i class="las la-user-shield text-2xl text-warning" aria-hidden="true"></i>
 			</span>
 			<h1 class="font-display text-lg font-bold text-base-content">
-				Family search unlocks once you're approved
+				{m.provider_find_not_approved_title()}
 			</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
-				When the Poppynz team has reviewed and approved your profile, you'll be able to browse
-				families looking for help near you.
+				{m.provider_find_not_approved_body()}
 			</p>
 			<a href={resolve('/service-provider/verification')} class="btn btn-primary btn-sm">
-				Check your approval status
+				{m.provider_find_check_approval()}
 			</a>
 		</div>
 	{:else}
@@ -379,12 +390,12 @@
 					<input
 						type="search"
 						class="grow"
-						placeholder="Search by service needed, name or keyword…"
-						aria-label="Search families"
+						placeholder={m.provider_find_search_placeholder()}
+						aria-label={m.provider_find_search_aria()}
 						bind:value={qInput}
 					/>
 				</label>
-				<button type="submit" class="btn btn-primary lg:w-auto">Search</button>
+				<button type="submit" class="btn btn-primary lg:w-auto">{m.common_search()}</button>
 			</div>
 
 			<div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
@@ -393,38 +404,47 @@
 					{#if !profileLoaded}
 						<span class="skeleton h-4 w-40"></span>
 					{:else if city}
-						<span class="truncate">In <strong class="text-base-content">{city}</strong></span>
+						<span class="truncate"
+							>{m.provider_find_location_in_before()}
+							<strong class="text-base-content">{city}</strong></span
+						>
 						{#if hasLocation}
 							<button
 								type="button"
 								class="shrink-0 text-xs font-semibold text-primary"
 								onclick={() => selectCity('')}
 							>
-								Search near me
+								{m.provider_find_search_near_me()}
 							</button>
 						{/if}
 					{:else if hasLocation}
 						<span class="truncate"
-							>Near <strong class="text-base-content">{originLabel}</strong></span
+							>{m.provider_find_location_near_before()}
+							<strong class="text-base-content">{originLabel}</strong></span
 						>
 						<a
 							href={resolve('/service-provider/profile')}
 							class="shrink-0 text-xs font-semibold text-primary"
 						>
-							Change
+							{m.provider_find_change_location()}
 						</a>
 					{:else}
-						<span>No location saved.</span>
+						<span>{m.provider_find_no_location()}</span>
 						<a
 							href={resolve('/service-provider/profile')}
 							class="shrink-0 text-xs font-semibold text-primary"
 						>
-							Set your location
+							{m.provider_find_set_location()}
 						</a>
 					{/if}
 				</div>
 
-				<div class="join" role="group" aria-label="Search radius" data-tour="radius">
+				<div
+					class="join"
+					role="group"
+					aria-label={m.provider_find_radius_aria()}
+					data-tour="radius"
+				>
 					<button
 						type="button"
 						class="btn join-item btn-sm {radiusKm == null
@@ -432,7 +452,7 @@
 							: 'btn-ghost border border-outline-variant'}"
 						onclick={() => pickRadius(null)}
 					>
-						Anywhere
+						{m.provider_find_anywhere()}
 					</button>
 					{#each RADIUS_PRESETS as preset (preset)}
 						<button
@@ -443,7 +463,7 @@
 							disabled={!hasLocation}
 							onclick={() => pickRadius(preset)}
 						>
-							{preset} km
+							{m.provider_family_distance_short({ distance: preset })}
 						</button>
 					{/each}
 				</div>
@@ -460,14 +480,13 @@
 				<div class="mb-3 flex flex-wrap items-center justify-between gap-3">
 					<h1 class="font-display text-xl font-bold text-base-content">
 						{#if loading && !data}
-							Searching…
+							{m.provider_find_searching()}
 						{:else}
-							{total}
-							{total === 1 ? 'family' : 'families'} looking for help{radiusKm != null
-								? ' near you'
+							{radiusKm != null
+								? m.provider_find_results_heading_near({ count: total })
 								: city
-									? ` in ${city}`
-									: ''}
+									? m.provider_find_results_heading_city({ count: total, city })
+									: m.provider_find_results_heading({ count: total })}
 						{/if}
 					</h1>
 					<div class="flex items-center gap-2">
@@ -478,7 +497,7 @@
 							onclick={() => (sheetOpen = true)}
 						>
 							<i class="las la-sliders-h" aria-hidden="true"></i>
-							Filters
+							{m.provider_find_filters()}
 							{#if activeFilterCount > 0}
 								<span
 									class="absolute -top-1.5 -right-1.5 flex size-4 items-center justify-center
@@ -492,13 +511,13 @@
 							class="flex items-center gap-1.5 text-xs text-base-content-muted"
 							data-tour="sort"
 						>
-							Sort by
+							{m.provider_find_sort_by()}
 							<select class="select select-sm w-auto" bind:value={sort} onchange={resetToFirstPage}>
-								<option value="relevance">Relevance</option>
+								<option value="relevance">{m.provider_find_sort_relevance()}</option>
 								{#if radiusKm != null}
-									<option value="distance">Distance (nearest)</option>
+									<option value="distance">{m.provider_find_sort_distance()}</option>
 								{/if}
-								<option value="newest">Newest</option>
+								<option value="newest">{m.provider_find_sort_newest()}</option>
 							</select>
 						</label>
 					</div>
@@ -541,7 +560,7 @@
 							</button>
 						{/if}
 						<button type="button" class="text-xs font-semibold text-primary" onclick={clearFilters}>
-							Clear all
+							{m.provider_find_clear_all()}
 						</button>
 					</div>
 				{/if}
@@ -574,10 +593,10 @@
 							<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
 						</span>
 						<h2 class="font-display text-lg font-bold text-base-content">
-							Something went wrong on our side
+							{m.provider_family_error_title()}
 						</h2>
 						<p class="max-w-sm text-sm text-base-content-muted">
-							Your search didn't load. Your filters are safe — try again in a moment.
+							{m.provider_find_error_body()}
 						</p>
 						<button
 							type="button"
@@ -585,7 +604,7 @@
 							onclick={() => (retryTick = retryTick + 1)}
 						>
 							<i class="las la-redo-alt" aria-hidden="true"></i>
-							Retry search
+							{m.provider_find_retry_search()}
 						</button>
 					</div>
 				{:else if total === 0 && filtersActive}
@@ -596,26 +615,30 @@
 							<i class="las la-search text-2xl text-neutral" aria-hidden="true"></i>
 						</span>
 						<h2 class="font-display text-lg font-bold text-base-content">
-							No families match this search
+							{m.provider_find_no_match_title()}
 						</h2>
 						<p class="max-w-sm text-sm text-base-content-muted">
 							{#if city}
-								Try another city, removing a filter, or searching a different term.
+								{m.provider_find_no_match_city()}
 							{:else}
-								Try widening your radius, removing a filter, or searching a different term.
+								{m.provider_find_no_match_radius()}
 							{/if}
 						</p>
 						<div class="flex flex-wrap justify-center gap-2">
 							{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
 								<button type="button" class="btn btn-primary btn-sm" onclick={expandRadius}>
-									Expand radius to {RADIUS_PRESETS.find((preset) => preset > (radiusKm ?? 0))} km
+									{m.provider_find_expand_radius({
+										distance: RADIUS_PRESETS.find((preset) => preset > (radiusKm ?? 0)) ?? ''
+									})}
 								</button>
 							{:else if city && hasLocation}
 								<button type="button" class="btn btn-primary btn-sm" onclick={() => selectCity('')}>
-									Search near me instead
+									{m.provider_find_search_near_me_instead()}
 								</button>
 							{/if}
-							<button type="button" class="btn btn-sm" onclick={clearFilters}>Clear filters</button>
+							<button type="button" class="btn btn-sm" onclick={clearFilters}
+								>{m.provider_find_clear_filters()}</button
+							>
 						</div>
 					</div>
 				{:else if total === 0}
@@ -626,11 +649,10 @@
 							<i class="las la-seedling text-2xl text-warning" aria-hidden="true"></i>
 						</span>
 						<h2 class="font-display text-lg font-bold text-base-content">
-							No families around here yet
+							{m.provider_find_empty_title()}
 						</h2>
 						<p class="max-w-sm text-sm text-base-content-muted">
-							Families appear here once they've listed the help they need. Widen the radius to see
-							who's a little further out.
+							{m.provider_find_empty_body()}
 						</p>
 						{#if hasLocation && radiusKm != null && radiusKm < RADIUS_PRESETS[RADIUS_PRESETS.length - 1]}
 							<button
@@ -638,7 +660,9 @@
 								class="btn btn-primary btn-sm"
 								onclick={() => pickRadius(RADIUS_PRESETS[RADIUS_PRESETS.length - 1])}
 							>
-								Search within {RADIUS_PRESETS[RADIUS_PRESETS.length - 1]} km
+								{m.provider_find_search_within({
+									distance: RADIUS_PRESETS[RADIUS_PRESETS.length - 1]
+								})}
 							</button>
 						{/if}
 					</div>
@@ -659,7 +683,7 @@
 						<Pagination
 							page={pageNumber}
 							{totalPages}
-							label="Search result pages"
+							label={m.provider_find_pagination_label()}
 							onselect={(next) => (pageNumber = next)}
 						/>
 					</div>
@@ -675,19 +699,21 @@
 		class="modal modal-bottom modal-open lg:hidden"
 		role="dialog"
 		aria-modal="true"
-		aria-label="Filters"
+		aria-label={m.provider_find_filters()}
 	>
 		<div class="modal-box rounded-t-2xl">
 			<div class="mx-auto mb-3 h-1 w-10 rounded-pill bg-outline-variant"></div>
 			<div class="mb-3 flex items-center justify-between">
-				<h2 class="font-display text-lg font-bold text-base-content">Filters</h2>
+				<h2 class="font-display text-lg font-bold text-base-content">
+					{m.provider_find_filters()}
+				</h2>
 				<button type="button" class="text-xs font-semibold text-primary" onclick={clearFilters}>
-					Clear all
+					{m.provider_find_clear_all()}
 				</button>
 			</div>
 			<div class="flex flex-col gap-3">
 				{#if hasLocation}
-					<div class="join" role="group" aria-label="Search radius">
+					<div class="join" role="group" aria-label={m.provider_find_radius_aria()}>
 						<button
 							type="button"
 							class="btn join-item btn-sm {radiusKm == null
@@ -695,7 +721,7 @@
 								: 'btn-ghost border border-outline-variant'}"
 							onclick={() => pickRadius(null)}
 						>
-							Anywhere
+							{m.provider_find_anywhere()}
 						</button>
 						{#each RADIUS_PRESETS as preset (preset)}
 							<button
@@ -705,7 +731,7 @@
 									: 'btn-ghost border border-outline-variant'}"
 								onclick={() => pickRadius(preset)}
 							>
-								{preset} km
+								{m.provider_family_distance_short({ distance: preset })}
 							</button>
 						{/each}
 					</div>
@@ -717,7 +743,7 @@
 					{#if loading}
 						<span class="loading loading-sm loading-spinner"></span>
 					{:else}
-						Show {total} {total === 1 ? 'family' : 'families'}
+						{m.provider_find_show_count({ count: total })}
 					{/if}
 				</button>
 			</div>
@@ -726,7 +752,7 @@
 			type="button"
 			class="modal-backdrop"
 			onclick={() => (sheetOpen = false)}
-			aria-label="Close filters"
+			aria-label={m.provider_find_close_filters()}
 		></button>
 	</div>
 {/if}

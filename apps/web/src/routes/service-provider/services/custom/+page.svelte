@@ -3,10 +3,14 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { createServiceOffered, listServicesOffered } from '$lib/api/services-offered';
-	import { centsToDollars, dollarsToCents } from '$lib/money';
+	import { formatNumber } from '$lib/locale';
+	import { dollarsToCents, formatMoney, rateRangeLabel } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
+	// Typical market range shown under the rate field.
+	const typicalRange = rateRangeLabel(1800, 3000);
 
 	let name = $state('');
 	let description = $state('');
@@ -38,46 +42,49 @@
 		});
 		if (result.ok) {
 			// The toast store is module-level, so this survives the navigation.
-			toast.success(
-				`${name.trim()} was sent for review — families see it once an administrator approves it.`,
-				{ title: 'Service added' }
-			);
+			toast.success(m.provider_custom_sent_for_review({ name: name.trim() }), {
+				title: m.provider_custom_added_title()
+			});
 			await goto(resolve('/service-provider/services'));
-		} else if (
-			result.error.code === 'INVALID_SERVICE_OFFERED_INPUT' ||
-			result.error.code === 'SERVICE_RATE_BELOW_FLOOR'
-		) {
+		} else if (result.error.code === 'INVALID_SERVICE_OFFERED_INPUT') {
 			// Server-side form validation stays next to the fields.
-			errorMessage = result.error.message;
+			errorMessage = m.provider_custom_invalid_input();
+			saving = false;
+		} else if (result.error.code === 'SERVICE_RATE_BELOW_FLOOR') {
+			errorMessage = m.provider_services_rate_below_floor({
+				amount: formatMoney(result.error.floorCents)
+			});
 			saving = false;
 		} else if (result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED') {
-			toast.error(result.error.message, { title: 'Service not added' });
+			toast.error(m.provider_services_limit({ max: result.error.max }), {
+				title: m.provider_custom_not_added_title()
+			});
 			saving = false;
 		} else {
-			toast.error(RETRY_MESSAGE, { title: 'Service not added' });
+			toast.error(RETRY_MESSAGE, { title: m.provider_custom_not_added_title() });
 			saving = false;
 		}
 	}
 </script>
 
 <svelte:head>
-	<title>Add a custom service · Poppynz</title>
+	<title>{m.provider_custom_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl">
 	<nav class="mb-4 flex items-center gap-2 text-[12.5px] font-medium text-outline">
 		<a href={resolve('/service-provider/services')} class="font-semibold text-primary">
-			Services & rates
+			{m.provider_services_title()}
 		</a>
 		<i class="las la-angle-right text-xs" aria-hidden="true"></i>
-		<span>Custom service</span>
+		<span>{m.provider_custom_breadcrumb()}</span>
 	</nav>
 
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Add a custom service</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">
+		{m.provider_services_add_custom()}
+	</h1>
 	<p class="mt-1 mb-6 max-w-xl text-sm text-base-content-muted">
-		Offer something not on the common list. Describe it in your own words. A Poppynz administrator
-		reviews every custom service before families can see it — personal care needs the PSW service
-		and an approved PSW credential instead.
+		{m.provider_custom_intro()}
 	</p>
 
 	<form
@@ -85,27 +92,27 @@
 		onsubmit={save}
 	>
 		<fieldset class="fieldset">
-			<legend class="fieldset-legend">Service name · ≤120</legend>
+			<legend class="fieldset-legend">{m.provider_custom_name_legend()}</legend>
 			<input
 				class="input w-full"
 				maxlength="120"
 				bind:value={name}
-				placeholder="e.g. Newborn overnight support"
+				placeholder={m.provider_custom_name_placeholder()}
 			/>
 		</fieldset>
 
 		<fieldset class="fieldset mt-3">
-			<legend class="fieldset-legend">Description · optional, ≤1000</legend>
+			<legend class="fieldset-legend">{m.provider_custom_description_legend()}</legend>
 			<textarea
 				class="textarea min-h-20 w-full"
 				maxlength="1000"
 				bind:value={description}
-				placeholder="What's included, who it's for, any certifications…"
+				placeholder={m.provider_custom_description_placeholder()}
 			></textarea>
 		</fieldset>
 
 		<fieldset class="fieldset mt-3">
-			<legend class="fieldset-legend">Hourly rate</legend>
+			<legend class="fieldset-legend">{m.provider_custom_rate_legend()}</legend>
 			<div class="flex items-center gap-2.5">
 				<span
 					class="flex items-center overflow-hidden rounded-md border-[1.5px] border-outline-variant"
@@ -120,7 +127,7 @@
 						class="w-24 px-3.5 py-2.5 text-sm text-base-content outline-none"
 						inputmode="decimal"
 						bind:value={rate}
-						placeholder="30.00"
+						placeholder={formatNumber(30, { minimumFractionDigits: 2 })}
 					/>
 				</span>
 				<span
@@ -132,8 +139,11 @@
 			</div>
 			<p class="label text-xs">
 				{baseRateCents === null
-					? 'Most helpers charge $18–$30/hr.'
-					: `Starts at the $${centsToDollars(baseRateCents)}/hr base rate. Most helpers charge $18–$30/hr.`}
+					? m.provider_custom_rate_hint({ range: typicalRange })
+					: m.provider_custom_rate_hint_base({
+							amount: formatMoney(baseRateCents),
+							range: typicalRange
+						})}
 			</p>
 		</fieldset>
 
@@ -142,12 +152,12 @@
 		{/if}
 
 		<div class="mt-6 flex justify-end gap-2.5">
-			<a href={resolve('/service-provider/services')} class="btn btn-ghost">Cancel</a>
+			<a href={resolve('/service-provider/services')} class="btn btn-ghost">{m.common_cancel()}</a>
 			<button type="submit" class="btn btn-primary" disabled={!canSave || saving}>
 				{#if saving}
 					<span class="loading loading-spinner loading-sm"></span>
 				{/if}
-				Add service
+				{m.provider_custom_submit()}
 			</button>
 		</div>
 	</form>

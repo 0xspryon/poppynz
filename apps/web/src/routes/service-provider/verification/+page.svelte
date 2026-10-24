@@ -20,11 +20,12 @@
 	import DocumentChecklist from '$lib/components/verification/DocumentChecklist.svelte';
 	import SafetyCheckPanel from '$lib/components/verification/SafetyCheckPanel.svelte';
 	import { notifications } from '$lib/notifications.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	type StepId = 'identity' | 'background-check' | 'review';
 	type StepState = 'done' | 'progress' | 'attention' | 'todo';
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 
 	let onboarding = $state<OnboardingState | null>(null);
 	let safety = $state<SafetyVerificationState | null>(null);
@@ -129,21 +130,25 @@
 	});
 
 	const steps = $derived<Array<{ id: StepId; label: string; state: StepState }>>([
-		{ id: 'identity', label: 'Identity', state: identityState },
-		{ id: 'background-check', label: 'Background check', state: backgroundState },
-		{ id: 'review', label: 'Poppynz review', state: reviewState }
+		{ id: 'identity', label: m.provider_verification_step_identity(), state: identityState },
+		{
+			id: 'background-check',
+			label: m.provider_verification_step_background(),
+			state: backgroundState
+		},
+		{ id: 'review', label: m.provider_verification_step_review(), state: reviewState }
 	]);
 
 	const stateText: Record<StepState, string> = {
-		done: 'Done',
-		progress: 'In progress',
-		attention: 'Needs attention',
-		todo: 'To do'
+		done: m.provider_verification_state_done(),
+		progress: m.provider_verification_state_progress(),
+		attention: m.provider_verification_state_attention(),
+		todo: m.provider_verification_state_todo()
 	};
 </script>
 
 <svelte:head>
-	<title>Verification · Poppynz</title>
+	<title>{m.provider_verification_page_title()}</title>
 </svelte:head>
 
 {#snippet stepBadge(index: number, stepState: StepState)}
@@ -182,9 +187,11 @@
 {/snippet}
 
 <div class="mx-auto max-w-4xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Verification</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">
+		{m.provider_verification_title()}
+	</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		Three steps to becoming a verified Poppynz helper. Your ID is never shown to families.
+		{m.provider_verification_intro()}
 	</p>
 
 	{#if loading}
@@ -194,7 +201,7 @@
 	{:else if errorMessage && !onboarding}
 		<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
 	{:else if onboarding && safety && history && vouches}
-		<nav aria-label="Verification steps">
+		<nav aria-label={m.provider_verification_nav_aria()}>
 			<ol class="grid gap-2.5 sm:grid-cols-3">
 				{#each steps as step, index (step.id)}
 					<li>
@@ -218,23 +225,23 @@
 		<section id="identity" class="mt-8 scroll-mt-6">
 			{@render sectionHeading(
 				0,
-				'Identity',
-				'Upload a government-issued ID and any other documents we ask for. They are never shown publicly.'
+				m.provider_verification_step_identity(),
+				m.provider_verification_identity_text()
 			)}
 			<DocumentChecklist
 				documents={identityDocs}
 				{queuedTypeIds}
 				onchanged={load}
 				oncheckList={() => scrollToStep('background-check')}
-				checkListPlace="the Background check step"
+				checkListPlace={m.provider_verification_place_background_step()}
 			/>
 		</section>
 
 		<section id="background-check" class="mt-10 scroll-mt-6">
 			{@render sectionHeading(
 				1,
-				'Background check',
-				'Every Poppynz helper completes the required criminal record check before taking bookings. A Vulnerable Sector Check is optional.'
+				m.provider_verification_step_background(),
+				m.provider_verification_background_text()
 			)}
 			{#if gateDocs.length > 0}
 				<div class="mb-4">
@@ -243,7 +250,7 @@
 						{queuedTypeIds}
 						onchanged={load}
 						oncheckList={() => scrollToStep('background-check')}
-						checkListPlace="your check list below"
+						checkListPlace={m.provider_verification_place_check_list_below()}
 						emptyRequiredText=""
 					/>
 				</div>
@@ -252,21 +259,23 @@
 				summary={safety}
 				onchanged={load}
 				ondocuments={() => scrollToStep('identity')}
-				documentsPlace="the list above"
+				documentsPlace={m.provider_verification_place_list_above()}
 				showDocumentsButton={false}
 			/>
 		</section>
 
 		<section id="vouches" class="mt-10 scroll-mt-6">
-			<h2 class="mb-4 font-display text-lg font-bold text-base-content">Vouches</h2>
+			<h2 class="mb-4 font-display text-lg font-bold text-base-content">
+				{m.provider_verification_vouches()}
+			</h2>
 			<ApplicantVouchesPanel data={vouches} onchanged={load} />
 		</section>
 
 		<section id="review" class="mt-10 scroll-mt-6">
 			{@render sectionHeading(
 				2,
-				'Poppynz review',
-				'Our team reviews your profile and lets you know if anything else is needed.'
+				m.provider_verification_step_review(),
+				m.provider_verification_review_text()
 			)}
 			<ApprovalPanel
 				role="service-provider"

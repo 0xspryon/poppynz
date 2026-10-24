@@ -8,16 +8,18 @@
 		listServicesOffered,
 		removeServiceOffered,
 		updateServiceOffered,
+		type ServiceMutationError,
 		type ServiceOffered
 	} from '$lib/api/services-offered';
 	import { acceptTcs, listPendingTcs, type PublishedTc } from '$lib/api/tcs';
-	import { centsToDollars, dollarsToCents } from '$lib/money';
+	import { centsToDollars, dollarsToCents, formatMoney } from '$lib/money';
+	import { m } from '$lib/paraglide/messages';
 	import BrowseServicesDialog from '$lib/components/BrowseServicesDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import TcModal from '$lib/components/TcModal.svelte';
 	import { toast } from '$lib/toast.svelte';
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 	const COMMON_COUNT = 6;
 
 	let catalogue = $state<Array<CatalogueItem>>([]);
@@ -64,10 +66,10 @@
 		if (result.ok) {
 			feeTerms = null;
 		} else if (result.error.code === 'TC_VERSION_STALE') {
-			feeTermsError = 'These terms were just updated — please review the newest version.';
+			feeTermsError = m.provider_services_terms_stale();
 			await loadFeeTerms();
 		} else {
-			feeTermsError = 'We could not record your acceptance. Please try again.';
+			feeTermsError = m.provider_services_terms_failed();
 		}
 		feeTermsBusy = false;
 	}
@@ -106,9 +108,21 @@
 	);
 	const commonServices = $derived(catalogue.slice(0, COMMON_COUNT));
 	const limitReached = $derived(services.length >= maxServices);
-	const limitMessage = $derived(
-		`You can offer up to ${maxServices} services — remove one to add another.`
-	);
+	const limitMessage = $derived(m.provider_services_limit({ max: maxServices }));
+
+	/** Localized text for a create/update failure (the API's messages are English). */
+	function mutationErrorText(error: ServiceMutationError, serviceName: string): string {
+		switch (error.code) {
+			case 'SERVICES_OFFERED_LIMIT_REACHED':
+				return m.provider_services_limit({ max: error.max });
+			case 'SERVICE_CREDENTIAL_REQUIRED':
+				return m.provider_services_credential_required({ service: serviceName });
+			case 'SERVICE_RATE_BELOW_FLOOR':
+				return m.provider_services_rate_below_floor({ amount: formatMoney(error.floorCents) });
+			default:
+				return RETRY_MESSAGE;
+		}
+	}
 
 	function floorFor(service: ServiceOffered): number | null {
 		// Custom services floor at the platform base rate (UAT #34).
@@ -126,15 +140,19 @@
 			catalogueServiceId: item.id
 		});
 		if (result.ok) {
-			toast.success(`${item.name} added to your services.`);
+			toast.success(m.provider_services_added({ name: item.name }));
 			await load();
 		} else if (
 			result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED' ||
 			result.error.code === 'SERVICE_CREDENTIAL_REQUIRED'
 		) {
-			toast.error(result.error.message, { title: `Could not add ${item.name}` });
+			toast.error(mutationErrorText(result.error, item.name), {
+				title: m.provider_services_add_failed_title({ name: item.name })
+			});
 		} else {
-			toast.error(RETRY_MESSAGE, { title: `Could not add ${item.name}` });
+			toast.error(RETRY_MESSAGE, {
+				title: m.provider_services_add_failed_title({ name: item.name })
+			});
 		}
 		busyIds.delete(item.id);
 	}
@@ -143,7 +161,7 @@
 		const draft = rateDrafts.get(service.id) ?? '';
 		const cents = dollarsToCents(draft);
 		if (cents === null) {
-			rowErrors.set(service.id, 'Enter a valid hourly rate.');
+			rowErrors.set(service.id, m.provider_services_rate_invalid());
 			return;
 		}
 		if (cents === service.hourlyRateCents) {
@@ -154,7 +172,7 @@
 		if (floor !== null && cents < floor) {
 			rowErrors.set(
 				service.id,
-				`Below the $${centsToDollars(floor)} base rate for this service — raise it to save.`
+				m.provider_services_rate_below_floor({ amount: formatMoney(floor) })
 			);
 			return;
 		}
@@ -165,14 +183,21 @@
 			rateDrafts.set(service.id, centsToDollars(result.data.hourlyRateCents));
 			rowErrors.delete(service.id);
 			toast.success(
-				`${service.name} rate updated to $${centsToDollars(result.data.hourlyRateCents)}/hr.`
+				m.provider_services_rate_updated({
+					name: service.name,
+					amount: formatMoney(result.data.hourlyRateCents)
+				})
 			);
 		} else if (result.error.code === 'SERVICE_RATE_BELOW_FLOOR') {
-			rowErrors.set(service.id, result.error.message);
+			rowErrors.set(service.id, mutationErrorText(result.error, service.name));
 		} else if (result.error.code === 'SERVICE_CREDENTIAL_REQUIRED') {
-			toast.error(result.error.message, { title: `${service.name} not updated` });
+			toast.error(mutationErrorText(result.error, service.name), {
+				title: m.provider_services_not_updated_title({ name: service.name })
+			});
 		} else {
-			toast.error(RETRY_MESSAGE, { title: `${service.name} rate not saved` });
+			toast.error(RETRY_MESSAGE, {
+				title: m.provider_services_rate_not_saved_title({ name: service.name })
+			});
 		}
 		busyIds.delete(service.id);
 	}
@@ -183,11 +208,13 @@
 		const result = await removeServiceOffered(deleting.id);
 		deleteBusy = false;
 		if (result.ok) {
-			toast.success(`${deleting.name} removed from your services.`);
+			toast.success(m.provider_services_removed({ name: deleting.name }));
 			deleting = null;
 			await load();
 		} else {
-			toast.error(RETRY_MESSAGE, { title: `Could not remove ${deleting.name}` });
+			toast.error(RETRY_MESSAGE, {
+				title: m.provider_services_remove_failed_title({ name: deleting.name })
+			});
 			deleting = null;
 		}
 	}
@@ -205,14 +232,12 @@
 				catalogueServiceId: item.id
 			});
 			if (!result.ok) {
-				const reason =
-					result.error.code === 'SERVICES_OFFERED_LIMIT_REACHED' ||
-					result.error.code === 'SERVICE_CREDENTIAL_REQUIRED'
-						? result.error.message
-						: RETRY_MESSAGE;
+				const reason = mutationErrorText(result.error, item.name);
 				toast.error(
-					added > 0 ? `Only ${added} of ${ids.length} services were added. ${reason}` : reason,
-					{ title: 'Could not add services' }
+					added > 0
+						? m.provider_services_partial_added({ added, total: ids.length, reason })
+						: reason,
+					{ title: m.provider_services_add_many_failed_title() }
 				);
 				browseBusy = false;
 				await load();
@@ -222,7 +247,7 @@
 		}
 		browseOpen = false;
 		browseBusy = false;
-		toast.success(added === 1 ? '1 service added.' : `${added} services added.`);
+		toast.success(m.provider_services_added_count({ count: added }));
 		await load();
 	}
 
@@ -232,21 +257,23 @@
 		const diff = service.hourlyRateCents - floor;
 		if (diff > 0) {
 			return {
-				label: `+$${centsToDollars(diff)} over base`,
+				label: m.provider_services_over_base({ amount: formatMoney(diff) }),
 				classes: 'bg-success-content text-success'
 			};
 		}
-		return { label: 'At base', classes: 'bg-info-content text-info' };
+		return { label: m.provider_services_at_base(), classes: 'bg-info-content text-info' };
 	}
 </script>
 
 <svelte:head>
-	<title>Services & rates · Poppynz</title>
+	<title>{m.provider_services_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-4xl">
 	<div class="flex flex-wrap items-center justify-between gap-3">
-		<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Services & rates</h1>
+		<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">
+			{m.provider_services_title()}
+		</h1>
 		{#if limitReached && !loading}
 			<span
 				class="btn btn-outline btn-secondary btn-disabled"
@@ -254,17 +281,17 @@
 				aria-disabled="true"
 			>
 				<i class="las la-plus" aria-hidden="true"></i>
-				Add a custom service
+				{m.provider_services_add_custom()}
 			</span>
 		{:else}
 			<a href={resolve('/service-provider/services/custom')} class="btn btn-outline btn-secondary">
 				<i class="las la-plus" aria-hidden="true"></i>
-				Add a custom service
+				{m.provider_services_add_custom()}
 			</a>
 		{/if}
 	</div>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		Pick the services you offer — each comes with a base rate you can raise, but not go below.
+		{m.provider_services_intro()}
 	</p>
 
 	{#if loading}
@@ -275,7 +302,7 @@
 		<p role="alert" class="text-sm font-medium text-error">{errorMessage}</p>
 	{:else}
 		<div class="mb-2.5 text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-			Common services
+			{m.provider_services_common()}
 		</div>
 		<div class="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-3">
 			{#each commonServices as item (item.id)}
@@ -305,10 +332,13 @@
 					</span>
 					<div class="text-[13px] font-semibold text-base-content">{item.name}</div>
 					<div class="text-xs text-base-content-muted">
-						Base rate <b class="text-secondary">${centsToDollars(item.baseHourlyRateCents)}/hr</b>
+						{m.provider_services_base_rate_label()}
+						<b class="text-secondary"
+							>{m.money_per_hour({ amount: formatMoney(item.baseHourlyRateCents) })}</b
+						>
 					</div>
 					{#if inList}
-						<div class="mt-1 text-[10.5px] text-success">✓ In your list</div>
+						<div class="mt-1 text-[10.5px] text-success">{m.provider_services_in_list()}</div>
 					{/if}
 				</button>
 			{/each}
@@ -324,17 +354,17 @@
 					<i class="las la-search text-base text-secondary" aria-hidden="true"></i>
 				</span>
 				<span class="text-[13px] font-semibold text-secondary">
-					Browse all {catalogue.length} services
+					{m.provider_services_browse_all({ count: catalogue.length })}
 				</span>
-				<span class="text-[11px] text-base-content-muted">See the full list with base rates</span>
+				<span class="text-[11px] text-base-content-muted">{m.provider_services_browse_hint()}</span>
 			</button>
 		</div>
 
 		<div class="mb-2.5 flex flex-wrap items-center justify-between gap-2">
 			<span class="text-[11px] font-semibold tracking-[0.1em] text-neutral uppercase">
-				Your services · {services.length} / {maxServices}
+				{m.provider_services_yours({ count: services.length, max: maxServices })}
 			</span>
-			<span class="text-xs text-outline">Rates can't go below the base rate for the service</span>
+			<span class="text-xs text-outline">{m.provider_services_floor_note()}</span>
 		</div>
 
 		{#if limitReached}
@@ -351,7 +381,7 @@
 			<p
 				class="rounded-lg border border-card-border bg-base-100 p-6 text-sm text-base-content-muted"
 			>
-				Nothing listed yet — pick a common service above or add a custom one.
+				{m.provider_services_empty()}
 			</p>
 		{:else}
 			<div class="flex flex-col gap-2.5">
@@ -367,23 +397,31 @@
 								<i class="las la-heart text-lg text-secondary" aria-hidden="true"></i>
 							</span>
 							<div class="min-w-0 flex-1">
-								<div class="flex flex-wrap items-center gap-2 text-sm font-semibold text-base-content">
+								<div
+									class="flex flex-wrap items-center gap-2 text-sm font-semibold text-base-content"
+								>
 									{service.name}
 									{#if service.reviewStatus === 'pending'}
-										<span class="rounded-sm bg-info-content px-1.5 py-0.5 text-[10.5px] font-semibold text-info">
-											Awaiting review
+										<span
+											class="rounded-sm bg-info-content px-1.5 py-0.5 text-[10.5px] font-semibold text-info"
+										>
+											{m.provider_services_awaiting_review()}
 										</span>
 									{:else if service.reviewStatus === 'rejected'}
-										<span class="rounded-sm bg-error-content px-1.5 py-0.5 text-[10.5px] font-semibold text-error">
-											Not approved
+										<span
+											class="rounded-sm bg-error-content px-1.5 py-0.5 text-[10.5px] font-semibold text-error"
+										>
+											{m.provider_services_not_approved()}
 										</span>
 									{/if}
 								</div>
 								<div class="text-xs text-base-content-muted">
 									{#if service.catalogueServiceId}
-										Base rate ${centsToDollars(floorFor(service) ?? 0)}/hr
+										{m.provider_services_base_rate_line({
+											amount: formatMoney(floorFor(service) ?? 0)
+										})}
 									{:else}
-										Custom service · from ${centsToDollars(customBaseRateCents)}/hr
+										{m.provider_services_custom_from({ amount: formatMoney(customBaseRateCents) })}
 										{#if service.description}
 											· {service.description}
 										{/if}
@@ -391,14 +429,14 @@
 								</div>
 								{#if service.reviewStatus === 'pending'}
 									<div class="mt-0.5 text-[11.5px] text-outline">
-										Families see it once a Poppynz administrator approves it.
+										{m.provider_services_pending_note()}
 									</div>
 								{:else if service.reviewStatus === 'rejected' && service.reviewReason}
 									<div class="mt-0.5 text-[11.5px] text-error">{service.reviewReason}</div>
 								{/if}
 							</div>
 							<label class="flex items-center gap-2">
-								<span class="text-xs text-outline">Your rate</span>
+								<span class="text-xs text-outline">{m.provider_services_your_rate()}</span>
 								<span
 									class="flex items-center overflow-hidden rounded-md border-[1.5px]
 										{rowError ? 'border-error' : 'border-outline-variant'}"
@@ -423,7 +461,7 @@
 												(event.currentTarget as HTMLInputElement).blur();
 											}
 										}}
-										aria-label="Hourly rate for {service.name}"
+										aria-label={m.provider_services_rate_aria({ name: service.name })}
 									/>
 								</span>
 							</label>
@@ -439,7 +477,7 @@
 								class="flex size-8 items-center justify-center rounded-[7px] border
 									border-card-border text-outline transition-colors hover:border-error
 									hover:text-error"
-								aria-label="Remove {service.name}"
+								aria-label={m.provider_services_remove_aria({ name: service.name })}
 								onclick={() => (deleting = service)}
 							>
 								<i class="las la-trash-alt text-base" aria-hidden="true"></i>
@@ -469,9 +507,9 @@
 
 <ConfirmDialog
 	open={deleting !== null}
-	title="Remove service"
-	body="Remove “{deleting?.name}” from your list? Families will no longer see it."
-	confirmLabel="Remove"
+	title={m.provider_services_remove_title()}
+	body={m.provider_services_remove_body({ name: deleting?.name ?? '' })}
+	confirmLabel={m.common_remove()}
 	busy={deleteBusy}
 	onconfirm={() => void confirmDelete()}
 	oncancel={() => (deleting = null)}
@@ -483,7 +521,7 @@
 		title={feeTerms.title}
 		content={feeTerms.content}
 		checkboxLabel={feeTerms.checkboxLabel}
-		intro="Before you offer services, please review how the Poppynz service fee works."
+		intro={m.provider_services_fee_intro()}
 		busy={feeTermsBusy}
 		error={feeTermsError}
 		onaccept={acceptFeeTerms}

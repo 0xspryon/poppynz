@@ -5,6 +5,8 @@
 	 * geo-searching. No rates — families describe needs, providers price them. */
 	import type { ResolvedPathname } from '$app/types';
 	import type { FamilyHit } from '$lib/api/families';
+	import { formatNumber } from '$lib/locale';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		family: FamilyHit;
@@ -13,7 +15,9 @@
 
 	let { family, href }: Props = $props();
 
-	const name = $derived(family.displayName ?? `Family in ${family.location.city}`);
+	const name = $derived(
+		family.displayName ?? m.provider_family_in_city({ city: family.location.city })
+	);
 	const anonymous = $derived(family.displayName == null);
 	const initials = $derived(
 		(family.displayName ?? '')
@@ -61,7 +65,7 @@
 				<span class="truncate">{family.location.city}, {family.location.stateProvince}</span>
 				{#if family.distanceKm !== undefined}
 					<span class="rounded-pill bg-base-500 px-2 py-0.5 text-[11px] font-semibold text-info">
-						{family.distanceKm} km
+						{m.provider_family_distance_short({ distance: formatNumber(family.distanceKm) })}
 					</span>
 				{/if}
 			</div>
@@ -76,7 +80,7 @@
 
 	<div class="mt-auto">
 		<div class="mb-1.5 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-			Looking for
+			{m.provider_family_card_looking_for()}
 		</div>
 		<div class="flex flex-wrap gap-1.5">
 			{#each shownServices as service (service)}
@@ -92,7 +96,7 @@
 					class="rounded-pill border border-dashed border-outline-variant px-2.5 py-1 text-[11px]
 						font-semibold text-base-content-muted"
 				>
-					+{overflow} more
+					{m.provider_family_card_more({ count: overflow })}
 				</span>
 			{/if}
 		</div>

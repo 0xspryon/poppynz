@@ -11,7 +11,9 @@
 	import { lookupConversation, type ConversationLookup } from '$lib/api/conversations';
 	import { getFamily, type FamilyDetail } from '$lib/api/families';
 	import ReachoutComposerModal from '$lib/components/messages/ReachoutComposerModal.svelte';
+	import { formatNumber } from '$lib/locale';
 	import { withQuery } from '$lib/nav';
+	import { m } from '$lib/paraglide/messages';
 
 	let family = $state<FamilyDetail | null>(null);
 	let loading = $state(true);
@@ -73,8 +75,16 @@
 		);
 	}
 
-	const name = $derived(family ? (family.displayName ?? `Family in ${family.location.city}`) : '');
-	const firstName = $derived(family?.displayName?.split(/\s+/)[0] ?? 'this family');
+	const name = $derived(
+		family ? (family.displayName ?? m.provider_family_in_city({ city: family.location.city })) : ''
+	);
+	const firstName = $derived(family?.displayName?.split(/\s+/)[0] ?? null);
+	const messageLabel = $derived(
+		firstName ? m.provider_family_message_named({ name: firstName }) : m.provider_family_message()
+	);
+	const contactLabel = $derived(
+		firstName ? m.provider_family_contact_named({ name: firstName }) : m.provider_family_contact()
+	);
 	const initials = $derived(
 		(family?.displayName ?? '')
 			.split(/\s+/)
@@ -86,7 +96,9 @@
 </script>
 
 <svelte:head>
-	<title>{name ? `${name} · Poppynz` : 'Family profile · Poppynz'}</title>
+	<title
+		>{name ? m.provider_family_page_title({ name }) : m.provider_family_page_title_default()}</title
+	>
 </svelte:head>
 
 <div class="mx-auto flex max-w-5xl flex-col gap-5 pb-24 lg:pb-0">
@@ -95,7 +107,7 @@
 		class="inline-flex items-center gap-1.5 self-start text-sm font-semibold text-primary"
 	>
 		<i class="las la-angle-left" aria-hidden="true"></i>
-		Back to results
+		{m.provider_family_back()}
 	</a>
 
 	{#if loading}
@@ -117,11 +129,13 @@
 			<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
 				<i class="las la-user-slash text-2xl text-neutral" aria-hidden="true"></i>
 			</span>
-			<h1 class="font-display text-lg font-bold text-base-content">This family isn't available</h1>
+			<h1 class="font-display text-lg font-bold text-base-content">
+				{m.provider_family_unavailable_title()}
+			</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
-				They may have paused their listing. Head back to the results to keep browsing.
+				{m.provider_family_unavailable_body()}
 			</p>
-			<a href={backHref} class="btn btn-primary btn-sm"> Back to results </a>
+			<a href={backHref} class="btn btn-primary btn-sm">{m.provider_family_back()}</a>
 		</div>
 	{:else if loadError}
 		<div
@@ -131,10 +145,10 @@
 				<i class="las la-exclamation-triangle text-2xl text-error" aria-hidden="true"></i>
 			</span>
 			<h1 class="font-display text-lg font-bold text-base-content">
-				Something went wrong on our side
+				{m.provider_family_error_title()}
 			</h1>
 			<p class="max-w-sm text-sm text-base-content-muted">
-				This profile didn't load. Try again in a moment.
+				{m.provider_family_error_body()}
 			</p>
 			<button
 				type="button"
@@ -142,7 +156,7 @@
 				onclick={() => (retryTick = retryTick + 1)}
 			>
 				<i class="las la-redo-alt" aria-hidden="true"></i>
-				Retry
+				{m.provider_family_retry()}
 			</button>
 		</div>
 	{:else if family}
@@ -175,7 +189,7 @@
 						</span>
 						{#if distanceKm != null}
 							<span class="rounded-pill bg-base-500 px-2.5 py-1 text-xs font-semibold text-info">
-								{distanceKm} km from you
+								{m.provider_family_distance({ distance: formatNumber(distanceKm) })}
 							</span>
 						{/if}
 					</div>
@@ -190,18 +204,20 @@
 							)}
 							class="btn btn-primary"
 						>
-							Message {firstName}
+							{messageLabel}
 						</a>
 						{#if conversation.status === 'pending'}
 							<span
 								class="rounded-pill bg-warning-content px-2.5 py-1 text-[11px] font-bold text-warning"
 							>
-								{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
+								{conversation.awaitingMyResponse
+									? m.provider_family_reachout_awaiting_you()
+									: m.provider_family_awaiting_response()}
 							</span>
 						{/if}
 					{:else}
 						<button type="button" class="btn btn-primary" onclick={() => (composerOpen = true)}>
-							Contact {firstName}
+							{contactLabel}
 						</button>
 					{/if}
 				</div>
@@ -213,7 +229,9 @@
 				{#if family.shortBio}
 					<section class="rounded-xl border border-card-border bg-base-100 p-6">
 						<h2 class="mb-3 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-							About {firstName}
+							{firstName
+								? m.provider_family_about_named({ name: firstName })
+								: m.provider_family_about()}
 						</h2>
 						<p class="text-sm leading-relaxed whitespace-pre-line text-base-content">
 							{family.shortBio}
@@ -223,7 +241,7 @@
 
 				<section class="rounded-xl border border-card-border bg-base-100 p-6">
 					<h2 class="mb-3 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-						Help they're looking for
+						{m.provider_family_help_heading()}
 					</h2>
 					<ul class="flex flex-col gap-2.5">
 						{#each family.services as service (service.id)}
@@ -243,29 +261,30 @@
 			<div class="flex flex-col gap-5">
 				<section class="rounded-xl border border-card-border bg-base-100 p-6">
 					<h2 class="mb-3 text-[10px] font-semibold tracking-[0.1em] text-neutral uppercase">
-						Location
+						{m.provider_family_location_heading()}
 					</h2>
 					<!-- Approximate area only — never an exact pin or street address. -->
 					<div
 						class="relative flex h-40 items-center justify-center overflow-hidden rounded-lg
 							bg-base-300"
 						role="img"
-						aria-label="Approximate area around {family.location.city}"
+						aria-label={m.provider_family_area_aria({ city: family.location.city })}
 					>
 						<span class="absolute size-24 rounded-full bg-primary/20"></span>
 						<span class="absolute size-12 rounded-full bg-primary/25"></span>
 						<span
 							class="relative z-10 rounded-pill bg-base-100 px-2.5 py-1 text-[11px] font-semibold text-neutral"
 						>
-							Approximate area
+							{m.provider_family_area_label()}
 						</span>
 					</div>
 					<p class="mt-3 text-[13px] leading-relaxed text-base-content-muted">
-						{firstName === 'this family' ? 'This family lives' : `${firstName}'s family lives`} around
+						{firstName
+							? m.provider_family_lives_named_before({ name: firstName })
+							: m.provider_family_lives_before()}
 						<strong class="text-base-content">
 							{family.location.city}, {family.location.stateProvince}</strong
-						>. For everyone's safety, Poppynz only ever shows an approximate area — never a street
-						address.
+						>{m.provider_family_lives_after()}
 					</p>
 				</section>
 			</div>
@@ -281,7 +300,9 @@
 					<span
 						class="rounded-pill bg-warning-content px-2.5 py-0.5 text-[11px] font-bold text-warning"
 					>
-						{conversation.awaitingMyResponse ? 'Reach-out awaiting you' : 'Awaiting response'}
+						{conversation.awaitingMyResponse
+							? m.provider_family_reachout_awaiting_you()
+							: m.provider_family_awaiting_response()}
 					</span>
 				{/if}
 				<a
@@ -291,11 +312,11 @@
 					)}
 					class="btn w-full btn-primary"
 				>
-					Message {firstName}
+					{messageLabel}
 				</a>
 			{:else}
 				<button type="button" class="btn w-full btn-primary" onclick={() => (composerOpen = true)}>
-					Contact {firstName}
+					{contactLabel}
 				</button>
 			{/if}
 		</div>

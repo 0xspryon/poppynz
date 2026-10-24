@@ -7,8 +7,13 @@
 		openPayoutsDashboard,
 		refreshPayouts,
 		startPayoutsOnboarding,
-		type PayoutsState
+		type PayoutsDashboardError,
+		type PayoutsOnboardingError,
+		type PayoutsRefreshError,
+		type PayoutsState,
+		type PayoutsStatusError
 	} from '$lib/api/payouts';
+	import { m } from '$lib/paraglide/messages';
 	import { payoutsBadge } from '$lib/payouts-badge.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { onMount } from 'svelte';
@@ -32,6 +37,28 @@
 	let loading = $state(true);
 	let busy = $state(false);
 
+	type PayoutsError =
+		| PayoutsStatusError
+		| PayoutsOnboardingError
+		| PayoutsRefreshError
+		| PayoutsDashboardError;
+
+	/** Localized text for a payouts failure (the API's messages are English). */
+	function errorText(error: PayoutsError): string {
+		switch (error.code) {
+			case 'NO_PAYOUT_ACCOUNT':
+				return m.payouts_error_no_account();
+			case 'PAYOUTS_PROVIDER_ERROR':
+				return m.payouts_error_provider();
+			case 'PAYOUTS_LOOKUP_FAILED':
+				return m.payouts_error_lookup();
+			case 'UNEXPECTED':
+				return error.status === null ? m.common_error_network() : m.common_error_generic();
+			default:
+				return m.common_error_generic();
+		}
+	}
+
 	async function load(request: typeof getPayouts | typeof refreshPayouts) {
 		loading = true;
 		const result = await request();
@@ -40,7 +67,7 @@
 			payouts = result.data;
 			payoutsBadge.needsSetup = !result.data.paymentReady;
 		} else {
-			toast.error(result.error.message, { title: 'Payouts unavailable' });
+			toast.error(errorText(result.error), { title: m.payouts_unavailable_title() });
 		}
 	}
 
@@ -58,7 +85,7 @@
 			return true;
 		}
 		busy = false;
-		toast.error(result.error.message, { title: failureTitle });
+		toast.error(errorText(result.error), { title: failureTitle });
 		return false;
 	}
 
@@ -66,7 +93,7 @@
 		void (async () => {
 			if (returnState === 'refresh') {
 				onreturnhandled?.();
-				const leaving = await goToStripe(startPayoutsOnboarding, "Couldn't reopen Stripe");
+				const leaving = await goToStripe(startPayoutsOnboarding, m.payouts_reopen_failed_title());
 				if (!leaving) await load(getPayouts);
 				return;
 			}
@@ -81,60 +108,64 @@
 </script>
 
 <div class="mx-auto max-w-3xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Payouts</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.payouts_title()}</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		Poppynz pays your earnings through Stripe. Stripe verifies your identity and your bank
-		account — Poppynz never sees those details.
+		{m.payouts_intro()}
 	</p>
 
 	<section class="rounded-xl border border-card-border bg-base-100 p-5 lg:p-6" aria-live="polite">
 		{#if loading}
-			<span class="loading loading-spinner loading-md" aria-label="Loading"></span>
+			<span class="loading loading-spinner loading-md" aria-label={m.common_loading()}></span>
 		{:else if payouts === null}
 			<p class="text-sm text-base-content-muted">
-				Your payout status couldn't be loaded. Refresh the page to try again.
+				{m.payouts_load_failed()}
 			</p>
 		{:else if !payouts.hasAccount}
-			<h2 class="text-[15px] font-bold text-base-content">Set up your payout account</h2>
+			<h2 class="text-[15px] font-bold text-base-content">
+				{m.payouts_setup_title()}
+			</h2>
 			<p class="mt-1 text-sm text-base-content-muted">
-				It takes a few minutes on Stripe. You can accept contracts before it's done, but you'll
-				need it to be paid.
+				{m.payouts_setup_body()}
 			</p>
 			<button
 				type="button"
 				class="btn mt-4 btn-primary"
 				disabled={busy}
-				onclick={() => goToStripe(startPayoutsOnboarding, "Couldn't open Stripe")}
+				onclick={() => goToStripe(startPayoutsOnboarding, m.payouts_open_failed_title())}
 			>
 				{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
-				Set up payouts
+				{m.payouts_setup_cta()}
 			</button>
 		{:else if payouts.status === 'ready'}
 			<div class="flex items-center gap-2 text-success">
 				<i class="las la-check-circle text-xl" aria-hidden="true"></i>
-				<h2 class="text-[15px] font-bold">Ready to be paid</h2>
+				<h2 class="text-[15px] font-bold">{m.payouts_ready_title()}</h2>
 			</div>
 			<p class="mt-1 text-sm text-base-content-muted">
-				Your payout account is set up. Stripe sends your earnings to your bank account.
+				{m.payouts_ready_body()}
 			</p>
 			<button
 				type="button"
 				class="btn mt-4 btn-outline"
 				disabled={busy}
-				onclick={() => goToStripe(openPayoutsDashboard, "Couldn't open Stripe")}
+				onclick={() => goToStripe(openPayoutsDashboard, m.payouts_open_failed_title())}
 			>
 				{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
-				View payouts in Stripe
+				{m.payouts_view_in_stripe()}
 			</button>
 		{:else if payouts.status === 'restricted' && payouts.requirementsDue.length === 0}
 			<!-- Restricted with nothing due: Stripe is verifying what it has
 			     (pending_verification, under_review). Nothing for the helper to fix. -->
-			<h2 class="text-[15px] font-bold text-base-content">Stripe is reviewing your details</h2>
+			<h2 class="text-[15px] font-bold text-base-content">
+				{m.payouts_reviewing_title()}
+			</h2>
 			<p class="mt-1 text-sm text-base-content-muted">
-				There's nothing more to do for now. This page updates once Stripe has finished.
+				{m.payouts_reviewing_body()}
 			</p>
 		{:else if payouts.status === 'restricted'}
-			<h2 class="text-[15px] font-bold text-base-content">Stripe needs a few more details</h2>
+			<h2 class="text-[15px] font-bold text-base-content">
+				{m.payouts_details_needed_title()}
+			</h2>
 			<ul class="mt-2 list-disc pl-5 text-sm text-base-content">
 				{#each payouts.requirementsDue as label (label)}
 					<li>{label}</li>
@@ -144,28 +175,29 @@
 				type="button"
 				class="btn mt-4 btn-primary"
 				disabled={busy}
-				onclick={() => goToStripe(startPayoutsOnboarding, "Couldn't open Stripe")}
+				onclick={() => goToStripe(startPayoutsOnboarding, m.payouts_open_failed_title())}
 			>
 				{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
-				Fix in Stripe
+				{m.payouts_fix_in_stripe()}
 			</button>
 		{:else if payouts.status === 'disabled'}
-			<h2 class="text-[15px] font-bold text-error">Payouts are turned off</h2>
+			<h2 class="text-[15px] font-bold text-error">{m.payouts_disabled_title()}</h2>
 			<p class="mt-1 text-sm text-base-content-muted">
-				Stripe can't pay out to this account. Please contact Poppynz support so we can help you
-				sort it out.
+				{m.payouts_disabled_body()}
 			</p>
 		{:else}
-			<h2 class="text-[15px] font-bold text-base-content">Your setup isn't finished</h2>
-			<p class="mt-1 text-sm text-base-content-muted">Pick up where you left off on Stripe.</p>
+			<h2 class="text-[15px] font-bold text-base-content">
+				{m.payouts_unfinished_title()}
+			</h2>
+			<p class="mt-1 text-sm text-base-content-muted">{m.payouts_unfinished_body()}</p>
 			<button
 				type="button"
 				class="btn mt-4 btn-primary"
 				disabled={busy}
-				onclick={() => goToStripe(startPayoutsOnboarding, "Couldn't open Stripe")}
+				onclick={() => goToStripe(startPayoutsOnboarding, m.payouts_open_failed_title())}
 			>
 				{#if busy}<span class="loading loading-spinner loading-xs"></span>{/if}
-				Continue setup
+				{m.payouts_continue_setup()}
 			</button>
 		{/if}
 	</section>

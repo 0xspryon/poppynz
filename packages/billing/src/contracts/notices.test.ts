@@ -9,7 +9,7 @@ import {
 } from '@repo/db';
 import { makeMailerTest, type ContractBillingNoticeMail } from '@repo/mail';
 import { NoopNotificationHubTest } from '@repo/notify';
-import { Effect, Layer } from 'effect';
+import { Effect, Layer, Logger } from 'effect';
 import { copyFor, cycleDates, sendBillingNotice, type BillingNoticeKind } from './notices';
 
 const nbsp = ' ';
@@ -54,16 +54,37 @@ const world = (languages: Record<string, string | undefined>) => {
     }),
     NoopNotificationHubTest
   );
+  const logs: Array<string> = [];
+  const capture = Logger.replace(
+    Logger.defaultLogger,
+    Logger.make(({ message }) => void logs.push(String(message)))
+  );
   const send = (
     kind: BillingNoticeKind,
     parties: ReadonlyArray<'family' | 'helper'>,
     extra: Partial<Parameters<typeof sendBillingNotice>[2]> = {}
   ) =>
     Effect.runPromise(
-      sendBillingNotice(kind, parties, { contract, cycle, ...extra }).pipe(Effect.provide(layer))
+      sendBillingNotice(kind, parties, { contract, cycle, ...extra }).pipe(
+        Effect.provide(layer),
+        Effect.provide(capture)
+      )
     );
-  return { mails, send };
+  return { mails, send, logs };
 };
+
+describe('sendBillingNotice logging', () => {
+  it('logs who was notified by user id, never by email address', async () => {
+    const { send, logs } = world({ 'family-1': 'en', 'helper-1': 'en' });
+    await send('suspended', ['family', 'helper']);
+    const sent = logs.filter((line) => line.includes('[billing] notice suspended sent'));
+    expect(sent).toEqual([
+      '[billing] notice suspended sent to family family-1',
+      '[billing] notice suspended sent to helper helper-1'
+    ]);
+    expect(logs.some((line) => line.includes('@'))).toBe(false);
+  });
+});
 
 describe('sendBillingNotice locale', () => {
   it("writes each party's mail in their own profile language", async () => {

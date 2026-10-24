@@ -416,7 +416,7 @@ export const sendBillingNotice = (
         .pipe(
           // Logged on every runtime alike (api and worker), so a notice is
           // traceable wherever the billing step ran.
-          Effect.tap(() => Effect.logInfo(`[billing] notice ${kind} sent to ${party} ${me.email}`)),
+          Effect.tap(() => Effect.logInfo(`[billing] notice ${kind} sent to ${party} ${userId}`)),
           Effect.catchAll((error) => Effect.logWarning(`billing notice ${kind} not sent`, error))
         );
     }

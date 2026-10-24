@@ -77,6 +77,9 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
 });
 
 const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
+  issuedOn: null,
+  reviewedBy: null,
+  reviewedAt: null,
   id: 'kyc-document-1',
   userId: 'provider-1',
   documentTypeId: 'document-type-1',

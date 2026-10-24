@@ -286,6 +286,11 @@ const makeLayer = (
                   description: null,
                   hourlyRateCents: 2500,
                   currency: 'CAD',
+                  catalogueServiceId: null,
+                  reviewStatus: 'approved' as const,
+                  reviewedBy: null,
+                  reviewedAt: null,
+                  reviewReason: null,
                   deletedAt: null,
                   createdAt: new Date('2026-06-12T00:00:00.000Z'),
                   updatedAt: new Date('2026-06-12T00:00:00.000Z')

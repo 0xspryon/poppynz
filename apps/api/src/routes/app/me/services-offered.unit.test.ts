@@ -1,6 +1,10 @@
 import { SqlError } from '@effect/sql/SqlError';
 import {
   DBNotFoundError,
+  type KycDocument,
+  type KycDocumentType,
+  makeKycDocumentRepoTest,
+  makeKycDocumentTypeRepoTest,
   makeServiceCatalogueRepoTest,
   makeServiceOfferedRepoTest,
   makeSessionRepoTest,
@@ -19,7 +23,9 @@ import { makeAuthServiceTest } from '@/api/lib/effect-auth';
 import {
   createServiceOfferedRouteProgram,
   deleteServiceOfferedRouteProgram,
+  listServicesForReviewRouteProgram,
   listServicesOfferedRouteProgram,
+  reviewServiceOfferedRouteProgram,
   updateServiceOfferedRouteProgram
 } from './services-offered.handler';
 
@@ -55,6 +61,10 @@ const session = (): Session => ({
 });
 
 const service = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
+  reviewStatus: 'approved',
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewReason: null,
   id: 'service-1',
   userId: 'provider-1',
   catalogueServiceId: null,
@@ -69,6 +79,7 @@ const service = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
 });
 
 const catalogueItem = (overrides: Partial<ServiceCatalogueItem> = {}): ServiceCatalogueItem => ({
+  requiredDocumentTypeId: null,
   id: '0197b3a0-0000-7000-8000-000000000001',
   name: 'Babysitting',
   category: 'Childcare',
@@ -78,6 +89,41 @@ const catalogueItem = (overrides: Partial<ServiceCatalogueItem> = {}): ServiceCa
   createdAt: new Date('2026-06-12T00:00:00.000Z'),
   updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   deletedAt: null,
+  ...overrides
+});
+
+const pswTypeId = '0197b3a0-0000-7000-8000-0000000000d1';
+const pswType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType => ({
+  id: pswTypeId,
+  name: 'Personal Support Worker (PSW)',
+  appliesToRole: 'service-provider',
+  isOptional: true,
+  requiresExpiryDate: false,
+  credibledCheckTypeValue: null,
+  credibledCostCents: null,
+  isSafetyGate: false,
+  deletedAt: null,
+  createdAt: new Date('2026-06-12T00:00:00.000Z'),
+  updatedAt: new Date('2026-06-12T00:00:00.000Z'),
+  ...overrides
+});
+
+const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
+  id: 'doc-1',
+  userId: 'provider-1',
+  documentTypeId: pswTypeId,
+  filename: 'psw.pdf',
+  fileKey: 'users/provider-1/kyc/psw.pdf',
+  expiryDate: null,
+  issuedOn: null,
+  status: 'approved',
+  source: 'upload',
+  reason: null,
+  reviewedBy: 'admin-1',
+  reviewedAt: new Date('2026-06-12T00:00:00.000Z'),
+  deletedAt: null,
+  createdAt: new Date('2026-06-12T00:00:00.000Z'),
+  updatedAt: new Date('2026-06-12T00:00:00.000Z'),
   ...overrides
 });
 
@@ -108,7 +154,11 @@ const makeLayer = (
     services?: Array<ServiceOffered>;
     existingService?: ServiceOffered;
     catalogueItems?: Array<ServiceCatalogueItem>;
+    kycDocuments?: Array<KycDocument>;
+    pendingReview?: Array<ServiceOffered>;
+    kycError?: SqlError;
     hasPermission?: boolean;
+    onReview?: (id: string, input: { status: string; reason: string | null }) => void;
     createError?: SqlError;
     onCreate?: (input: {
       name: string;
@@ -123,6 +173,26 @@ const makeLayer = (
   const existingService = options.existingService ?? service();
   const catalogueItems = options.catalogueItems ?? [];
   return Layer.mergeAll(
+    makeKycDocumentRepoTest({
+      findByIdWithType: (id) => Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: id })),
+      findByUserId: () =>
+        options.kycError ? Effect.fail(options.kycError) : Effect.succeed(options.kycDocuments ?? []),
+      findByUserIdWithTypes: () => Effect.succeed([]),
+      submit: () => Effect.fail(new SqlError({ message: 'not used' })),
+      updateExpiryDate: (id) =>
+        Effect.fail(new DBNotFoundError({ entity: 'kycDocument', value: id })),
+      approveSubmittedByUserId: () => Effect.succeed([])
+    }),
+    makeKycDocumentTypeRepoTest({
+      listActive: () => Effect.succeed([pswType()]),
+      findActiveById: (id) =>
+        id === pswTypeId
+          ? Effect.succeed(pswType())
+          : Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id })),
+      create: () => Effect.fail(new SqlError({ message: 'not used' })),
+      update: (id) => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id })),
+      softDelete: (id) => Effect.fail(new DBNotFoundError({ entity: 'kycDocumentType', value: id }))
+    }),
     makeServiceCatalogueRepoTest({
       listActive: () => Effect.succeed(catalogueItems),
       listLive: () => Effect.succeed(catalogueItems.filter((item) => item.isLive)),
@@ -182,7 +252,33 @@ const makeLayer = (
         return Effect.succeed(service({ ...existingService, ...input, id }));
       },
       softDeleteByIdForUser: (id) =>
-        Effect.succeed(service({ id, deletedAt: new Date('2026-06-13T00:00:00.000Z') }))
+        Effect.succeed(service({ id, deletedAt: new Date('2026-06-13T00:00:00.000Z') })),
+      listPendingReview: () =>
+        Effect.succeed(
+          (options.pendingReview ?? []).map((pending) => ({
+            ...pending,
+            helper: {
+              name: 'Provider',
+              email: 'provider@example.com',
+              firstName: 'Pat',
+              lastName: 'Lee'
+            }
+          }))
+        ),
+      review: (id, input) => {
+        options.onReview?.(id, input);
+        const pending = (options.pendingReview ?? []).find((candidate) => candidate.id === id);
+        return pending
+          ? Effect.succeed(
+              service({
+                ...pending,
+                reviewStatus: input.status,
+                reviewedBy: input.reviewedBy,
+                reviewReason: input.reason
+              })
+            )
+          : Effect.fail(new DBNotFoundError({ entity: 'serviceOffered', value: id }));
+      }
     }),
     makeProviderSearchQueueTest({
       enqueueReconcile: () => Effect.succeed({ id: 'job-1', name: 'reconcile-provider' }),
@@ -431,18 +527,36 @@ describe('services offered catalogue rules', () => {
     expect(result).toMatchObject({ catalogueServiceId: null });
   });
 
-  it('allows unlinking and lowering the rate below the old floor in one call', async () => {
+  it('applies the custom-service floor, not the old link floor, when unlinking', async () => {
     // Regression: loose equality (== undefined) once conflated explicit null
     // with "absent", so the removed link's floor was wrongly enforced here.
-    const existing = service({ catalogueServiceId: liveItem.id, hourlyRateCents: 1800 });
+    // An unlinked service is custom, so the platform base rate applies.
+    const existing = service({ catalogueServiceId: liveItem.id, hourlyRateCents: 2500 });
     const result = await Effect.runPromise(
       updateServiceOfferedRouteProgram(
-        contextWithJson({ catalogueServiceId: null, hourlyRateCents: 100 }),
+        contextWithJson({ catalogueServiceId: null, hourlyRateCents: 2000 }),
         new Headers(),
         existing.id
       ).pipe(Effect.provide(makeLayer({ existingService: existing, catalogueItems: [liveItem] })))
     );
-    expect(result).toMatchObject({ catalogueServiceId: null, hourlyRateCents: 100 });
+    expect(result).toMatchObject({ catalogueServiceId: null, hourlyRateCents: 2000 });
+    // Unlinked = custom = back to the admin.
+    expect(result.reviewStatus).toBe('pending');
+
+    const exit = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(
+        contextWithJson({ catalogueServiceId: null, hourlyRateCents: 100 }),
+        new Headers(),
+        existing.id
+      ).pipe(
+        Effect.provide(makeLayer({ existingService: existing, catalogueItems: [liveItem] })),
+        Effect.exit
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ServiceRateBelowFloorError',
+      floorCents: 2000
+    });
   });
 
   it('clears the description with an explicit null', async () => {
@@ -510,5 +624,285 @@ describe('services offered catalogue rules', () => {
       )
     );
     expect(getFailure(exit)._tag).toBe('ServiceCatalogueItemNotFoundError');
+  });
+});
+
+describe('custom services and the credential gate (UAT #1, #18, #34)', () => {
+  const pswItem = catalogueItem({
+    id: '0197b3a0-0000-7000-8000-000000000010',
+    name: 'Personal support (PSW)',
+    category: 'Elderly Care',
+    baseHourlyRateCents: 2500,
+    requiredDocumentTypeId: pswTypeId
+  });
+
+  it('creates a custom service as pending review', async () => {
+    const created: Array<Record<string, unknown>> = [];
+    const result = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({ name: 'Garden design', hourlyRateCents: 2000 }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer({ onCreate: (input) => created.push(input) })))
+    );
+    expect(created[0]).toMatchObject({ reviewStatus: 'pending', catalogueServiceId: null });
+    expect(result.reviewStatus).toBe('pending');
+  });
+
+  it('rejects a custom service below the platform base rate', async () => {
+    const exit = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({ name: 'Personal care', hourlyRateCents: 500 }),
+        new Headers()
+      ).pipe(Effect.provide(makeLayer()), Effect.exit)
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ServiceRateBelowFloorError',
+      floorCents: 2000
+    });
+  });
+
+  it('rejects raising a custom service rate below the base rate on update', async () => {
+    const exit = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(
+        contextWithJson({ hourlyRateCents: 1500 }),
+        new Headers(),
+        'service-1'
+      ).pipe(Effect.provide(makeLayer()), Effect.exit)
+    );
+    expect(getFailure(exit)._tag).toBe('ServiceRateBelowFloorError');
+  });
+
+  it('keeps the review decision when only the rate of a custom service changes', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    await Effect.runPromise(
+      updateServiceOfferedRouteProgram(
+        contextWithJson({ hourlyRateCents: 3000 }),
+        new Headers(),
+        'service-1'
+      ).pipe(Effect.provide(makeLayer({ onUpdate: (input) => updates.push(input) })))
+    );
+    expect(updates[0]).not.toHaveProperty('reviewStatus');
+  });
+
+  it('sends a reworded custom service back to review', async () => {
+    const updates: Array<Record<string, unknown>> = [];
+    await Effect.runPromise(
+      updateServiceOfferedRouteProgram(
+        contextWithJson({ name: 'Childcare and personal care' }),
+        new Headers(),
+        'service-1'
+      ).pipe(Effect.provide(makeLayer({ onUpdate: (input) => updates.push(input) })))
+    );
+    expect(updates[0]).toMatchObject({ reviewStatus: 'pending', reviewedBy: null });
+  });
+
+  it('names a linked service after its catalogue item and approves it', async () => {
+    const liveItem = catalogueItem();
+    const created: Array<Record<string, unknown>> = [];
+    await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({
+          name: 'PSW care (not really babysitting)',
+          hourlyRateCents: 1800,
+          catalogueServiceId: liveItem.id
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({ catalogueItems: [liveItem], onCreate: (input) => created.push(input) })
+        )
+      )
+    );
+    expect(created[0]).toMatchObject({ name: 'Babysitting', reviewStatus: 'approved' });
+  });
+
+  it('refuses the PSW service without an approved PSW credential', async () => {
+    for (const kycDocuments of [[], [kycDocument({ status: 'submitted' })]]) {
+      const exit = await Effect.runPromise(
+        createServiceOfferedRouteProgram(
+          contextWithJson({
+            name: 'Personal support (PSW)',
+            hourlyRateCents: 2500,
+            catalogueServiceId: pswItem.id
+          }),
+          new Headers()
+        ).pipe(
+          Effect.provide(makeLayer({ catalogueItems: [pswItem], kycDocuments })),
+          Effect.exit
+        )
+      );
+      expect(getFailure(exit)).toMatchObject({
+        _tag: 'ServiceCredentialRequiredError',
+        documentTypeId: pswTypeId,
+        documentTypeName: 'Personal Support Worker (PSW)'
+      });
+    }
+  });
+
+  it('adds the PSW service once the credential is approved', async () => {
+    const result = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({
+          name: 'Personal support (PSW)',
+          hourlyRateCents: 2500,
+          catalogueServiceId: pswItem.id
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(makeLayer({ catalogueItems: [pswItem], kycDocuments: [kycDocument()] }))
+      )
+    );
+    expect(result).toMatchObject({ catalogueServiceId: pswItem.id, reviewStatus: 'approved' });
+  });
+
+  it('checks the credential when re-linking an existing service to the PSW item', async () => {
+    const exit = await Effect.runPromise(
+      updateServiceOfferedRouteProgram(
+        contextWithJson({ catalogueServiceId: pswItem.id }),
+        new Headers(),
+        'service-1'
+      ).pipe(
+        Effect.provide(makeLayer({ catalogueItems: [pswItem], kycDocuments: [] })),
+        Effect.exit
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('ServiceCredentialRequiredError');
+  });
+
+  it('surfaces a document lookup failure as a repo error', async () => {
+    const exit = await Effect.runPromise(
+      createServiceOfferedRouteProgram(
+        contextWithJson({
+          name: 'Personal support (PSW)',
+          hourlyRateCents: 2500,
+          catalogueServiceId: pswItem.id
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            catalogueItems: [pswItem],
+            kycError: new SqlError({ cause: new Error('boom'), message: 'boom' })
+          })
+        ),
+        Effect.exit
+      )
+    );
+    expect(getFailure(exit)._tag).toBe('SqlError');
+  });
+
+  it('reports the custom-service base rate on the list endpoint', async () => {
+    const result = await Effect.runPromise(
+      listServicesOfferedRouteProgram(new Headers()).pipe(Effect.provide(makeLayer()))
+    );
+    expect(result.customServiceBaseRateCents).toBe(2000);
+  });
+});
+
+describe('admin review of custom services', () => {
+  const pending = service({ id: 'pending-1', reviewStatus: 'pending', name: 'Garden design' });
+
+  it('lists pending services with the helper', async () => {
+    const result = await Effect.runPromise(
+      listServicesForReviewRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ pendingReview: [pending] }))
+      )
+    );
+    expect(result.services).toEqual([
+      expect.objectContaining({
+        id: 'pending-1',
+        reviewStatus: 'pending',
+        helper: expect.objectContaining({ firstName: 'Pat' })
+      })
+    ]);
+  });
+
+  it('approves a pending service and records the reviewer', async () => {
+    const reviews: Array<{ id: string; status: string; reason: string | null }> = [];
+    const result = await Effect.runPromise(
+      reviewServiceOfferedRouteProgram(
+        contextWithJson({ decision: 'approve' }),
+        new Headers(),
+        'pending-1'
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'provider-1', role: 'admin' }),
+            pendingReview: [pending],
+            onReview: (id, input) => reviews.push({ id, ...input })
+          })
+        )
+      )
+    );
+    expect(reviews).toEqual([
+      expect.objectContaining({ id: 'pending-1', status: 'approved', reason: null })
+    ]);
+    expect(result).toMatchObject({ reviewStatus: 'approved', reviewedBy: 'provider-1' });
+  });
+
+  it('requires a reason to reject', async () => {
+    const exit = await Effect.runPromise(
+      reviewServiceOfferedRouteProgram(
+        contextWithJson({ decision: 'reject', reason: '  ' }),
+        new Headers(),
+        'pending-1'
+      ).pipe(Effect.provide(makeLayer({ pendingReview: [pending] })), Effect.exit)
+    );
+    expect(getFailure(exit)._tag).toBe('ServiceReviewReasonRequiredError');
+  });
+
+  it('rejects with a reason', async () => {
+    const result = await Effect.runPromise(
+      reviewServiceOfferedRouteProgram(
+        contextWithJson({ decision: 'reject', reason: 'Describes personal care — needs PSW.' }),
+        new Headers(),
+        'pending-1'
+      ).pipe(Effect.provide(makeLayer({ pendingReview: [pending] })))
+    );
+    expect(result).toMatchObject({
+      reviewStatus: 'rejected',
+      reviewReason: 'Describes personal care — needs PSW.'
+    });
+  });
+
+  it('maps a service that is no longer pending to ServiceReviewNotPendingError', async () => {
+    const exit = await Effect.runPromise(
+      reviewServiceOfferedRouteProgram(
+        contextWithJson({ decision: 'approve' }),
+        new Headers(),
+        'gone'
+      ).pipe(Effect.provide(makeLayer({ pendingReview: [pending] })), Effect.exit)
+    );
+    expect(getFailure(exit)._tag).toBe('ServiceReviewNotPendingError');
+  });
+
+  it('rejects invalid review input', async () => {
+    const exit = await Effect.runPromise(
+      reviewServiceOfferedRouteProgram(
+        contextWithJson({ decision: 'maybe' }),
+        new Headers(),
+        'pending-1'
+      ).pipe(Effect.provide(makeLayer({ pendingReview: [pending] })), Effect.exit)
+    );
+    expect(getFailure(exit)._tag).toBe('RequestValidationError');
+  });
+
+  it('denies reviewers without the serviceOffered review permission', async () => {
+    for (const program of [
+      listServicesForReviewRouteProgram(new Headers()),
+      reviewServiceOfferedRouteProgram(
+        contextWithJson({ decision: 'approve' }),
+        new Headers(),
+        'pending-1'
+      )
+    ]) {
+      const exit = await Effect.runPromise(
+        (program as Effect.Effect<unknown, { _tag: string }, never>).pipe(
+          Effect.provide(makeLayer({ hasPermission: false, pendingReview: [pending] })),
+          Effect.exit
+        )
+      );
+      expect(getFailure(exit)._tag).toBe('ForbiddenError');
+    }
   });
 });

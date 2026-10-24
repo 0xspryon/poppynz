@@ -141,6 +141,10 @@ const profile = (
 });
 
 const offeredService = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
+  reviewStatus: 'approved',
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewReason: null,
   id: SERVICE_ID,
   userId: 'provider-1',
   catalogueServiceId: null,
@@ -245,6 +249,8 @@ const makeLayer = (
     contracts?: Array<ContractWithContext>;
     versions?: Array<ContractVersion>;
     offered?: Array<ServiceOffered>;
+    /** The catalogue base rate behind every offered service (null = custom). */
+    catalogueBaseRateCents?: number | null;
     createFailsWith?: SqlError;
     listForUserFailsWith?: SqlError;
     /** Per-call findByConversationId results (consumed in order). */
@@ -363,6 +369,15 @@ const makeLayer = (
     }),
     makeServiceOfferedRepoTest({
       listByUserId: () => Effect.succeed(options.offered ?? [offeredService()]),
+      listPublishableByUserIds: () =>
+        Effect.succeed(
+          (options.offered ?? [offeredService()])
+            .filter((service) => service.reviewStatus === 'approved')
+            .map((service) => ({
+              ...service,
+              catalogueBaseRateCents: options.catalogueBaseRateCents ?? null
+            }))
+        ),
       findByIdForUser: () => Effect.die('not used'),
       create: () => Effect.die('not used'),
       updateByIdForUser: () => Effect.die('not used'),
@@ -685,12 +700,14 @@ describe('PUT /contracts/:id/terms', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'UnknownContractServiceError' });
   });
 
-  it('floors rates at half the listed rate and names the offending rows', async () => {
+  it('floors offers at the base rate, not half the listed rate (UAT #39)', async () => {
+    // Listed at $25, custom service: the floor is the $20 platform base rate,
+    // so the old half-the-listing $12.50 offer is refused.
     const exit = await Effect.runPromiseExit(
       saveTermsRouteProgram(
         makeContext({
           params: { id: CONTRACT_ID },
-          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 1249 }] }
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 1250 }] }
         }),
         new Headers()
       ).pipe(
@@ -699,11 +716,53 @@ describe('PUT /contracts/:id/terms', () => {
     );
     expect(getFailure(exit)).toMatchObject({
       _tag: 'RateBelowListedError',
-      violations: [{ serviceId: SERVICE_ID, listedRateCents: 2500 }]
+      violations: [{ serviceId: SERVICE_ID, listedRateCents: 2500, floorRateCents: 2000 }]
     });
   });
 
-  it('accepts a rate at exactly half the listed rate', async () => {
+  it("uses the catalogue item's base rate as the floor for a linked service", async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({
+          params: { id: CONTRACT_ID },
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 2399 }] }
+        }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            catalogueBaseRateCents: 2400
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'RateBelowListedError',
+      violations: [{ serviceId: SERVICE_ID, floorRateCents: 2400 }]
+    });
+  });
+
+  it('treats a service awaiting review as not on the listing', async () => {
+    const exit = await Effect.runPromiseExit(
+      saveTermsRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID }, body: termsBody }),
+        new Headers()
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion()],
+            offered: [offeredService({ reviewStatus: 'pending' })]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'UnknownContractServiceError' });
+  });
+
+  it('accepts a rate at exactly the base rate', async () => {
     const updates: Array<any> = [];
     const layer = makeLayer({
       contractById: baseContract(),
@@ -714,14 +773,14 @@ describe('PUT /contracts/:id/terms', () => {
       saveTermsRouteProgram(
         makeContext({
           params: { id: CONTRACT_ID },
-          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 1250 }] }
+          body: { ...termsBody, services: [{ ...termsBody.services[0], rateCents: 2000 }] }
         }),
         new Headers()
       ).pipe(Effect.provide(layer))
     );
     expect(result).toEqual({ id: CONTRACT_ID, version: 1 });
     expect(updates[0][1]).toMatchObject({
-      services: [{ serviceId: SERVICE_ID, listedRateCents: 2500, rateCents: 1250 }]
+      services: [{ serviceId: SERVICE_ID, listedRateCents: 2500, rateCents: 2000 }]
     });
   });
 
@@ -1021,16 +1080,17 @@ describe('POST /contracts/:id/send', () => {
           makeLayer({
             contractById: baseContract(),
             versions: [draftVersion()],
-            // Provider raised their rate enough that the drafted 2600 is now
-            // below the half-the-listing floor (ceil(6000 / 2) = 3000).
-            offered: [offeredService({ hourlyRateCents: 6000 })]
+            // The catalogue base rate rose above the drafted 2600 since the
+            // draft was saved: the floor is re-read at send time.
+            offered: [offeredService({ hourlyRateCents: 6000 })],
+            catalogueBaseRateCents: 3000
           })
         )
       )
     );
     expect(getFailure(exit)).toMatchObject({
       _tag: 'RateBelowListedError',
-      violations: [{ serviceId: SERVICE_ID, listedRateCents: 6000 }]
+      violations: [{ serviceId: SERVICE_ID, listedRateCents: 6000, floorRateCents: 3000 }]
     });
   });
 

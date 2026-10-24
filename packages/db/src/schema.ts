@@ -10,6 +10,7 @@ import {
   index,
   jsonb,
   pgSchema,
+  primaryKey,
   uniqueIndex,
   uuid
 } from 'drizzle-orm/pg-core';
@@ -156,6 +157,14 @@ export const vouchStatus = appDb.enum('vouch_status', [
 
 // Derived by the API from the three Stripe readiness flags; see
 // migrations/0026_payout_accounts.sql.
+// Admin review of a helper's custom (non-catalogue) service. Catalogue-linked
+// services are approved on creation — their name and floor come from the
+// catalogue — so only free-text services wait in the queue.
+export const serviceReviewStatus = appDb.enum('service_review_status', [
+  'pending',
+  'approved',
+  'rejected'
+]);
 export const payoutAccountStatus = appDb.enum('payout_account_status', [
   'onboarding',
   'ready',
@@ -219,6 +228,21 @@ export const userProfile = appDb.table('user_profile', {
   latitude: doublePrecision('latitude'),
   longitude: doublePrecision('longitude')
 });
+
+// One-off UI prompts a user has dismissed (the family getting-started pop-up,
+// UAT #16), keyed by a stable prompt name. Server-side so a dismissal holds
+// across devices and browsers instead of living in localStorage.
+export const userDismissal = appDb.table(
+  'user_dismissals',
+  {
+    userId: text('user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(),
+    dismissedAt: timestamp('dismissed_at').defaultNow().notNull()
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.key] })]
+);
 
 export const referral = appDb.table(
   'referral',
@@ -420,9 +444,15 @@ export const kycDocument = appDb.table(
     filename: text('filename'),
     fileKey: text('file_key'),
     expiryDate: timestamp('expiry_date'),
+    // Date-only, as printed on the document. Optional for every type.
+    issuedOn: date('issued_on'),
     status: kycDocumentStatus('status').notNull(),
     source: kycDocumentSource('source').notNull().default('upload'),
     reason: text('reason'),
+    // Who decided this document and when. Null while it awaits review; a
+    // re-upload clears both so the new file is reviewed afresh.
+    reviewedBy: text('reviewed_by').references(() => user.id, { onDelete: 'set null' }),
+    reviewedAt: timestamp('reviewed_at'),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -913,6 +943,13 @@ export const serviceCatalogueItem = appDb.table(
     baseHourlyRateCents: integer('base_hourly_rate_cents').notNull(),
     currency: text('currency').default('CAD').notNull(),
     isLive: boolean('is_live').default(true).notNull(),
+    // Credential gate: a helper may only offer (and is only listed for) this
+    // service while their document of this type is admin-approved — e.g.
+    // Personal support (PSW) requires an approved PSW credential.
+    requiredDocumentTypeId: uuid('required_document_type_id').references(
+      () => kycDocumentType.id,
+      { onDelete: 'restrict' }
+    ),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -942,6 +979,12 @@ export const serviceOffered = appDb.table(
     description: text('description'),
     hourlyRateCents: integer('hourly_rate_cents').notNull(),
     currency: text('currency').default('CAD').notNull(),
+    // Families only ever see `approved` services (UAT #34).
+    reviewStatus: serviceReviewStatus('review_status').default('approved').notNull(),
+    reviewedBy: text('reviewed_by').references(() => user.id, { onDelete: 'set null' }),
+    reviewedAt: timestamp('reviewed_at'),
+    // Shown to the helper when a custom service is rejected.
+    reviewReason: text('review_reason'),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -951,6 +994,7 @@ export const serviceOffered = appDb.table(
   },
   (table) => [
     index('services_offered_user_id_idx').on(table.userId),
+    index('services_offered_review_status_idx').on(table.reviewStatus),
     index('services_offered_deleted_at_idx').on(table.deletedAt),
     index('services_offered_catalogue_service_id_idx').on(table.catalogueServiceId)
   ]
@@ -1125,6 +1169,42 @@ export const conversationMessage = appDb.table(
   ]
 );
 
+/** What the chat scanner recognised in a message. */
+export type ContactDetailKind = 'phone' | 'email' | 'link';
+
+// Evidence trail for UAT #38: sharing contact details in chat is allowed, but
+// every time a phone number, email address or link is detected both people
+// are warned that off-platform dealings aren't covered, and the warning is
+// recorded here — who sent it, in which conversation, when, and what kind of
+// detail it was. The message body itself stays in conversation_messages.
+export const contactDetailWarning = appDb.table(
+  'contact_detail_warnings',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    conversationId: uuid('conversation_id')
+      .notNull()
+      .references(() => conversation.id, { onDelete: 'restrict' }),
+    messageId: uuid('message_id')
+      .notNull()
+      .references(() => conversationMessage.id, { onDelete: 'restrict' }),
+    senderUserId: text('sender_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    recipientUserId: text('recipient_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    kinds: jsonb('kinds').$type<Array<ContactDetailKind>>().notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    uniqueIndex('contact_detail_warnings_message_uidx').on(table.messageId),
+    index('contact_detail_warnings_conversation_idx').on(table.conversationId, table.createdAt),
+    index('contact_detail_warnings_sender_idx').on(table.senderUserId)
+  ]
+);
+
 // One proposed weekly session. Times are wall-clock minutes from midnight in
 // the contract version's own time zone (`contract_versions.time_zone`) — never
 // UTC instants, so a "3:30–6:00 pm" session stays 3:30–6:00 pm across DST.
@@ -1235,6 +1315,9 @@ export const contractVersion = appDb.table(
     // at acceptance. Null only while the version is a draft.
     timeZone: text('time_zone'),
     sentAt: timestamp('sent_at'),
+    // The family's explicit "Sign & send" (UAT #41). Set together with
+    // sent_at; the helper's signature is their acceptance (decided_at).
+    familySignedAt: timestamp('family_signed_at'),
     decidedAt: timestamp('decided_at'),
     declineReason: text('decline_reason'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

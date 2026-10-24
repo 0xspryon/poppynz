@@ -108,6 +108,10 @@ const profile = (userId: string, firstName: string, city: string | null): SafeUs
 });
 
 const offeredService = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
+  reviewStatus: 'approved',
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewReason: null,
   id: '11111111-1111-4111-8111-111111111111',
   userId: 'provider-1',
   catalogueServiceId: null,

@@ -67,6 +67,7 @@ const service = (overrides: Partial<ServiceNeeded> = {}): ServiceNeeded => ({
 });
 
 const catalogueItem = (overrides: Partial<ServiceCatalogueItem> = {}): ServiceCatalogueItem => ({
+  requiredDocumentTypeId: null,
   id: '0197b3a0-0000-7000-8000-000000000001',
   name: 'Babysitting',
   category: 'Childcare',

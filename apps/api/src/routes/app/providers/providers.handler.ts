@@ -4,7 +4,7 @@ import {
   buildProviderSearchDocument,
   getProviderSearchMinRadiusKm
 } from '@repo/typesense';
-import { DBNotFoundError, ProviderSearchRepo, UserProfileRepo } from '@repo/db';
+import { DBNotFoundError, offerFloorCents, ProviderSearchRepo, UserProfileRepo } from '@repo/db';
 import { Cause, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
@@ -88,6 +88,8 @@ const publicProviderDetail = (
         name: service.name,
         description: service.description,
         hourlyRateCents: service.hourlyRateCents,
+        // The lowest offer a family may make (UAT #39): the base rate.
+        floorRateCents: offerFloorCents(service),
         currency: service.currency
       }))
   };

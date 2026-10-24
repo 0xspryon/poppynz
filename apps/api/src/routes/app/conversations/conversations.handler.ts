@@ -287,7 +287,9 @@ export const createReachoutProgram = (
     const selectableServices =
       sender.role === 'family'
         ? yield* ServiceOfferedRepo.pipe(
-            Effect.flatMap((repo) => repo.listByUserId(pair.providerUserId)),
+            // Only what families can see: no pending custom services, no
+            // credential-gated service without its approved credential.
+            Effect.flatMap((repo) => repo.listPublishableByUserIds([pair.providerUserId])),
             (errors) => mapConversationRepoError(errors)
           )
         : yield* ServiceNeededRepo.pipe(

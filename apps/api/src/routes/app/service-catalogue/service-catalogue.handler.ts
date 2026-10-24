@@ -1,5 +1,10 @@
 import type { SqlError } from '@effect/sql/SqlError';
-import { DBNotFoundError, ServiceCatalogueRepo, type ServiceCatalogueItem } from '@repo/db';
+import {
+  DBNotFoundError,
+  KycDocumentTypeRepo,
+  ServiceCatalogueRepo,
+  type ServiceCatalogueItem
+} from '@repo/db';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
@@ -26,6 +31,27 @@ class ServiceCatalogueNotFoundError extends Data.TaggedError('ServiceCatalogueNo
 class ServiceCatalogueRepoError extends Data.TaggedError('ServiceCatalogueRepoError')<{
   cause: SqlError;
 }> {}
+/** The credential named for a service must be a live helper document type. */
+export class ServiceCatalogueCredentialInvalidError extends Data.TaggedError(
+  'ServiceCatalogueCredentialInvalidError'
+)<{ documentTypeId: string }> {}
+
+const ensureCredentialType = (documentTypeId: string | null | undefined) =>
+  documentTypeId == null
+    ? Effect.void
+    : KycDocumentTypeRepo.pipe(
+        Effect.flatMap((repo) => repo.findActiveById(documentTypeId)),
+        Effect.catchTags({
+          DBNotFoundError: () =>
+            Effect.fail(new ServiceCatalogueCredentialInvalidError({ documentTypeId })),
+          SqlError: (cause) => Effect.fail(new ServiceCatalogueRepoError({ cause }))
+        }),
+        Effect.flatMap((type) =>
+          type.appliesToRole === 'service-provider'
+            ? Effect.void
+            : Effect.fail(new ServiceCatalogueCredentialInvalidError({ documentTypeId }))
+        )
+      );
 
 function mapCatalogueRepoError<A, R>(
   effect: Effect.Effect<A, SqlError, R>
@@ -75,6 +101,7 @@ export const createServiceCatalogueItemRouteProgram = (c: HonoContext<HonoEnv>, 
     const input = yield* validateServiceCatalogueItemCreateInput(rawBody);
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { serviceCatalogue: ['write'] })(authenticated);
+    yield* ensureCredentialType(input.requiredDocumentTypeId);
     const repo = yield* ServiceCatalogueRepo;
     const item = yield* repo
       .create({
@@ -82,7 +109,8 @@ export const createServiceCatalogueItemRouteProgram = (c: HonoContext<HonoEnv>, 
         category: input.category,
         baseHourlyRateCents: input.baseHourlyRateCents,
         currency: input.currency ?? 'CAD',
-        isLive: input.isLive ?? true
+        isLive: input.isLive ?? true,
+        requiredDocumentTypeId: input.requiredDocumentTypeId ?? null
       })
       .pipe((error) => mapCatalogueRepoError(error));
     return toCatalogueItemResponse(item);
@@ -98,8 +126,9 @@ export const updateServiceCatalogueItemRouteProgram = (
     const input = yield* validateServiceCatalogueItemUpdateInput(rawBody);
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { serviceCatalogue: ['write'] })(authenticated);
+    yield* ensureCredentialType(input.requiredDocumentTypeId);
     const repo = yield* ServiceCatalogueRepo;
-    const item = yield* mapCatalogueRepoError(repo.update(id, input));
+    const item = yield* repo.update(id, input).pipe((errors) => mapCatalogueRepoError(errors));
     return toCatalogueItemResponse(item);
   });
 
@@ -146,6 +175,16 @@ const serviceCatalogueErrorToResponse = (
           }
         },
         500
+      );
+    case 'ServiceCatalogueCredentialInvalidError':
+      return c.json(
+        {
+          error: {
+            code: 'SERVICE_CATALOGUE_CREDENTIAL_INVALID' as const,
+            message: 'The required credential must be an existing helper document type.'
+          }
+        },
+        422
       );
     default:
       return handleNever(c, error);

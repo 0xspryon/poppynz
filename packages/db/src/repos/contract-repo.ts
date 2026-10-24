@@ -324,6 +324,7 @@ export const ContractRepoLive = Layer.effect(
       sendPendingVersion: (contractId, versionId, terms) =>
         compound(
           Effect.gen(function* () {
+            const now = new Date();
             const rows = yield* db
               .update(contractVersion)
               .set({
@@ -333,7 +334,10 @@ export const ContractRepoLive = Layer.effect(
                 endsAtMinutes: terms.endsAtMinutes,
                 timeZone: terms.timeZone,
                 status: 'proposed',
-                sentAt: new Date()
+                sentAt: now,
+                // Sending is the family's explicit "Sign & send" — the route
+                // only gets here once they confirmed it (UAT #41).
+                familySignedAt: now
               })
               .where(and(eq(contractVersion.id, versionId), eq(contractVersion.status, 'draft')))
               .returning();
@@ -351,7 +355,7 @@ export const ContractRepoLive = Layer.effect(
           Effect.gen(function* () {
             const rows = yield* db
               .update(contractVersion)
-              .set({ status: 'draft', sentAt: null })
+              .set({ status: 'draft', sentAt: null, familySignedAt: null })
               .where(and(eq(contractVersion.id, versionId), eq(contractVersion.status, 'proposed')))
               .returning();
             const version = rows[0];
@@ -526,6 +530,7 @@ export const dummyContractVersion: ContractVersion = {
   endsAtMinutes: null,
   timeZone: null,
   sentAt: null,
+  familySignedAt: null,
   decidedAt: null,
   declineReason: null,
   createdAt: new Date('2026-08-05T00:00:00.000Z'),

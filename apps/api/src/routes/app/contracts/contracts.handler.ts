@@ -22,6 +22,7 @@ import {
   ContractRepo,
   ConversationRepo,
   ServiceOfferedRepo,
+  offerFloorCents,
   UserProfileRepo,
   UserRepo,
   type Contract,
@@ -94,15 +95,13 @@ export class UnknownContractServiceError extends Data.TaggedError(
   'UnknownContractServiceError'
 )<{}> {}
 
-/** Rates floor at half the provider's listed rate; violations name the
- * offending line items so the editor can point at the right rows. */
+/** Offers floor at the service's BASE rate (UAT #39) — its catalogue rate,
+ * or the platform base rate for a custom service — never at a fraction of
+ * what the helper lists. Violations name the offending line items (and the
+ * floor) so the editor can point at the right rows. */
 export class RateBelowListedError extends Data.TaggedError('RateBelowListedError')<{
-  violations: Array<{ serviceId: string; listedRateCents: number }>;
+  violations: Array<{ serviceId: string; listedRateCents: number; floorRateCents: number }>;
 }> {}
-
-/** Half the listed rate, rounded up to whole cents — mirrored by the terms
- * editor's inline check. */
-const minAllowedRateCents = (listedRateCents: number) => Math.ceil(listedRateCents / 2);
 
 export class EmptyContractTermsError extends Data.TaggedError('EmptyContractTermsError')<{}> {}
 
@@ -666,22 +665,34 @@ const loadPendingVersion = (contractId: string) =>
  * with the offending rows. */
 const snapshotTerms = (providerUserId: string, input: ContractTermsInput) =>
   Effect.gen(function* () {
+    // Only services families may see can be contracted — a custom service
+    // awaiting review, or a PSW service without an approved credential, is
+    // as good as unlisted.
     const listed = yield* ServiceOfferedRepo.pipe(
-      Effect.flatMap((repo) => repo.listByUserId(providerUserId)),
+      Effect.flatMap((repo) => repo.listPublishableByUserIds([providerUserId])),
       (errors) => mapContractRepoError(errors)
     );
     const listedById = new Map(listed.map((service) => [service.id, service]));
     const seen = new Set<string>();
     const services: Array<ContractServiceItem> = [];
-    const violations: Array<{ serviceId: string; listedRateCents: number }> = [];
+    const violations: Array<{
+      serviceId: string;
+      listedRateCents: number;
+      floorRateCents: number;
+    }> = [];
     for (const item of input.services) {
       const service = listedById.get(item.serviceId);
       if (!service || seen.has(item.serviceId)) {
         return yield* Effect.fail(new UnknownContractServiceError());
       }
       seen.add(item.serviceId);
-      if (item.rateCents < minAllowedRateCents(service.hourlyRateCents)) {
-        violations.push({ serviceId: service.id, listedRateCents: service.hourlyRateCents });
+      const floorRateCents = offerFloorCents(service);
+      if (item.rateCents < floorRateCents) {
+        violations.push({
+          serviceId: service.id,
+          listedRateCents: service.hourlyRateCents,
+          floorRateCents
+        });
         continue;
       }
       services.push({
@@ -856,16 +867,25 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     // do items whose listing switched currency (cents in different currencies
     // are not comparable).
     const listed = yield* ServiceOfferedRepo.pipe(
-      Effect.flatMap((repo) => repo.listByUserId(contract.providerUserId)),
+      Effect.flatMap((repo) => repo.listPublishableByUserIds([contract.providerUserId])),
       (errors) => mapContractRepoError(errors)
     );
     const listedById = new Map(listed.map((service) => [service.id, service]));
-    const violations: Array<{ serviceId: string; listedRateCents: number }> = [];
+    const violations: Array<{
+      serviceId: string;
+      listedRateCents: number;
+      floorRateCents: number;
+    }> = [];
     const refreshed = pending.services.map((item) => {
       const current = listedById.get(item.serviceId);
       if (!current || current.currency !== item.currency) return item;
-      if (item.rateCents < minAllowedRateCents(current.hourlyRateCents)) {
-        violations.push({ serviceId: item.serviceId, listedRateCents: current.hourlyRateCents });
+      const floorRateCents = offerFloorCents(current);
+      if (item.rateCents < floorRateCents) {
+        violations.push({
+          serviceId: item.serviceId,
+          listedRateCents: current.hourlyRateCents,
+          floorRateCents
+        });
       }
       return { ...item, listedRateCents: current.hourlyRateCents };
     });
@@ -1655,7 +1675,8 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
         {
           error: {
             code: 'RATE_BELOW_LISTED' as const,
-            message: "Rates start at half the provider's listed rate — you can always offer more.",
+            message:
+              "Offers start at the service's base rate — the lowest rate helpers can charge for it.",
             violations: error.violations
           }
         },

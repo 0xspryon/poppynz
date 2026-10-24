@@ -34,3 +34,4 @@ export * from './repos/tc-document-repo';
 
 // TEMPORARY — remove with migration 0018 after the staging webhook run.
 export * from './credibled-webhook-log';
+export * from './service-publishability';

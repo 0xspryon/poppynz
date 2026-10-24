@@ -146,6 +146,9 @@ const documentType = (overrides: Partial<KycDocumentType> = {}): KycDocumentType
 });
 
 const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
+  issuedOn: null,
+  reviewedBy: null,
+  reviewedAt: null,
   id: 'kyc-document-1',
   userId: 'user-1',
   documentTypeId: 'document-type-1',
@@ -162,6 +165,10 @@ const kycDocument = (overrides: Partial<KycDocument> = {}): KycDocument => ({
 });
 
 const service = (overrides: Partial<ServiceOffered> = {}): ServiceOffered => ({
+  reviewStatus: 'approved',
+  reviewedBy: null,
+  reviewedAt: null,
+  reviewReason: null,
   id: 'service-1',
   userId: 'user-1',
   name: 'Childcare',

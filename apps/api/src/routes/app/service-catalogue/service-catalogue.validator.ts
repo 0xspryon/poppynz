@@ -13,7 +13,10 @@ export const serviceCatalogueItemCreateSchema = Schema.Struct({
   category: trimmedNonEmptyString.pipe(Schema.maxLength(80)),
   baseHourlyRateCents: Schema.Number.pipe(Schema.int(), Schema.positive()),
   currency: Schema.optional(trimmedNonEmptyString.pipe(Schema.maxLength(3))),
-  isLive: Schema.optional(Schema.Boolean)
+  isLive: Schema.optional(Schema.Boolean),
+  // A helper document type that must be admin-approved before a helper can
+  // offer this service (e.g. the PSW credential for personal support).
+  requiredDocumentTypeId: Schema.optional(Schema.NullOr(Schema.UUID))
 });
 
 export const serviceCatalogueItemUpdateSchema = Schema.partial(serviceCatalogueItemCreateSchema);

@@ -33,7 +33,12 @@ import { Mailer, makeMailerTest } from '@repo/mail';
 import { NoopNotificationHubTest, NotificationHub } from '@repo/notify';
 import { contractBillingConfig } from '@repo/env';
 import type { SqlError } from '@effect/sql/SqlError';
-import { Payments, type PaymentProviderError, type ProviderPayment } from '@repo/payments';
+import {
+  Payments,
+  type ChargeSavedCardInput,
+  type PaymentProviderError,
+  type ProviderPayment
+} from '@repo/payments';
 import { Effect, Either, Layer } from 'effect';
 import { CycleSettlement } from '../settle';
 import { toCard } from '../cards';
@@ -102,6 +107,16 @@ const MAX_RECOVERY_DECLINES = 3;
 /** Search is eventually consistent: an unanswered attempt is looked up only
  * once it is older than this. */
 const LOOKUP_AFTER_MS = 2 * 60 * 1000;
+
+/** The provider remembers an idempotency key for 24 h. Within this window
+ * a replay of the create (same key, same request) is the authoritative
+ * answer to "did it go through?"; past it, re-sending the request would be
+ * a NEW charge, so the attempt is only ever looked up. */
+const REPLAY_WINDOW_MS = 23 * HOUR_MS;
+
+/** A search miss is evidence that nothing exists only once the attempt is
+ * older than this (search lags behind creation, sometimes by minutes). */
+const SEARCH_SETTLED_MS = HOUR_MS;
 
 /** `payments.last_error` of an attempt the provider never answered and
  * that was found not to exist (or was released). */
@@ -423,22 +438,54 @@ const describeCycle = (ctx: BillingContext, cycle: ContractCycle, mode: ChargeMo
     return `${label} with ${helper.name} · ${cycleDates(cycle)}`;
   });
 
+/** The idempotency key of a cycle's next attempt (`cycle.attempts + 1`). */
+const attemptKey = (cycle: ContractCycle, mode: ChargeMode, attemptNumber: number) =>
+  `${mode === 'resume' && cycle.status === 'capture_failed' ? 'recover' : 'cycle'}-${cycle.id}-${attemptNumber}`;
+
+/** The one request an attempt is ever sent as: its own card and key, frozen
+ * on the row when it was created (R4) — so a retry or a replay is the same
+ * request even after the family replaces the card. Rows from before that
+ * fall back to the card on file and the key derived from the cycle. Null
+ * when there is no card to charge. */
+const chargeRequest = (cycle: ContractCycle, payment: Payment) =>
+  Effect.gen(function* () {
+    const payments = yield* Payments;
+    const customer = yield* (yield* BillingCustomerRepo).findByUserId(payment.userId);
+    const card = payment.cardReference ?? toCard(customer, payments.provider)?.reference ?? null;
+    if (customer === null || card === null) return null;
+    return {
+      amountCents: payment.totalCents,
+      currency: 'CAD',
+      customer: customer.customerReference,
+      card,
+      capture: cycle.chargeMode === 'hold' ? 'manual' : 'automatic',
+      idempotencyKey:
+        payment.chargeKey ?? attemptKey(cycle, cycle.chargeMode ?? 'hold', cycle.attempts),
+      metadata: {
+        payment_id: payment.id,
+        cycle_id: cycle.id,
+        contract_id: cycle.contractId,
+        kind: 'contract_cycle'
+      },
+      ...(payment.description ? { description: payment.description } : {})
+    } satisfies ChargeSavedCardInput as ChargeSavedCardInput;
+  });
+
 /** Calls the provider for the cycle's current attempt and settles what it
  * says. A provider error leaves the attempt pending: the next tick retries
- * it under the same key, so it can never become a second charge. */
+ * it under the same key, so it can never become a second charge. A key the
+ * provider refuses (`conflict`) is resolved by the caller, never re-sent. */
 const chargeAndSettle = (
   cycle: ContractCycle,
   payment: Payment,
   now: Date
-): Step<'provider_error' | 'settled' | 'declined'> =>
+): Step<'provider_error' | 'settled' | 'declined' | 'conflict'> =>
   Effect.gen(function* () {
     const payments = yield* Payments;
     const repo = yield* ContractBillingRepo;
     const paymentRepo = yield* PaymentRepo;
-    const customers = yield* BillingCustomerRepo;
-    const customer = yield* customers.findByUserId(payment.userId);
-    const card = toCard(customer, payments.provider);
-    if (customer === null || card === null) {
+    const request = yield* chargeRequest(cycle, payment);
+    if (request === null) {
       const failed =
         (yield* paymentRepo.advance(payment.id, {
           from: 'pending',
@@ -446,30 +493,15 @@ const chargeAndSettle = (
         })) ?? payment;
       return yield* declined(cycle, failed, 'There is no card on file.', now);
     }
-    const result = yield* payments
-      .chargeSavedCard({
-        amountCents: payment.totalCents,
-        currency: 'CAD',
-        customer: customer.customerReference,
-        card: card.reference,
-        capture: cycle.chargeMode === 'hold' ? 'manual' : 'automatic',
-        idempotencyKey: `${cycle.chargeMode === 'resume' && cycle.status === 'capture_failed' ? 'recover' : 'cycle'}-${cycle.id}-${cycle.attempts}`,
-        metadata: {
-          payment_id: payment.id,
-          cycle_id: cycle.id,
-          contract_id: cycle.contractId,
-          kind: 'contract_cycle'
-        },
-        ...(payment.description ? { description: payment.description } : {})
-      })
-      .pipe(Effect.either);
+    const result = yield* payments.chargeSavedCard(request).pipe(Effect.either);
     if (Either.isLeft(result)) {
+      yield* Effect.logWarning(`[billing] provider error charging cycle ${cycle.id}`, result.left);
+      if (result.left.idempotency === 'mismatch') return 'conflict' as const;
       yield* repo.advanceCycle(cycle.id, {
         from: [cycle.status],
         paymentId: payment.id,
         set: { lastError: 'payment provider unavailable — retrying' }
       });
-      yield* Effect.logWarning(`[billing] provider error charging cycle ${cycle.id}`, result.left);
       return 'provider_error' as const;
     }
     yield* paymentRepo.advance(payment.id, {
@@ -489,29 +521,49 @@ type Lookup =
   | { kind: 'none' }
   | { kind: 'unknown' };
 
-/** Is there an intent for this row at the provider? Asked before an
- * unanswered attempt is given up, so a charge whose response was lost is
- * never orphaned. */
-const lookUp = (payment: Payment): Step<Lookup> =>
+/** What became of an unanswered attempt at the provider. Asked before the
+ * attempt is given up or replaced, so a charge whose response was lost is
+ * never orphaned (R3):
+ *
+ *   1. Within the provider's key window, the create is REPLAYED — same key,
+ *      same request. That answer is authoritative: the first response if
+ *      the request ever got through, otherwise the request now (which is
+ *      what a retry would have done anyway).
+ *   2. Otherwise, or when the replay can't be made or answered, search.
+ *   3. A search miss counts as "nothing exists" only once the attempt is
+ *      older than `SEARCH_SETTLED_MS`; before that it is "unknown". */
+const resolveAttempt = (cycle: ContractCycle, payment: Payment, now: Date): Step<Lookup> =>
   Effect.gen(function* () {
     const payments = yield* Payments;
+    const age = now.getTime() - payment.createdAt.getTime();
+    if (age < REPLAY_WINDOW_MS && cycle.paymentId === payment.id) {
+      const request = yield* chargeRequest(cycle, payment);
+      if (request !== null) {
+        const replayed = yield* payments.chargeSavedCard(request).pipe(Effect.either);
+        if (Either.isRight(replayed)) {
+          return { kind: 'found', payment: replayed.right } as Lookup;
+        }
+        yield* Effect.logWarning(`[billing] could not replay payment ${payment.id}`, replayed.left);
+      }
+    }
     const found = yield* payments.findPaymentByRowId(payment.id).pipe(Effect.either);
     if (Either.isLeft(found)) {
       yield* Effect.logWarning(`[billing] could not look up payment ${payment.id}`, found.left);
       return { kind: 'unknown' } as Lookup;
     }
-    return (found.right === null ? { kind: 'none' } : { kind: 'found', payment: found.right }) as Lookup;
+    if (found.right !== null) return { kind: 'found', payment: found.right } as Lookup;
+    return (age >= SEARCH_SETTLED_MS ? { kind: 'none' } : { kind: 'unknown' }) as Lookup;
   });
 
 /** Ends an unanswered attempt that must not be used any more (a stale
  * resume quote, a cycle that started unfunded): whatever the provider has
  * for it is cancelled — or refunded, when it was taken — and the row is
  * failed (or refunded). Resolves false while the provider can't be asked. */
-const releaseUnanswered = (payment: Payment, now: Date): Step<boolean> =>
+const releaseUnanswered = (cycle: ContractCycle, payment: Payment, now: Date): Step<boolean> =>
   Effect.gen(function* () {
     const payments = yield* Payments;
     const paymentRepo = yield* PaymentRepo;
-    const found = yield* lookUp(payment);
+    const found = yield* resolveAttempt(cycle, payment, now);
     if (found.kind === 'unknown') {
       yield* paymentRepo.update(payment.id, {
         lastError: 'unanswered by the provider — looking it up'
@@ -587,7 +639,7 @@ const attempt = (
   amounts: ContractAmounts,
   from: ReadonlyArray<ContractCycleStatus>,
   now: Date
-): Step<'lost' | 'provider_error' | 'settled' | 'declined'> =>
+): Step<'lost' | 'provider_error' | 'settled' | 'declined' | 'conflict'> =>
   Effect.gen(function* () {
     const payments = yield* Payments;
     const paymentRepo = yield* PaymentRepo;
@@ -597,9 +649,13 @@ const attempt = (
     const previous = yield* findPayment(cycle.paymentId);
     if (previous !== null && previous.status === 'pending' && previous.providerReference === null) {
       if (!isUnanswered(previous, now)) return 'provider_error' as const;
-      if (!(yield* releaseUnanswered(previous, now))) return 'provider_error' as const;
+      if (!(yield* releaseUnanswered(cycle, previous, now))) return 'provider_error' as const;
     }
     const description = yield* describeCycle(ctx, cycle, mode);
+    // The card and key are frozen on the row: this attempt is only ever
+    // sent as this one request (R4).
+    const customer = yield* (yield* BillingCustomerRepo).findByUserId(ctx.contract.familyUserId);
+    const card = toCard(customer, payments.provider);
     const payment = yield* paymentRepo.create({
       userId: ctx.contract.familyUserId,
       kind: 'contract_cycle',
@@ -611,7 +667,9 @@ const attempt = (
       taxLines: [...amounts.serviceTaxLines, ...amounts.familyFeeTaxLines].map((line) => ({
         ...line
       })),
-      description
+      description,
+      cardReference: card?.reference ?? null,
+      chargeKey: attemptKey(cycle, mode, cycle.attempts + 1)
     });
     const claimed = yield* repo.advanceCycle(cycle.id, {
       from,
@@ -748,12 +806,40 @@ const carry = (
     yield* repo.appendLedger(entries);
   });
 
+/** The payment row carries what is captured, so the payer's history and the
+ * tax collected add up: its breakdown follows the cycle's (re)quote — its
+ * total stays the authorised amount the provider holds; `captured_cents` is
+ * what was taken. Idempotent, so a crash between claiming the capture and
+ * this write is repaired by running it again (M6). */
+const syncCaptureBreakdown = (cycle: ContractCycle, payment: Payment) =>
+  Effect.gen(function* () {
+    if (cycle.serviceCents === null || cycle.familyFeeCents === null) return payment;
+    const taxLines = cycle.taxLines.filter(
+      (line) =>
+        line.supplyType === 'care_service_value' || line.supplyType === 'family_service_fee'
+    );
+    const breakdown = {
+      amountCents: cycle.serviceCents,
+      feeCents: cycle.familyFeeCents,
+      taxCents: sum(taxLines as ReadonlyArray<TaxLine>),
+      taxLines: taxLines.map((line) => ({ ...line }))
+    };
+    if (
+      payment.amountCents === breakdown.amountCents &&
+      payment.feeCents === breakdown.feeCents &&
+      payment.taxCents === breakdown.taxCents &&
+      JSON.stringify(payment.taxLines) === JSON.stringify(breakdown.taxLines)
+    ) {
+      return payment;
+    }
+    return yield* (yield* PaymentRepo).update(payment.id, breakdown);
+  });
+
 /** A held cycle is due for capture: recheck the helper, then capture what
  * its sessions are worth now (never more than the hold). */
 const capture = (billing: ContractBilling, ctx: BillingContext, cycle: ContractCycle, now: Date) =>
   Effect.gen(function* () {
     const repo = yield* ContractBillingRepo;
-    const paymentRepo = yield* PaymentRepo;
     const payment = yield* findPayment(cycle.paymentId);
     if (payment === null || payment.providerReference === null) return;
     const readiness = yield* paymentReadiness(ctx.contract.providerUserId);
@@ -808,20 +894,8 @@ const capture = (billing: ContractBilling, ctx: BillingContext, cycle: ContractC
       set: { status: 'capturing', ...(requoted ? quoteColumns(requoted) : {}) }
     });
     if (!claimed) return;
-    if (requoted) {
-      // The payment row carries what is captured, so the payer's history
-      // and the tax collected add up (its total stays the authorised
-      // amount the provider holds; `captured_cents` is what was taken).
-      yield* paymentRepo.update(payment.id, {
-        amountCents: requoted.serviceCents,
-        feeCents: requoted.familyFeeCents,
-        taxCents: sum(requoted.serviceTaxLines) + sum(requoted.familyFeeTaxLines),
-        taxLines: [...requoted.serviceTaxLines, ...requoted.familyFeeTaxLines].map((line) => ({
-          ...line
-        }))
-      });
-    }
-    yield* captureClaimed(ctx, claimed, payment, now);
+    // A crash before this write is repaired by the `capturing` branch.
+    yield* captureClaimed(ctx, claimed, yield* syncCaptureBreakdown(claimed, payment), now);
   });
 
 /** Captures a claimed cycle under its one key (`capture-<cycleId>`). A
@@ -900,20 +974,16 @@ const settleQuietly = (payment: Payment, now: Date) =>
 /** An attempt that was never answered, at the cycle start: whatever the
  * provider has for it is used (a hold or charge whose response was lost);
  * without one the cycle is suspended — not the card's fault. When the
- * provider can't even be asked, the cycle is suspended all the same and the
- * attempt is looked up again on later ticks. */
+ * provider can't say yet (unreachable, or a search miss on a young attempt)
+ * the cycle is suspended all the same and the attempt stays pending, to be
+ * resolved on later ticks (`resolveStrandedAttempts`) — never failed on a
+ * guess, which would orphan a charge that did go through. */
 const giveUpAtStart = (ctx: BillingContext, cycle: ContractCycle, payment: Payment, now: Date) =>
   Effect.gen(function* () {
     const paymentRepo = yield* PaymentRepo;
-    const found = yield* lookUp(payment);
+    const found = yield* resolveAttempt(cycle, payment, now);
     if (found.kind === 'found') {
-      const recorded =
-        (yield* paymentRepo.advance(payment.id, {
-          from: 'pending',
-          providerReference: null,
-          set: { providerReference: found.payment.reference }
-        })) ?? (yield* paymentRepo.findById(payment.id));
-      yield* settleCycleRow(recorded, now, found.payment);
+      yield* adoptProviderPayment(payment, found.payment, now);
       return;
     }
     if (found.kind === 'none') {
@@ -949,7 +1019,8 @@ const resumeQuoteStale = (cycle: ContractCycle, now: Date) =>
 const giveUpResume = (cycle: ContractCycle, payment: Payment, now: Date) =>
   Effect.gen(function* () {
     const repo = yield* ContractBillingRepo;
-    yield* releaseUnanswered(payment, now);
+    // Unresolved (unknown) leaves the row pending for resolveStrandedAttempts.
+    yield* releaseUnanswered(cycle, payment, now);
     const back = yield* repo.advanceCycle(cycle.id, {
       from: ['authorising'],
       paymentId: payment.id,
@@ -961,6 +1032,201 @@ const giveUpResume = (cycle: ContractCycle, payment: Payment, now: Date) =>
         set: { suspendedReason: 'provider_unavailable' }
       });
     }
+  });
+
+/** An unanswered attempt, before its give-up point: re-sent as the very
+ * same request (a replay — never a second charge) while that is still safe
+ * and still right. It is resolved at the provider instead when the family
+ * has replaced the card since, when the provider refuses the key, or once
+ * the provider has forgotten the key (re-sending would then be a NEW
+ * charge). Found → adopted; nothing there → failed and a new attempt starts
+ * at once with a new key and the card on file now (R4); unknown → asked
+ * again next tick. */
+const retryUnanswered = (
+  billing: ContractBilling,
+  ctx: BillingContext,
+  cycle: ContractCycle,
+  payment: Payment,
+  now: Date
+): Step<void> =>
+  Effect.gen(function* () {
+    const payments = yield* Payments;
+    const paymentRepo = yield* PaymentRepo;
+    const onFile = toCard(
+      yield* (yield* BillingCustomerRepo).findByUserId(payment.userId),
+      payments.provider
+    );
+    const replaced = payment.cardReference !== null && onFile?.reference !== payment.cardReference;
+    const age = now.getTime() - payment.createdAt.getTime();
+    if (age < REPLAY_WINDOW_MS && !replaced) {
+      if ((yield* chargeAndSettle(cycle, payment, now)) !== 'conflict') return;
+    }
+    const found = yield* resolveAttempt(cycle, payment, now);
+    if (found.kind === 'found') {
+      yield* adoptProviderPayment(payment, found.payment, now);
+      return;
+    }
+    if (found.kind === 'unknown') {
+      yield* paymentRepo.update(payment.id, {
+        lastError: 'unanswered by the provider — looking it up'
+      });
+      return;
+    }
+    const failed = yield* paymentRepo.advance(payment.id, {
+      from: 'pending',
+      providerReference: null,
+      set: { status: 'failed', lastError: UNANSWERED }
+    });
+    if (failed) yield* startOver(billing, ctx, cycle, failed, now);
+  });
+
+/** The cycle's unanswered attempt was resolved as never having reached the
+ * provider: a new attempt starts now, as it would have after a decline that
+ * was nobody's fault — without the retry wait. */
+const startOver = (
+  billing: ContractBilling,
+  ctx: BillingContext,
+  cycle: ContractCycle,
+  failed: Payment,
+  now: Date
+): Step<void> =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    if (cycle.status === 'capture_failed') {
+      const fresh = (yield* repo.listCycles(cycle.contractId)).find((row) => row.id === cycle.id);
+      if (fresh && recoveryPending(fresh)) yield* recover(ctx, fresh, now);
+      return;
+    }
+    if (cycle.chargeMode === 'resume') {
+      // Back to suspended (the provider's fault); resume re-quotes the rest.
+      yield* providerSideFailure(cycle, failed, UNANSWERED, now);
+      const current = yield* repo.findBilling(cycle.contractId);
+      if (current) yield* resume(current, ctx, now, 'tick');
+      return;
+    }
+    const graced = yield* repo.advanceCycle(cycle.id, {
+      from: ['authorising'],
+      paymentId: failed.id,
+      set: { status: 'grace', nextRetryAt: now, lastError: UNANSWERED }
+    });
+    if (graced) yield* fund(billing, ctx, graced, ['grace'], now);
+  });
+
+// ---------------------------------------------------------------------------
+// Provider payments found by our payment id (webhook fallback, lookups)
+
+const dollars = (cents: number) => `$${(cents / 100).toFixed(2)} CAD`;
+
+/** A provider payment for an attempt that was given up (failed, refunded,
+ * superseded) or that belongs to a row holding another intent: nothing
+ * may be kept. A hold is cancelled, a charge refunded — automatically —
+ * and an admin incident raised once per provider payment. Fails (so the
+ * webhook is retried) while the provider can't be reached. */
+const releaseOrphan = (row: Payment, fetched: ProviderPayment, now: Date) =>
+  Effect.gen(function* () {
+    const payments = yield* Payments;
+    const paymentRepo = yield* PaymentRepo;
+    const repo = yield* ContractBillingRepo;
+    if (fetched.status === 'canceled') {
+      return { outcome: 'final' as CycleSettleOutcome, payment: row };
+    }
+    if (fetched.status === 'succeeded' && fetched.refundedCents > 0) {
+      // Already given back (by an earlier delivery or by hand).
+      return { outcome: 'final' as CycleSettleOutcome, payment: row };
+    }
+    const after =
+      fetched.status === 'succeeded' ? fetched : yield* payments.cancelPayment(fetched.reference);
+    const refund =
+      after.status === 'succeeded'
+        ? yield* payments.refund({
+            reference: fetched.reference,
+            reason: 'charge on a contract attempt that was given up',
+            idempotencyKey: `orphan-${fetched.reference}`
+          })
+        : null;
+    // A row that never learned its intent records it (so later events find
+    // it, and the payer's history shows the refund or the release).
+    const recorded =
+      row.providerReference !== null
+        ? row
+        : ((yield* paymentRepo.advance(row.id, {
+            from: ['failed', 'refunded'],
+            providerReference: null,
+            set: refund
+              ? {
+                  status: 'refunded',
+                  providerReference: fetched.reference,
+                  refundReference: refund.refundReference,
+                  refundedAt: refund.refundedAt,
+                  lastError: 'charge landed after the attempt was given up — refunded'
+                }
+              : {
+                  providerReference: fetched.reference,
+                  releasedAt: now,
+                  lastError: 'hold landed after the attempt was given up — released'
+                }
+          })) ?? row);
+    const contractId = fetched.metadata.contract_id ?? null;
+    const cycle =
+      (contractId === null
+        ? null
+        : (yield* repo.listCycles(contractId)).find(
+            (candidate) => candidate.id === fetched.metadata.cycle_id
+          )) ?? (yield* repo.findCycleByPaymentId(row.id));
+    const what = refund ? 'charge' : 'hold';
+    const detail = `A ${what} of ${dollars(fetched.amountCents)} (${fetched.reference}) landed on payment ${row.id} after that attempt was given up; it was ${refund ? 'refunded' : 'released'} automatically`;
+    const first =
+      cycle === null
+        ? true
+        : yield* repo.recordIncident({
+            contractId: cycle.contractId,
+            cycleId: cycle.id,
+            kind: `orphaned_payment:${fetched.reference}`,
+            detail
+          });
+    if (first) {
+      yield* alertAdmins(
+        `Payment landed on a given-up attempt${cycle ? ` on contract ${cycle.contractId}` : ''}`,
+        [
+          `${detail}.`,
+          cycle
+            ? `Cycle ${cycle.index + 1} (${cycleDates(cycle)}) is billed by its own current attempt; the family was not charged twice.`
+            : 'No cycle could be matched: check the payment by hand.'
+        ]
+      );
+    }
+    return { outcome: 'released' as CycleSettleOutcome, payment: recorded };
+  });
+
+/** A provider payment that names our row (`metadata.payment_id`) — from a
+ * lookup, or a webhook whose reference matched no row (the response was
+ * lost, so the row never learned it). An unanswered row adopts it and
+ * settles it the normal way; a row that has moved on (given up, or holding
+ * another intent) never keeps it: it is released (R3). */
+export const adoptProviderPayment = (
+  row: Payment,
+  fetched: ProviderPayment,
+  now: Date
+): Step<{ outcome: CycleSettleOutcome; payment: Payment }> =>
+  Effect.gen(function* () {
+    const paymentRepo = yield* PaymentRepo;
+    if (fetched.metadata.payment_id !== row.id) {
+      return { outcome: 'mismatch' as CycleSettleOutcome, payment: row };
+    }
+    const current =
+      row.status === 'pending' && row.providerReference === null
+        ? ((yield* paymentRepo.advance(row.id, {
+            from: 'pending',
+            providerReference: null,
+            set: { providerReference: fetched.reference }
+          })) ?? (yield* paymentRepo.findById(row.id)))
+        : row;
+    const live =
+      current.status === 'pending' || current.status === 'authorised' || current.status === 'captured';
+    if (live && current.providerReference === fetched.reference) {
+      return yield* settleCycleRow(current, now, fetched);
+    }
+    return yield* releaseOrphan(current, fetched, now);
   });
 
 // ---------------------------------------------------------------------------
@@ -997,7 +1263,7 @@ const processCycle = (
         return yield* fund(billing, ctx, cycle, ['grace'], now);
       }
       case 'authorising': {
-        const payment = yield* findPayment(cycle.paymentId);
+    const payment = yield* findPayment(cycle.paymentId);
         if (payment === null) return;
         if (payment.status === 'pending' && payment.providerReference === null) {
           // The provider never answered this attempt. Retry under the same
@@ -1007,8 +1273,7 @@ const processCycle = (
           } else if (now >= cycle.startsAt) {
             return yield* giveUpAtStart(ctx, cycle, payment, now);
           }
-          yield* chargeAndSettle(cycle, payment, now);
-          return;
+          return yield* retryUnanswered(billing, ctx, cycle, payment, now);
         }
         // Answered but not settled (a crash, or a webhook still on its way),
         // or failed without the cycle moving on.
@@ -1019,8 +1284,11 @@ const processCycle = (
         if (now < cycle.captureAt) return;
         return yield* capture(billing, ctx, cycle, now);
       case 'capturing': {
-        const payment = yield* findPayment(cycle.paymentId);
-        if (payment === null) return;
+        const found = yield* findPayment(cycle.paymentId);
+        if (found === null) return;
+        // A crash right after the claim may have skipped the reduced
+        // breakdown (M6): written again before anything else.
+        const payment = yield* syncCaptureBreakdown(cycle, found);
         // A capture that crashed or failed: what does the provider say now?
         yield* settleQuietly(payment, now);
         const current = (yield* (yield* ContractBillingRepo).listCycles(cycle.contractId)).find(
@@ -1034,12 +1302,12 @@ const processCycle = (
         // The recovery never started (a surviving hold could not be
         // cancelled first): start it now.
         if (cycle.chargeMode !== 'resume') return yield* recover(ctx, cycle, now);
-        const payment = yield* findPayment(cycle.paymentId);
+    const payment = yield* findPayment(cycle.paymentId);
         if (payment === null) return;
         if (payment.status === 'pending' && payment.providerReference === null) {
-          // Unanswered: the same key again, never a second charge.
-          yield* chargeAndSettle(cycle, payment, now);
-          return;
+          // Unanswered: the same request again (never a second charge), or
+          // resolved and replaced — exactly as for a first attempt.
+          return yield* retryUnanswered(billing, ctx, cycle, payment, now);
         }
         if (payment.status === 'pending' || payment.status === 'authorised') {
           yield* settleQuietly(payment, now);
@@ -1327,7 +1595,9 @@ export type CycleSettleOutcome =
   | 'pending'
   | 'final'
   | 'mismatch'
-  | 'skipped';
+  | 'skipped'
+  /** A provider payment on a given-up attempt, cancelled or refunded. */
+  | 'released';
 
 const writeLedger = (cycle: ContractCycle, payment: Payment) =>
   Effect.gen(function* () {
@@ -1792,7 +2062,7 @@ const resolveStrandedAttempts = (contractId: string, now: Date) =>
     for (const cycle of yield* repo.listCycles(contractId)) {
       if (cycle.status !== 'suspended' && cycle.status !== 'cancelled') continue;
       const payment = yield* findPayment(cycle.paymentId);
-      if (isUnanswered(payment, now)) yield* releaseUnanswered(payment, now);
+      if (isUnanswered(payment, now)) yield* releaseUnanswered(cycle, payment, now);
     }
   });
 
@@ -1941,12 +2211,24 @@ export const retryFamilyBilling = (userId: string, now: Date) =>
           retried += 1;
           yield* fund(billing, ctx, cycle, ['grace'], now);
         }
+        const unanswered =
+          (cycle.status === 'authorising' && cycle.chargeMode !== 'resume' && now < cycle.startsAt) ||
+          (recoveryPending(cycle) && cycle.chargeMode === 'resume');
         if (recoveryPending(cycle) && cycle.chargeMode === 'resume') {
           // A declined recovery after a system failure: the new card, now.
           const payment = yield* findPayment(cycle.paymentId);
           if (payment?.status === 'failed') {
             retried += 1;
             yield* recover(ctx, cycle, now);
+          }
+        }
+        if (unanswered) {
+          // An attempt the provider never answered, still on the old card:
+          // resolved now rather than on the next tick (R4).
+          const payment = yield* findPayment(cycle.paymentId);
+          if (payment?.status === 'pending' && payment.providerReference === null) {
+            retried += 1;
+            yield* retryUnanswered(billing, ctx, cycle, payment, now);
           }
         }
       }
@@ -2006,7 +2288,9 @@ export const CycleSettlementLive = Layer.effect(
       | NotificationHub
     >();
     return {
-      settle: (row: Payment, now: Date) => settleCycleRow(row, now).pipe(Effect.provide(context))
+      settle: (row: Payment, now: Date) => settleCycleRow(row, now).pipe(Effect.provide(context)),
+      adopt: (row: Payment, fetched: ProviderPayment, now: Date) =>
+        adoptProviderPayment(row, fetched, now).pipe(Effect.provide(context))
     };
   })
 );

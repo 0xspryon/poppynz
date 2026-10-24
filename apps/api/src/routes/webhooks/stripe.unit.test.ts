@@ -371,6 +371,17 @@ describe('processStripeEvent', () => {
     expect(await run(world, event())).toBe('settle: unknown');
   });
 
+  it('settles a payment whose row never learned its reference, by metadata.payment_id (R3)', async () => {
+    // The start's response was lost: no row holds pi_1, but the intent
+    // names payment-1.
+    const world = makeWorld({
+      payment: paymentRow({ providerReference: null }),
+      provider: fetched({ receivedCents: 7500 })
+    });
+    expect(await run(world, event())).toBe('settle: captured');
+    expect(world.payment()).toMatchObject({ status: 'captured', providerReference: 'pi_1' });
+  });
+
   it('saves the card of a finished setup for the customer that owns it', async () => {
     const world = makeWorld();
     await run(world, event({ type: 'setup_intent.succeeded', objectId: 'seti_1' }));

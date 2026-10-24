@@ -53,8 +53,44 @@ export class CycleSettlement extends Context.Tag('@repo/billing/CycleSettlement'
       { outcome: string; payment: Payment },
       SqlError | DBNotFoundError | PaymentProviderError
     >;
+    /** A provider payment that names `row` in its metadata but that the row
+     * never recorded (its response was lost): adopted while the attempt is
+     * still open, cancelled or refunded once it was given up. */
+    adopt: (
+      row: Payment,
+      fetched: ProviderPayment,
+      now: Date
+    ) => Effect.Effect<
+      { outcome: string; payment: Payment },
+      SqlError | DBNotFoundError | PaymentProviderError
+    >;
   }
 >() {}
+
+const fromCycleOutcome = (settled: { outcome: string; payment: Payment }): SettleResult => {
+  switch (settled.outcome) {
+    case 'authorised':
+      return { outcome: 'authorised', payment: settled.payment };
+    case 'captured':
+      return { outcome: 'captured', payment: settled.payment };
+    case 'declined':
+    case 'lost_hold':
+      return { outcome: 'failed', payment: settled.payment };
+    case 'final':
+    case 'released':
+      return { outcome: 'final', payment: settled.payment };
+    case 'skipped':
+      return { outcome: 'skipped', payment: settled.payment };
+    case 'mismatch':
+      return {
+        outcome: 'mismatch',
+        payment: settled.payment,
+        reason: settled.payment.lastError ?? 'mismatch'
+      };
+    default:
+      return { outcome: 'pending', payment: settled.payment };
+  }
+};
 
 const settleContractCycle = (row: Payment, now: Date) =>
   Effect.gen(function* () {
@@ -63,28 +99,7 @@ const settleContractCycle = (row: Payment, now: Date) =>
       yield* Effect.logWarning(`[billing] no cycle settlement here; left ${row.id} for the worker`);
       return { outcome: 'pending' as const, payment: row };
     }
-    const settled = yield* settlement.value.settle(row, now);
-    switch (settled.outcome) {
-      case 'authorised':
-        return { outcome: 'authorised' as const, payment: settled.payment };
-      case 'captured':
-        return { outcome: 'captured' as const, payment: settled.payment };
-      case 'declined':
-      case 'lost_hold':
-        return { outcome: 'failed' as const, payment: settled.payment };
-      case 'final':
-        return { outcome: 'final' as const, payment: settled.payment };
-      case 'skipped':
-        return { outcome: 'skipped' as const, payment: settled.payment };
-      case 'mismatch':
-        return {
-          outcome: 'mismatch' as const,
-          payment: settled.payment,
-          reason: settled.payment.lastError ?? 'mismatch'
-        };
-      default:
-        return { outcome: 'pending' as const, payment: settled.payment };
-    }
+    return fromCycleOutcome(yield* settlement.value.settle(row, now));
   });
 
 /** Statuses after which a payment row never moves again here. `authorised`
@@ -323,14 +338,55 @@ export const settlePayment = (paymentId: string, now: () => Date = () => new Dat
   });
 
 /** The webhook's entry point: it knows the provider's reference, not our id.
- * `unknown` for an intent we never created (another integration on the same
- * Stripe account, or a test event). */
+ *
+ * No row holding the reference is not proof the intent isn't ours: when the
+ * response that carried it was lost, the row never recorded it (R3). The
+ * intent is then fetched and its `metadata.payment_id` names the row — a
+ * contract attempt is handed to contract billing (adopted while open,
+ * released once given up); a check-order payment still waiting for its
+ * reference records it and settles. `unknown` for an intent we never
+ * created (another integration on the same Stripe account, or a test
+ * event). */
 export const settlePaymentByReference = (reference: string, now: () => Date = () => new Date()) =>
   Effect.gen(function* () {
     const paymentRepo = yield* PaymentRepo;
     const payments = yield* Payments;
     const row = yield* paymentRepo.findByProviderReference(payments.provider, reference);
-    if (row === null) return { outcome: 'unknown' as const };
-    const result: SettleResult = yield* settleRow(row, now);
-    return result;
+    if (row !== null) {
+      const result: SettleResult = yield* settleRow(row, now);
+      return result;
+    }
+    const fetched = yield* payments.getPayment(reference);
+    const paymentId = fetched.metadata.payment_id;
+    const named = paymentId
+      ? yield* paymentRepo
+          .findById(paymentId)
+          .pipe(Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)))
+      : null;
+    if (named === null || named.provider !== payments.provider) {
+      return { outcome: 'unknown' as const };
+    }
+    if (named.kind === 'contract_cycle') {
+      const settlement = yield* Effect.serviceOption(CycleSettlement);
+      if (Option.isNone(settlement)) {
+        yield* Effect.logWarning(`[billing] no cycle settlement here; left ${named.id} for later`);
+        return { outcome: 'pending' as const, payment: named } as SettleResult;
+      }
+      return fromCycleOutcome(yield* settlement.value.adopt(named, fetched, now()));
+    }
+    if (named.status === 'pending' && named.providerReference === null) {
+      const recorded = yield* paymentRepo.advance(named.id, {
+        from: 'pending',
+        providerReference: null,
+        set: { providerReference: reference }
+      });
+      if (recorded !== null) {
+        const result: SettleResult = yield* settleRow(recorded, now);
+        return result;
+      }
+    }
+    yield* Effect.logWarning(
+      `[billing] provider payment ${reference} names payment ${named.id}, which holds another reference`
+    );
+    return { outcome: 'unknown' as const };
   });

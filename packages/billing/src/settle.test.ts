@@ -15,7 +15,7 @@ import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
 import { makePaymentsTest, type ProviderPayment } from '@repo/payments';
 import { makeSafetyVerificationQueueTest, SafetyVerificationQueueError } from '@repo/queue';
 import { Effect, Layer } from 'effect';
-import { settlePayment, settlePaymentByReference } from './settle';
+import { CycleSettlement, settlePayment, settlePaymentByReference } from './settle';
 
 const NOW = new Date('2026-10-02T12:00:00.000Z');
 
@@ -40,6 +40,9 @@ const paymentRow = (overrides: Partial<Payment> = {}): Payment => ({
   taxLines: [],
   description: null,
   capturedCents: null,
+  releasedAt: null,
+  cardReference: null,
+  chargeKey: null,
   createdAt: new Date('2026-10-02T11:00:00.000Z'),
   updatedAt: new Date('2026-10-02T11:00:00.000Z'),
   ...overrides
@@ -568,12 +571,61 @@ describe('settlePaymentByReference', () => {
   });
 
   it('reports an intent we never created as unknown', async () => {
-    const world = makeWorld();
+    const world = makeWorld({ provider: fetched({ reference: 'pi_unknown', metadata: {} }) });
     const result = await run(
       world,
       settlePaymentByReference('pi_unknown', () => NOW).pipe(Effect.provide(world.layer))
     );
     expect(result).toEqual({ outcome: 'unknown' });
-    expect(world.calls.getPayment).toBe(0);
+  });
+
+  it('reports an intent naming a row that does not exist as unknown', async () => {
+    const world = makeWorld({
+      provider: fetched({ reference: 'pi_other', metadata: { payment_id: 'payment-404' } })
+    });
+    const result = await run(
+      world,
+      settlePaymentByReference('pi_other', () => NOW).pipe(Effect.provide(world.layer))
+    );
+    expect(result).toEqual({ outcome: 'unknown' });
+  });
+
+  it('falls back to metadata.payment_id when the row never learned its reference (R3)', async () => {
+    // The start's response was lost: the row has no reference, the
+    // provider's event carries one.
+    const world = makeWorld({
+      payment: paymentRow({ providerReference: null }),
+      provider: fetched({ reference: 'pi_lost' })
+    });
+    const result = await run(
+      world,
+      settlePaymentByReference('pi_lost', () => NOW).pipe(Effect.provide(world.layer))
+    );
+    expect(result.outcome).toBe('captured');
+    expect(world.payment()).toMatchObject({ status: 'captured', providerReference: 'pi_lost' });
+  });
+
+  it('hands a contract payment found by metadata to contract billing to adopt or release', async () => {
+    const adopted: Array<[string, string]> = [];
+    const world = makeWorld({
+      payment: paymentRow({ kind: 'contract_cycle', providerReference: null, status: 'failed' }),
+      provider: fetched({ reference: 'pi_late' })
+    });
+    const settlement = Layer.succeed(CycleSettlement, {
+      settle: () => Effect.die('not used'),
+      adopt: (row, payment) =>
+        Effect.sync(() => {
+          adopted.push([row.id, payment.reference]);
+          return { outcome: 'released', payment: row };
+        })
+    });
+    const result = await run(
+      world,
+      settlePaymentByReference('pi_late', () => NOW).pipe(
+        Effect.provide(Layer.merge(world.layer, settlement))
+      )
+    );
+    expect(adopted).toEqual([['payment-1', 'pi_late']]);
+    expect(result.outcome).toBe('final');
   });
 });

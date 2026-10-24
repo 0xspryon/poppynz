@@ -26,10 +26,12 @@ import {
   makeMockPayments,
   PaymentProviderError,
   Payments,
+  type MockPayments,
   type ProviderPayment
 } from '@repo/payments';
 import { ConfigProvider, Context, Effect, Exit, Layer } from 'effect';
 import {
+  adoptProviderPayment,
   previewCardResumes,
   retryFamilyBilling,
   runContractBilling,
@@ -103,8 +105,13 @@ type WorldOptions = {
   providerDown?: boolean;
   version?: Partial<ContractVersion>;
   contract?: Partial<Contract>;
-  /** Overrides on the mock provider (e.g. a re-fetch that says canceled). */
-  payments?: Partial<Context.Tag.Service<typeof Payments>>;
+  /** Overrides on the mock provider (e.g. a re-fetch that says canceled),
+   * or a function of the world's own mock (whose clock is the world's). */
+  payments?:
+    | Partial<Context.Tag.Service<typeof Payments>>
+    | ((mock: MockPayments) => Partial<Context.Tag.Service<typeof Payments>>);
+  /** Options of the world's own mock provider. */
+  mock?: Omit<NonNullable<Parameters<typeof makeMockPayments>[0]>, 'now' | 'providerDown'>;
   /** Wraps the in-memory payment repo (e.g. to interleave two callers). */
   paymentRepo?: (
     service: Context.Tag.Service<typeof PaymentRepo>
@@ -123,7 +130,11 @@ const makeWorld = (options: WorldOptions = {}) => {
     ],
     families: { 'contract-1': 'family-1' }
   });
-  const paymentRepo = makeInMemoryPaymentRepo();
+  // The provider's clock is the step's: what it remembers (idempotency keys,
+  // its search index) and how old an attempt is age with the simulated
+  // time, not the wall clock.
+  let clock = new Date('2026-10-24T00:00:00.000Z');
+  const paymentRepo = makeInMemoryPaymentRepo([], () => clock);
   const customers = makeInMemoryBillingCustomerRepo(
     options.card === null
       ? []
@@ -147,8 +158,14 @@ const makeWorld = (options: WorldOptions = {}) => {
   const ended: Array<string> = [];
   const mails: Array<ContractBillingNoticeMail> = [];
   const alerts: Array<string> = [];
-  const mock = makeMockPayments({ providerDown: options.providerDown });
-  const payments = { ...mock, ...options.payments };
+  const mock = makeMockPayments({
+    ...options.mock,
+    providerDown: options.providerDown,
+    now: () => clock
+  });
+  const overrides =
+    typeof options.payments === 'function' ? options.payments(mock) : options.payments;
+  const payments = { ...mock, ...overrides };
   const version = accepted(options.version);
 
   const layer = Layer.mergeAll(
@@ -194,8 +211,18 @@ const makeWorld = (options: WorldOptions = {}) => {
   );
 
   const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
-  const step = (now: Date) =>
-    run(runContractBilling('contract-1', now).pipe(Effect.provide(layer)));
+  const step = (now: Date) => {
+    clock = now;
+    return run(runContractBilling('contract-1', now).pipe(Effect.provide(layer)));
+  };
+  const start = (now: Date) => {
+    clock = now;
+    return run(startContractBilling('contract-1', now).pipe(Effect.provide(layer)));
+  };
+  const retry = (now: Date) => {
+    clock = now;
+    return run(retryFamilyBilling('family-1', now).pipe(Effect.provide(layer)));
+  };
   const cycles = () =>
     run(
       ContractBillingRepo.pipe(
@@ -217,6 +244,9 @@ const makeWorld = (options: WorldOptions = {}) => {
     layer,
     run,
     step,
+    start,
+    retry,
+    mock,
     cycles,
     billing,
     sessions,
@@ -1159,5 +1189,275 @@ describe('card dialog preview (B2)', () => {
     ]);
     // Nothing was charged by asking.
     expect([...world.payments.values()].some((row) => row.status === 'captured')).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Round 3 (2026-10-24): a lost response never orphans a charge, a replaced
+// card never loops, and a reduced capture survives a crash.
+
+/** Every charge under `key` goes through at the provider, but its answer is
+ * lost — the attempt can only be resolved by replay or lookup. */
+const loseKey =
+  (suffix: string) =>
+  (mock: MockPayments): Partial<Context.Tag.Service<typeof Payments>> => ({
+    chargeSavedCard: (input) =>
+      input.idempotencyKey.endsWith(suffix)
+        ? mock.chargeSavedCard(input).pipe(Effect.zipRight(providerFails('chargeSavedCard')))
+        : mock.chargeSavedCard(input)
+  });
+
+describe('lost responses and the give-up paths (R3)', () => {
+  // Accepted ten minutes before the cycle starts: charged at once (late
+  // booking), and given up on at the start if unanswered.
+  const acceptedAt = at(CYCLE_1.startsAt, -10);
+
+  it('uses a replay of the create as the authoritative lookup when search lags', async () => {
+    let lose = true;
+    const world = makeWorld({
+      billing: { billableFrom: acceptedAt },
+      mock: { loseResponses: () => lose, searchLagMs: 10 * 60 * 60_000 }
+    });
+    await world.start(acceptedAt);
+    expect((await world.cycles())[0]!.status).toBe('authorising');
+    lose = false;
+    await world.step(at(CYCLE_1.startsAt, 1));
+    // Search has not indexed the charge yet; the replay returns it.
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured', attempts: 1 });
+    const [payment] = [...world.payments.values()];
+    expect(payment).toMatchObject({ status: 'captured' });
+    expect(payment!.providerReference).toBe(world.mock.intents()[0]!.reference);
+    expect(world.mock.intents()).toHaveLength(1);
+  });
+
+  it('treats a search miss as unknown until the attempt is an hour old, then releases what it finds', async () => {
+    const world = makeWorld({
+      billing: { billableFrom: acceptedAt },
+      mock: { loseResponses: () => true, searchLagMs: 30 * 60_000 }
+    });
+    await world.start(acceptedAt);
+    await world.step(at(CYCLE_1.startsAt, 1));
+    // Replay unanswered, search not caught up, attempt 11 minutes old.
+    expect(world.billing()).toMatchObject({
+      status: 'suspended',
+      suspendedReason: 'provider_unavailable'
+    });
+    const [payment] = [...world.payments.values()];
+    expect(payment!.status).toBe('pending');
+    await world.step(at(CYCLE_1.startsAt, 40));
+    const resolved = world.payments.get(payment!.id)!;
+    // The charge did go through: it is found and refunded, never orphaned.
+    expect(resolved.status).toBe('refunded');
+    expect(resolved.providerReference).toBe(world.mock.intents()[0]!.reference);
+    expect(resolved.refundReference).not.toBeNull();
+  });
+
+  it('applies the same age guard when a stale resume charge is given up', async () => {
+    let lose = false;
+    const world = makeWorld({
+      card: 'mock_pm_decline',
+      mock: { loseResponses: () => lose, searchLagMs: 2 * 60 * 60_000 }
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    expect(world.billing().status).toBe('suspended');
+    world.setCard('mock_pm_new');
+    lose = true;
+    // Wednesday 15:00 EST: the resume charge goes through unanswered; the
+    // session starts at 15:30, so its quote is stale by the next tick.
+    await world.retry(new Date('2026-11-04T20:00:00.000Z'));
+    const resume = [...world.payments.values()].at(-1)!;
+    expect(resume.status).toBe('pending');
+    await world.step(new Date('2026-11-04T20:40:00.000Z'));
+    expect((await world.cycles())[0]!.status).toBe('suspended');
+    expect(world.payments.get(resume.id)!.status).toBe('pending');
+    await world.step(new Date('2026-11-04T23:00:00.000Z'));
+    expect(world.payments.get(resume.id)).toMatchObject({ status: 'refunded' });
+  });
+});
+
+describe('a charge that lands on a given-up attempt (R3 webhook)', () => {
+  const acceptedAt = at(CYCLE_1.startsAt, -10);
+
+  it('refunds it automatically and raises an incident', async () => {
+    const world = makeWorld({
+      billing: { billableFrom: acceptedAt },
+      // Search never finds attempt 1; attempt 2 goes through normally.
+      mock: { searchLagMs: 10 * 24 * 60 * 60_000 },
+      payments: loseKey('-1')
+    });
+    await world.start(acceptedAt);
+    await world.step(at(CYCLE_1.startsAt, 1));
+    await world.step(at(CYCLE_1.startsAt, 70));
+    const first = [...world.payments.values()][0]!;
+    expect(first).toMatchObject({ status: 'failed', providerReference: null });
+    // The webhook for attempt 1's charge finally arrives.
+    const landed = world.mock.intents().find((intent) => intent.metadata.payment_id === first.id)!;
+    expect(landed.status).toBe('succeeded');
+    const result = await world.run(
+      adoptProviderPayment(first, landed, at(CYCLE_1.startsAt, 90)).pipe(
+        Effect.provide(world.layer)
+      )
+    );
+    expect(result.outcome).toBe('released');
+    expect(world.payments.get(first.id)).toMatchObject({
+      status: 'refunded',
+      providerReference: landed.reference
+    });
+    expect(world.billingState.incidents.map((incident) => incident.kind)).toEqual([
+      `orphaned_payment:${landed.reference}`
+    ]);
+    expect(world.alerts.some((subject) => subject.includes('given-up attempt'))).toBe(true);
+    // Adopting the same delivery again changes nothing.
+    await world.run(
+      adoptProviderPayment(world.payments.get(first.id)!, landed, at(CYCLE_1.startsAt, 95)).pipe(
+        Effect.provide(world.layer)
+      )
+    );
+    expect(world.billingState.incidents).toHaveLength(1);
+  });
+
+  it('records an unanswered attempt it finds by payment id and settles it', async () => {
+    const world = makeWorld({ payments: loseKey('-1') });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    const [pending] = [...world.payments.values()];
+    expect(pending).toMatchObject({ status: 'pending', providerReference: null });
+    const landed = world.mock.intents()[0]!;
+    const result = await world.run(
+      adoptProviderPayment(pending!, landed, at(CYCLE_1.holdAt, 6)).pipe(
+        Effect.provide(world.layer)
+      )
+    );
+    expect(result.outcome).toBe('authorised');
+    expect((await world.cycles())[0]!.status).toBe('authorised');
+    expect(world.payments.get(pending!.id)!.providerReference).toBe(landed.reference);
+  });
+});
+
+describe('a replaced card under an unanswered attempt (R4)', () => {
+  it('charges the attempt its own card, so the replay is not refused', async () => {
+    let lose = true;
+    const world = makeWorld({ mock: { loseResponses: () => lose } });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    expect([...world.payments.values()][0]).toMatchObject({ cardReference: 'mock_pm_ok' });
+    world.setCard('mock_pm_new');
+    lose = false;
+    await world.step(at(CYCLE_1.holdAt, 20));
+    expect((await world.cycles())[0]).toMatchObject({ status: 'authorised', attempts: 1 });
+    expect(world.mock.intents()).toHaveLength(1);
+    expect(world.mock.intents()[0]!.paymentMethod?.reference).toBe('mock_pm_ok');
+  });
+
+  it('resolves an idempotency refusal by lookup, then starts a new attempt', async () => {
+    const world = makeWorld({
+      payments: (mock) => ({
+        chargeSavedCard: (input) =>
+          input.idempotencyKey.endsWith('-1')
+            ? Effect.fail(
+                new PaymentProviderError({
+                  operation: 'chargeSavedCard',
+                  cause: 'key reused with different parameters',
+                  idempotency: 'mismatch'
+                })
+              )
+            : mock.chargeSavedCard(input)
+      })
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.holdAt, 20));
+    // Nothing found yet, but a miss is not proof within the first hour.
+    expect((await world.cycles())[0]).toMatchObject({ status: 'authorising', attempts: 1 });
+    await world.step(at(CYCLE_1.holdAt, 70));
+    const [first, second] = [...world.payments.values()];
+    expect(first!.status).toBe('failed');
+    expect(second).toMatchObject({ status: 'authorised', chargeKey: expect.stringMatching(/-2$/) });
+    expect((await world.cycles())[0]).toMatchObject({ status: 'authorised', attempts: 2 });
+  });
+
+  it('gives the recovery branch the same lookup instead of looping', async () => {
+    let lostHold = false;
+    let lose = false;
+    const world = makeWorld({
+      mock: { loseResponses: () => lose },
+      payments: (mock) => ({
+        getPayment: (reference) =>
+          mock
+            .getPayment(reference)
+            .pipe(
+              Effect.map(
+                (payment): ProviderPayment =>
+                  lostHold && payment.status === 'authorised'
+                    ? { ...payment, status: 'canceled' }
+                    : payment
+              )
+            ),
+        capturePayment: () => providerFails('capturePayment')
+      })
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    lostHold = true;
+    lose = true;
+    await world.step(at(CYCLE_1.captureAt, 1));
+    expect((await world.cycles())[0]!.status).toBe('capture_failed');
+    world.setCard('mock_pm_new');
+    lose = false;
+    await world.step(at(CYCLE_1.captureAt, 20));
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured', attempts: 2 });
+  });
+
+  it('resolves an unanswered attempt as soon as the card is replaced', async () => {
+    let lose = true;
+    const world = makeWorld({ mock: { loseResponses: () => lose } });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    world.setCard('mock_pm_new');
+    lose = false;
+    // The card dialog's retry, not the next tick.
+    await world.retry(at(CYCLE_1.holdAt, 8));
+    expect((await world.cycles())[0]).toMatchObject({ status: 'authorised', attempts: 1 });
+    expect(world.mock.intents()).toHaveLength(1);
+  });
+
+  it('never re-sends an attempt under a key the provider has forgotten', async () => {
+    let lose = true;
+    const world = makeWorld({ mock: { loseResponses: () => lose } });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    lose = false;
+    // 24 h later the key is gone at the provider: a re-send would be a
+    // second hold. The attempt is looked up instead.
+    await world.step(at(CYCLE_1.holdAt, 5 + 24 * 60 + 10));
+    expect(world.mock.intents()).toHaveLength(1);
+    expect((await world.cycles())[0]).toMatchObject({ status: 'authorised', attempts: 1 });
+  });
+});
+
+describe('reduced captures survive a crash (M6)', () => {
+  it('writes the reduced breakdown on the next tick when the first write never happened', async () => {
+    let crash = true;
+    const world = makeWorld({
+      paymentRepo: (service) => ({
+        ...service,
+        update: (id, input) => {
+          if (crash && input.amountCents !== undefined) {
+            crash = false;
+            return Effect.die('crash after claiming the capture');
+          }
+          return service.update(id, input);
+        }
+      })
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    world.billingState.sessions = world.billingState.sessions.map((session) =>
+      session.date === '2026-11-04' ? { ...session, status: 'cancelled' } : session
+    );
+    await world.step(at(CYCLE_1.captureAt, 1)).catch(() => undefined);
+    expect((await world.cycles())[0]!.status).toBe('capturing');
+    await world.step(at(CYCLE_1.captureAt, 20));
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured', capturedCents: 6604 });
+    expect([...world.payments.values()][0]).toMatchObject({
+      amountCents: 6250,
+      feeCents: 313,
+      taxCents: 41,
+      capturedCents: 6604
+    });
   });
 });

@@ -174,9 +174,13 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('staging suppresses everyone else and logs the suppression', async () => {
+  // Staging mails real recipients since 96b814e ("send email in staging"):
+  // UAT testers sign up with their own addresses and need the mails.
+  it('staging sends to any recipient, like production', async () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ id: 'mail-1' }), { status: 200 }));
 
     await Effect.runPromise(
       gatedMailer('staging').sendApprovalGranted({
@@ -187,11 +191,56 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
       })
     );
 
-    expect(fetchSpy).not.toHaveBeenCalled();
-    expect(String(logSpy.mock.calls[0]![0])).toContain('suppressed (staging) to user@example.com');
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).to).toEqual(['user@example.com']);
+    expect(logSpy).not.toHaveBeenCalled();
   });
 
-  it('staging filters a mixed recipient list down to the allowed subset', async () => {
+  it('staging sends a mixed recipient list in full', async () => {
+    const fetchSpy = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValue(new Response(JSON.stringify({ id: 'mail-1' }), { status: 200 }));
+
+    await Effect.runPromise(
+      makeMailer({
+        resendApiKey: Option.some('re_test_key'),
+        from,
+        adminNotificationEmails: ['kay@poppynz.com', 'watcher@example.com'],
+        environment: 'staging',
+        adminAccounts: []
+      }).sendAdminApprovalRequestSubmitted({
+        applicantName: 'P',
+        applicantEmail: 'p@example.com',
+        role: 'service-provider'
+      })
+    );
+
+    expect(JSON.parse(String(fetchSpy.mock.calls[0]![1]?.body)).to).toEqual([
+      'kay@poppynz.com',
+      'watcher@example.com'
+    ]);
+  });
+
+  it('dev suppresses everyone outside @poppynz.com and the admin accounts, and logs it', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+
+    await Effect.runPromise(
+      gatedMailer('dev').sendApprovalGranted({
+        email: 'user@example.com',
+        name: 'User',
+        role: 'service-provider',
+        expiresAt: new Date('2027-01-01T00:00:00.000Z')
+      })
+    );
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(logSpy.mock.calls.map((call) => String(call[0]))).toContainEqual(
+      expect.stringContaining('suppressed (dev) to user@example.com')
+    );
+  });
+
+  it('dev filters a mixed recipient list down to the allowed subset', async () => {
     const fetchSpy = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response(JSON.stringify({ id: 'mail-1' }), { status: 200 }));
@@ -202,7 +251,7 @@ describe('makeMailer (ENVIRONMENT gating)', () => {
         resendApiKey: Option.some('re_test_key'),
         from,
         adminNotificationEmails: ['kay@poppynz.com', 'watcher@example.com'],
-        environment: 'staging',
+        environment: 'dev',
         adminAccounts: []
       }).sendAdminApprovalRequestSubmitted({
         applicantName: 'P',

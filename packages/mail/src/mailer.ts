@@ -240,8 +240,9 @@ export const makeMailer = (config: {
   });
   const adminAccounts = new Set(config.adminAccounts.map((email) => email.trim().toLowerCase()));
 
-  // Production mails everyone; staging and dev only @poppynz.com addresses
-  // and the admin accounts, so test users can never receive real mail.
+  // Production and staging mail everyone (staging since 96b814e: UAT testers
+  // use their own addresses). Dev only mails @poppynz.com addresses and the
+  // admin accounts, so local test users never receive real mail.
   const isAllowed = (recipient: string) => {
     if (config.environment === 'production' || config.environment === 'staging') {
       return true;

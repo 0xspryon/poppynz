@@ -568,6 +568,71 @@ describe('chargeSavedCard', () => {
   });
 });
 
+describe('chargeSavedCard idempotency refusals (R4)', () => {
+  const input = {
+    amountCents: 63390,
+    currency: 'CAD' as const,
+    customer: 'cus_1',
+    card: 'pm_new',
+    capture: 'manual' as const,
+    idempotencyKey: 'cycle-c1-1',
+    metadata: { payment_id: 'payment-9' }
+  };
+
+  it('marks a key reused with different parameters as an idempotency mismatch', async () => {
+    const { client } = fakeStripe({
+      create: () => {
+        throw new Stripe.errors.StripeIdempotencyError({
+          type: 'idempotency_error',
+          message: 'Keys for idempotent requests can only be used with the same parameters.'
+        } as never);
+      }
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const exit = await Effect.runPromiseExit(payments.chargeSavedCard(input));
+    expect(exit).toEqual(
+      Exit.fail(
+        expect.objectContaining({
+          _tag: 'PaymentProviderError',
+          idempotency: 'mismatch'
+        }) as never
+      )
+    );
+  });
+
+  it('marks a key whose first request is still running as in flight', async () => {
+    const { client } = fakeStripe({
+      create: () => {
+        throw new Stripe.errors.StripeInvalidRequestError({
+          code: 'idempotency_key_in_use',
+          message: 'There is currently another in-progress request using this key.'
+        } as never);
+      }
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const exit = await Effect.runPromiseExit(payments.chargeSavedCard(input));
+    expect(exit).toEqual(
+      Exit.fail(
+        expect.objectContaining({ _tag: 'PaymentProviderError', idempotency: 'in_flight' }) as never
+      )
+    );
+  });
+
+  it('leaves an ordinary outage unmarked', async () => {
+    const { client } = fakeStripe({
+      create: () => {
+        throw new Stripe.errors.StripeConnectionError({ message: 'socket hang up' } as never);
+      }
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const exit = await Effect.runPromiseExit(payments.chargeSavedCard(input));
+    expect(Exit.isFailure(exit)).toBe(true);
+    if (Exit.isFailure(exit) && exit.cause._tag === 'Fail') {
+      expect((exit.cause.error as { idempotency?: string }).idempotency).toBeUndefined();
+    }
+  });
+});
+
 describe('capturePayment', () => {
   it('captures the amount asked for under the capture key', async () => {
     const { client, calls } = fakeStripe({

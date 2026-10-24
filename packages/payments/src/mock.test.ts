@@ -168,3 +168,58 @@ describe('mock off-session billing', () => {
     ).toBe(true);
   });
 });
+
+describe('mock provider trouble (R3, R4)', () => {
+  const input = {
+    amountCents: 13206,
+    currency: 'CAD' as const,
+    customer: 'mock_cus_1',
+    card: 'mock_pm_old',
+    capture: 'manual' as const,
+    idempotencyKey: 'cycle-c1-1',
+    metadata: { payment_id: 'payment-1' }
+  };
+
+  it('acts on a charge whose response it then loses, and replays the first answer', async () => {
+    let lose = true;
+    const payments = makeMockPayments({ loseResponses: () => lose });
+    expect(Exit.isFailure(await Effect.runPromiseExit(payments.chargeSavedCard(input)))).toBe(true);
+    expect(payments.intents()).toHaveLength(1);
+    lose = false;
+    const replayed = await Effect.runPromise(payments.chargeSavedCard(input));
+    expect(replayed.status).toBe('authorised');
+    expect(payments.intents()).toHaveLength(1);
+  });
+
+  it('refuses the same key with another card as an idempotency mismatch', async () => {
+    const payments = makeMockPayments();
+    await Effect.runPromise(payments.chargeSavedCard(input));
+    const exit = await Effect.runPromiseExit(
+      payments.chargeSavedCard({ ...input, card: 'mock_pm_new' })
+    );
+    expect(exit).toEqual(
+      Exit.fail(
+        expect.objectContaining({ _tag: 'PaymentProviderError', idempotency: 'mismatch' }) as never
+      )
+    );
+  });
+
+  it('forgets a key after 24 hours, as the provider does', async () => {
+    let clock = new Date('2026-11-01T00:00:00.000Z');
+    const payments = makeMockPayments({ now: () => clock });
+    await Effect.runPromise(payments.chargeSavedCard(input));
+    clock = new Date(clock.getTime() + 24 * 60 * 60 * 1000);
+    await Effect.runPromise(payments.chargeSavedCard(input));
+    // A second intent: why nothing may be "retried" under an expired key.
+    expect(payments.intents()).toHaveLength(2);
+  });
+
+  it('does not find a fresh intent by search until the index catches up', async () => {
+    let clock = new Date('2026-11-01T00:00:00.000Z');
+    const payments = makeMockPayments({ now: () => clock, searchLagMs: 60_000 });
+    await Effect.runPromise(payments.chargeSavedCard(input));
+    expect(await Effect.runPromise(payments.findPaymentByRowId('payment-1'))).toBeNull();
+    clock = new Date(clock.getTime() + 60_000);
+    expect(await Effect.runPromise(payments.findPaymentByRowId('payment-1'))).not.toBeNull();
+  });
+});

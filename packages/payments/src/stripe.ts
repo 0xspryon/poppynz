@@ -157,6 +157,17 @@ const isUnexpectedState = (cause: unknown) =>
   cause instanceof Stripe.errors.StripeInvalidRequestError &&
   cause.code === 'payment_intent_unexpected_state';
 
+/** Stripe refusing the idempotency key itself (not the charge): reused with
+ * different parameters, or the first request is still running. */
+export const idempotencyOf = (
+  cause: unknown
+): { idempotency?: 'mismatch' | 'in_flight' } =>
+  cause instanceof Stripe.errors.StripeIdempotencyError
+    ? { idempotency: 'mismatch' }
+    : cause instanceof Stripe.errors.StripeError && cause.code === 'idempotency_key_in_use'
+      ? { idempotency: 'in_flight' }
+      : {};
+
 /** Webhook payloads are routed by id only; this is the shape we read. */
 type RoutedObject = { id?: unknown; payment_intent?: unknown };
 
@@ -336,7 +347,13 @@ export const makeStripePayments = (options: {
               });
             }
           }
-          return Effect.fail(new PaymentProviderError({ operation: 'chargeSavedCard', cause }));
+          return Effect.fail(
+            new PaymentProviderError({
+              operation: 'chargeSavedCard',
+              cause,
+              ...idempotencyOf(cause)
+            })
+          );
         })
       ),
 

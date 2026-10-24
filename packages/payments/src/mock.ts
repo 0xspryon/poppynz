@@ -9,9 +9,26 @@ import {
   type PaymentOperation,
   type PaymentRefund,
   type ProviderCardSetup,
+  type ChargeSavedCardInput,
   type ProviderPayment,
   type StartPaymentInput
 } from './port';
+
+/** How long a provider remembers an idempotency key (Stripe: 24 h). */
+export const IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+/** The mock, plus every intent it holds (for assertions). */
+export type MockPayments = Context.Tag.Service<Payments> & {
+  intents: () => ReadonlyArray<ProviderPayment>;
+};
+
+const sameCharge = (a: ChargeSavedCardInput, b: ChargeSavedCardInput) =>
+  a.amountCents === b.amountCents &&
+  a.currency === b.currency &&
+  a.customer === b.customer &&
+  a.card === b.card &&
+  a.capture === b.capture &&
+  JSON.stringify(a.metadata) === JSON.stringify(b.metadata);
 
 /** The card every mock setup and mock payment "uses". */
 export const mockCard = (reference: string): CardDetails => ({
@@ -37,14 +54,30 @@ export const makeMockPayments = (
     failRefund?: boolean;
     /** Off-session charges and captures fail as if the provider were down. */
     providerDown?: boolean;
+    /** The off-session charge goes through, but its response never comes
+     * back (a timeout after the provider acted). */
+    loseResponses?: () => boolean;
+    /** Search is eventually consistent: an intent younger than this is not
+     * found by `findPaymentByRowId` yet. */
+    searchLagMs?: number;
     now?: () => Date;
   } = {}
-): Context.Tag.Service<Payments> => {
+): MockPayments => {
   const now = options.now ?? (() => new Date());
   const started = new Map<string, { input: StartPaymentInput; reference: string }>();
+  const charges = new Map<string, { input: ChargeSavedCardInput; reference: string; at: Date }>();
+  const createdAt = new Map<string, Date>();
   const byReference = new Map<string, ProviderPayment>();
   const refunds = new Map<string, PaymentRefund>();
   const setups = new Map<string, ProviderCardSetup>();
+
+  /** The provider's answer — or, when responses are being lost, nothing. */
+  const answer = (payment: ProviderPayment) =>
+    options.loseResponses?.()
+      ? Effect.fail(
+          new PaymentProviderError({ operation: 'chargeSavedCard', cause: 'mock: response lost' })
+        )
+      : Effect.succeed(payment);
 
   const unknown = (operation: PaymentOperation, reference: string) =>
     Effect.fail(
@@ -159,7 +192,9 @@ export const makeMockPayments = (
 
     // Off-session contract billing. A saved card whose reference contains
     // `decline` is refused — the only way to reach the decline paths without
-    // a provider. Same key → same intent, as everywhere else.
+    // a provider. Same key + same input within 24 h → the first answer (a
+    // replay); same key + different input → an idempotency refusal; a key
+    // older than 24 h is forgotten, as Stripe forgets it.
     chargeSavedCard: (input) =>
       Effect.suspend(() => {
         if (options.providerDown) {
@@ -167,9 +202,27 @@ export const makeMockPayments = (
             new PaymentProviderError({ operation: 'chargeSavedCard', cause: 'mock provider down' })
           );
         }
-        const existing = started.get(input.idempotencyKey);
-        if (existing) return Effect.succeed(byReference.get(existing.reference)!);
-        const reference = `mock_pi_${input.idempotencyKey}`;
+        const at = now();
+        const existing = charges.get(input.idempotencyKey);
+        const remembered =
+          existing && at.getTime() - existing.at.getTime() < IDEMPOTENCY_WINDOW_MS
+            ? existing
+            : null;
+        if (remembered) {
+          if (!sameCharge(remembered.input, input)) {
+            return Effect.fail(
+              new PaymentProviderError({
+                operation: 'chargeSavedCard',
+                cause: `mock: key ${input.idempotencyKey} reused with different parameters`,
+                idempotency: 'mismatch'
+              })
+            );
+          }
+          return answer(byReference.get(remembered.reference)!);
+        }
+        const reference = existing
+          ? `mock_pi_${input.idempotencyKey}_${byReference.size + 1}`
+          : `mock_pi_${input.idempotencyKey}`;
         const declined = input.card.includes('decline');
         const payment: ProviderPayment = {
           reference,
@@ -186,29 +239,12 @@ export const makeMockPayments = (
           capturableCents: !declined && input.capture === 'manual' ? input.amountCents : 0,
           receivedCents: !declined && input.capture === 'automatic' ? input.amountCents : 0,
           captureBefore:
-            input.capture === 'manual' ? new Date(now().getTime() + 114 * 60 * 60 * 1000) : null
+            input.capture === 'manual' ? new Date(at.getTime() + 114 * 60 * 60 * 1000) : null
         };
-        started.set(input.idempotencyKey, {
-          input: {
-            quote: {
-              amountCents: input.amountCents,
-              lineItems: [],
-              feeCents: 0,
-              taxCents: 0,
-              taxLines: [],
-              totalCents: input.amountCents,
-              currency: input.currency
-            },
-            idempotencyKey: input.idempotencyKey,
-            metadata: input.metadata,
-            customer: input.customer,
-            savedCard: input.card,
-            saveCard: false
-          },
-          reference
-        });
+        charges.set(input.idempotencyKey, { input, reference, at });
+        createdAt.set(reference, at);
         byReference.set(reference, payment);
-        return Effect.succeed(payment);
+        return answer(payment);
       }),
 
     capturePayment: ({ reference, amountCents }) =>
@@ -250,7 +286,11 @@ export const makeMockPayments = (
         : Effect.sync(
             () =>
               [...byReference.values()].find(
-                (payment) => payment.metadata.payment_id === paymentId
+                (payment) =>
+                  payment.metadata.payment_id === paymentId &&
+                  // Not indexed yet: search lags behind creation.
+                  now().getTime() - (createdAt.get(payment.reference) ?? new Date(0)).getTime() >=
+                    (options.searchLagMs ?? 0)
               ) ?? null
           ),
 
@@ -276,7 +316,9 @@ export const makeMockPayments = (
     createDashboardLink: () => Effect.succeed({ url: 'about:blank' }),
 
     verifyWebhook: () =>
-      Effect.fail(new PaymentWebhookSignatureError({ reason: 'the mock provider has no webhooks' }))
+      Effect.fail(new PaymentWebhookSignatureError({ reason: 'the mock provider has no webhooks' })),
+
+    intents: () => [...byReference.values()]
   };
 };
 

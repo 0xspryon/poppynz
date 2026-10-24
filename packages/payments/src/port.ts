@@ -203,6 +203,11 @@ export class PaymentDeclinedError extends Data.TaggedError('PaymentDeclinedError
 export class PaymentProviderError extends Data.TaggedError('PaymentProviderError')<{
   operation: PaymentOperation;
   cause: unknown;
+  /** Set when the provider refused the idempotency key itself: `mismatch`
+   * — the key was already used with different parameters (it will never be
+   * accepted again for this request); `in_flight` — the first request under
+   * the key is still being processed. Neither says whether money moved. */
+  idempotency?: 'mismatch' | 'in_flight';
 }> {}
 
 export class PaymentWebhookSignatureError extends Data.TaggedError('PaymentWebhookSignatureError')<{
@@ -274,7 +279,9 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
     /** Charges (or holds) a saved card with nobody present. A decline is
      * DATA — `status: 'failed'` with the card's reason — because it is a
      * business outcome (grace period, suspension), not a fault. Only trouble
-     * reaching the provider fails the effect. */
+     * reaching the provider fails the effect. The same key with the same
+     * input, within 24 h, returns the first answer (a replay); the same key
+     * with a different input fails with `idempotency: 'mismatch'`. */
     chargeSavedCard: (
       input: ChargeSavedCardInput
     ) => Effect.Effect<ProviderPayment, PaymentProviderError>;
@@ -285,8 +292,9 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
       idempotencyKey: string;
     }) => Effect.Effect<ProviderPayment, PaymentProviderError>;
     /** The intent created for our `payments.id` (its `metadata.payment_id`),
-     * or null when none exists. How a charge whose response was lost is
-     * resolved before the attempt is given up — never a second charge. */
+     * or null when none is found. Search is eventually consistent, so a null
+     * is NOT proof that nothing exists — only a replay of the create under
+     * its key (within the provider's 24 h key window) is authoritative. */
     findPaymentByRowId: (
       paymentId: string
     ) => Effect.Effect<ProviderPayment | null, PaymentProviderError>;

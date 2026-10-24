@@ -26,11 +26,18 @@ export const safetyVerificationQueueDefinition = {
   type: 'bullmq' as const
 };
 
+export const contractBillingQueueDefinition = {
+  name: 'contract-billing' as const,
+  displayName: 'Contract Billing' as const,
+  type: 'bullmq' as const
+};
+
 export const queues = [
   providerSearchQueueDefinition,
   familySearchQueueDefinition,
   approvalExpiryQueueDefinition,
-  safetyVerificationQueueDefinition
+  safetyVerificationQueueDefinition,
+  contractBillingQueueDefinition
 ] as const;
 
 export const providerSearchJobNames = {
@@ -60,6 +67,17 @@ export const safetyVerificationJobNames = {
    * was lost: settles them, and cancels the ones abandoned for a day. */
   recoverPayments: 'recover-pending-payments'
 } as const;
+
+export const contractBillingJobNames = {
+  /** Sessions, holds, captures, grace, suspension, resume and the
+   * payment-readiness gate for every live contract (piece 3). */
+  tick: 'contract-billing-tick'
+} as const;
+
+/** Every 15 minutes: a missed run catches up, since each cycle stores the
+ * instants it is due at. */
+export const contractBillingSchedulerId = 'contract-billing-tick';
+export const contractBillingCronPattern = '*/15 * * * *';
 
 /** One repeatable scheduler drives the daily run; upserted on worker boot. */
 export const approvalExpirySchedulerId = 'approval-expiry-daily';

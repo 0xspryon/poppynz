@@ -7,6 +7,8 @@ import { CredibledDefault } from '@repo/credibled';
 import { MailerLive } from '@repo/mail';
 import { NotificationHubLive } from '@repo/notify';
 import { PaymentsLive } from '@repo/payments';
+import { ContractBillingBaseLive, withCycleSettlement } from './billing-layer';
+import { describeTick, processContractBillingTick } from './contract-billing-processor';
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import {
   ApprovalRepoDefault,
@@ -27,6 +29,10 @@ import {
   approvalExpiryJobNames,
   approvalExpiryQueueDefinition,
   approvalExpirySchedulerId,
+  contractBillingCronPattern,
+  contractBillingJobNames,
+  contractBillingQueueDefinition,
+  contractBillingSchedulerId,
   familySearchJobNames,
   familySearchQueueDefinition,
   familySearchReindexDeduplicationId,
@@ -52,7 +58,9 @@ import { processSafetyVerificationExpiries } from './safety-verification-expiry-
 import { placeCheckOrder, recoverUnplacedCheckOrders } from './safety-verification-order-processor';
 import { reconcileCheckOrderStatuses } from './safety-verification-status-processor';
 
-const WorkerLive = Layer.mergeAll(
+const WorkerBaseLive = Layer.mergeAll(
+  // Contract billing (piece 3): repos, provider, mail and notifications.
+  ContractBillingBaseLive,
   ProviderSearchIndexDefault,
   ProviderSearchOutboxRepoDefault,
   FamilySearchIndexDefault,
@@ -77,6 +85,9 @@ const WorkerLive = Layer.mergeAll(
   // stream subscribes to, so the applicant's page learns without a refresh.
   NotificationHubLive
 );
+// Contract-cycle payments settle through the one settle path (the recovery
+// job included) with contract billing's own dependencies.
+const WorkerLive = withCycleSettlement(WorkerBaseLive);
 const runtime = ManagedRuntime.make(WorkerLive);
 const connection = getRedisConnection();
 
@@ -169,6 +180,33 @@ const approvalExpiryWorker = new Worker(
   },
   { connection, concurrency: 1 }
 );
+
+const contractBillingWorker = new Worker(
+  contractBillingQueueDefinition.name,
+  async (job) => {
+    if (job.name !== contractBillingJobNames.tick) {
+      console.warn(`contract-billing: unknown job ${job.name}`);
+      return;
+    }
+    const summary = await runtime.runPromise(processContractBillingTick(new Date()));
+    console.log(describeTick(summary));
+  },
+  // One tick at a time: ticks are idempotent, but there is nothing to gain
+  // from two racing over the same contracts.
+  { connection, concurrency: 1 }
+);
+
+const contractBillingQueue = new Queue(contractBillingQueueDefinition.name, { connection });
+
+void contractBillingQueue
+  .upsertJobScheduler(
+    contractBillingSchedulerId,
+    { pattern: contractBillingCronPattern },
+    { name: contractBillingJobNames.tick, data: {} }
+  )
+  .catch((cause) => {
+    console.error(cause);
+  });
 
 const approvalExpiryQueue = new Queue(approvalExpiryQueueDefinition.name, { connection });
 
@@ -348,6 +386,8 @@ const shutdown = async () => {
   await approvalExpiryQueue.close();
   await safetyVerificationWorker.close();
   await safetyVerificationQueue.close();
+  await contractBillingWorker.close();
+  await contractBillingQueue.close();
   await Promise.all(queueDashQueues.map(({ queue }) => queue.close()));
   await runtime.dispose();
 };

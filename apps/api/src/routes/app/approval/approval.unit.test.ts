@@ -148,6 +148,8 @@ const makeLayer = (
     mailerFail?: boolean;
     /** The applicant's role, as stored on their account and profile. */
     role?: 'family' | 'service-provider';
+    /** The applicant's profile language (default 'en'). */
+    language?: string;
     /** Which side's index reconcile was scheduled. */
     reconciled?: Array<{ side: 'family' | 'provider'; userId: string }>;
     /** The applicant's photo; helpers default to having one. */
@@ -284,7 +286,7 @@ const makeLayer = (
           userId,
           email: 'provider@example.com',
           role: options.role ?? 'service-provider',
-          language: 'en',
+          language: options.language ?? 'en',
           firstName: 'Provider',
           lastName: 'User',
           gender: null,
@@ -447,10 +449,23 @@ describe('createApprovalProgram', () => {
           email: 'provider@example.com',
           name: 'Provider',
           role: 'service-provider',
-          expiresAt: new Date('2027-01-01T00:00:00.000Z')
+          expiresAt: new Date('2027-01-01T00:00:00.000Z'),
+          locale: 'en'
         }
       }
     ]);
+  });
+
+  it("writes the granted mail in the applicant's profile language", async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    await Effect.runPromise(
+      createApprovalProgram(userAndSession, input).pipe(
+        Effect.provide(makeLayer({ sentMails, language: 'fr' }))
+      )
+    );
+
+    expect(sentMails[0]?.mail).toMatchObject({ locale: 'fr' });
   });
 
   it('still creates the approval when the granted mail fails', async () => {
@@ -640,10 +655,23 @@ describe('revokeApprovalProgram', () => {
           email: 'provider@example.com',
           name: 'Provider User',
           role: 'service-provider',
-          reason: 'Expired vulnerable sector check'
+          reason: 'Expired vulnerable sector check',
+          locale: 'en'
         }
       }
     ]);
+  });
+
+  it("writes the revoked mail in the applicant's profile language", async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    await Effect.runPromise(
+      revokeApprovalProgram(APPROVAL_ID, 'Expired vulnerable sector check').pipe(
+        Effect.provide(makeLayer({ revokeSucceeds: true, sentMails, language: 'fr' }))
+      )
+    );
+
+    expect(sentMails[0]?.mail).toMatchObject({ locale: 'fr' });
   });
 
   it('still revokes the approval when the revoked mail fails', async () => {

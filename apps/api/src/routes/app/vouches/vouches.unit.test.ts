@@ -103,6 +103,8 @@ const makeLayer = (
     /** Called on every vouch-repo read or write, to prove one never happened. */
     onRepoTouch?: () => void;
     sent?: Array<VouchRequestMail>;
+    /** Profile languages by user id; everyone else has no profile. */
+    languages?: Record<string, string>;
   } = {}
 ) =>
   Layer.mergeAll(
@@ -133,7 +135,10 @@ const makeLayer = (
     }),
     makeUserProfileRepoTest({
       create: () => Effect.die('not used'),
-      findByUserId: () => Effect.fail(new DBNotFoundError({ entity: 'profile', value: '' })),
+      findByUserId: (userId) =>
+        options.languages && userId in options.languages
+          ? Effect.succeed({ userId, language: options.languages[userId] } as never)
+          : Effect.fail(new DBNotFoundError({ entity: 'profile', value: '' })),
       updateByUserId: () => Effect.die('not used'),
       updateLocationByUserId: () => Effect.die('not used')
     }),
@@ -217,9 +222,24 @@ describe('requestVouchProgram', () => {
     });
     expect(sent[0]).toMatchObject({
       email: voucher.email,
-      link: 'http://localhost:5173/family/vouches'
+      link: 'http://localhost:5173/family/vouches',
+      locale: 'en'
     });
     expect(result.status).toBe('pending');
+  });
+
+  it("writes the request in the voucher's language, not the applicant's", async () => {
+    const sent: Array<VouchRequestMail> = [];
+    await Effect.runPromise(
+      requestVouchProgram(
+        asSession(applicant),
+        { email: voucher.email, relationship: 'Voisine' },
+        ctx
+      ).pipe(
+        Effect.provide(makeLayer({ sent, languages: { [voucher.id]: 'fr', [applicant.id]: 'en' } }))
+      )
+    );
+    expect(sent[0]).toMatchObject({ email: voucher.email, locale: 'fr' });
   });
 
   it('refuses the applicant themself with the same vague error as an unknown email', async () => {
@@ -749,7 +769,10 @@ describe('vouch privacy and photos (UAT #35, #36)', () => {
         Effect.provide(makeLayer({ listed: [pending] }))
       )
     );
-    expect(result.vouches[0]).toMatchObject({ voucherName: null, voucherEmail: 'vera@example.com' });
+    expect(result.vouches[0]).toMatchObject({
+      voucherName: null,
+      voucherEmail: 'vera@example.com'
+    });
   });
 
   it('signs the applicant photo instead of returning the storage key', async () => {

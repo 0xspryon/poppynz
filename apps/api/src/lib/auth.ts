@@ -18,11 +18,13 @@ import {
   SignupIntentRepo,
   SignupIntentRepoDefault,
   UserProfileRepo,
-  UserProfileRepoDefault
+  UserProfileRepoDefault,
+  UserRepoDefault
 } from '@repo/db';
 import { FamilySearchQueueLive, ProviderSearchQueueLive } from '@repo/queue';
 import { Cause, Data, Effect, Exit, Layer, ManagedRuntime, Option } from 'effect';
 import { Mailer, MailerLive, sendMailBestEffort } from './mailer';
+import { emailMailLocale, requestMailLocale, userMailLocale } from './mail-locale';
 import { scheduleFamilySearchReconcile } from './family-search-jobs';
 import { scheduleProviderSearchReconcile } from './provider-search-jobs';
 
@@ -33,6 +35,8 @@ export class SignupHookDbError extends Data.TaggedError('SignupHookDbError')<{
 const AuthHookLive = Layer.mergeAll(
   SignupIntentRepoDefault,
   UserProfileRepoDefault,
+  // The magic link finds an existing user's language by email.
+  UserRepoDefault,
   ReferralRepoDefault,
   ProviderSearchOutboxRepoDefault,
   ProviderSearchQueueLive,
@@ -118,28 +122,33 @@ const runSignupHookEffect = async <A>(exitPromise: Promise<Exit.Exit<A, unknown>
 
 /** Welcome mail with role-specific next steps, sent once when the user record
  * is created (i.e. on the first magic-link verification). Links are rebased
- * onto the UI origin that initiated the request, like magic links. Best-effort:
- * a mail failure must never fail account creation. */
+ * onto the UI origin that initiated the request, like magic links, and
+ * written in the language of the profile the signup just created (else the
+ * request's). Best-effort: a mail failure must never fail account creation. */
 export const sendWelcomeMailEffect = (
-  user: { email: string; name?: string | null; role?: string | null },
+  user: { id: string; email: string; name?: string | null; role?: string | null },
   headers?: Headers
 ) => {
   const origin = resolveUiOrigin(headers ?? new Headers());
   const link = (path: string) => new URL(path, origin).toString();
   const name = user.name || null;
+  const locale = userMailLocale(user.id, requestMailLocale(headers));
 
   if (user.role === 'family') {
     return sendMailBestEffort(
       'family welcome',
-      Effect.flatMap(Mailer, (mailer) =>
-        mailer.sendFamilyWelcome({
-          email: user.email,
-          name,
-          profileLink: link('/family/profile'),
-          needsLink: link('/family/needs'),
-          documentsLink: link('/family/documents'),
-          findLink: link('/family/find')
-        })
+      Effect.all([Mailer, locale]).pipe(
+        Effect.flatMap(([mailer, locale]) =>
+          mailer.sendFamilyWelcome({
+            email: user.email,
+            name,
+            profileLink: link('/family/profile'),
+            needsLink: link('/family/needs'),
+            documentsLink: link('/family/documents'),
+            findLink: link('/family/find'),
+            locale
+          })
+        )
       )
     );
   }
@@ -147,53 +156,69 @@ export const sendWelcomeMailEffect = (
   if (user.role === 'service-provider') {
     return sendMailBestEffort(
       'provider welcome',
-      Effect.flatMap(Mailer, (mailer) =>
-        mailer.sendProviderWelcome({
-          email: user.email,
-          name,
-          profileLink: link('/service-provider/profile'),
-          documentsLink: link('/service-provider/documents'),
-          servicesLink: link('/service-provider/services'),
-          approvalLink: link('/service-provider/approval'),
-          findLink: link('/service-provider/find')
-        })
+      Effect.all([Mailer, locale]).pipe(
+        Effect.flatMap(([mailer, locale]) =>
+          mailer.sendProviderWelcome({
+            email: user.email,
+            name,
+            profileLink: link('/service-provider/profile'),
+            documentsLink: link('/service-provider/documents'),
+            servicesLink: link('/service-provider/services'),
+            approvalLink: link('/service-provider/approval'),
+            findLink: link('/service-provider/find'),
+            locale
+          })
+        )
       )
     );
   }
 
   // Admins (and any future roles) get no onboarding mail.
-  return Effect.void as Effect.Effect<void, never, Mailer>;
+  return Effect.void as Effect.Effect<void, never, Mailer | UserProfileRepo>;
 };
 
 /** Mails a user when an admin bans or unbans them. Keyed off the admin
  * endpoint paths so the lazy `banExpires` auto-unban (which also flips
  * `banned` back to false, from whatever endpoint touched the session) never
- * emails anyone. Best-effort: a mail failure must not fail the admin call. */
+ * emails anyone. Written in the user's profile language (the request is the
+ * admin's, so it says nothing about theirs). Best-effort: a mail failure must
+ * not fail the admin call. */
 export const notifyBanStatusChangeEffect = (
-  user: { email: string; name?: string | null; banReason?: string | null },
+  user: { id: string; email: string; name?: string | null; banReason?: string | null },
   endpointPath: string | undefined,
   headers?: Headers
 ) => {
   if (endpointPath !== '/admin/ban-user' && endpointPath !== '/admin/unban-user') {
-    return Effect.void as Effect.Effect<void, never, Mailer>;
+    return Effect.void as Effect.Effect<void, never, Mailer | UserProfileRepo>;
   }
 
   const name = user.name || null;
+  const mailerAndLocale = Effect.all([Mailer, userMailLocale(user.id)]);
   return endpointPath === '/admin/ban-user'
     ? sendMailBestEffort(
         'account banned',
-        Effect.flatMap(Mailer, (mailer) =>
-          mailer.sendAccountBanned({ email: user.email, name, reason: user.banReason ?? null })
+        mailerAndLocale.pipe(
+          Effect.flatMap(([mailer, locale]) =>
+            mailer.sendAccountBanned({
+              email: user.email,
+              name,
+              reason: user.banReason ?? null,
+              locale
+            })
+          )
         )
       )
     : sendMailBestEffort(
         'account unbanned',
-        Effect.flatMap(Mailer, (mailer) =>
-          mailer.sendAccountUnbanned({
-            email: user.email,
-            name,
-            link: new URL('/auth/sign-in', resolveUiOrigin(headers ?? new Headers())).toString()
-          })
+        mailerAndLocale.pipe(
+          Effect.flatMap(([mailer, locale]) =>
+            mailer.sendAccountUnbanned({
+              email: user.email,
+              name,
+              link: new URL('/auth/sign-in', resolveUiOrigin(headers ?? new Headers())).toString(),
+              locale
+            })
+          )
         )
       );
 };
@@ -237,9 +262,15 @@ export const auth = betterAuth({
         const uiOrigin = resolveUiOrigin(ctx?.headers ?? new Headers());
         const link = new URL(`${generated.pathname}${generated.search}`, uiOrigin);
         // Failures propagate so better-auth reports the send error instead of
-        // silently succeeding while no mail goes out.
+        // silently succeeding while no mail goes out. The language lookup
+        // itself never fails: an existing user's profile language, else the
+        // request's (Paraglide cookie, then Accept-Language), else English.
         await authHookRuntime.runPromise(
-          Effect.flatMap(Mailer, (mailer) => mailer.sendMagicLink({ email, link: link.toString() }))
+          Effect.all([Mailer, emailMailLocale(email, requestMailLocale(ctx?.headers))]).pipe(
+            Effect.flatMap(([mailer, locale]) =>
+              mailer.sendMagicLink({ email, link: link.toString(), locale })
+            )
+          )
         );
         // Dev only: the check-email page's mock inbox opens this real link.
         rememberDevMagicLink(email, link.toString());

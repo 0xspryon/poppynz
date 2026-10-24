@@ -80,8 +80,8 @@ const referredEntry = (overrides: Partial<ReferralWithReferred> = {}): ReferralW
   ...overrides
 });
 
-const contextWithJson = (body: unknown) =>
-  ({ req: { json: async () => body }, get: () => 'en' }) as unknown as HonoContext<HonoEnv>;
+const contextWithJson = (body: unknown, language = 'en') =>
+  ({ req: { json: async () => body }, get: () => language }) as unknown as HonoContext<HonoEnv>;
 
 const getFailure = <E>(exit: Exit.Exit<unknown, E>) => {
   if (!Exit.isFailure(exit)) throw new Error('Expected effect to fail');
@@ -251,10 +251,30 @@ describe('POST /referrals', () => {
     ]);
     expect(mails).toHaveLength(1);
     expect(mails[0]?.inviterName).toBe('Maria Santos');
+    expect(mails[0]?.locale).toBe('en');
     expect(mails[0]?.link).toContain(
       '/auth/sign-up?email=rosa.friend%40gmail.com&role=service-provider'
     );
     expect(result.status).toBe('invited');
+  });
+
+  it("writes the invite in the request's language, like the signup intent", async () => {
+    const intents: Array<{ email: string; role: string; language: string }> = [];
+    const mails: Array<ReferralInviteMail> = [];
+    const layer = makeLayer({
+      onCreateIntent: (input) => intents.push(input),
+      onSendInvite: (mail) => mails.push(mail)
+    });
+
+    await Effect.runPromise(
+      createReferralRouteProgram(
+        contextWithJson({ email: 'invitee@example.com', role: 'family' }, 'fr'),
+        new Headers()
+      ).pipe(Effect.provide(layer))
+    );
+
+    expect(intents[0]?.language).toBe('fr');
+    expect(mails[0]?.locale).toBe('fr');
   });
 
   it('rejects an email that already belongs to a member', async () => {

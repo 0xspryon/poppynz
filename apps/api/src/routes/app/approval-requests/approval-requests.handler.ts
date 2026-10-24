@@ -18,7 +18,8 @@ import {
   requirePermissions
 } from '@/api/lib/effect-auth';
 import { applicantRoleOf, type ApplicantRole } from '@/api/lib/approval-gate';
-import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
+import { Mailer, sendMailBestEffort, toMailLocale } from '@/api/lib/mailer';
+import { userMailLocale } from '@/api/lib/mail-locale';
 import { loadChecklist, loadChecklistWithTypes } from '@/api/lib/onboarding-checklist';
 import {
   type ApprovalBlocker,
@@ -82,7 +83,6 @@ const toRequestResponse = <
   generalRemarksUpdatedAt: request.generalRemarksUpdatedAt?.toISOString() ?? null
 });
 
-
 export const createApprovalRequestRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
     const authenticated = yield* authenticate(headers);
@@ -118,9 +118,11 @@ export const createApprovalRequestRouteProgram = (headers: Headers) =>
       mailer.sendApprovalRequestSubmitted({
         email: provider.user.email,
         name: provider.user.name || null,
-        role
+        role,
+        locale: toMailLocale(profile.language)
       })
     );
+    // Admin-facing: stays English.
     yield* sendMailBestEffort(
       'approval-request admin notification',
       mailer.sendAdminApprovalRequestSubmitted({
@@ -311,11 +313,13 @@ export const rejectAdminApprovalRequestRouteProgram = (
         const userRepo = yield* UserRepo;
         const mailer = yield* Mailer;
         const applicant = yield* userRepo.findById(request.userId);
+        const locale = yield* userMailLocale(request.userId);
         yield* mailer.sendApprovalRequestRejected({
           email: applicant.email,
           name: applicant.name || null,
           role: roleOrProvider(applicant.role),
-          reason: input.reason
+          reason: input.reason,
+          locale
         });
       })
     );

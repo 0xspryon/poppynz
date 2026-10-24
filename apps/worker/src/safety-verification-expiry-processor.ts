@@ -3,6 +3,7 @@ import { safetyVerificationConfig } from '@repo/env';
 import { Mailer } from '@repo/mail';
 import { Effect } from 'effect';
 import { scheduleFamilySearchReconcile } from './family-search-jobs';
+import { userMailLocale } from './mail-locale';
 
 /**
  * Daily expiry sweep.
@@ -26,8 +27,7 @@ const policy = safetyVerificationConfig.pipe(
 
 const toDateOnly = (at: Date) => at.toISOString().slice(0, 10);
 
-const addDays = (at: Date, days: number) =>
-  new Date(at.getTime() + days * 24 * 60 * 60 * 1000);
+const addDays = (at: Date, days: number) => new Date(at.getTime() + days * 24 * 60 * 60 * 1000);
 
 const daysUntil = (expiresOn: string, now: Date) =>
   Math.max(
@@ -76,6 +76,7 @@ export const processSafetyVerificationExpiries = (now: Date, uiOrigin: string) =
             return 'skipped' as const;
           }
 
+          const locale = yield* userMailLocale(record.userId);
           const sent = yield* mailer
             .sendSafetyVerificationExpiring({
               email: user.value.email,
@@ -83,7 +84,8 @@ export const processSafetyVerificationExpiries = (now: Date, uiOrigin: string) =
               role: record.role === 'family' ? 'family' : 'service-provider',
               expiresOn: record.expiresOn ?? '',
               daysRemaining: daysUntil(record.expiresOn ?? toDateOnly(now), now),
-              link: renewalLink(record, uiOrigin)
+              link: renewalLink(record, uiOrigin),
+              locale
             })
             .pipe(Effect.option);
           if (sent._tag === 'None') {

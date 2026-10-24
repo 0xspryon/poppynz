@@ -1,5 +1,7 @@
 import {
+  DBNotFoundError,
   makeApprovalRepoTest,
+  makeUserProfileRepoTest,
   type Approval,
   type ApprovalExpiryCandidate,
   type ApprovalExpiryNotifiedStamps
@@ -33,6 +35,12 @@ const candidate = (overrides: Partial<ApprovalExpiryCandidate> = {}): ApprovalEx
   ...overrides
 });
 
+type RunOptions = {
+  failMailFor?: Array<string>;
+  /** Profile languages by user id; everyone else has no profile. */
+  languages?: Record<string, string>;
+};
+
 type Recorded = {
   sent: Array<ApprovalExpiringMail>;
   stamped: Array<{ id: string; stamps: ApprovalExpiryNotifiedStamps }>;
@@ -41,9 +49,18 @@ type Recorded = {
 const makeLayer = (
   candidates: Array<ApprovalExpiryCandidate>,
   recorded: Recorded,
-  options: { failMailFor?: Array<string> } = {}
+  options: RunOptions = {}
 ) =>
   Layer.mergeAll(
+    makeUserProfileRepoTest({
+      create: () => Effect.die('unused'),
+      findByUserId: (userId) =>
+        options.languages && userId in options.languages
+          ? Effect.succeed({ userId, language: options.languages[userId] } as never)
+          : Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId })),
+      updateByUserId: () => Effect.die('unused'),
+      updateLocationByUserId: () => Effect.die('unused')
+    }),
     makeApprovalRepoTest({
       listExpiringForNotification: () => Effect.succeed(candidates),
       markExpiryNotified: (id, stamps) => {
@@ -61,10 +78,7 @@ const makeLayer = (
     })
   );
 
-const run = (
-  candidates: Array<ApprovalExpiryCandidate>,
-  options: { failMailFor?: Array<string> } = {}
-) => {
+const run = (candidates: Array<ApprovalExpiryCandidate>, options: RunOptions = {}) => {
   const recorded: Recorded = { sent: [], stamped: [] };
   return Effect.runPromise(
     processApprovalExpiryNotifications(now, uiOrigin).pipe(
@@ -85,10 +99,32 @@ describe('processApprovalExpiryNotifications', () => {
         role: 'service-provider',
         expiresAt: daysFromNow(20),
         daysRemaining: 20,
-        link: uiOrigin
+        link: uiOrigin,
+        locale: 'en'
       }
     ]);
     expect(stamped).toEqual([{ id: 'approval-1', stamps: { notifiedExpiresInOneMonthAt: now } }]);
+  });
+
+  it("writes each warning in the applicant's profile language", async () => {
+    const { summary, sent } = await run(
+      [
+        candidate(),
+        candidate({
+          id: 'approval-2',
+          userId: 'family-1',
+          applicant: { email: 'family@example.com', name: null, role: 'family' }
+        })
+      ],
+      { languages: { 'provider-1': 'fr' } }
+    );
+
+    expect(summary).toEqual({ candidates: 2, notified: 2, skipped: 0, failed: 0 });
+    // The family has no profile: English, and the mail still goes out.
+    expect(sent.map((mail) => [mail.email, mail.locale])).toEqual([
+      ['provider@example.com', 'fr'],
+      ['family@example.com', 'en']
+    ]);
   });
 
   it('walks down the tiers as expiry approaches', async () => {

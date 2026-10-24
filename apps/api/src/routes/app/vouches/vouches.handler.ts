@@ -25,6 +25,7 @@ import {
   vouchRequestWindowMs
 } from '@/api/lib/constants';
 import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
+import { userMailLocale } from '@/api/lib/mail-locale';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import { isUniqueViolation } from '@/api/lib/sql-errors';
 import { resolveUiOrigin } from '@/api/lib/ui-origin';
@@ -81,7 +82,9 @@ const toApplicantVouch = (vouch: VouchWithVoucher, now: Date) => ({
   // The name only once the voucher has answered — before that the applicant
   // sees just the email they typed (UAT #36: no name lookup before sending).
   voucherName:
-    applicantVouchStatus(vouch, now) === 'pending' ? null : fullName(vouch.voucher, vouch.voucher.name),
+    applicantVouchStatus(vouch, now) === 'pending'
+      ? null
+      : fullName(vouch.voucher, vouch.voucher.name),
   voucherEmail: vouch.voucher.email,
   relationship: vouch.relationship,
   status: applicantVouchStatus(vouch, now),
@@ -209,6 +212,8 @@ export const requestVouchProgram = (
     );
     const applicantName = profile ? fullName(profile, applicant.name) : applicant.name;
     const mailer = yield* Mailer;
+    // Written in the voucher's language, not the applicant's.
+    const voucherLocale = yield* userMailLocale(voucher.id);
     yield* sendMailBestEffort(
       'vouch request',
       mailer.sendVouchRequest({
@@ -218,7 +223,8 @@ export const requestVouchProgram = (
         link: new URL(
           voucherRole === 'family' ? '/family/vouches' : '/service-provider/vouches',
           context.uiOrigin
-        ).toString()
+        ).toString(),
+        locale: voucherLocale
       })
     );
     yield* publishNotificationBestEffort(voucher.id, {

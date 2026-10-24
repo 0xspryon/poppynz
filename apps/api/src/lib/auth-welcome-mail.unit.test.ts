@@ -1,12 +1,25 @@
-import { Effect } from 'effect';
+import { DBNotFoundError, makeUserProfileRepoTest } from '@repo/db';
+import { Effect, Layer } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { sendWelcomeMailEffect } from './auth';
 import { MailerError, makeMailerTest } from './mailer';
 import { trustedUiOrigins } from './ui-origin';
 
-const makeRecorder = (options: { fail?: boolean } = {}) => {
+/** Profile languages by user id; a missing entry means no profile yet. */
+const profilesLayer = (languages: Record<string, string>) =>
+  makeUserProfileRepoTest({
+    create: () => Effect.die('unused'),
+    findByUserId: (userId) =>
+      userId in languages
+        ? Effect.succeed({ userId, language: languages[userId] } as never)
+        : Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId })),
+    updateByUserId: () => Effect.die('unused'),
+    updateLocationByUserId: () => Effect.die('unused')
+  });
+
+const makeRecorder = (options: { fail?: boolean; languages?: Record<string, string> } = {}) => {
   const sentMails: Array<{ kind: string; mail: unknown }> = [];
-  const layer = makeMailerTest({
+  const mailerLayer = makeMailerTest({
     sendFamilyWelcome: (mail) => {
       sentMails.push({ kind: 'family', mail });
       return options.fail ? Effect.fail(new MailerError({ cause: 'boom' })) : Effect.void;
@@ -16,6 +29,7 @@ const makeRecorder = (options: { fail?: boolean } = {}) => {
       return options.fail ? Effect.fail(new MailerError({ cause: 'boom' })) : Effect.void;
     }
   });
+  const layer = Layer.merge(mailerLayer, profilesLayer(options.languages ?? {}));
   return { sentMails, layer };
 };
 
@@ -26,9 +40,12 @@ describe('sendWelcomeMailEffect', () => {
     const { sentMails, layer } = makeRecorder();
 
     await Effect.runPromise(
-      sendWelcomeMailEffect({ email: 'family@example.com', name: 'Fiona', role: 'family' }).pipe(
-        Effect.provide(layer)
-      )
+      sendWelcomeMailEffect({
+        id: 'family-1',
+        email: 'family@example.com',
+        name: 'Fiona',
+        role: 'family'
+      }).pipe(Effect.provide(layer))
     );
 
     expect(sentMails).toEqual([
@@ -40,7 +57,8 @@ describe('sendWelcomeMailEffect', () => {
           profileLink: link('/family/profile'),
           needsLink: link('/family/needs'),
           documentsLink: link('/family/documents'),
-          findLink: link('/family/find')
+          findLink: link('/family/find'),
+          locale: 'en'
         }
       }
     ]);
@@ -51,6 +69,7 @@ describe('sendWelcomeMailEffect', () => {
 
     await Effect.runPromise(
       sendWelcomeMailEffect({
+        id: 'provider-1',
         email: 'provider@example.com',
         name: null,
         role: 'service-provider'
@@ -67,7 +86,8 @@ describe('sendWelcomeMailEffect', () => {
           documentsLink: link('/service-provider/documents'),
           servicesLink: link('/service-provider/services'),
           approvalLink: link('/service-provider/approval'),
-          findLink: link('/service-provider/find')
+          findLink: link('/service-provider/find'),
+          locale: 'en'
         }
       }
     ]);
@@ -79,7 +99,7 @@ describe('sendWelcomeMailEffect', () => {
 
     await Effect.runPromise(
       sendWelcomeMailEffect(
-        { email: 'family@example.com', name: null, role: 'family' },
+        { id: 'family-1', email: 'family@example.com', name: null, role: 'family' },
         new Headers({ origin })
       ).pipe(Effect.provide(layer))
     );
@@ -93,9 +113,12 @@ describe('sendWelcomeMailEffect', () => {
     const { sentMails, layer } = makeRecorder();
 
     await Effect.runPromise(
-      sendWelcomeMailEffect({ email: 'family@example.com', name: '', role: 'family' }).pipe(
-        Effect.provide(layer)
-      )
+      sendWelcomeMailEffect({
+        id: 'family-1',
+        email: 'family@example.com',
+        name: '',
+        role: 'family'
+      }).pipe(Effect.provide(layer))
     );
 
     expect(sentMails[0]?.mail).toMatchObject({ name: null });
@@ -106,13 +129,15 @@ describe('sendWelcomeMailEffect', () => {
 
     await Effect.runPromise(
       Effect.all([
-        sendWelcomeMailEffect({ email: 'admin@example.com', role: 'admin' }).pipe(
+        sendWelcomeMailEffect({ id: 'admin-1', email: 'admin@example.com', role: 'admin' }).pipe(
           Effect.provide(layer)
         ),
-        sendWelcomeMailEffect({ email: 'nobody@example.com', role: null }).pipe(
+        sendWelcomeMailEffect({ id: 'nobody-1', email: 'nobody@example.com', role: null }).pipe(
           Effect.provide(layer)
         ),
-        sendWelcomeMailEffect({ email: 'nobody@example.com' }).pipe(Effect.provide(layer))
+        sendWelcomeMailEffect({ id: 'nobody-1', email: 'nobody@example.com' }).pipe(
+          Effect.provide(layer)
+        )
       ])
     );
 
@@ -124,10 +149,36 @@ describe('sendWelcomeMailEffect', () => {
 
     await expect(
       Effect.runPromise(
-        sendWelcomeMailEffect({ email: 'family@example.com', role: 'family' }).pipe(
+        sendWelcomeMailEffect({ id: 'family-1', email: 'family@example.com', role: 'family' }).pipe(
           Effect.provide(layer)
         )
       )
     ).resolves.toBeUndefined();
+  });
+
+  it("writes the mail in the new profile's language", async () => {
+    const { sentMails, layer } = makeRecorder({ languages: { 'family-1': 'fr' } });
+
+    await Effect.runPromise(
+      sendWelcomeMailEffect(
+        { id: 'family-1', email: 'family@example.com', role: 'family' },
+        new Headers({ 'accept-language': 'en-CA' })
+      ).pipe(Effect.provide(layer))
+    );
+
+    expect(sentMails[0]?.mail).toMatchObject({ locale: 'fr' });
+  });
+
+  it("falls back to the request's language when there is no profile", async () => {
+    const { sentMails, layer } = makeRecorder();
+
+    await Effect.runPromise(
+      sendWelcomeMailEffect(
+        { id: 'provider-1', email: 'provider@example.com', role: 'service-provider' },
+        new Headers({ cookie: 'PARAGLIDE_LOCALE=fr' })
+      ).pipe(Effect.provide(layer))
+    );
+
+    expect(sentMails[0]?.mail).toMatchObject({ locale: 'fr' });
   });
 });

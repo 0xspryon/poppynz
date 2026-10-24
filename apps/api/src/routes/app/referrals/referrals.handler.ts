@@ -16,7 +16,7 @@ import {
   handleNever
 } from '@/api/lib/effect-auth';
 import { referralInviteTtlMs } from '@/api/lib/constants';
-import { Mailer } from '@/api/lib/mailer';
+import { Mailer, toMailLocale } from '@/api/lib/mailer';
 import { resolveUiOrigin } from '@/api/lib/ui-origin';
 import { referralJsonError, validateReferralCreateInput } from './referrals.validator';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
@@ -131,7 +131,16 @@ export const createReferralProgram = (
       `/auth/sign-up?email=${encodeURIComponent(input.email)}&role=${input.role}`,
       context.uiOrigin
     ).toString();
-    yield* mailer.sendReferralInvite({ email: input.email, inviterName, role: input.role, link });
+    // The invitee has no profile yet: the invite is written in the language
+    // the inviter is using, the same one the signup intent carries into the
+    // invitee's new profile.
+    yield* mailer.sendReferralInvite({
+      email: input.email,
+      inviterName,
+      role: input.role,
+      link,
+      locale: toMailLocale(context.language)
+    });
 
     return toReferralResponse(
       { ...referral, referredFirstName: null, referredLastName: null, referredVerified: false },

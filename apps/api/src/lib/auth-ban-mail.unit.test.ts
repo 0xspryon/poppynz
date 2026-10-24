@@ -1,18 +1,32 @@
-import { Effect } from 'effect';
+import { DBNotFoundError, makeUserProfileRepoTest } from '@repo/db';
+import { Effect, Layer } from 'effect';
 import { describe, expect, it } from 'vitest';
 import { notifyBanStatusChangeEffect } from './auth';
 import { MailerError, makeMailerTest } from './mailer';
 import { trustedUiOrigins } from './ui-origin';
 
 const bannedUser = {
+  id: 'provider-1',
   email: 'provider@example.com',
   name: 'Provider User',
   banReason: 'Repeated no-shows'
 };
 
-const makeRecorder = (options: { fail?: boolean } = {}) => {
+/** Profile languages by user id; a missing entry is a failed lookup. */
+const profilesLayer = (languages: Record<string, string>) =>
+  makeUserProfileRepoTest({
+    create: () => Effect.die('unused'),
+    findByUserId: (userId) =>
+      userId in languages
+        ? Effect.succeed({ userId, language: languages[userId] } as never)
+        : Effect.fail(new DBNotFoundError({ entity: 'userProfile', value: userId })),
+    updateByUserId: () => Effect.die('unused'),
+    updateLocationByUserId: () => Effect.die('unused')
+  });
+
+const makeRecorder = (options: { fail?: boolean; languages?: Record<string, string> } = {}) => {
   const sentMails: Array<{ kind: string; mail: unknown }> = [];
-  const layer = makeMailerTest({
+  const mailerLayer = makeMailerTest({
     sendAccountBanned: (mail) => {
       sentMails.push({ kind: 'banned', mail });
       return options.fail ? Effect.fail(new MailerError({ cause: 'boom' })) : Effect.void;
@@ -22,6 +36,7 @@ const makeRecorder = (options: { fail?: boolean } = {}) => {
       return options.fail ? Effect.fail(new MailerError({ cause: 'boom' })) : Effect.void;
     }
   });
+  const layer = Layer.merge(mailerLayer, profilesLayer(options.languages ?? {}));
   return { sentMails, layer };
 };
 
@@ -36,7 +51,12 @@ describe('notifyBanStatusChangeEffect', () => {
     expect(sentMails).toEqual([
       {
         kind: 'banned',
-        mail: { email: 'provider@example.com', name: 'Provider User', reason: 'Repeated no-shows' }
+        mail: {
+          email: 'provider@example.com',
+          name: 'Provider User',
+          reason: 'Repeated no-shows',
+          locale: 'en'
+        }
       }
     ]);
   });
@@ -46,7 +66,7 @@ describe('notifyBanStatusChangeEffect', () => {
 
     await Effect.runPromise(
       notifyBanStatusChangeEffect(
-        { email: 'provider@example.com', name: 'Provider User' },
+        { id: 'provider-1', email: 'provider@example.com', name: 'Provider User' },
         '/admin/unban-user'
       ).pipe(Effect.provide(layer))
     );
@@ -57,7 +77,8 @@ describe('notifyBanStatusChangeEffect', () => {
         mail: {
           email: 'provider@example.com',
           name: 'Provider User',
-          link: new URL('/auth/sign-in', trustedUiOrigins[0]).toString()
+          link: new URL('/auth/sign-in', trustedUiOrigins[0]).toString(),
+          locale: 'en'
         }
       }
     ]);
@@ -84,5 +105,19 @@ describe('notifyBanStatusChangeEffect', () => {
         notifyBanStatusChangeEffect(bannedUser, '/admin/ban-user').pipe(Effect.provide(layer))
       )
     ).resolves.toBeUndefined();
+  });
+
+  it("writes the mail in the user's profile language, not the admin's", async () => {
+    const { sentMails, layer } = makeRecorder({ languages: { 'provider-1': 'fr' } });
+
+    await Effect.runPromise(
+      notifyBanStatusChangeEffect(
+        bannedUser,
+        '/admin/ban-user',
+        new Headers({ cookie: 'PARAGLIDE_LOCALE=en' })
+      ).pipe(Effect.provide(layer))
+    );
+
+    expect(sentMails[0]?.mail).toMatchObject({ locale: 'fr' });
   });
 });

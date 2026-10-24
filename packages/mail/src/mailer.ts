@@ -1,5 +1,6 @@
 import { mailConfig, type AppEnvironment } from '@repo/env';
 import { Context, Data, Effect, Layer, Option } from 'effect';
+import type { MailLocale } from './locale';
 import type { MailRole } from './templates';
 import {
   accountBannedMail,
@@ -29,6 +30,8 @@ export class MailerError extends Data.TaggedError('MailerError')<{
 export type MagicLinkMail = {
   email: string;
   link: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type ReferralInviteMail = {
@@ -37,6 +40,8 @@ export type ReferralInviteMail = {
   inviterName: string;
   role: MailRole;
   link: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type VouchRequestMail = {
@@ -44,12 +49,16 @@ export type VouchRequestMail = {
   applicantName: string;
   relationship: string;
   link: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type ApprovalRequestSubmittedMail = {
   email: string;
   name: string | null;
   role: MailRole;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 /** Recipients come from ADMIN_NOTIFICATION_EMAILS, not from the payload. */
@@ -57,6 +66,8 @@ export type AdminApprovalRequestSubmittedMail = {
   applicantName: string | null;
   applicantEmail: string;
   role: MailRole;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type ApprovalRequestRejectedMail = {
@@ -64,6 +75,8 @@ export type ApprovalRequestRejectedMail = {
   name: string | null;
   role: MailRole;
   reason: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type ApprovalGrantedMail = {
@@ -71,6 +84,8 @@ export type ApprovalGrantedMail = {
   name: string | null;
   role: MailRole;
   expiresAt: Date;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type ApprovalRevokedMail = {
@@ -78,6 +93,8 @@ export type ApprovalRevokedMail = {
   name: string | null;
   role: MailRole;
   reason: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type ApprovalExpiringMail = {
@@ -87,12 +104,16 @@ export type ApprovalExpiringMail = {
   expiresAt: Date;
   daysRemaining: number;
   link: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type SafetyVerificationInviteMail = {
   email: string;
   name: string | null;
   link: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type SafetyVerificationExpiringMail = {
@@ -102,6 +123,8 @@ export type SafetyVerificationExpiringMail = {
   expiresOn: string;
   daysRemaining: number;
   link: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type FamilyWelcomeMail = {
@@ -111,6 +134,8 @@ export type FamilyWelcomeMail = {
   needsLink: string;
   documentsLink: string;
   findLink: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type ProviderWelcomeMail = {
@@ -121,18 +146,24 @@ export type ProviderWelcomeMail = {
   servicesLink: string;
   approvalLink: string;
   findLink: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type AccountBannedMail = {
   email: string;
   name: string | null;
   reason: string | null;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export type AccountUnbannedMail = {
   email: string;
   name: string | null;
   link: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 /** A contract-billing notice (piece 3). The copy is composed by the billing
@@ -144,12 +175,16 @@ export type ContractBillingNoticeMail = {
   paragraphs: ReadonlyArray<string>;
   link: string;
   linkLabel: string;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 /** Recipients come from ADMIN_NOTIFICATION_EMAILS, not from the payload. */
 export type AdminBillingAlertMail = {
   subject: string;
   lines: ReadonlyArray<string>;
+  /** The recipient's language; English when unknown. */
+  locale?: MailLocale;
 };
 
 export class Mailer extends Context.Tag('@api/lib/Mailer')<

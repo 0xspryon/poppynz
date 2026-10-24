@@ -5,6 +5,7 @@ import {
 } from '@repo/db';
 import { Mailer } from '@repo/mail';
 import { Effect } from 'effect';
+import { userMailLocale } from './mail-locale';
 
 const dayMs = 24 * 60 * 60 * 1000;
 
@@ -30,6 +31,7 @@ const notifyCandidate = (candidate: ApprovalExpiryCandidate, now: Date, uiOrigin
 
     const mailer = yield* Mailer;
     const repo = yield* ApprovalRepo;
+    const locale = yield* userMailLocale(candidate.userId);
 
     yield* mailer.sendApprovalExpiring({
       email: candidate.applicant.email,
@@ -38,7 +40,8 @@ const notifyCandidate = (candidate: ApprovalExpiryCandidate, now: Date, uiOrigin
       role: candidate.applicant.role === 'family' ? 'family' : 'service-provider',
       expiresAt: candidate.expiresAt,
       daysRemaining: Math.max(1, Math.ceil(remainingMs / dayMs)),
-      link: uiOrigin
+      link: uiOrigin,
+      locale
     });
 
     // Stamp the fired tier AND every longer tier that never fired: an

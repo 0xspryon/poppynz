@@ -497,7 +497,12 @@ describe('createApprovalRequestRouteProgram', () => {
     expect(sentMails).toEqual([
       {
         kind: 'submitted',
-        mail: { email: 'provider@example.com', name: 'Provider User', role: 'service-provider' }
+        mail: {
+          email: 'provider@example.com',
+          name: 'Provider User',
+          role: 'service-provider',
+          locale: 'en'
+        }
       },
       {
         kind: 'admin-notification',
@@ -508,6 +513,20 @@ describe('createApprovalRequestRouteProgram', () => {
         }
       }
     ]);
+  });
+
+  it("writes the confirmation in the applicant's language and keeps the admin mail English", async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    await Effect.runPromise(
+      createApprovalRequestRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ sentMails, profile: profile({ language: 'fr' }) }))
+      )
+    );
+
+    expect(sentMails[0]).toMatchObject({ kind: 'submitted', mail: { locale: 'fr' } });
+    expect(sentMails[1]?.kind).toBe('admin-notification');
+    expect(sentMails[1]?.mail).not.toHaveProperty('locale');
   });
 
   it('judges a family on family documents only, and never on services or a photo', async () => {
@@ -560,9 +579,12 @@ describe('createApprovalRequestRouteProgram', () => {
       )
     );
     expect(result.status).toBe('submitted');
-    expect(result.warnings).toEqual({ missingRequiredDocuments: [], missingServicesOffered: false });
+    expect(result.warnings).toEqual({
+      missingRequiredDocuments: [],
+      missingServicesOffered: false
+    });
     expect(sentMails.map((entry) => entry.mail)).toEqual([
-      { email: 'priya@example.com', name: 'Priya K', role: 'family' },
+      { email: 'priya@example.com', name: 'Priya K', role: 'family', locale: 'en' },
       { applicantName: 'Priya K', applicantEmail: 'priya@example.com', role: 'family' }
     ]);
   });
@@ -783,10 +805,55 @@ describe('admin approval request review route programs', () => {
           email: 'provider@example.com',
           name: 'Provider User',
           role: 'service-provider',
-          reason: 'Missing required documents.'
+          reason: 'Missing required documents.',
+          locale: 'en'
         }
       }
     ]);
+  });
+
+  it("writes the rejection in the applicant's profile language, not the admin's", async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    await Effect.runPromise(
+      rejectAdminApprovalRequestRouteProgram(
+        contextWithJson({ reason: 'Documents manquants.' }),
+        new Headers({ cookie: 'PARAGLIDE_LOCALE=en' }),
+        REQUEST_ID
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            profile: profile({ language: 'fr' }),
+            sentMails
+          })
+        )
+      )
+    );
+
+    expect(sentMails[0]?.mail).toMatchObject({ locale: 'fr' });
+  });
+
+  it('falls back to English when the applicant has no profile', async () => {
+    const sentMails: Array<{ kind: string; mail: unknown }> = [];
+
+    await Effect.runPromise(
+      rejectAdminApprovalRequestRouteProgram(
+        contextWithJson({ reason: 'Missing required documents.' }),
+        new Headers(),
+        REQUEST_ID
+      ).pipe(
+        Effect.provide(
+          makeLayer({
+            user: user({ id: 'admin-1', role: 'admin' }),
+            profile: profile({ userId: 'someone-else', language: 'fr' }),
+            sentMails
+          })
+        )
+      )
+    );
+
+    expect(sentMails[0]?.mail).toMatchObject({ locale: 'en' });
   });
 
   it('still rejects the request when the rejection mail fails', async () => {

@@ -30,11 +30,16 @@ import {
   requestValidationErrorToResponse
 } from '@/api/lib/schema-validator';
 import type { SqlError } from '@effect/sql/SqlError';
-import { Mailer, sendMailBestEffort } from '@/api/lib/mailer';
+import { Mailer, sendMailBestEffort, toMailLocale } from '@/api/lib/mailer';
+import { userMailLocale } from '@/api/lib/mail-locale';
 import { scheduleProviderSearchReconcile } from '@/api/lib/provider-search-jobs';
 import { scheduleFamilySearchReconcile } from '@/api/lib/family-search-jobs';
 import { applicantRoleOf, type ApplicantRole } from '@/api/lib/approval-gate';
-import { type ApprovalBlocker, approvalBlockers, describeBlocker } from '@/api/lib/approval-readiness';
+import {
+  type ApprovalBlocker,
+  approvalBlockers,
+  describeBlocker
+} from '@/api/lib/approval-readiness';
 import { loadChecklist } from '@/api/lib/onboarding-checklist';
 import { publishNotificationBestEffort } from '@repo/notify';
 
@@ -196,7 +201,8 @@ export const createApprovalProgram = (userAndSession: UserAndSession, input: App
         email: profile.email,
         name: profile.firstName || null,
         role,
-        expiresAt: approval.expiresAt
+        expiresAt: approval.expiresAt,
+        locale: toMailLocale(profile.language)
       })
     );
     yield* publishNotificationBestEffort(approval.userId, {
@@ -239,11 +245,13 @@ export const revokeApprovalProgram = (id: string, reason: string) =>
         const userRepo = yield* UserRepo;
         const mailer = yield* Mailer;
         const applicant = yield* userRepo.findById(revoked.userId);
+        const locale = yield* userMailLocale(revoked.userId);
         yield* mailer.sendApprovalRevoked({
           email: applicant.email,
           name: applicant.name || null,
           role: applicantRoleOf(applicant.role) ?? 'service-provider',
-          reason
+          reason,
+          locale
         });
       })
     );

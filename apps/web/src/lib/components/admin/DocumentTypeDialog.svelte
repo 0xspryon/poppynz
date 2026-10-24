@@ -155,7 +155,6 @@
 				</p>
 			</fieldset>
 
-			{@debug draft}
 			{#if draft.credibledCheckTypeValue}
 				<fieldset class="fieldset mt-3">
 					<legend class="fieldset-legend">{m.admin_doctypes_price_legend()}</legend>

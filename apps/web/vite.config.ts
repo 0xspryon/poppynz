@@ -1,7 +1,9 @@
 import { fileURLToPath } from 'node:url';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defaultClientConditions, defineConfig } from 'vite';
+import { paraglideOptions } from './paraglide.options.js';
 
 export default defineConfig(({ mode }) => ({
 	resolve: {
@@ -26,5 +28,5 @@ export default defineConfig(({ mode }) => ({
 			}
 		}
 	},
-	plugins: [tailwindcss(), sveltekit()]
+	plugins: [tailwindcss(), sveltekit(), paraglideVitePlugin(paraglideOptions)]
 }));

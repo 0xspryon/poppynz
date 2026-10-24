@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Role } from '$lib/api/auth';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		value: Role;
@@ -8,17 +9,26 @@
 	let { value = $bindable('family') }: Props = $props();
 
 	const options: Array<{ role: Role; icon: string; title: string; blurb: string }> = [
-		{ role: 'family', icon: 'la-home', title: 'A family', blurb: 'Looking for trusted care' },
+		{
+			role: 'family',
+			icon: 'la-home',
+			title: m.auth_role_family_title(),
+			blurb: m.auth_role_family_blurb()
+		},
 		{
 			role: 'service-provider',
 			icon: 'la-heart',
-			title: 'A helper',
-			blurb: 'I offer in-home care'
+			title: m.auth_role_helper_title(),
+			blurb: m.auth_role_helper_blurb()
 		}
 	];
 </script>
 
-<div role="radiogroup" aria-label="I'm joining as" class="grid gap-3 sm:grid-cols-2 sm:gap-4">
+<div
+	role="radiogroup"
+	aria-label={m.auth_signup_joining_as()}
+	class="grid gap-3 sm:grid-cols-2 sm:gap-4"
+>
 	{#each options as option (option.role)}
 		{@const selected = value === option.role}
 		<button

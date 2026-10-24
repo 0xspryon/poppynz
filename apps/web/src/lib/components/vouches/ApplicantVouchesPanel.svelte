@@ -5,6 +5,7 @@
 	import { matchError } from '$lib/api/client';
 	import { requestVouch, type MyVouch, type MyVouches } from '$lib/api/vouches';
 	import { toast } from '$lib/toast.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		data: MyVouches;
@@ -13,7 +14,7 @@
 
 	let { data, onchanged }: Props = $props();
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 
 	let email = $state('');
 	let relationship = $state('');
@@ -30,21 +31,21 @@
 		const result = await requestVouch({ email, relationship });
 		if (result.ok) {
 			// The same answer whoever the email belongs to (UAT #36).
-			toast.success(result.data.message, { title: 'Request sent' });
+			toast.success(m.vouches_request_sent_body(), { title: m.vouches_request_sent_title() });
 			email = '';
 			relationship = '';
 			await onchanged();
 		} else {
 			formError = matchError(result.error, {
-				VOUCH_APPLICANT_ONLY: () => 'Only helpers can ask for vouches.',
-				VOUCH_RATE_LIMITED: (error) => error.message,
-				INVALID_VOUCH_INPUT: () => 'Check the email and how you know them, then try again.',
+				VOUCH_APPLICANT_ONLY: () => m.vouches_error_applicant_only(),
+				VOUCH_RATE_LIMITED: () => m.vouches_error_rate_limited(),
+				INVALID_VOUCH_INPUT: () => m.vouches_error_invalid_input(),
 				VOUCH_LOOKUP_FAILED: () => RETRY_MESSAGE,
 				VOUCH_NOT_FOUND: () => RETRY_MESSAGE,
 				VOUCH_STATE_INVALID: () => RETRY_MESSAGE,
 				VOUCH_LOCKED: () => RETRY_MESSAGE,
-				UNAUTHORIZED: () => 'You need to be signed in.',
-				FORBIDDEN: () => 'You need to be signed in.',
+				UNAUTHORIZED: () => m.vouches_error_signed_in(),
+				FORBIDDEN: () => m.vouches_error_signed_in(),
 				AUTH_PROVIDER_FAILED: () => RETRY_MESSAGE,
 				AUTH_ENTITY_LOOKUP_FAILED: () => RETRY_MESSAGE,
 				INTERNAL_SERVER_ERROR: () => RETRY_MESSAGE,
@@ -62,48 +63,52 @@
 		not_counted: 'bg-warning-content text-warning'
 	};
 	const chipLabel: Record<MyVouch['status'], string> = {
-		pending: 'Pending',
-		completed: 'Completed',
-		declined: 'Declined',
-		expired: 'Expired',
-		not_counted: 'Not counted'
+		pending: m.vouches_status_pending(),
+		completed: m.vouches_status_completed(),
+		declined: m.vouches_status_declined(),
+		expired: m.vouches_status_expired(),
+		not_counted: m.vouches_status_not_counted()
 	};
 </script>
 
 <div class="rounded-lg border border-card-border bg-base-100 p-5 lg:p-6">
 	<div class="flex flex-wrap items-baseline justify-between gap-2">
 		<div class="text-[15px] font-bold text-base-content">
-			Vouches · {data.counting} of {data.recommended} recommended
+			{m.vouches_panel_heading({ counting: data.counting, recommended: data.recommended })}
 		</div>
 		{#if data.counting < data.recommended}
 			<span class="text-xs text-base-content-muted">
-				Optional — without them we'll email you to arrange a quick chat.
+				{m.vouches_panel_optional()}
 			</span>
 		{/if}
 	</div>
 	<p class="mt-1 text-[13px] text-base-content-muted">
-		Ask two approved Poppynz members who know you personally — a family or a helper. Their answers
-		go only to our team.
+		{m.vouches_panel_intro()}
 	</p>
 
 	<form class="mt-4 flex flex-col gap-2.5" onsubmit={send}>
 		<div class="flex flex-col gap-2.5 sm:flex-row">
 			<label class="input min-w-0 flex-1">
 				<i class="las la-envelope text-base text-outline" aria-hidden="true"></i>
-				<input type="email" placeholder="their.email@example.com" required bind:value={email} />
+				<input
+					type="email"
+					placeholder={m.vouches_email_placeholder()}
+					required
+					bind:value={email}
+				/>
 			</label>
 			<label class="input min-w-0 flex-1">
 				<input
 					type="text"
 					maxlength="300"
-					placeholder="How do you know them? e.g. I nanny for their family"
+					placeholder={m.vouches_relationship_placeholder()}
 					required
 					bind:value={relationship}
 				/>
 			</label>
 			<button type="submit" class="btn btn-primary" disabled={!canSend}>
 				{#if sending}<span class="loading loading-spinner loading-xs"></span>{/if}
-				Ask to vouch
+				{m.vouches_ask()}
 			</button>
 		</div>
 		{#if formError}
@@ -135,7 +140,7 @@
 		</div>
 		{#if data.vouches.some((vouch) => vouch.status === 'not_counted')}
 			<p class="mt-2 text-xs text-warning">
-				A vouch needs attention and isn't counted. You can ask someone else.
+				{m.vouches_not_counted_note()}
 			</p>
 		{/if}
 	{/if}

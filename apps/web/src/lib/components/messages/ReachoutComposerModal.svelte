@@ -8,6 +8,7 @@
 	import { getProfile } from '$lib/api/provider-profile';
 	import { matchError } from '$lib/api/client';
 	import { toast } from '$lib/toast.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		open: boolean;
@@ -26,22 +27,25 @@
 	let sending = $state(false);
 	let senderCity = $state<string | null>(null);
 
-	const firstName = $derived(recipient.name.split(/\s+/)[0] ?? 'there');
+	const firstName = $derived(recipient.name.split(/\s+/)[0] ?? '');
 	const initial = $derived(firstName.charAt(0).toUpperCase());
 
 	// Mirrors the server-side template (conversations.handler.ts).
 	const previewMessage = $derived.by(() => {
-		const location = senderCity
-			? senderRole === 'family'
-				? ` We're in ${senderCity}.`
-				: ` I'm in ${senderCity}.`
-			: '';
-		const closing =
-			senderRole === 'family'
-				? ' Take a look at my family profile and the services we need below.'
-				: ' Take a look at my profile and the services I offer below.';
-		return `Hi ${firstName} — I'd like to work with you.${location}${closing}`;
+		if (senderRole === 'family') {
+			return senderCity
+				? m.messages_composer_preview_family_city({ name: firstName, city: senderCity })
+				: m.messages_composer_preview_family({ name: firstName });
+		}
+		return senderCity
+			? m.messages_composer_preview_provider_city({ name: firstName, city: senderCity })
+			: m.messages_composer_preview_provider({ name: firstName });
 	});
+
+	const approvalNeededMessage = () =>
+		senderRole === 'family'
+			? m.messages_error_approval_needed_reachout_family()
+			: m.messages_error_approval_needed_reachout_provider();
 
 	$effect(() => {
 		if (!open) return;
@@ -66,31 +70,33 @@
 		});
 		sending = false;
 		if (result.ok) {
-			toast.success(`${firstName} can now respond to your reach-out.`, { title: 'Reach-out sent' });
+			toast.success(m.messages_composer_sent_body({ name: firstName }), {
+				title: m.messages_composer_sent_title()
+			});
 			onconversation(result.data.id);
 			onclose();
 			return;
 		}
-		const genericError = () => toast.error('The reach-out could not be sent. Please try again.');
+		const genericError = () => toast.error(m.messages_composer_error_generic());
 		matchError(result.error, {
 			CONVERSATION_EXISTS: (error) => {
 				onconversation(error.conversationId);
 				onclose();
 			},
-			REACHOUT_UNAVAILABLE: (error) => toast.error(error.message),
-			INVALID_REACHOUT_SERVICES: (error) => toast.error(error.message),
-			INVALID_REACHOUT_INPUT: () => toast.error('Pick at least one service and try again.'),
-			RECIPIENT_NOT_FOUND: (error) => toast.error(error.message),
-			CONVERSATION_PAIR_INVALID: (error) => toast.error(error.message),
-			PROVIDER_NOT_APPROVED: (error) => toast.error(error.message),
-			FAMILY_NOT_APPROVED: (error) => toast.error(error.message),
-			APPROVAL_UNAVAILABLE: (error) => toast.error(error.message),
+			REACHOUT_UNAVAILABLE: () => toast.error(m.messages_composer_error_reachout_unavailable()),
+			INVALID_REACHOUT_SERVICES: () => toast.error(m.messages_composer_error_invalid_services()),
+			INVALID_REACHOUT_INPUT: () => toast.error(m.messages_composer_error_invalid_input()),
+			RECIPIENT_NOT_FOUND: () => toast.error(m.messages_composer_error_recipient_not_found()),
+			CONVERSATION_PAIR_INVALID: () => toast.error(m.messages_composer_error_pair_invalid()),
+			PROVIDER_NOT_APPROVED: () => toast.error(approvalNeededMessage()),
+			FAMILY_NOT_APPROVED: () => toast.error(approvalNeededMessage()),
+			APPROVAL_UNAVAILABLE: () => toast.error(m.messages_error_approval_unavailable()),
 			// Safety verification gates both roles, so this can fire for a family
 			// as well as a helper — send them to the screen that fixes it.
-			SAFETY_VERIFICATION_REQUIRED: (error) => toast.error(error.message),
-			SAFETY_VERIFICATION_UNAVAILABLE: (error) => toast.error(error.message),
-			UNAUTHORIZED: () => toast.error('Please sign in again.'),
-			FORBIDDEN: () => toast.error("You can't send reach-outs right now."),
+			SAFETY_VERIFICATION_REQUIRED: () => toast.error(m.messages_error_safety_required()),
+			SAFETY_VERIFICATION_UNAVAILABLE: () => toast.error(m.messages_error_safety_unavailable()),
+			UNAUTHORIZED: () => toast.error(m.messages_composer_error_sign_in_again()),
+			FORBIDDEN: () => toast.error(m.messages_composer_error_forbidden()),
 			// Codes below belong to sibling /conversations endpoints (they share
 			// one error union) or are transport-level — all generic here.
 			CONVERSATION_LOOKUP_FAILED: genericError,
@@ -115,7 +121,7 @@
 		class="modal modal-open"
 		role="dialog"
 		aria-modal="true"
-		aria-label="Reach out to {recipient.name}"
+		aria-label={m.messages_composer_title({ name: recipient.name })}
 	>
 		<div class="modal-box max-w-xl border border-card-border p-0">
 			<div class="flex items-center gap-2.5 border-b border-base-300 px-6 py-4">
@@ -126,12 +132,12 @@
 					{initial}
 				</span>
 				<h2 class="font-display text-base font-bold text-base-content">
-					Reach out to {recipient.name}
+					{m.messages_composer_title({ name: recipient.name })}
 				</h2>
 				<button
 					type="button"
 					class="btn ml-auto btn-circle btn-ghost btn-sm"
-					aria-label="Close"
+					aria-label={m.common_close()}
 					onclick={onclose}
 				>
 					<i class="las la-times text-lg" aria-hidden="true"></i>
@@ -141,7 +147,7 @@
 			<div class="flex flex-col gap-4 px-6 py-4">
 				<div>
 					<div class="mb-1.5 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
-						Your message
+						{m.messages_composer_your_message()}
 					</div>
 					<div
 						class="flex items-start gap-2 rounded-lg border border-outline-variant/60 bg-base-200
@@ -151,15 +157,19 @@
 						<span>{previewMessage}</span>
 					</div>
 					<p class="mt-1 text-[11px] text-outline">
-						Standard reach-out message — the same for everyone, so no screening is needed.
+						{m.messages_composer_standard_note()}
 					</p>
 				</div>
 
 				<div>
 					<div class="mb-1.5 text-[11px] font-semibold tracking-[0.08em] text-outline uppercase">
-						{senderRole === 'family' ? 'Services you need' : 'Services you can help with'}
+						{senderRole === 'family'
+							? m.messages_composer_services_family()
+							: m.messages_composer_services_provider()}
 						<span class="font-normal normal-case tracking-normal">
-							(from {firstName}'s {senderRole === 'family' ? 'offering' : 'needs'})
+							{senderRole === 'family'
+								? m.messages_composer_services_from_offering({ name: firstName })
+								: m.messages_composer_services_from_needs({ name: firstName })}
 						</span>
 					</div>
 					<div class="flex flex-wrap gap-2">
@@ -191,10 +201,13 @@
 				>
 					<i class="las la-user-shield mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 					<p class="text-xs leading-relaxed text-neutral">
-						{firstName} will see your
-						<strong>{senderRole === 'family' ? 'family profile' : 'profile'}</strong>
-						and the services you selected. You can share contact details in chat, but conversations,
-						arrangements and payments made outside Poppynz aren't covered by our guarantees.
+						{m.messages_composer_privacy_before({ name: firstName })}
+						<strong
+							>{senderRole === 'family'
+								? m.messages_composer_privacy_family_profile()
+								: m.messages_composer_privacy_profile()}</strong
+						>
+						{m.messages_composer_privacy_after()}
 					</p>
 				</div>
 			</div>
@@ -209,12 +222,12 @@
 					{#if sending}
 						<span class="loading loading-sm loading-spinner"></span>
 					{/if}
-					Send reach-out
+					{m.messages_composer_send()}
 				</button>
-				<button type="button" class="btn btn-ghost" onclick={onclose}>Cancel</button>
-				<span class="ml-auto text-[11px] text-outline">{firstName} can respond or ignore</span>
+				<button type="button" class="btn btn-ghost" onclick={onclose}>{m.common_cancel()}</button>
+				<span class="ml-auto text-[11px] text-outline">{m.messages_composer_can_respond({ name: firstName })}</span>
 			</div>
 		</div>
-		<button type="button" class="modal-backdrop" onclick={onclose} aria-label="Close"></button>
+		<button type="button" class="modal-backdrop" onclick={onclose} aria-label={m.common_close()}></button>
 	</div>
 {/if}

@@ -5,8 +5,9 @@
 	import { page } from '$app/state';
 	import { getPendingAuth, requestSignInLink, requestSignUpLink } from '$lib/api/auth';
 	import { matchError } from '$lib/api/client';
+	import { m } from '$lib/paraglide/messages';
 
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+	const RETRY_MESSAGE = m.auth_retry_message();
 
 	// Forwarded by the sign-in/sign-up error routes from better-auth's
 	// errorCallbackURL. INVALID_TOKEN (used or expired link) gets the default
@@ -41,12 +42,12 @@
 			return;
 		}
 		errorMessage = matchError(result.error, {
-			USER_NOT_FOUND: () => 'No account exists for this email — create one instead.',
-			USER_ALREADY_EXISTS: () => 'Your account already exists — sign in instead.',
-			INVALID_SIGNIN_INPUT: () => "That email address doesn't look right. Check it and try again.",
-			INVALID_SIGNUP_INPUT: () => "That email address doesn't look right. Check it and try again.",
-			SIGNIN_LINK_FAILED: () => "We couldn't send your sign-in link. Please try again.",
-			SIGNUP_LINK_FAILED: () => "We couldn't send your magic link. Please try again.",
+			USER_NOT_FOUND: () => m.auth_error_user_not_found_create(),
+			USER_ALREADY_EXISTS: () => m.auth_error_user_exists_sign_in(),
+			INVALID_SIGNIN_INPUT: () => m.auth_error_invalid_email(),
+			INVALID_SIGNUP_INPUT: () => m.auth_error_invalid_email(),
+			SIGNIN_LINK_FAILED: () => m.auth_error_signin_link_failed(),
+			SIGNUP_LINK_FAILED: () => m.auth_error_signup_link_failed(),
 			SIGNIN_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
 			SIGNUP_INTENT_FAILED: () => RETRY_MESSAGE,
 			SIGNUP_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
@@ -58,7 +59,11 @@
 </script>
 
 <svelte:head>
-	<title>{serverFailure ? 'Sign-in failed' : 'Link expired'} · Poppynz</title>
+	<title
+		>{m.shell_page_title({
+			title: serverFailure ? m.auth_expired_title_failed() : m.auth_expired_title_expired()
+		})}</title
+	>
 </svelte:head>
 
 <form class="max-w-form lg:my-auto lg:pb-12" onsubmit={submit}>
@@ -70,22 +75,20 @@
 	</div>
 
 	<h2 class="mb-2.5 font-display text-3xl font-bold text-base-content lg:text-4xl">
-		{serverFailure ? 'Something went wrong' : 'This link is no longer valid'}
+		{serverFailure ? m.auth_expired_heading_failed() : m.auth_expired_heading_expired()}
 	</h2>
 	<p class="mb-7 max-w-md text-base leading-relaxed text-base-content-muted">
-		{serverFailure
-			? "We couldn't finish signing you in. Enter your email and we'll send you a new link to try again."
-			: "Sign-in links are single-use and only work for 5 minutes. Enter your email and we'll send a fresh one right away."}
+		{serverFailure ? m.auth_expired_body_failed() : m.auth_expired_body_expired()}
 	</p>
 
 	<fieldset class="fieldset mb-4">
-		<legend class="fieldset-legend">Email</legend>
+		<legend class="fieldset-legend">{m.auth_email_label()}</legend>
 		<label class="input input-lg w-full">
 			<i class="las la-envelope text-outline" aria-hidden="true"></i>
 			<input
 				type="email"
 				class="grow"
-				placeholder="johndoe@email.com"
+				placeholder={m.auth_email_placeholder()}
 				required
 				autocomplete="email"
 				bind:value={email}
@@ -112,11 +115,12 @@
 		{#if submitting}
 			<span class="loading loading-spinner"></span>
 		{/if}
-		Send me a new link
+		{m.auth_expired_submit()}
 	</button>
 
 	<p class="mt-5 text-center text-sm text-base-content-muted">
 		<!-- Support page doesn't exist yet — placeholder anchor -->
-		Need help? <a href="#support" class="font-semibold text-primary">Contact support</a>
+		{m.auth_expired_need_help()}
+		<a href="#support" class="font-semibold text-primary">{m.auth_expired_contact_support()}</a>
 	</p>
 </form>

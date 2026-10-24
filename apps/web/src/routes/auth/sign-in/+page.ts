@@ -1,13 +1,21 @@
 import type { AuthPanel } from '$lib/auth-panel';
+import { m } from '$lib/paraglide/messages';
 
 export function load(): { panel: AuthPanel } {
 	return {
 		panel: {
-			eyebrow: 'Welcome back',
-			headline: [[{ text: 'Good to see' }], [{ text: 'you again' }, { text: '.', accent: true }]],
-			body: "Enter your email and we'll send you a secure sign-in link. No password to remember.",
-			trustLine: 'Single-use links · PIPEDA-compliant · End-to-end encrypted',
-			aux: { text: 'New to Poppynz?', cta: 'Create account', href: '/auth/sign-up' },
+			eyebrow: m.auth_panel_signin_eyebrow(),
+			headline: [
+				[{ text: m.auth_panel_signin_line1() }],
+				[{ text: m.auth_panel_signin_line2() }, { text: '.', accent: true }]
+			],
+			body: m.auth_panel_signin_body(),
+			trustLine: m.auth_panel_trust_line(),
+			aux: {
+				text: m.auth_panel_signin_aux_text(),
+				cta: m.auth_panel_signin_aux_cta(),
+				href: '/auth/sign-up'
+			},
 			mobileHero: true
 		}
 	};

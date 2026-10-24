@@ -19,6 +19,7 @@
 	import { formatDateWithWeekday } from '$lib/date';
 	import { formatEndTime } from '$lib/contract-sessions';
 	import { notifications } from '$lib/notifications.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 	import { unread } from '$lib/unread.svelte';
 	import { onMount } from 'svelte';
@@ -66,21 +67,24 @@
 
 	const verificationCopy: Record<string, { title: string; message: string }> = {
 		invited: {
-			title: 'Your check is ready',
-			message: 'Credibled has set up your safety check — continue it from Safety verification.'
+			title: m.notify_verification_invited_title(),
+			message: m.notify_verification_invited_message()
 		},
 		in_progress: {
-			title: 'Check in progress',
-			message: 'Credibled is processing your safety check.'
+			title: m.notify_verification_in_progress_title(),
+			message: m.notify_verification_in_progress_message()
 		},
 		review_required: {
-			title: 'Check complete',
-			message: 'Your safety check is finished and with a Poppynz administrator for review.'
+			title: m.notify_verification_review_title(),
+			message: m.notify_verification_review_message()
 		},
-		verified: { title: 'You are verified', message: 'Your safety verification was approved.' },
+		verified: {
+			title: m.notify_verification_verified_title(),
+			message: m.notify_verification_verified_message()
+		},
 		rejected: {
-			title: 'Verification update',
-			message: 'Your safety verification was not approved. See Safety verification for the reason.'
+			title: m.notify_verification_rejected_title(),
+			message: m.notify_verification_rejected_message()
 		}
 	};
 
@@ -92,8 +96,8 @@
 			notifications.on('conversation.reachout', (event) => {
 				void unread.refresh();
 				if (!onMessagesPage()) {
-					toast.info(`${event.payload.senderName} would like to work with you.`, {
-						title: 'New reach-out'
+					toast.info(m.notify_reachout_message({ name: event.payload.senderName }), {
+						title: m.notify_reachout_title()
 					});
 				}
 			}),
@@ -101,28 +105,25 @@
 				void unread.refresh();
 				if (!onMessagesPage()) {
 					toast.info(event.payload.preview, {
-						title: `New message from ${event.payload.senderName}`
+						title: m.notify_message_title({ name: event.payload.senderName })
 					});
 				}
 			}),
 			notifications.on('conversation.unlocked', (event) => {
 				void unread.refresh();
 				if (!onMessagesPage()) {
-					toast.success(
-						`${event.payload.responderName} responded — your conversation is unlocked.`,
-						{
-							title: 'Reach-out accepted'
-						}
-					);
+					toast.success(m.notify_unlocked_message({ name: event.payload.responderName }), {
+						title: m.notify_unlocked_title()
+					});
 				}
 			}),
 			notifications.on('approval.decided', (event) => {
 				if (onApprovalPage()) {
 					toast.info(
 						event.payload.status === 'approved'
-							? 'Your approval request was accepted.'
-							: 'Your approval request was declined.',
-						{ title: 'Approval update' }
+							? m.notify_approval_accepted()
+							: m.notify_approval_declined(),
+						{ title: m.notify_approval_title() }
 					);
 					return;
 				}
@@ -133,7 +134,7 @@
 			}),
 			notifications.on('approval.revoked', (event) => {
 				if (onApprovalPage()) {
-					toast.error('Your approval was revoked.', { title: 'Approval update' });
+					toast.error(m.notify_approval_revoked(), { title: m.notify_approval_title() });
 					return;
 				}
 				approvalDecision = { kind: 'revoked', reason: event.payload.reason };
@@ -141,17 +142,20 @@
 			notifications.on('contract.proposed', (event) => {
 				void contractsBadge.refresh();
 				if (!onContractsPage()) {
-					toast.info(`${event.payload.counterpartName} sent you contract terms to review.`, {
-						title: 'New contract proposal'
+					toast.info(m.notify_contract_proposed_message({ name: event.payload.counterpartName }), {
+						title: m.notify_contract_proposed_title()
 					});
 				}
 			}),
 			notifications.on('contract.accepted', (event) => {
 				void contractsBadge.refresh();
 				if (onContractsPage()) {
-					toast.success(`${event.payload.counterpartName} accepted & signed your proposal.`, {
-						title: 'Contract update'
-					});
+					toast.success(
+						m.notify_contract_accepted_message({ name: event.payload.counterpartName }),
+						{
+							title: m.notify_contract_update_title()
+						}
+					);
 					return;
 				}
 				contractDecision = {
@@ -163,8 +167,8 @@
 			notifications.on('contract.declined', (event) => {
 				void contractsBadge.refresh();
 				if (onContractsPage()) {
-					toast.info(`${event.payload.counterpartName} declined your proposal.`, {
-						title: 'Contract update'
+					toast.info(m.notify_contract_declined_message({ name: event.payload.counterpartName }), {
+						title: m.notify_contract_update_title()
 					});
 					return;
 				}
@@ -178,8 +182,8 @@
 			notifications.on('contract.changes_requested', (event) => {
 				void contractsBadge.refresh();
 				if (!onContractsPage()) {
-					toast.info(`${event.payload.counterpartName} asked for changes to your proposal.`, {
-						title: 'Contract update'
+					toast.info(m.notify_contract_changes_message({ name: event.payload.counterpartName }), {
+						title: m.notify_contract_update_title()
 					});
 				}
 			}),
@@ -197,16 +201,24 @@
 			}),
 			notifications.on('vouch.requested', (event) => {
 				if (onVouchesPage()) return;
-				toast.info(`${event.payload.applicantName} asked you to vouch for them.`, {
-					title: 'Vouch request'
+				toast.info(m.notify_vouch_requested_message({ name: event.payload.applicantName }), {
+					title: m.notify_vouch_requested_title()
 				});
 			}),
 			notifications.on('contract.ended', (event) => {
 				void contractsBadge.refresh();
 				if (!onContractsPage()) {
+					const name = event.payload.counterpartName;
+					const date = formatDateWithWeekday(event.payload.endsOn);
 					toast.info(
-						`${event.payload.counterpartName} gave 2 weeks' notice — last working day ${formatDateWithWeekday(event.payload.endsOn)}${event.payload.endsAtMinutes ? `, until ${formatEndTime(event.payload.endsAtMinutes)}` : ''}.`,
-						{ title: 'Contract ending' }
+						event.payload.endsAtMinutes
+							? m.notify_contract_ended_until_message({
+									name,
+									date,
+									time: formatEndTime(event.payload.endsAtMinutes)
+								})
+							: m.notify_contract_ended_message({ name, date }),
+						{ title: m.notify_contract_ended_title() }
 					);
 				}
 			})

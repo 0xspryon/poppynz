@@ -3,6 +3,7 @@
 	 * opens a navy panel sliding over a dimmed backdrop — replaces bottom tabs
 	 * and the old dropdown menu. Desktop keeps the persistent sidebar. */
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		open: boolean;
@@ -29,12 +30,12 @@
 		<button
 			type="button"
 			class="absolute inset-0 bg-base-content/45"
-			aria-label="Close navigation"
+			aria-label={m.nav_close()}
 			onclick={onclose}
 		></button>
 		<aside
 			class="absolute inset-y-0 left-0 flex w-[292px] flex-col gap-1 bg-secondary p-4 shadow-panel"
-			aria-label="Navigation"
+			aria-label={m.nav_drawer_label()}
 		>
 			<SidebarNav
 				{kicker}

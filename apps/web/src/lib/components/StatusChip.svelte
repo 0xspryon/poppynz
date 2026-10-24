@@ -22,6 +22,8 @@
 </script>
 
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
+
 	/** Small status chip (design: 11px/600, 5px radius, soft tint background).
 	 * Colors follow the semantic mapping in app.css — soft chips pair a status
 	 * color with its `-content` tint. `in-progress` is Credibled-scoped. */
@@ -53,27 +55,27 @@
 		suspended: 'bg-warning-content text-warning'
 	};
 
-	const defaultLabels: Record<ChipStatus, string> = {
-		approved: 'Approved',
-		complete: 'Complete',
-		submitted: 'Submitted',
-		rejected: 'Rejected',
-		missing: 'Missing',
-		empty: 'Empty',
-		expired: 'Expired',
-		'in-progress': 'In progress',
-		draft: 'Draft',
-		proposed: 'Proposed',
-		'awaiting-you': 'Awaiting you',
-		'changes-requested': 'Changes requested',
-		active: 'Active',
-		declined: 'Declined',
-		ending: 'Ending',
-		ended: 'Ended',
-		suspended: 'Suspended'
+	const defaultLabels: Record<ChipStatus, () => string> = {
+		approved: m.shell_status_approved,
+		complete: m.shell_status_complete,
+		submitted: m.shell_status_submitted,
+		rejected: m.shell_status_rejected,
+		missing: m.shell_status_missing,
+		empty: m.shell_status_empty,
+		expired: m.shell_status_expired,
+		'in-progress': m.shell_status_in_progress,
+		draft: m.shell_status_draft,
+		proposed: m.shell_status_proposed,
+		'awaiting-you': m.shell_status_awaiting_you,
+		'changes-requested': m.shell_status_changes_requested,
+		active: m.shell_status_active,
+		declined: m.shell_status_declined,
+		ending: m.shell_status_ending,
+		ended: m.shell_status_ended,
+		suspended: m.shell_status_suspended
 	};
 </script>
 
 <span class="rounded-sm px-2.5 py-1 text-[11px] font-semibold whitespace-nowrap {styles[status]}">
-	{label ?? defaultLabels[status]}
+	{label ?? defaultLabels[status]()}
 </span>

@@ -12,6 +12,7 @@
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
@@ -44,27 +45,33 @@
 	const initial = $derived(email.charAt(0).toUpperCase());
 	const isAdmin = $derived(session?.role === 'admin');
 
+	const groupTax = m.nav_group_tax();
 	const items = $derived<Array<SidebarItem>>([
 		...(access?.canRead
 			? [
-					{ href: resolve('/accountant/rates'), label: 'Rates', icon: 'la-percent', group: 'Tax' },
+					{
+						href: resolve('/accountant/rates'),
+						label: m.nav_tax_rates(),
+						icon: 'la-percent',
+						group: groupTax
+					},
 					{
 						href: resolve('/accountant/treatments'),
-						label: 'Treatments',
+						label: m.nav_tax_treatments(),
 						icon: 'la-sitemap',
-						group: 'Tax'
+						group: groupTax
 					},
 					{
 						href: resolve('/accountant/registrations'),
-						label: 'Registrations',
+						label: m.nav_tax_registrations(),
 						icon: 'la-id-card',
-						group: 'Tax'
+						group: groupTax
 					},
 					{
 						href: resolve('/accountant/audit'),
-						label: 'Audit log',
+						label: m.nav_tax_audit_log(),
 						icon: 'la-history',
-						group: 'Tax'
+						group: groupTax
 					}
 				]
 			: []),
@@ -72,15 +79,17 @@
 			? [
 					{
 						href: resolve('/accountant/reports'),
-						label: 'Reports',
+						label: m.nav_tax_reports(),
 						icon: 'la-file-invoice-dollar',
-						group: 'Tax'
+						group: groupTax
 					}
 				]
 			: []),
-		...(isAdmin ? [{ href: resolve('/admin'), label: 'Admin console', icon: 'la-arrow-left' }] : [])
+		...(isAdmin
+			? [{ href: resolve('/admin'), label: m.nav_admin_console(), icon: 'la-arrow-left' }]
+			: [])
 	]);
-	const roleLabel = $derived(isAdmin ? 'Administrator' : 'Accountant');
+	const roleLabel = $derived(isAdmin ? m.nav_role_administrator() : m.nav_role_accountant());
 </script>
 
 {#if access}
@@ -88,7 +97,7 @@
 		<aside
 			class="sticky top-0 hidden h-dvh w-[250px] shrink-0 flex-col gap-1 bg-secondary p-5 lg:flex"
 		>
-			<SidebarNav kicker="Accountant" {items} {email} {roleLabel} />
+			<SidebarNav kicker={m.nav_role_accountant()} {items} {email} {roleLabel} />
 		</aside>
 
 		<div class="flex min-w-0 flex-1 flex-col">
@@ -102,14 +111,14 @@
 						class="rounded-sm bg-secondary px-1.5 py-0.5 text-[9px] font-semibold tracking-widest
 							text-secondary-content uppercase"
 					>
-						Accountant
+						{m.nav_role_accountant()}
 					</span>
 				</span>
 				<button
 					type="button"
 					class="flex size-8 items-center justify-center rounded-full bg-primary text-sm
 						font-bold text-primary-content"
-					aria-label="Open navigation"
+					aria-label={m.nav_open()}
 					onclick={() => (drawerOpen = true)}
 				>
 					{initial}
@@ -125,7 +134,7 @@
 	<MobileNavDrawer
 		open={drawerOpen}
 		onclose={() => (drawerOpen = false)}
-		kicker="Accountant"
+		kicker={m.nav_role_accountant()}
 		{items}
 		{email}
 		{roleLabel}

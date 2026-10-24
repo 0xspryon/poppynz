@@ -1,21 +1,31 @@
 import type { AuthPanel } from '$lib/auth-panel';
+import { m } from '$lib/paraglide/messages';
 
 export function load(): { panel: AuthPanel } {
 	return {
 		panel: {
-			eyebrow: 'Welcome to Poppynz',
+			eyebrow: m.auth_panel_signup_eyebrow(),
+			// The accent word is styled on its own, so the line is split around it.
 			headline: [
-				[{ text: 'A few minutes now,' }],
-				[{ text: 'trusted help ' }, { text: 'after', accent: true }, { text: '.' }]
+				[{ text: m.auth_panel_signup_line1() }],
+				[
+					{ text: m.auth_panel_signup_line2_before() },
+					{ text: m.auth_panel_signup_line2_accent(), accent: true },
+					{ text: '.' }
+				]
 			],
-			body: "Tell us a bit about yourself. We'll connect families with vetted helpers near them, available when needed.",
+			body: m.auth_panel_signup_body(),
 			testimonial: {
-				quote: '“Our kids ask for Maria by name now. She remembers the granola Theo likes.”',
-				attribution: 'Adelaide, mum to Theo (5) · Mississauga',
+				quote: m.auth_panel_signup_quote(),
+				attribution: m.auth_panel_signup_attribution(),
 				initial: 'A'
 			},
-			trustLine: 'Background-checked helpers · PIPEDA-compliant · End-to-end encrypted',
-			aux: { text: 'Already with us?', cta: 'Sign in', href: '/auth/sign-in' },
+			trustLine: m.auth_panel_signup_trust_line(),
+			aux: {
+				text: m.auth_panel_signup_aux_text(),
+				cta: m.auth_panel_signup_aux_cta(),
+				href: '/auth/sign-in'
+			},
 			mobileHero: true
 		}
 	};

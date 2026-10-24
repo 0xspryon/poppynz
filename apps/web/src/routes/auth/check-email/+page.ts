@@ -1,15 +1,16 @@
 import type { AuthPanel } from '$lib/auth-panel';
+import { m } from '$lib/paraglide/messages';
 
 export function load(): { panel: AuthPanel } {
 	return {
 		panel: {
-			eyebrow: 'One tap away',
+			eyebrow: m.auth_panel_check_email_eyebrow(),
 			headline: [
-				[{ text: 'Your link is in' }],
-				[{ text: 'the mail' }, { text: '.', accent: true }]
+				[{ text: m.auth_panel_check_email_line1() }],
+				[{ text: m.auth_panel_check_email_line2() }, { text: '.', accent: true }]
 			],
-			body: "We never store passwords. Every sign-in link is single-use and expires quickly — that's what keeps your account safe.",
-			trustLine: 'Single-use links · PIPEDA-compliant · End-to-end encrypted'
+			body: m.auth_panel_check_email_body(),
+			trustLine: m.auth_panel_trust_line()
 		}
 	};
 }

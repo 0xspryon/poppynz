@@ -2,6 +2,7 @@
  * and /geocoding. Location is saved as a Google place id; the API resolves
  * coordinates server-side. */
 import { apiClient, call, type ApiResult, type ErrorsOf, type UnexpectedError } from './client';
+import { m } from '$lib/paraglide/messages';
 
 const getEndpoint = apiClient.me.profile.$get;
 const updateEndpoint = apiClient.me.profile.$patch;
@@ -81,7 +82,7 @@ export async function uploadProfilePhoto(
 				ok: false,
 				error: {
 					code: 'UNEXPECTED',
-					message: 'The photo could not be uploaded to storage.',
+					message: m.profile_photo_upload_storage_failed(),
 					status: uploadRes.status
 				}
 			};
@@ -89,7 +90,11 @@ export async function uploadProfilePhoto(
 	} catch {
 		return {
 			ok: false,
-			error: { code: 'UNEXPECTED', message: 'The photo upload could not be sent.', status: null }
+			error: {
+				code: 'UNEXPECTED',
+				message: m.profile_photo_upload_send_failed(),
+				status: null
+			}
 		};
 	}
 

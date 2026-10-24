@@ -10,6 +10,7 @@
 	import { onMount } from 'svelte';
 	import { acceptTcs, listPendingTcs, type PublishedTc } from '$lib/api/tcs';
 	import TcModal from './TcModal.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	const SURFACED_ELSEWHERE = new Set(['service_provider_fee_acceptance', 'family_fee_acceptance']);
 
@@ -38,10 +39,10 @@
 		if (result.ok) {
 			pending = pending.filter((tc) => tc.versionId !== current.versionId);
 		} else if (result.error.code === 'TC_VERSION_STALE') {
-			errorMessage = 'These terms were just updated — please review the newest version.';
+			errorMessage = m.tc_stale();
 			await load();
 		} else {
-			errorMessage = 'We could not record your acceptance. Please try again.';
+			errorMessage = m.tc_accept_failed();
 		}
 		busy = false;
 	}
@@ -53,9 +54,7 @@
 		title={current.title}
 		content={current.content}
 		checkboxLabel={current.checkboxLabel}
-		intro={current.version > 1
-			? 'Our terms have changed. Please review and accept the updated version to continue.'
-			: 'Please review and accept to continue.'}
+		intro={current.version > 1 ? m.tc_intro_changed() : m.tc_intro()}
 		{busy}
 		error={errorMessage}
 		onaccept={accept}

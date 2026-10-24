@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CONTACT_DETAILS_WARNING, STANDING_CHAT_NOTICE } from '$lib/off-platform-notice';
+	import { contactDetailsWarning, standingChatNotice } from '$lib/off-platform-notice';
 	/** Shared Messages screen for both roles (design 16b/16c). Desktop shows the
 	 * conversation list and the thread side by side; on mobile the `?c=` query
 	 * param switches between the list screen and the chat screen, so the back
@@ -25,6 +25,8 @@
 	import { toast } from '$lib/toast.svelte';
 	import { unread } from '$lib/unread.svelte';
 	import { withQuery } from '$lib/nav';
+	import { formatTime, relativeDayLabel } from '$lib/date';
+	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 
 	interface Props {
@@ -167,16 +169,20 @@
 
 	/** Messaging needs both people to hold a live approval (and the viewer a
 	 * verified safety check). Those refusals explain themselves, so the toast
-	 * shows the API's own message; anything else gets the generic fallback. */
-	function standingErrorMessage(error: { code: string; message?: string }): string | null {
+	 * names the reason (localized here); anything else gets the generic fallback. */
+	function standingErrorMessage(error: { code: string }): string | null {
 		switch (error.code) {
 			case 'COUNTERPART_UNAVAILABLE':
+				return m.messages_error_counterpart_unavailable();
 			case 'FAMILY_NOT_APPROVED':
 			case 'PROVIDER_NOT_APPROVED':
+				return m.messages_error_approval_needed_message();
 			case 'APPROVAL_UNAVAILABLE':
+				return m.messages_error_approval_unavailable();
 			case 'SAFETY_VERIFICATION_REQUIRED':
+				return m.messages_error_safety_required();
 			case 'SAFETY_VERIFICATION_UNAVAILABLE':
-				return error.message ?? null;
+				return m.messages_error_safety_unavailable();
 			default:
 				return null;
 		}
@@ -193,7 +199,7 @@
 		if (result.ok) {
 			draft = '';
 			if (result.data.contactWarning) {
-				toast.info(CONTACT_DETAILS_WARNING, { title: 'Contact details shared' });
+				toast.info(contactDetailsWarning(), { title: m.messages_contact_shared_title() });
 			}
 			thread = thread && {
 				...thread,
@@ -204,8 +210,8 @@
 			toast.error(
 				standingErrorMessage(result.error) ??
 					(result.error.code === 'CONVERSATION_LOCKED'
-						? 'This conversation is locked until the reach-out gets a response.'
-						: 'Your message could not be sent. Please try again.')
+						? m.messages_error_locked()
+						: m.messages_error_send_failed())
 			);
 		}
 	}
@@ -223,7 +229,7 @@
 		} else if (result.error.code === 'CONTRACT_EXISTS') {
 			void goto(contractHref(result.error.contractId));
 		} else {
-			toast.error('Starting the contract failed. Please try again.');
+			toast.error(m.messages_error_contract_start_failed());
 		}
 	}
 
@@ -232,23 +238,23 @@
 		if (!contract) return null;
 		switch (contract.status) {
 			case 'draft':
-				return { label: 'Contract draft', tone: 'neutral' as const };
+				return { label: m.messages_contract_draft(), tone: 'neutral' as const };
 			case 'proposed':
 				return contract.awaitingYou
-					? { label: 'Review proposal', tone: 'accent' as const }
-					: { label: 'Proposal sent', tone: 'neutral' as const };
+					? { label: m.messages_contract_review_proposal(), tone: 'accent' as const }
+					: { label: m.messages_contract_proposal_sent(), tone: 'neutral' as const };
 			case 'expired':
-				return { label: 'Proposal expired', tone: 'neutral' as const };
+				return { label: m.messages_contract_proposal_expired(), tone: 'neutral' as const };
 			case 'changes_requested':
-				return { label: 'Changes requested', tone: 'warning' as const };
+				return { label: m.messages_contract_changes_requested(), tone: 'warning' as const };
 			case 'declined':
-				return { label: 'Proposal declined', tone: 'neutral' as const };
+				return { label: m.messages_contract_proposal_declined(), tone: 'neutral' as const };
 			case 'active':
-				return { label: 'Contract active', tone: 'success' as const };
+				return { label: m.messages_contract_active(), tone: 'success' as const };
 			case 'ending':
-				return { label: 'Contract ending', tone: 'warning' as const };
+				return { label: m.messages_contract_ending(), tone: 'warning' as const };
 			case 'ended':
-				return { label: 'Contract ended', tone: 'neutral' as const };
+				return { label: m.messages_contract_ended(), tone: 'neutral' as const };
 			default:
 				return null;
 		}
@@ -271,7 +277,7 @@
 			await refreshThread(id);
 			void refreshList();
 		} else {
-			toast.error(standingErrorMessage(result.error) ?? 'Responding failed. Please try again.');
+			toast.error(standingErrorMessage(result.error) ?? m.messages_error_respond_failed());
 		}
 	}
 
@@ -281,43 +287,45 @@
 		ignoreConfirmOpen = false;
 		const result = await ignoreReachout(id);
 		if (result.ok) {
-			toast.info('Reach-out archived. They were not notified.');
+			toast.info(m.messages_ignore_done());
 			void unread.refresh();
 			conversations = conversations.filter((conversation) => conversation.id !== id);
 			void goto(listHref, { noScroll: true });
 		} else {
-			toast.error('Archiving failed. Please try again.');
+			toast.error(m.messages_error_archive_failed());
 		}
 	}
 
-	const dayLabel = (iso: string) => {
-		const date = new Date(iso);
-		const today = new Date();
-		const yesterday = new Date(today.getTime() - 86_400_000);
-		if (date.toDateString() === today.toDateString()) return 'Today';
-		if (date.toDateString() === yesterday.toDateString()) return 'Yesterday';
-		return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-	};
+	// "Today" / "Yesterday" / "Aug 4", localized.
+	const dayLabel = (iso: string) => relativeDayLabel(iso);
 
-	const timeLabel = (iso: string) =>
-		new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+	const timeLabel = (iso: string) => formatTime(iso);
 
 	const listTimestamp = (conversation: ConversationSummary) =>
-		dayLabel(conversation.lastMessage?.at ?? conversation.createdAt) === 'Today'
+		dayLabel(conversation.lastMessage?.at ?? conversation.createdAt) === m.date_today()
 			? timeLabel(conversation.lastMessage?.at ?? conversation.createdAt)
 			: dayLabel(conversation.lastMessage?.at ?? conversation.createdAt);
 
 	const listPreview = (conversation: ConversationSummary) => {
 		if (conversation.lastMessage) return conversation.lastMessage.body;
 		if (conversation.awaitingMyResponse) {
-			return `${conversation.counterpart.name.split(/\s+/)[0]} would like to work with you`;
+			return m.messages_preview_wants_to_work({
+				name: conversation.counterpart.name.split(/\s+/)[0] ?? ''
+			});
 		}
-		return conversation.reachout.sentByMe ? 'Reach-out sent' : conversation.reachout.message;
+		return conversation.reachout.sentByMe
+			? m.messages_preview_reachout_sent()
+			: conversation.reachout.message;
 	};
 
 	const isUnread = (conversation: ConversationSummary) =>
 		conversation.unreadCount > 0 || conversation.awaitingMyResponse;
 
+	const counterpartRoleLabel = $derived(
+		thread?.conversation.counterpart.role === 'family'
+			? m.messages_counterpart_family()
+			: m.messages_counterpart_provider()
+	);
 	const threadFirstName = $derived(thread?.conversation.counterpart.name.split(/\s+/)[0] ?? '');
 	const composerState = $derived.by((): 'active' | 'awaiting-me' | 'awaiting-them' => {
 		if (!thread || thread.conversation.status === 'active') return 'active';
@@ -338,7 +346,7 @@
 </script>
 
 <svelte:head>
-	<title>Messages · Poppynz</title>
+	<title>{m.messages_page_title()}</title>
 </svelte:head>
 
 <div
@@ -351,10 +359,10 @@
 			'w-full flex-col border-card-border lg:flex lg:w-[330px] lg:shrink-0 lg:border-r',
 			selectedId ? 'hidden' : 'flex'
 		]}
-		aria-label="Conversations"
+		aria-label={m.messages_list_aria()}
 	>
 		<header class="px-5 pt-5 pb-3">
-			<h1 class="font-display text-xl font-bold text-base-content">Messages</h1>
+			<h1 class="font-display text-xl font-bold text-base-content">{m.messages_heading()}</h1>
 		</header>
 		{#if listLoading}
 			<div class="flex flex-col gap-3 px-5">
@@ -370,10 +378,10 @@
 			</div>
 		{:else if listError}
 			<div class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-				<p class="text-sm text-base-content-muted">Your messages didn't load.</p>
+				<p class="text-sm text-base-content-muted">{m.messages_list_load_failed()}</p>
 				<button type="button" class="btn btn-primary btn-sm" onclick={() => void refreshList()}>
 					<i class="las la-redo-alt" aria-hidden="true"></i>
-					Retry
+					{m.messages_retry()}
 				</button>
 			</div>
 		{:else if conversations.length === 0}
@@ -381,14 +389,14 @@
 				<span class="flex size-14 items-center justify-center rounded-full bg-base-400">
 					<i class="las la-comments text-2xl text-neutral" aria-hidden="true"></i>
 				</span>
-				<h2 class="font-display text-base font-bold text-base-content">No messages yet</h2>
+				<h2 class="font-display text-base font-bold text-base-content">
+					{m.messages_empty_title()}
+				</h2>
 				<p class="max-w-[240px] text-[13px] text-base-content-muted">
-					{role === 'family'
-						? 'Reach out to a helper from their profile and the conversation will appear here.'
-						: 'Reach out to a family from their profile and the conversation will appear here.'}
+					{role === 'family' ? m.messages_empty_body_family() : m.messages_empty_body_provider()}
 				</p>
 				<a href={findHref} class="btn btn-primary btn-sm">
-					{role === 'family' ? 'Find help' : 'Find families'}
+					{role === 'family' ? m.messages_find_help() : m.messages_find_families()}
 				</a>
 			</div>
 		{:else}
@@ -449,7 +457,7 @@
 										class="mt-1.5 inline-block rounded-pill bg-warning-content px-2.5 py-0.5
 											text-[10.5px] font-semibold text-warning"
 									>
-										New reach-out
+										{m.messages_new_reachout_badge()}
 									</span>
 								{/if}
 							</span>
@@ -463,12 +471,12 @@
 	<!-- Thread pane -->
 	<section
 		class={['min-w-0 flex-1 flex-col bg-base-200 lg:flex', selectedId ? 'flex' : 'hidden']}
-		aria-label="Conversation"
+		aria-label={m.messages_thread_aria()}
 	>
 		{#if !selectedId}
 			<div class="flex flex-1 flex-col items-center justify-center gap-2 text-center">
 				<i class="las la-comment-dots text-4xl text-outline-variant" aria-hidden="true"></i>
-				<p class="text-sm text-base-content-muted">Select a conversation</p>
+				<p class="text-sm text-base-content-muted">{m.messages_select_conversation()}</p>
 			</div>
 		{:else if threadLoading && !thread}
 			<div class="flex flex-1 items-center justify-center">
@@ -476,14 +484,14 @@
 			</div>
 		{:else if threadError && !thread}
 			<div class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center">
-				<p class="text-sm text-base-content-muted">This conversation didn't load.</p>
+				<p class="text-sm text-base-content-muted">{m.messages_thread_load_failed()}</p>
 				<button
 					type="button"
 					class="btn btn-primary btn-sm"
 					onclick={() => selectedId && void refreshThread(selectedId)}
 				>
 					<i class="las la-redo-alt" aria-hidden="true"></i>
-					Retry
+					{m.messages_retry()}
 				</button>
 			</div>
 		{:else if thread}
@@ -493,7 +501,7 @@
 				<a
 					href={listHref}
 					class="btn btn-circle btn-ghost btn-sm lg:hidden"
-					aria-label="Back to messages"
+					aria-label={m.messages_back_to_list()}
 				>
 					<i class="las la-angle-left text-xl" aria-hidden="true"></i>
 				</a>
@@ -511,9 +519,13 @@
 						{thread.conversation.counterpart.name}
 					</a>
 					<p class="truncate text-[11.5px] text-outline">
-						{thread.conversation.counterpart.role === 'family' ? 'Family' : 'Provider'}
 						{#if thread.conversation.counterpart.city}
-							· {thread.conversation.counterpart.city}
+							{m.messages_counterpart_with_city({
+								role: counterpartRoleLabel,
+								city: thread.conversation.counterpart.city
+							})}
+						{:else}
+							{counterpartRoleLabel}
 						{/if}
 					</p>
 				</div>
@@ -538,7 +550,7 @@
 						{:else}
 							<i class="las la-file-signature" aria-hidden="true"></i>
 						{/if}
-						Propose terms
+						{m.messages_propose_terms()}
 					</button>
 				{/if}
 			</header>
@@ -573,13 +585,13 @@
 							]}
 						>
 							{#if thread.contract.status === 'active'}
-								Contract active
+								{m.messages_contract_active()}
 							{:else if thread.contract.status === 'declined'}
-								Proposal declined
+								{m.messages_contract_proposal_declined()}
 							{:else if thread.contract.status === 'ending'}
-								Contract ending
+								{m.messages_contract_ending()}
 							{:else}
-								Contract ended
+								{m.messages_contract_ended()}
 							{/if}
 							<a
 								href={contractHref(thread.contract.id)}
@@ -590,7 +602,7 @@
 										: 'border-[1.5px] border-outline-variant bg-base-100 text-secondary'
 								]}
 							>
-								View
+								{m.common_view()}
 							</a>
 						</span>
 					</div>
@@ -628,7 +640,7 @@
 									role="note"
 								>
 									<i class="las la-exclamation-triangle mt-0.5 shrink-0" aria-hidden="true"></i>
-									{CONTACT_DETAILS_WARNING}
+									{contactDetailsWarning()}
 								</p>
 							{/if}
 							<div
@@ -648,7 +660,7 @@
 			<div class="px-4 pt-2 pb-4 lg:px-6">
 				<p class="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-outline">
 					<i class="las la-shield-alt mt-0.5 shrink-0" aria-hidden="true"></i>
-					{STANDING_CHAT_NOTICE}
+					{standingChatNotice()}
 				</p>
 				{#if composerState === 'active'}
 					<form
@@ -660,7 +672,7 @@
 							type="text"
 							class="min-w-0 flex-1 bg-transparent text-[13.5px] text-base-content outline-none
 								placeholder:text-outline"
-							placeholder="Message {threadFirstName}…"
+							placeholder={m.messages_composer_placeholder({ name: threadFirstName })}
 							maxlength={4000}
 							bind:value={draft}
 						/>
@@ -668,7 +680,7 @@
 							type="submit"
 							class="btn btn-circle btn-primary btn-sm"
 							disabled={sending || draft.trim().length === 0}
-							aria-label="Send message"
+							aria-label={m.messages_send_aria()}
 						>
 							{#if sending}
 								<span class="loading loading-xs loading-spinner"></span>
@@ -684,8 +696,8 @@
 					>
 						<span class="flex-1 text-[13px] text-outline">
 							{composerState === 'awaiting-me'
-								? 'Respond to unlock the conversation'
-								: `You can chat once ${threadFirstName} responds`}
+								? m.messages_composer_respond_to_unlock()
+								: m.messages_composer_awaiting_them({ name: threadFirstName })}
 						</span>
 						<span
 							class="flex size-8 items-center justify-center rounded-full bg-outline-variant
@@ -702,9 +714,9 @@
 
 <ConfirmDialog
 	open={ignoreConfirmOpen}
-	title="Ignore this reach-out?"
-	body="It will quietly disappear from your messages — {threadFirstName} won't be notified."
-	confirmLabel="Ignore"
+	title={m.messages_ignore_title()}
+	body={m.messages_ignore_body({ name: threadFirstName })}
+	confirmLabel={m.messages_ignore_confirm()}
 	onconfirm={handleIgnore}
 	oncancel={() => (ignoreConfirmOpen = false)}
 />

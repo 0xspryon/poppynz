@@ -5,6 +5,7 @@
  * driver.js CSS is imported globally in app.css. */
 import { browser } from '$app/environment';
 import { driver } from 'driver.js';
+import { m } from '$lib/paraglide/messages';
 
 export interface TourStep {
 	selector: string;
@@ -29,9 +30,11 @@ export function startTourOnce(key: string, steps: Array<TourStep>) {
 		showProgress: true,
 		overlayOpacity: 0.55,
 		stagePadding: 6,
-		nextBtnText: 'Next',
-		prevBtnText: 'Back',
-		doneBtnText: 'Got it',
+		// driver.js fills in {{current}} / {{total}} itself.
+		progressText: m.tour_progress({ current: '{{current}}', total: '{{total}}' }),
+		nextBtnText: m.common_next(),
+		prevBtnText: m.common_back(),
+		doneBtnText: m.tour_done(),
 		onDestroyed: () => localStorage.setItem(key, '1'),
 		steps: present.map((step) => ({
 			element: step.selector,

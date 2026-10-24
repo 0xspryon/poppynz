@@ -16,6 +16,8 @@
 </script>
 
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
+
 	/** Page-number pagination (design 13b/13c): Prev · 1 … 5 6 7 … 30 · Next,
 	 * current page navy, icon-only prev/next. Renders nothing for one page. */
 	interface Props {
@@ -26,7 +28,7 @@
 		label?: string;
 	}
 
-	let { page, totalPages, onselect, label = 'Pages' }: Props = $props();
+	let { page, totalPages, onselect, label = m.shell_pagination_label() }: Props = $props();
 </script>
 
 {#if totalPages > 1}
@@ -36,7 +38,7 @@
 				type="button"
 				class="btn join-item btn-sm"
 				disabled={page <= 1}
-				aria-label="Previous page"
+				aria-label={m.shell_pagination_previous()}
 				onclick={() => onselect(page - 1)}
 			>
 				<i class="las la-angle-left" aria-hidden="true"></i>
@@ -59,7 +61,7 @@
 				type="button"
 				class="btn join-item btn-sm"
 				disabled={page >= totalPages}
-				aria-label="Next page"
+				aria-label={m.shell_pagination_next()}
 				onclick={() => onselect(page + 1)}
 			>
 				<i class="las la-angle-right" aria-hidden="true"></i>

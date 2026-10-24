@@ -1,4 +1,5 @@
 import { API_BASE_PATH, hcWithType } from 'api/hc';
+import { m } from '$lib/paraglide/messages';
 
 export const apiClient = hcWithType(API_BASE_PATH);
 export type ApiClient = typeof apiClient;
@@ -50,7 +51,7 @@ export async function call<TRes extends { ok: boolean; status: number; json(): P
 	try {
 		res = await request;
 	} catch {
-		return { ok: false, error: unexpected('The request could not be sent.', null) };
+		return { ok: false, error: unexpected(m.api_unexpected_network(), null) };
 	}
 
 	let body: unknown = null;
@@ -66,7 +67,7 @@ export async function call<TRes extends { ok: boolean; status: number; json(): P
 	if (isApiErrorBody(body)) {
 		return { ok: false, error: body.error as KnownErrorOf<TRes> };
 	}
-	return { ok: false, error: unexpected('The server sent an unexpected response.', res.status) };
+	return { ok: false, error: unexpected(m.api_unexpected_response(), res.status) };
 }
 
 /**

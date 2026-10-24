@@ -12,6 +12,7 @@
 	import { toast } from '$lib/toast.svelte';
 	import { toDateInputValue } from '$lib/date';
 	import { SvelteSet } from 'svelte/reactivity';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		/** Subtitle under the page heading. */
@@ -27,14 +28,15 @@
 	let { description, bioPlaceholder, photoRequired = false, audience = 'helper' }: Props = $props();
 
 	const photoHint = $derived(
+		audience === 'family' ? m.profile_photo_hint_family() : m.profile_photo_hint_helper()
+	);
+	const requiredPhotoHint = $derived(
 		audience === 'family'
-			? 'A clear, friendly photo helps helpers recognise your family.'
-			: 'A clear, friendly photo of your face helps families feel at ease.'
+			? m.profile_photo_required_hint_family()
+			: m.profile_photo_required_hint_helper()
 	);
 	const locationHint = $derived(
-		audience === 'family'
-			? 'Searches centre on your area and helpers see your neighbourhood only — never your exact address.'
-			: 'Families search by area — only your neighbourhood is shown, never your exact address.'
+		audience === 'family' ? m.profile_location_hint_family() : m.profile_location_hint_helper()
 	);
 
 	const MIN_BIRTH_DATE = '1900-01-01';
@@ -44,7 +46,7 @@
 	const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 	const PHOTO_MAX_BYTES = 5 * 1024 * 1024;
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 
 	let profile = $state<ProviderProfile | null>(null);
 	let loading = $state(true);
@@ -114,7 +116,7 @@
 		const value = dateOfBirth.trim();
 		if (value === '') return '';
 		if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value < MIN_BIRTH_DATE || value > maxBirthDate) {
-			return 'Enter a real date of birth, between 1900 and today.';
+			return m.profile_dob_invalid();
 		}
 		return '';
 	});
@@ -138,12 +140,12 @@
 		if (result.ok) {
 			profile = result.data;
 			dirty.clear();
-			toast.success('Profile saved.');
+			toast.success(m.profile_saved());
 		} else if (result.error.code === 'INVALID_PROFILE_INPUT') {
 			// Server-side form validation stays next to the fields.
-			saveError = result.error.message;
+			saveError = m.profile_invalid_input();
 		} else {
-			toast.error(RETRY_MESSAGE, { title: 'Profile not saved' });
+			toast.error(RETRY_MESSAGE, { title: m.profile_not_saved_title() });
 		}
 		saving = false;
 	}
@@ -155,22 +157,22 @@
 		if (!file || uploadingPhoto) return;
 		photoError = '';
 		if (!PHOTO_TYPES.includes(file.type)) {
-			photoError = 'Choose a JPG, PNG or WebP image.';
+			photoError = m.profile_photo_invalid_type();
 			return;
 		}
 		if (file.size > PHOTO_MAX_BYTES) {
-			photoError = 'That photo is over 5 MB — choose a smaller one.';
+			photoError = m.profile_photo_too_large();
 			return;
 		}
 		uploadingPhoto = true;
 		const result = await uploadProfilePhoto(file);
 		if (result.ok) {
 			profile = result.data;
-			toast.success('Photo saved.');
+			toast.success(m.profile_photo_saved());
 		} else if (result.error.code === 'INVALID_UPLOAD') {
-			photoError = result.error.message;
+			photoError = m.profile_photo_invalid_upload();
 		} else {
-			toast.error(RETRY_MESSAGE, { title: 'Photo not saved' });
+			toast.error(RETRY_MESSAGE, { title: m.profile_photo_not_saved_title() });
 		}
 		uploadingPhoto = false;
 	}
@@ -200,7 +202,7 @@
 			suggestions = result.data.suggestions;
 		} else {
 			suggestions = [];
-			locationError = 'Address search is unavailable right now.';
+			locationError = m.profile_address_search_unavailable();
 		}
 		searching = false;
 	}
@@ -214,11 +216,11 @@
 			profile = result.data;
 			suggestions = [];
 			locationQuery = '';
-			toast.success('Location saved.');
+			toast.success(m.profile_location_saved());
 		} else {
 			toast.error(
-				result.error.code === 'GOOGLE_PLACE_INVALID' ? result.error.message : RETRY_MESSAGE,
-				{ title: 'Location not saved' }
+				result.error.code === 'GOOGLE_PLACE_INVALID' ? m.profile_location_invalid() : RETRY_MESSAGE,
+				{ title: m.profile_location_not_saved_title() }
 			);
 		}
 		savingLocation = false;
@@ -236,7 +238,7 @@
 </script>
 
 <div class="mx-auto max-w-3xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Your profile</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">{m.profile_heading()}</h1>
 	<p class="mt-1 mb-6 text-sm text-base-content-muted">{description}</p>
 
 	{#if loading}
@@ -253,7 +255,7 @@
 			{#if profile?.image}
 				<img
 					src={profile.image}
-					alt="Your profile"
+					alt={m.profile_photo_alt()}
 					class="size-20 shrink-0 rounded-full object-cover"
 				/>
 			{:else}
@@ -266,10 +268,10 @@
 				</span>
 			{/if}
 			<div class="min-w-0 flex-1">
-				<h2 class="text-base font-bold text-base-content">Profile photo</h2>
+				<h2 class="text-base font-bold text-base-content">{m.profile_photo_heading()}</h2>
 				<p class="mt-0.5 text-xs text-base-content-muted">
-					{photoRequired && !profile?.image ? `Required — ${photoHint.charAt(0).toLowerCase()}${photoHint.slice(1)}` : photoHint}
-					JPG, PNG or WebP, up to 5 MB.
+					{photoRequired && !profile?.image ? requiredPhotoHint : photoHint}
+					{m.profile_photo_formats()}
 				</p>
 				{#if photoError}
 					<p role="alert" class="mt-2 text-sm font-medium text-error">{photoError}</p>
@@ -291,7 +293,7 @@
 				{#if uploadingPhoto}
 					<span class="loading loading-spinner loading-xs"></span>
 				{/if}
-				{profile?.image ? 'Change photo' : 'Upload photo'}
+				{profile?.image ? m.profile_photo_change() : m.profile_photo_upload()}
 			</button>
 		</div>
 
@@ -303,7 +305,7 @@
 		>
 			<div class="grid gap-4 sm:grid-cols-2">
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">First name</legend>
+					<legend class="fieldset-legend">{m.profile_first_name()}</legend>
 					<input
 						class="input w-full"
 						name="firstName"
@@ -312,7 +314,7 @@
 					/>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Last name</legend>
+					<legend class="fieldset-legend">{m.profile_last_name()}</legend>
 					<input
 						class="input w-full"
 						name="lastName"
@@ -321,15 +323,15 @@
 					/>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Gender</legend>
+					<legend class="fieldset-legend">{m.profile_gender()}</legend>
 					<select class="select w-full" name="gender" bind:value={gender}>
-						<option value="">Prefer not to say</option>
-						<option value="female">Female</option>
-						<option value="male">Male</option>
+						<option value="">{m.profile_gender_unspecified()}</option>
+						<option value="female">{m.profile_gender_female()}</option>
+						<option value="male">{m.profile_gender_male()}</option>
 					</select>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Phone number</legend>
+					<legend class="fieldset-legend">{m.profile_phone()}</legend>
 					<input
 						class="input w-full"
 						name="phoneNumber"
@@ -338,7 +340,7 @@
 					/>
 				</fieldset>
 				<fieldset class="fieldset">
-					<legend class="fieldset-legend">Date of birth</legend>
+					<legend class="fieldset-legend">{m.profile_dob()}</legend>
 					<input
 						class="input w-full {dateOfBirthError ? 'input-error' : ''}"
 						type="date"
@@ -354,7 +356,7 @@
 			</div>
 
 			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">Short bio</legend>
+				<legend class="fieldset-legend">{m.profile_bio()}</legend>
 				<textarea
 					class="textarea min-h-24 w-full"
 					name="shortBio"
@@ -374,13 +376,13 @@
 					{#if saving}
 						<span class="loading loading-spinner loading-sm"></span>
 					{/if}
-					Save profile
+					{m.profile_save()}
 				</button>
 			</div>
 		</form>
 
 		<div class="mt-5 rounded-lg border border-card-border bg-base-100 p-6 lg:p-7">
-			<h2 class="text-base font-bold text-base-content">Location</h2>
+			<h2 class="text-base font-bold text-base-content">{m.profile_location_heading()}</h2>
 			<p class="mt-0.5 mb-4 text-xs text-base-content-muted">
 				{locationHint}
 			</p>
@@ -391,16 +393,16 @@
 					<span class="font-medium text-base-content">{savedAddress}</span>
 				</p>
 			{:else}
-				<p class="mb-4 text-sm font-medium text-warning">No location saved yet.</p>
+				<p class="mb-4 text-sm font-medium text-warning">{m.profile_location_none()}</p>
 			{/if}
 
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend">
-					{savedAddress ? 'Change location' : 'Set your location'}
+					{savedAddress ? m.profile_location_change() : m.profile_location_set()}
 				</legend>
 				<input
 					class="input w-full"
-					placeholder="Search your address or neighbourhood…"
+					placeholder={m.profile_location_placeholder()}
 					bind:value={locationQuery}
 					oninput={onQueryInput}
 				/>
@@ -409,7 +411,7 @@
 			{#if searching || savingLocation}
 				<div class="mt-2 flex items-center gap-2 text-xs text-base-content-muted">
 					<span class="loading loading-spinner loading-xs text-primary"></span>
-					{savingLocation ? 'Saving location…' : 'Searching…'}
+					{savingLocation ? m.profile_location_saving() : m.profile_location_searching()}
 				</div>
 			{:else if suggestions.length > 0}
 				<ul class="mt-2 overflow-hidden rounded-md border border-outline-variant bg-base-100">

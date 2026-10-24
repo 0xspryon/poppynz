@@ -5,6 +5,7 @@
 	 * summary pills; "View" re-expands the original card read-only. */
 	import type { ResolvedPathname } from '$app/types';
 	import type { ConversationSummary } from '$lib/api/conversations';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		conversation: ConversationSummary;
@@ -18,13 +19,15 @@
 
 	let expanded = $state(false);
 
-	const firstName = $derived(conversation.counterpart.name.split(/\s+/)[0] ?? 'them');
+	const firstName = $derived(conversation.counterpart.name.split(/\s+/)[0] ?? '');
 	// The services chip label reflects who initiated: a family's reach-out lists
 	// needs, a provider's lists what they offer.
 	const initiatorIsFamily = $derived(
 		conversation.reachout.sentByMe === (conversation.counterpart.role === 'service-provider')
 	);
-	const servicesLabel = $derived(initiatorIsFamily ? 'Needs' : 'Offers');
+	const servicesLabel = $derived(
+		initiatorIsFamily ? m.messages_reachout_needs() : m.messages_reachout_offers()
+	);
 	const serviceNames = $derived(conversation.reachout.services.map((service) => service.name));
 </script>
 
@@ -39,13 +42,17 @@
 		<div class="flex items-center gap-2 border-b border-base-300 px-4 py-3">
 			<i class="las la-comment text-base text-secondary" aria-hidden="true"></i>
 			<span class="font-display text-[13px] font-bold text-base-content">
-				{conversation.reachout.sentByMe ? 'Your reach-out' : `Reach-out from ${firstName}`}
+				{conversation.reachout.sentByMe
+					? m.messages_reachout_yours()
+					: m.messages_reachout_from({ name: firstName })}
 			</span>
 			<span
 				class="ml-auto rounded-pill bg-warning-content px-2.5 py-0.5 text-[10.5px] font-semibold
 					text-warning"
 			>
-				{conversation.reachout.sentByMe ? `Awaiting ${firstName}` : 'Awaiting you'}
+				{conversation.reachout.sentByMe
+					? m.messages_reachout_awaiting_name({ name: firstName })
+					: m.messages_reachout_awaiting_you()}
 			</span>
 		</div>
 		<p class="px-4 py-3 text-[13.5px] leading-relaxed text-base-content">
@@ -77,10 +84,12 @@
 					{#if responding}
 						<span class="loading loading-sm loading-spinner"></span>
 					{/if}
-					Respond
+					{m.messages_reachout_respond()}
 				</button>
 				<a href={profileHref} class="btn btn-outline btn-secondary btn-sm">
-					View {initiatorIsFamily ? 'family' : ''} profile
+					{initiatorIsFamily
+						? m.messages_reachout_view_family_profile()
+						: m.messages_reachout_view_profile()}
 				</a>
 				<button
 					type="button"
@@ -88,7 +97,7 @@
 					disabled={responding}
 					onclick={onignore}
 				>
-					Ignore
+					{m.messages_reachout_ignore()}
 				</button>
 			</div>
 		{/if}
@@ -99,7 +108,7 @@
 	{@render fullCard(conversation.awaitingMyResponse)}
 	{#if conversation.awaitingMyResponse}
 		<p class="ml-1 self-start text-[11px] text-outline">
-			Ignoring quietly archives this — {firstName} isn't notified.
+			{m.messages_reachout_ignore_hint({ name: firstName })}
 		</p>
 	{/if}
 {:else}
@@ -112,10 +121,16 @@
 	>
 		<i class="las la-comment" aria-hidden="true"></i>
 		<span>
-			Reach-out from {conversation.reachout.sentByMe ? 'you' : firstName}
-			· {serviceNames.join(', ')}
+			{conversation.reachout.sentByMe
+				? m.messages_reachout_summary_from_you({ services: serviceNames.join(', ') })
+				: m.messages_reachout_summary_from_name({
+						name: firstName,
+						services: serviceNames.join(', ')
+					})}
 		</span>
-		<span class="font-semibold text-secondary">{expanded ? 'Hide' : 'View'}</span>
+		<span class="font-semibold text-secondary"
+			>{expanded ? m.messages_reachout_hide() : m.common_view()}</span
+		>
 	</button>
 	{#if expanded}
 		<div class="flex w-full justify-center">
@@ -128,7 +143,9 @@
 				bg-success-content px-3.5 py-1.5 text-[11.5px] text-success"
 		>
 			<i class="las la-check" aria-hidden="true"></i>
-			{conversation.reachout.sentByMe ? firstName : 'You'} responded · conversation unlocked
+			{conversation.reachout.sentByMe
+				? m.messages_reachout_responded_name({ name: firstName })
+				: m.messages_reachout_responded_you()}
 		</span>
 	{/if}
 {/if}

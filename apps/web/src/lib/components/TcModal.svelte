@@ -3,6 +3,7 @@
 	 * mode, the version's mandatory checkbox and an Accept action. View mode
 	 * (signup, previews) is read-only and dismissible. */
 	import MarkdownView from './MarkdownView.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		open: boolean;
@@ -53,7 +54,7 @@
 						<button
 							type="button"
 							class="btn btn-square btn-ghost btn-sm"
-							aria-label="Close"
+							aria-label={m.common_close()}
 							onclick={onclose}
 						>
 							<i class="las la-times text-lg" aria-hidden="true"></i>
@@ -91,7 +92,7 @@
 					<div class="mt-4 flex justify-end gap-2.5">
 						{#if onclose}
 							<button type="button" class="btn btn-ghost" onclick={onclose} disabled={busy}>
-								Not now
+								{m.tc_not_now()}
 							</button>
 						{/if}
 						<button
@@ -101,12 +102,14 @@
 							onclick={onaccept}
 						>
 							{#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-							Agree and continue
+							{m.tc_agree_continue()}
 						</button>
 					</div>
 				{:else}
 					<div class="flex justify-end">
-						<button type="button" class="btn btn-primary" onclick={onclose}>Close</button>
+						<button type="button" class="btn btn-primary" onclick={onclose}
+							>{m.common_close()}</button
+						>
 					</div>
 				{/if}
 			</div>

@@ -2,6 +2,7 @@
 	/** The six-question vouch form plus the mandatory attestation. Emits the
 	 * answers; the caller submits and closes. */
 	import type { VouchAnswersInput } from '$lib/api/vouches';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		open: boolean;
@@ -62,32 +63,32 @@
 	}
 
 	const choices: Array<{ value: Choice; label: string }> = [
-		{ value: 'yes', label: 'Yes' },
-		{ value: 'no', label: 'No' },
-		{ value: 'unsure', label: 'Not sure' }
+		{ value: 'yes', label: m.common_yes() },
+		{ value: 'no', label: m.common_no() },
+		{ value: 'unsure', label: m.vouches_form_unsure() }
 	];
 </script>
 
 {#if open}
-	<div class="modal modal-open" role="dialog" aria-label="Vouch for {applicantName}">
+	<div class="modal modal-open" role="dialog" aria-label={m.vouches_form_title({ name: applicantName })}>
 		<form class="modal-box max-w-xl" onsubmit={submit}>
-			<h2 class="text-lg font-bold">Vouch for {applicantName}</h2>
+			<h2 class="text-lg font-bold">{m.vouches_form_title({ name: applicantName })}</h2>
 			<p class="mt-1 text-[13px] leading-relaxed text-base-content-muted">
-				A vouch is a <b>personal endorsement</b>. Your answers are seen only by the Poppynz team, never
-				by {applicantName}.
+				{m.vouches_form_intro_before()}
+				<b>{m.vouches_form_intro_bold()}</b>{m.vouches_form_intro_after({ name: applicantName })}
 			</p>
 
 			<fieldset class="fieldset mt-4">
-				<legend class="fieldset-legend">1. How do you know the applicant?</legend>
+				<legend class="fieldset-legend">{m.vouches_form_q1()}</legend>
 				<textarea class="textarea w-full" maxlength="1000" bind:value={howKnow}></textarea>
 			</fieldset>
 			<fieldset class="fieldset">
-				<legend class="fieldset-legend">2. How long have you known them?</legend>
-				<input class="input w-full" maxlength="100" bind:value={howLong} placeholder="e.g. 3 years" />
+				<legend class="fieldset-legend">{m.vouches_form_q2()}</legend>
+				<input class="input w-full" maxlength="100" bind:value={howLong} placeholder={m.vouches_form_q2_placeholder()} />
 			</fieldset>
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend">
-					3. Would you trust this person to provide care for a child, older adult, pet, or household?
+					{m.vouches_form_q3()}
 				</legend>
 				<div class="flex gap-2">
 					{#each choices as choice (choice.value)}
@@ -106,7 +107,7 @@
 			</fieldset>
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend">
-					4. Do you have any concerns about their reliability, judgment, safety, or conduct?
+					{m.vouches_form_q4()}
 				</legend>
 				<div class="flex gap-2">
 					<label class="flex items-center gap-1.5 text-sm">
@@ -117,7 +118,7 @@
 							checked={hasConcerns === false}
 							onchange={() => (hasConcerns = false)}
 						/>
-						No
+						{m.common_no()}
 					</label>
 					<label class="flex items-center gap-1.5 text-sm">
 						<input
@@ -127,20 +128,20 @@
 							checked={hasConcerns === true}
 							onchange={() => (hasConcerns = true)}
 						/>
-						Yes
+						{m.common_yes()}
 					</label>
 				</div>
 				{#if hasConcerns}
 					<textarea
 						class="textarea mt-2 w-full"
 						maxlength="2000"
-						placeholder="Please tell us more"
+						placeholder={m.vouches_form_q4_placeholder()}
 						bind:value={concernsDetail}
 					></textarea>
 				{/if}
 			</fieldset>
 			<fieldset class="fieldset">
-				<legend class="fieldset-legend">5. Would you personally hire or recommend them?</legend>
+				<legend class="fieldset-legend">{m.vouches_form_q5()}</legend>
 				<div class="flex gap-2">
 					{#each choices as choice (choice.value)}
 						<label class="flex items-center gap-1.5 text-sm">
@@ -158,7 +159,7 @@
 			</fieldset>
 			<fieldset class="fieldset">
 				<legend class="fieldset-legend">
-					6. Is there anything Poppynz should know before approving them? · optional
+					{m.vouches_form_q6()}
 				</legend>
 				<textarea class="textarea w-full" maxlength="2000" bind:value={anythingElse}></textarea>
 			</fieldset>
@@ -166,19 +167,18 @@
 			<label class="mt-3 flex items-start gap-2.5 text-[13px] leading-relaxed">
 				<input type="checkbox" class="checkbox checkbox-sm mt-0.5" bind:checked={attested} />
 				<span>
-					I confirm that I know this applicant personally and that the information I have provided is
-					truthful. I understand that Poppynz may contact me to verify this referral.
+					{m.vouches_form_attestation()}
 				</span>
 			</label>
 
 			<div class="modal-action">
-				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>Cancel</button>
+				<button type="button" class="btn btn-ghost" onclick={oncancel} disabled={busy}>{m.common_cancel()}</button>
 				<button type="submit" class="btn btn-primary" disabled={!complete || busy}>
 					{#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-					Submit vouch
+					{m.vouches_form_submit()}
 				</button>
 			</div>
 		</form>
-		<button type="button" class="modal-backdrop" aria-label="Close" onclick={oncancel}></button>
+		<button type="button" class="modal-backdrop" aria-label={m.common_close()} onclick={oncancel}></button>
 	</div>
 {/if}

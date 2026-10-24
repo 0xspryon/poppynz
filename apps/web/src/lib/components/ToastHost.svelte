@@ -3,6 +3,7 @@
 	 * per authenticated layout, top-right, above open modals. */
 	import { fly } from 'svelte/transition';
 	import { toast, type ToastKind } from '$lib/toast.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	const ALERT_CLASS: Record<ToastKind, string> = {
 		success: 'alert-success',
@@ -35,7 +36,7 @@
 			<button
 				type="button"
 				class="btn btn-circle btn-ghost btn-xs -mr-1"
-				aria-label="Dismiss notification"
+				aria-label={m.shell_toast_dismiss()}
 				onclick={() => toast.dismiss(item.id)}
 			>
 				<i class="las la-times" aria-hidden="true"></i>

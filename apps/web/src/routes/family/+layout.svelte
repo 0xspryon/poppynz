@@ -13,6 +13,7 @@
 	import ToastHost from '$lib/components/ToastHost.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
 	import { unread } from '$lib/unread.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
@@ -50,36 +51,36 @@
 		}
 	});
 
-	const email = $derived(session?.email ?? 'family');
+	const email = $derived(session?.email ?? m.nav_email_fallback_family());
 	const impersonated = $derived(session?.impersonatedBy != null);
 	const initial = $derived(email.charAt(0).toUpperCase());
 
 	const items: Array<SidebarItem> = $derived([
-		{ href: resolve('/family/find'), label: 'Find help', icon: 'la-search' },
+		{ href: resolve('/family/find'), label: m.nav_find_help(), icon: 'la-search' },
 		{
 			href: resolve('/family/messages'),
-			label: 'Messages',
+			label: m.nav_messages(),
 			icon: 'la-comment',
 			badge: unread.count
 		},
 		{
 			href: resolve('/family/contracts'),
-			label: 'Contracts',
+			label: m.nav_contracts(),
 			icon: 'la-file-signature',
 			badge: contractsBadge.count
 		},
-		{ href: resolve('/family/needs'), label: 'Services I need', icon: 'la-clipboard-list' },
-		{ href: resolve('/family/documents'), label: 'Documents', icon: 'la-file-alt' },
+		{ href: resolve('/family/needs'), label: m.nav_services_i_need(), icon: 'la-clipboard-list' },
+		{ href: resolve('/family/documents'), label: m.nav_documents(), icon: 'la-file-alt' },
 		{
 			href: resolve('/family/verification'),
-			label: 'Safety verification',
+			label: m.nav_safety_verification(),
 			icon: 'la-shield-alt'
 		},
-		{ href: resolve('/family/approval'), label: 'Approval', icon: 'la-user-shield' },
-		{ href: resolve('/family/billing'), label: 'Billing', icon: 'la-credit-card' },
-		{ href: resolve('/family/profile'), label: 'Profile', icon: 'la-user' },
-		{ href: resolve('/family/referrals'), label: 'Referrals', icon: 'la-user-plus' },
-		{ href: resolve('/family/vouches'), label: 'Vouch requests', icon: 'la-handshake' }
+		{ href: resolve('/family/approval'), label: m.nav_approval(), icon: 'la-user-shield' },
+		{ href: resolve('/family/billing'), label: m.nav_billing(), icon: 'la-credit-card' },
+		{ href: resolve('/family/profile'), label: m.nav_profile(), icon: 'la-user' },
+		{ href: resolve('/family/referrals'), label: m.nav_referrals(), icon: 'la-user-plus' },
+		{ href: resolve('/family/vouches'), label: m.nav_vouch_requests(), icon: 'la-handshake' }
 	]);
 </script>
 
@@ -99,7 +100,13 @@
 			class="sticky top-(--nav-top) hidden h-[calc(100dvh-var(--nav-top))] w-[250px] shrink-0
 				flex-col gap-1 bg-secondary p-5 lg:flex"
 		>
-			<SidebarNav kicker="Family" {items} {email} roleLabel="Family" {impersonated} />
+			<SidebarNav
+				kicker={m.nav_role_family()}
+				{items}
+				{email}
+				roleLabel={m.nav_role_family()}
+				{impersonated}
+			/>
 		</aside>
 
 		<div class="flex min-w-0 flex-1 flex-col">
@@ -113,7 +120,7 @@
 					type="button"
 					class="flex size-8 items-center justify-center rounded-full bg-secondary text-sm
 						font-bold text-secondary-content"
-					aria-label="Open navigation"
+					aria-label={m.nav_open()}
 					onclick={() => (drawerOpen = true)}
 				>
 					{initial}
@@ -129,10 +136,10 @@
 	<MobileNavDrawer
 		open={drawerOpen}
 		onclose={() => (drawerOpen = false)}
-		kicker="Family"
+		kicker={m.nav_role_family()}
 		{items}
 		{email}
-		roleLabel="Family"
+		roleLabel={m.nav_role_family()}
 		{impersonated}
 	/>
 

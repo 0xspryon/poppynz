@@ -15,8 +15,9 @@
 	import { initialsOf } from '$lib/initials';
 	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
+	import { m } from '$lib/paraglide/messages';
 
-	const RETRY_MESSAGE = 'Something went wrong. Please try again.';
+	const RETRY_MESSAGE = m.common_error_generic();
 
 	let requests = $state<Array<VouchRequestEntry> | null>(null);
 	let loadError = $state('');
@@ -41,9 +42,9 @@
 
 	const errorText = (code: string) =>
 		code === 'VOUCH_STATE_INVALID'
-			? 'This request was already answered or has expired.'
+			? m.vouches_requests_error_state_invalid()
 			: code === 'VOUCH_LOCKED'
-				? 'This helper is already approved. Contact Poppynz to change your vouch.'
+				? m.vouches_requests_error_locked()
 				: RETRY_MESSAGE;
 
 	async function sendVouch(answers: VouchAnswersInput) {
@@ -51,7 +52,7 @@
 		busy = true;
 		const result = await submitVouch(formFor.id, answers);
 		if (result.ok) {
-			toast.success(`Thanks — your vouch for ${formFor.applicantName} is with our team.`);
+			toast.success(m.vouches_requests_submitted({ name: formFor.applicantName }));
 			formFor = null;
 		} else {
 			toast.error(errorText(result.error.code));
@@ -68,7 +69,11 @@
 				? await declineVouch(confirm.entry.id)
 				: await withdrawVouch(confirm.entry.id);
 		if (result.ok) {
-			toast.success(confirm.kind === 'decline' ? 'Request declined.' : 'Vouch withdrawn.');
+			toast.success(
+				confirm.kind === 'decline'
+					? m.vouches_requests_declined_toast()
+					: m.vouches_requests_withdrawn_toast()
+			);
 		} else {
 			toast.error(errorText(result.error.code));
 		}
@@ -78,25 +83,32 @@
 	}
 
 	const chip: Record<VouchRequestEntry['status'], { label: string; cls: string }> = {
-		pending: { label: 'Waiting for you', cls: 'bg-info-content text-info' },
-		accepted: { label: 'Vouched', cls: 'bg-success-content text-success' },
-		declined: { label: 'Declined', cls: 'bg-base-300 text-base-content-muted' },
-		expired: { label: 'Expired', cls: 'bg-base-300 text-base-content-muted' },
+		pending: { label: m.vouches_requests_status_pending(), cls: 'bg-info-content text-info' },
+		accepted: {
+			label: m.vouches_requests_status_accepted(),
+			cls: 'bg-success-content text-success'
+		},
+		declined: { label: m.vouches_status_declined(), cls: 'bg-base-300 text-base-content-muted' },
+		expired: { label: m.vouches_status_expired(), cls: 'bg-base-300 text-base-content-muted' },
 		// The API already folds admin flags/revokes and the voucher's own
 		// withdrawal into "closed": the voucher never learns of an admin action.
-		closed: { label: 'Closed', cls: 'bg-base-300 text-base-content-muted' }
+		closed: {
+			label: m.vouches_requests_status_closed(),
+			cls: 'bg-base-300 text-base-content-muted'
+		}
 	};
 </script>
 
 <svelte:head>
-	<title>Vouch requests · Poppynz</title>
+	<title>{m.vouches_requests_page_title()}</title>
 </svelte:head>
 
 <div class="mx-auto max-w-3xl">
-	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">Vouch requests</h1>
+	<h1 class="text-2xl font-bold text-base-content lg:text-[26px]">
+		{m.vouches_requests_heading()}
+	</h1>
 	<p class="mt-1 mb-5 text-sm text-base-content-muted">
-		Helpers applying to Poppynz can ask members who know them to vouch. Only vouch for people you
-		know personally.
+		{m.vouches_requests_intro()}
 	</p>
 
 	{#if loadError}
@@ -109,7 +121,7 @@
 		<p
 			class="rounded-xl border border-card-border bg-base-100 p-8 text-center text-sm text-base-content-muted"
 		>
-			No vouch requests yet.
+			{m.vouches_requests_empty()}
 		</p>
 	{:else}
 		<div class="flex flex-col gap-2">
@@ -130,7 +142,9 @@
 						<div class="truncate text-[13.5px] font-semibold text-base-content">
 							{entry.applicantName}
 						</div>
-						<div class="truncate text-[12px] text-base-content-muted">"{entry.relationship}"</div>
+						<div class="truncate text-[12px] text-base-content-muted">
+							{m.vouches_requests_relationship_quote({ text: entry.relationship })}
+						</div>
 					</div>
 					<span
 						class="rounded-[5px] px-2.5 py-1 text-[11px] font-semibold {chip[entry.status].cls}"
@@ -139,14 +153,14 @@
 					</span>
 					{#if entry.status === 'pending'}
 						<button type="button" class="btn btn-primary btn-sm" onclick={() => (formFor = entry)}
-							>Vouch</button
+							>{m.vouches_requests_vouch()}</button
 						>
 						<button
 							type="button"
 							class="btn btn-ghost btn-sm"
 							onclick={() => (confirm = { kind: 'decline', entry })}
 						>
-							Decline
+							{m.vouches_requests_decline()}
 						</button>
 					{:else if entry.canWithdraw}
 						<!-- Accepted and the applicant isn't approved yet; after approval the
@@ -156,7 +170,7 @@
 							class="btn btn-ghost btn-sm"
 							onclick={() => (confirm = { kind: 'withdraw', entry })}
 						>
-							Withdraw
+							{m.vouches_requests_withdraw()}
 						</button>
 					{/if}
 				</div>
@@ -175,11 +189,15 @@
 
 <ConfirmDialog
 	open={confirm !== null}
-	title={confirm?.kind === 'decline' ? 'Decline this request?' : 'Withdraw your vouch?'}
+	title={confirm?.kind === 'decline'
+		? m.vouches_requests_decline_title()
+		: m.vouches_requests_withdraw_title()}
 	body={confirm?.kind === 'decline'
-		? `${confirm.entry.applicantName} will see that you declined. No reason is shared.`
-		: `Your vouch for ${confirm?.entry.applicantName ?? ''} will stop counting.`}
-	confirmLabel={confirm?.kind === 'decline' ? 'Decline' : 'Withdraw'}
+		? m.vouches_requests_decline_body({ name: confirm.entry.applicantName })
+		: m.vouches_requests_withdraw_body({ name: confirm?.entry.applicantName ?? '' })}
+	confirmLabel={confirm?.kind === 'decline'
+		? m.vouches_requests_decline()
+		: m.vouches_requests_withdraw()}
 	{busy}
 	onconfirm={() => void confirmAction()}
 	oncancel={() => (confirm = null)}

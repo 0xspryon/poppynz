@@ -25,6 +25,7 @@
 	import { signOut } from '$lib/api/auth';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import LangToggle from '$lib/components/LangToggle.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		/** Uppercase kicker under the brand, e.g. "Helper" / "Admin console". */
@@ -61,7 +62,7 @@
 			type="button"
 			class="flex size-8 items-center justify-center rounded-full bg-secondary-content/10
 				text-secondary-content-muted transition-colors hover:text-secondary-content"
-			aria-label="Close navigation"
+			aria-label={m.nav_close()}
 			onclick={onclose}
 		>
 			<i class="las la-times text-lg" aria-hidden="true"></i>
@@ -76,7 +77,7 @@
 
 <!-- Only the links scroll when they outgrow the column; the brand above and the
 	 language toggle / user card / sign out below stay pinned in view. -->
-<nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto" aria-label="Main">
+<nav class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto" aria-label={m.nav_main_label()}>
 	{#each items as item, index (item.href)}
 		{@const active = page.url.pathname.startsWith(item.href)}
 		{#if item.group && item.group !== items[index - 1]?.group}
@@ -128,7 +129,7 @@
 			<div
 				class="text-[11px] {impersonated ? 'text-warning-content' : 'text-secondary-content-faint'}"
 			>
-				{impersonated ? 'via admin (impersonated)' : roleLabel}
+				{impersonated ? m.nav_impersonated_by_admin() : roleLabel}
 			</div>
 		</div>
 	</div>
@@ -141,6 +142,6 @@
 		disabled={signingOut}
 	>
 		<i class="las la-sign-out-alt text-lg" aria-hidden="true"></i>
-		{signingOut ? 'Signing out…' : 'Sign out'}
+		{signingOut ? m.nav_signing_out() : m.common_sign_out()}
 	</button>
 </div>

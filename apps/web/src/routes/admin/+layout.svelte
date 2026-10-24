@@ -9,6 +9,7 @@
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
 	import ToastHost from '$lib/components/ToastHost.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
@@ -41,42 +42,48 @@
 	});
 
 	const session = $derived(browser ? getSession() : null);
-	const email = $derived(session?.email ?? 'admin');
+	const email = $derived(session?.email ?? m.nav_email_fallback_admin());
 	const initial = $derived(email.charAt(0).toUpperCase());
 
 	const baseItems: Array<SidebarItem> = [
-		{ href: resolve('/admin/approval-requests'), label: 'Approval queue', icon: 'la-user-check' },
+		{ href: resolve('/admin/approval-requests'), label: m.nav_admin_approval_queue(), icon: 'la-user-check' },
 		{
 			href: resolve('/admin/safety-verifications'),
-			label: 'Safety verifications',
+			label: m.nav_admin_safety_verifications(),
 			icon: 'la-shield-alt'
 		},
-		{ href: resolve('/admin/users'), label: 'Users', icon: 'la-users' },
-		{ href: resolve('/admin/user-searches'), label: 'User searches', icon: 'la-search' },
-		{ href: resolve('/admin/document-types'), label: 'Document types', icon: 'la-file-alt' },
-		{ href: resolve('/admin/service-catalogue'), label: 'Service catalogue', icon: 'la-heart' },
-		{ href: resolve('/admin/custom-services'), label: 'Custom services', icon: 'la-clipboard-check' },
-		{ href: resolve('/admin/tcs'), label: 'Terms & conditions', icon: 'la-file-contract' }
+		{ href: resolve('/admin/users'), label: m.nav_admin_users(), icon: 'la-users' },
+		{ href: resolve('/admin/user-searches'), label: m.nav_admin_user_searches(), icon: 'la-search' },
+		{ href: resolve('/admin/document-types'), label: m.nav_admin_document_types(), icon: 'la-file-alt' },
+		{ href: resolve('/admin/service-catalogue'), label: m.nav_admin_service_catalogue(), icon: 'la-heart' },
+		{ href: resolve('/admin/custom-services'), label: m.nav_admin_custom_services(), icon: 'la-clipboard-check' },
+		{ href: resolve('/admin/tcs'), label: m.nav_admin_tcs(), icon: 'la-file-contract' }
 	];
 	const items = $derived<Array<SidebarItem>>(
 		taxAccess
-			? [...baseItems, { href: resolve('/accountant'), label: 'Accountant', icon: 'la-calculator' }]
+			? [
+					...baseItems,
+					{ href: resolve('/accountant'), label: m.nav_accountant(), icon: 'la-calculator' }
+				]
 			: baseItems
 	);
 </script>
 
 <svelte:head>
-	{#if notAuthorized}<title>Not authorized · Poppynz</title>{/if}
+	{#if notAuthorized}<title>{m.shell_page_title({ title: m.nav_not_authorized() })}</title>{/if}
 </svelte:head>
 
 {#if notAuthorized}
 	<main class="flex min-h-screen items-center justify-center bg-base-200 p-gutter">
 		<div class="max-w-md rounded-xl border border-card-border bg-base-100 p-8 text-center">
 			<i class="las la-lock text-4xl text-outline" aria-hidden="true"></i>
-			<h1 class="mt-2 font-display text-xl font-bold text-base-content">Not authorized</h1>
+			<h1 class="mt-2 font-display text-xl font-bold text-base-content">
+				{m.nav_not_authorized()}
+			</h1>
 			<p class="mt-2 text-sm text-base-content-muted">
-				The admin console is for Poppynz administrators. You're signed in with a
-				{notAuthorized === 'family' ? 'family' : 'helper'} account.
+				{notAuthorized === 'family'
+					? m.nav_not_authorized_body_family()
+					: m.nav_not_authorized_body_helper()}
 			</p>
 			<a
 				class="btn mt-5 btn-primary"
@@ -84,7 +91,7 @@
 					? resolve('/family/find')
 					: resolve('/service-provider/dashboard')}
 			>
-				Back to your account
+				{m.nav_not_authorized_back()}
 			</a>
 		</div>
 	</main>
@@ -95,7 +102,12 @@
 		<aside
 			class="sticky top-0 hidden h-dvh w-[250px] shrink-0 flex-col gap-1 bg-secondary p-5 lg:flex"
 		>
-			<SidebarNav kicker="Admin console" {items} {email} roleLabel="Administrator" />
+			<SidebarNav
+				kicker={m.nav_admin_console()}
+				{items}
+				{email}
+				roleLabel={m.nav_role_administrator()}
+			/>
 		</aside>
 
 		<div class="flex min-w-0 flex-1 flex-col">
@@ -110,14 +122,14 @@
 						class="rounded-sm bg-secondary px-1.5 py-0.5 text-[9px] font-semibold tracking-widest
 							text-secondary-content uppercase"
 					>
-						Admin
+						{m.nav_admin_badge()}
 					</span>
 				</span>
 				<button
 					type="button"
 					class="flex size-8 items-center justify-center rounded-full bg-primary text-sm
 						font-bold text-primary-content"
-					aria-label="Open navigation"
+					aria-label={m.nav_open()}
 					onclick={() => (drawerOpen = true)}
 				>
 					{initial}
@@ -133,10 +145,10 @@
 	<MobileNavDrawer
 		open={drawerOpen}
 		onclose={() => (drawerOpen = false)}
-		kicker="Admin console"
+		kicker={m.nav_admin_console()}
 		{items}
 		{email}
-		roleLabel="Administrator"
+		roleLabel={m.nav_role_administrator()}
 	/>
 {/if}
 

@@ -8,6 +8,7 @@
 	import { fetchSession, type MockSession } from '$lib/api/profile';
 	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	interface Props {
 		session: MockSession;
@@ -48,12 +49,12 @@
 			const fresh = await fetchSession();
 			if (fresh?.impersonatedBy != null) {
 				// Still impersonating: the stop didn't take — stay put and say so.
-				toast.error('Could not stop impersonating. Please try again.');
+				toast.error(m.shell_impersonation_stop_failed());
 				notifications.connect();
 				return;
 			}
 			if (result.ok) {
-				toast.success(`Stopped impersonating ${session.email}.`);
+				toast.success(m.shell_impersonation_stopped({ email: session.email }));
 			}
 			await goto(resolve('/admin/users'), { replaceState: true });
 		} finally {
@@ -65,10 +66,13 @@
 <div class="flex items-center gap-3 bg-accent px-4 py-2.5 lg:px-5">
 	<i class="las la-eye shrink-0 text-base text-accent-content" aria-hidden="true"></i>
 	<span class="min-w-0 flex-1 text-[13px] font-semibold text-accent-content">
-		You are impersonating <b>{session.email}</b> — everything you do happens on their account.
+		{m.shell_impersonation_banner_before()} <b>{session.email}</b>
+		{m.shell_impersonation_banner_after()}
 	</span>
 	{#if remaining}
-		<span class="hidden text-xs font-medium text-warning-content sm:block">{remaining} left</span>
+		<span class="hidden text-xs font-medium text-warning-content sm:block">
+			{m.shell_impersonation_time_left({ time: remaining })}
+		</span>
 	{/if}
 	<button
 		type="button"
@@ -77,6 +81,6 @@
 		disabled={stopping}
 		onclick={stop}
 	>
-		{stopping ? 'Stopping…' : 'Stop impersonating'}
+		{stopping ? m.shell_impersonation_stopping() : m.shell_impersonation_stop()}
 	</button>
 </div>

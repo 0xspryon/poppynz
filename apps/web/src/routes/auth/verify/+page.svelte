@@ -4,6 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { verifyMagicLink } from '$lib/api/auth';
+	import { m } from '$lib/paraglide/messages';
 
 	onMount(async () => {
 		const token = page.url.searchParams.get('token') ?? '';
@@ -13,7 +14,7 @@
 </script>
 
 <svelte:head>
-	<title>Signing you in · Poppynz</title>
+	<title>{m.shell_page_title({ title: m.auth_verify_title() })}</title>
 </svelte:head>
 
 <div class="m-auto max-w-md py-24 text-center lg:py-0">
@@ -21,10 +22,12 @@
 		class="mx-auto mb-6 size-14 animate-spin rounded-pill border-4 border-base-400
 			border-t-primary"
 		role="status"
-		aria-label="Signing you in"
+		aria-label={m.auth_verify_title()}
 	></div>
-	<h2 class="mb-2 font-display text-3xl font-bold text-base-content">Signing you in…</h2>
+	<h2 class="mb-2 font-display text-3xl font-bold text-base-content">
+		{m.auth_verify_heading()}
+	</h2>
 	<p class="text-sm leading-relaxed text-base-content-muted">
-		This only takes a moment. You'll be signed in right after.
+		{m.auth_verify_body()}
 	</p>
 </div>

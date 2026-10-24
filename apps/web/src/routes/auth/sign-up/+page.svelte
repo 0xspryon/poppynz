@@ -5,15 +5,15 @@
 	import { browser } from '$app/environment';
 	import { requestSignUpLink, type Role } from '$lib/api/auth';
 	import { matchError } from '$lib/api/client';
+	import { m } from '$lib/paraglide/messages';
 	import { listPublishedTcs, type PublishedTc } from '$lib/api/tcs';
 	import RoleChooser from '$lib/components/RoleChooser.svelte';
 	import TcModal from '$lib/components/TcModal.svelte';
 
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+	const RETRY_MESSAGE = m.auth_retry_message();
 	// Static fallback while the published terms load (or if the fetch fails);
 	// matches the seeded terms_of_service checkbox label.
-	const TERMS_CHECKBOX_FALLBACK =
-		'I have read and agree to the Poppynz Terms of Service, Payment and Cancellation Policy, and Privacy Policy.';
+	const TERMS_CHECKBOX_FALLBACK = m.auth_signup_terms_fallback();
 
 	// Referral invite links land here with ?email=…&role=… prefilled.
 	const invitedRole = page.url.searchParams.get('role');
@@ -52,9 +52,9 @@
 			return;
 		}
 		errorMessage = matchError(result.error, {
-			USER_ALREADY_EXISTS: () => 'An account already exists for this email — sign in instead.',
-			INVALID_SIGNUP_INPUT: () => "That email address doesn't look right. Check it and try again.",
-			SIGNUP_LINK_FAILED: () => "We couldn't send your magic link. Please try again.",
+			USER_ALREADY_EXISTS: () => m.auth_error_signup_user_exists(),
+			INVALID_SIGNUP_INPUT: () => m.auth_error_invalid_email(),
+			SIGNUP_LINK_FAILED: () => m.auth_error_signup_link_failed(),
 			SIGNUP_INTENT_FAILED: () => RETRY_MESSAGE,
 			SIGNUP_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
 			INTERNAL_SERVER_ERROR: () => RETRY_MESSAGE,
@@ -65,30 +65,32 @@
 </script>
 
 <svelte:head>
-	<title>Create your account · Poppynz</title>
+	<title>{m.shell_page_title({ title: m.auth_signup_title() })}</title>
 </svelte:head>
 
 <form class="max-w-form" onsubmit={submit}>
 	<h2 class="mb-2 font-display text-3xl font-bold text-base-content lg:text-4xl">
-		Create your Poppynz account
+		{m.auth_signup_heading()}
 	</h2>
 	<p class="mb-8 text-base text-base-content-muted">
-		Free to join. No password — we email you a secure link.
+		{m.auth_signup_lead()}
 	</p>
 
-	<p class="mb-3 text-xs font-semibold tracking-widest text-neutral uppercase">I'm joining as</p>
+	<p class="mb-3 text-xs font-semibold tracking-widest text-neutral uppercase">
+		{m.auth_signup_joining_as()}
+	</p>
 	<div class="mb-7">
 		<RoleChooser bind:value={role} />
 	</div>
 
 	<fieldset class="fieldset mb-6">
-		<legend class="fieldset-legend">Email</legend>
+		<legend class="fieldset-legend">{m.auth_email_label()}</legend>
 		<label class="input input-lg w-full">
 			<i class="las la-envelope text-outline" aria-hidden="true"></i>
 			<input
 				type="email"
 				class="grow"
-				placeholder="johndoe@email.com"
+				placeholder={m.auth_email_placeholder()}
 				required
 				autocomplete="email"
 				bind:value={email}
@@ -106,7 +108,7 @@
 					class="font-semibold text-primary underline"
 					onclick={() => (termsOpen = true)}
 				>
-					Read the terms
+					{m.auth_signup_read_terms()}
 				</button>
 			{/if}
 		</span>
@@ -131,12 +133,12 @@
 		{#if submitting}
 			<span class="loading loading-spinner"></span>
 		{/if}
-		Email me a magic link <i class="las la-arrow-right" aria-hidden="true"></i>
+		{m.auth_magic_link_button()} <i class="las la-arrow-right" aria-hidden="true"></i>
 	</button>
 
 	<p class="mt-4 flex items-center justify-center gap-2 text-sm text-base-content-muted">
 		<i class="las la-lock text-outline" aria-hidden="true"></i>
-		No password needed — the link signs you in securely and expires in 5 minutes.
+		{m.auth_signup_link_note()}
 	</p>
 </form>
 

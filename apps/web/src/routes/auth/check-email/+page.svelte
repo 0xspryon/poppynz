@@ -3,6 +3,7 @@
 	import { resolve } from '$app/paths';
 	import { getDevMagicLink, getPendingAuth, resendMagicLink, type PendingAuth } from '$lib/api/auth';
 	import { toast } from '$lib/toast.svelte';
+	import { m } from '$lib/paraglide/messages';
 
 	// The mock inbox exists only in local dev builds (UAT #32).
 	const devInbox = import.meta.env.DEV;
@@ -19,9 +20,9 @@
 		} else {
 			toast.error(
 				result.error.code === 'DEV_INBOX_EMPTY'
-					? 'No magic link has been sent to this address since the API started — use Resend.'
-					: 'The mock inbox is only available against a local dev API.',
-				{ title: 'No link to open' }
+					? m.auth_dev_inbox_empty()
+					: m.auth_dev_inbox_unavailable(),
+				{ title: m.auth_dev_no_link_title() }
 			);
 		}
 	}
@@ -46,7 +47,7 @@
 		return () => clearInterval(timer);
 	});
 
-	const RETRY_MESSAGE = "We couldn't resend the link. Please try again.";
+	const RETRY_MESSAGE = m.auth_check_email_resend_failed();
 
 	async function resend() {
 		if (resending || cooldownLeft > 0) return;
@@ -60,8 +61,8 @@
 			pending = result.data;
 		} else {
 			resendError = matchError(result.error, {
-				USER_ALREADY_EXISTS: () => 'Your account already exists — sign in instead.',
-				USER_NOT_FOUND: () => 'No account exists for this email anymore — start over below.',
+				USER_ALREADY_EXISTS: () => m.auth_error_user_exists_sign_in(),
+				USER_NOT_FOUND: () => m.auth_check_email_user_not_found(),
 				INVALID_SIGNUP_INPUT: () => RETRY_MESSAGE,
 				INVALID_SIGNIN_INPUT: () => RETRY_MESSAGE,
 				SIGNUP_INTENT_FAILED: () => RETRY_MESSAGE,
@@ -78,7 +79,7 @@
 </script>
 
 <svelte:head>
-	<title>Check your inbox · Poppynz</title>
+	<title>{m.shell_page_title({ title: m.auth_check_email_title() })}</title>
 </svelte:head>
 
 <div class="max-w-form lg:my-auto lg:pb-12">
@@ -87,11 +88,11 @@
 	</div>
 
 	<h2 class="mb-2.5 font-display text-3xl font-bold text-base-content lg:text-4xl">
-		Check your inbox
+		{m.auth_check_email_title()}
 	</h2>
-	<p class="mb-1 text-base text-base-content-muted">We sent a secure sign-in link to</p>
+	<p class="mb-1 text-base text-base-content-muted">{m.auth_check_email_sent_to()}</p>
 	<p class="mb-6 text-base font-semibold text-secondary">
-		{pending?.email ?? 'your email address'}
+		{pending?.email ?? m.auth_check_email_your_address()}
 	</p>
 
 	<p
@@ -99,23 +100,25 @@
 			bg-warning-content px-4 py-3 text-sm font-medium text-warning"
 	>
 		<i class="las la-clock text-base" aria-hidden="true"></i>
-		The link expires in 5 minutes — open it soon.
+		{m.auth_check_email_expires()}
 	</p>
 
 	<div class="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
 		{#if cooldownLeft > 0}
-			<button class="btn btn-outline" disabled>Resend link in {countdown}</button>
+			<button class="btn btn-outline" disabled>{m.auth_check_email_resend_in({ countdown })}</button>
 		{:else}
 			<button class="btn btn-outline" onclick={resend} disabled={resending}>
 				{#if resending}
 					<span class="loading loading-spinner loading-sm"></span>
 				{/if}
-				Resend link
+				{m.auth_check_email_resend()}
 			</button>
 		{/if}
 		<p class="text-sm text-base-content-muted">
-			Wrong email?
-			<a href={resolve('/auth/sign-up')} class="font-semibold text-primary">Start over</a>
+			{m.auth_check_email_wrong_email()}
+			<a href={resolve('/auth/sign-up')} class="font-semibold text-primary"
+				>{m.auth_check_email_start_over()}</a
+			>
 		</p>
 	</div>
 
@@ -124,8 +127,7 @@
 	{/if}
 
 	<p class="text-sm leading-relaxed text-outline">
-		Nothing arriving? Check your spam folder, or make sure
-		{pending?.email ?? 'your email'} is spelled right.
+		{m.auth_check_email_spam_hint({ email: pending?.email ?? m.auth_check_email_your_email() })}
 	</p>
 
 	{#if devInbox}
@@ -135,7 +137,7 @@
 				class="mb-3 flex items-center gap-2 text-xs font-semibold tracking-widest text-outline uppercase"
 			>
 				<i class="las la-flask text-base" aria-hidden="true"></i>
-				Mock inbox — dev only
+				{m.auth_dev_inbox_heading()}
 			</p>
 			<div class="flex flex-wrap gap-3">
 				<button
@@ -144,10 +146,10 @@
 					disabled={!pending || openingLink}
 					onclick={() => void openLatestLink()}
 				>
-					<i class="las la-external-link-alt" aria-hidden="true"></i> Open magic link
+					<i class="las la-external-link-alt" aria-hidden="true"></i> {m.auth_dev_open_link()}
 				</button>
 				<a href="{resolve('/auth/verify')}?token=expired" class="btn btn-sm btn-soft btn-error">
-					<i class="las la-hourglass-end" aria-hidden="true"></i> Open expired link
+					<i class="las la-hourglass-end" aria-hidden="true"></i> {m.auth_dev_open_expired_link()}
 				</a>
 			</div>
 		</div>

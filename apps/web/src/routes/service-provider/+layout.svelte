@@ -15,6 +15,7 @@
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
 	import { payoutsBadge } from '$lib/payouts-badge.svelte';
 	import { unread } from '$lib/unread.svelte';
+	import { m } from '$lib/paraglide/messages';
 	import { onMount, type Snippet } from 'svelte';
 
 	interface Props {
@@ -70,76 +71,79 @@
 		}
 	});
 
-	const email = $derived(session?.email ?? 'provider');
+	const email = $derived(session?.email ?? m.nav_email_fallback_provider());
 	const impersonated = $derived(session?.impersonatedBy != null);
 	const initial = $derived(email.charAt(0).toUpperCase());
 
 	// Grouped so a brand-new helper sees the onboarding pages first; Documents,
 	// Safety verification and Approval live together under Verification.
+	const groupGetStarted = m.nav_group_get_started();
+	const groupYourPoppynz = m.nav_group_your_poppynz();
+	const groupMore = m.nav_group_more();
 	const items: Array<SidebarItem> = $derived([
 		{
 			href: resolve('/service-provider/dashboard'),
-			label: 'Home',
+			label: m.nav_home(),
 			icon: 'la-home',
-			group: 'Get started'
+			group: groupGetStarted
 		},
 		{
 			href: resolve('/service-provider/profile'),
-			label: 'Profile',
+			label: m.nav_profile(),
 			icon: 'la-user',
-			group: 'Get started'
+			group: groupGetStarted
 		},
 		{
 			href: resolve('/service-provider/services'),
-			label: 'Services & rates',
+			label: m.nav_services_rates(),
 			icon: 'la-heart',
-			group: 'Get started'
+			group: groupGetStarted
 		},
 		{
 			href: resolve('/service-provider/verification'),
-			label: 'Verification',
+			label: m.nav_verification(),
 			icon: 'la-shield-alt',
 			badge: missingDocuments,
-			group: 'Get started'
+			group: groupGetStarted
 		},
 		{
 			href: resolve('/service-provider/find'),
-			label: 'Find families',
+			label: m.nav_find_families(),
 			icon: 'la-search',
-			group: 'Your Poppynz'
+			group: groupYourPoppynz
 		},
 		{
 			href: resolve('/service-provider/messages'),
-			label: 'Messages',
+			label: m.nav_messages(),
 			icon: 'la-comment',
 			badge: unread.count,
-			group: 'Your Poppynz'
+			group: groupYourPoppynz
 		},
 		{
 			href: resolve('/service-provider/contracts'),
-			label: 'Contracts',
+			label: m.nav_contracts(),
 			icon: 'la-file-signature',
 			badge: contractsBadge.count,
-			group: 'Your Poppynz'
+			group: groupYourPoppynz
 		},
 		{
 			href: resolve('/service-provider/payouts'),
-			label: 'Payouts',
+			label: m.nav_payouts(),
 			icon: 'la-wallet',
 			badge: payoutsBadge.needsSetup ? '!' : undefined,
-			group: 'Your Poppynz'
+			group: groupYourPoppynz
 		},
 		{
 			href: resolve('/service-provider/referrals'),
-			label: 'Referrals',
+			label: m.nav_referrals(),
 			icon: 'la-user-plus',
-			group: 'More'
+			group: groupMore
 		},
 		{
 			href: resolve('/service-provider/vouches'),
-			label: 'Vouch requests',
+			label: m.nav_vouch_requests(),
 			icon: 'la-handshake',
-			group: 'More'
+			group: groupMore
 		}
 	]);
 </script>
@@ -160,7 +164,13 @@
 			class="sticky top-(--nav-top) hidden h-[calc(100dvh-var(--nav-top))] w-[250px] shrink-0
 				flex-col gap-1 bg-secondary p-5 lg:flex"
 		>
-			<SidebarNav kicker="Helper" {items} {email} roleLabel="Helper" {impersonated} />
+			<SidebarNav
+				kicker={m.nav_role_helper()}
+				{items}
+				{email}
+				roleLabel={m.nav_role_helper()}
+				{impersonated}
+			/>
 		</aside>
 
 		<div class="flex min-w-0 flex-1 flex-col">
@@ -174,7 +184,7 @@
 					type="button"
 					class="flex size-8 items-center justify-center rounded-full bg-secondary text-sm
 						font-bold text-secondary-content"
-					aria-label="Open navigation"
+					aria-label={m.nav_open()}
 					onclick={() => (drawerOpen = true)}
 				>
 					{initial}
@@ -190,10 +200,10 @@
 	<MobileNavDrawer
 		open={drawerOpen}
 		onclose={() => (drawerOpen = false)}
-		kicker="Helper"
+		kicker={m.nav_role_helper()}
 		{items}
 		{email}
-		roleLabel="Helper"
+		roleLabel={m.nav_role_helper()}
 		{impersonated}
 	/>
 

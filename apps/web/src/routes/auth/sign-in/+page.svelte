@@ -3,8 +3,9 @@
 	import { resolve } from '$app/paths';
 	import { requestSignInLink } from '$lib/api/auth';
 	import { matchError } from '$lib/api/client';
+	import { m } from '$lib/paraglide/messages';
 
-	const RETRY_MESSAGE = 'Something went wrong on our side. Please try again.';
+	const RETRY_MESSAGE = m.auth_retry_message();
 
 	let email = $state('');
 	let submitting = $state(false);
@@ -23,9 +24,9 @@
 			return;
 		}
 		errorMessage = matchError(result.error, {
-			USER_NOT_FOUND: () => 'No account exists for this email — create one instead.',
-			INVALID_SIGNIN_INPUT: () => "That email address doesn't look right. Check it and try again.",
-			SIGNIN_LINK_FAILED: () => "We couldn't send your sign-in link. Please try again.",
+			USER_NOT_FOUND: () => m.auth_error_user_not_found_create(),
+			INVALID_SIGNIN_INPUT: () => m.auth_error_invalid_email(),
+			SIGNIN_LINK_FAILED: () => m.auth_error_signin_link_failed(),
 			SIGNIN_USER_LOOKUP_FAILED: () => RETRY_MESSAGE,
 			INTERNAL_SERVER_ERROR: () => RETRY_MESSAGE,
 			UNEXPECTED: () => RETRY_MESSAGE
@@ -35,25 +36,25 @@
 </script>
 
 <svelte:head>
-	<title>Sign in · Poppynz</title>
+	<title>{m.shell_page_title({ title: m.auth_signin_title() })}</title>
 </svelte:head>
 
 <form class="max-w-form lg:my-auto lg:pb-16" onsubmit={submit}>
 	<h2 class="mb-2 font-display text-3xl font-bold text-base-content lg:text-4xl">
-		Sign in to Poppynz
+		{m.auth_signin_heading()}
 	</h2>
 	<p class="mb-8 text-base text-base-content-muted">
-		We'll email you a secure link — it signs you in with one tap.
+		{m.auth_signin_lead()}
 	</p>
 
 	<fieldset class="fieldset mb-7">
-		<legend class="fieldset-legend">Email</legend>
+		<legend class="fieldset-legend">{m.auth_email_label()}</legend>
 		<label class="input input-lg w-full">
 			<i class="las la-envelope text-outline" aria-hidden="true"></i>
 			<input
 				type="email"
 				class="grow"
-				placeholder="johndoe@email.com"
+				placeholder={m.auth_email_placeholder()}
 				required
 				autocomplete="email"
 				bind:value={email}
@@ -80,11 +81,11 @@
 		{#if submitting}
 			<span class="loading loading-spinner"></span>
 		{/if}
-		Email me a magic link <i class="las la-arrow-right" aria-hidden="true"></i>
+		{m.auth_magic_link_button()} <i class="las la-arrow-right" aria-hidden="true"></i>
 	</button>
 
 	<p class="mt-4 flex items-center justify-center gap-2 text-sm text-base-content-muted">
 		<i class="las la-lock text-outline" aria-hidden="true"></i>
-		The link is single-use and expires in 5 minutes.
+		{m.auth_signin_link_note()}
 	</p>
 </form>

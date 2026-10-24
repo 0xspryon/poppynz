@@ -4,6 +4,7 @@ import { kycDocumentTypes } from './0001_kyc_document_types';
 import { serviceCatalogue } from './0002_service_catalogue';
 import { tcDocuments } from './0003_tc_documents';
 import { taxConfig } from './0004_tax_config';
+import { devAccountant } from './0005_dev_accountant';
 // <seed:new-imports> — `bun run seed:new` inserts above; keep this marker.
 
 /**
@@ -17,6 +18,7 @@ export const seeds: ReadonlyArray<Seed> = [
   kycDocumentTypes,
   serviceCatalogue,
   tcDocuments,
-  taxConfig
+  taxConfig,
+  devAccountant
   // <seed:new-entries> — `bun run seed:new` inserts above; keep this marker.
 ];

@@ -30,6 +30,7 @@ import { vouchesRoute } from './vouches/vouches';
 import { adminVouchesRoute } from './admin/vouches';
 import { contractsRoute } from './contracts/contracts';
 import { payoutsRoute } from './payouts/payouts';
+import { taxRoute } from './tax/tax';
 import { conversationsRoute } from './conversations/conversations';
 import { notificationsRoute } from './notifications/notifications';
 import { tcsRoute } from './tcs/tcs';
@@ -66,6 +67,7 @@ export const appRoutes = new Hono<HonoEnv>()
   .route('/admin/vouches', adminVouchesRoute)
   .route('/contracts', contractsRoute)
   .route('/payouts', payoutsRoute)
+  .route('/tax', taxRoute)
   .route('/conversations', conversationsRoute)
   .route('/notifications', notificationsRoute)
   .route('/providers', providersRoute)

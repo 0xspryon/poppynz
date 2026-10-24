@@ -38,8 +38,8 @@ export const appAc = createAccessControl({
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
   // Sales-tax configuration (rates, supply-type treatments, registrations)
-  // and its reports. Granted to admins now and to the accountant role the
-  // tax portal adds later — always checked as a permission, never a role.
+  // and its reports — the tax portal. Granted to admins and to the
+  // accountant role; always checked as a permission, never a role.
   tax: ['read', 'write'],
   taxReport: ['read'],
   tcs: ['read', 'accept', 'write'],
@@ -108,8 +108,16 @@ export const adminRole = appAc.newRole({
   vouch: ['read', 'write', 'review']
 });
 
+/** Poppynz's accountant: the tax portal only — the configuration (read and
+ * correct, every change audited) and the tax-collected reports. */
+export const accountantRole = appAc.newRole({
+  tax: ['read', 'write'],
+  taxReport: ['read']
+});
+
 export const roles = {
   admin: adminRole,
+  accountant: accountantRole,
   family: familyRole,
   'service-provider': spRole
 };

@@ -110,8 +110,9 @@ export const listPendingTcsRouteProgram = (headers: Headers) =>
     const authenticated = yield* authenticate(headers);
     const userAndSession = yield* requirePermissions(headers, { tcs: ['accept'] })(authenticated);
     const role = userAndSession.user.role;
-    // Admins are never shown T&C — only the non-admin profiles are gated.
-    if (role === null || role === 'admin') {
+    // Admins (and the accountant) are never shown T&C — only the family and
+    // helper profiles are gated.
+    if (role !== 'family' && role !== 'service-provider') {
       return [];
     }
 

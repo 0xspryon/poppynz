@@ -5,7 +5,8 @@ These project-specific rules exist to prevent repeat mistakes from prior impleme
 ## Creating Worktrees
 
 - Create feature worktrees with `bun setup:worktree -b feature/<feature_name> ../<feature_name> develop`, run from an existing checkout (e.g. `develop/`).
-- Do not use a bare `git worktree add` and then copy `.env` files or create directories by hand. The script pulls `develop` first, copies the root, `apps/api` and `apps/web` `.env` files, symlinks `packages/db/.env` and `apps/worker/.env` to the api one, creates `bun_node_modules` (needed before `docker compose up`), and runs `bun install`.
+- Do not use a bare `git worktree add` and then copy `.env` files or create directories by hand. The script pulls `develop` first, copies the root, `apps/api` and `apps/web` `.env` files, symlinks `packages/db/.env` and `apps/worker/.env` to the api one, creates `bun_node_modules` (needed before `docker compose up`), sets a per-worktree `COMPOSE_PROJECT_NAME` in the root `.env`, and runs `bun install`.
+- Database, search and file-storage data live in Docker named volumes scoped by `COMPOSE_PROJECT_NAME`, so each worktree has its own data that survives Docker restarts. `docker compose down -v` deletes that worktree's data; removing a worktree does not, so run it (or `docker volume rm`) first. Container names are fixed, so run one checkout's stack at a time.
 
 ## Handler Error Exhaustiveness
 

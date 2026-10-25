@@ -120,7 +120,7 @@ services:
       - POSTGRES_USER=${DB_USER}
       - POSTGRES_PASSWORD=${DB_PASS}
     volumes:
-      - ./postgres_data:/var/lib/postgresql
+      - postgres_data:/var/lib/postgresql
     networks:
       - app-net
     ports:
@@ -140,11 +140,11 @@ services:
         echo 'RustFS volume permissions fixed'
       "
     volumes:
-      - ./rustfs_data_0:/data0
-      - ./rustfs_data_1:/data1
-      - ./rustfs_data_2:/data2
-      - ./rustfs_data_3:/data3
-      - ./rustfs_logs:/logs
+      - rustfs_data_0:/data0
+      - rustfs_data_1:/data1
+      - rustfs_data_2:/data2
+      - rustfs_data_3:/data3
+      - rustfs_logs:/logs
     networks:
       - app-net
     restart: 'no'
@@ -167,11 +167,11 @@ services:
       - RUSTFS_SECRET_KEY=${RUSTFS_SECRET_KEY:-rustfsadmin}
       - RUSTFS_OBS_LOGGER_LEVEL=${RUSTFS_OBS_LOGGER_LEVEL:-info}
     volumes:
-      - ./rustfs_data_0:/data/rustfs0
-      - ./rustfs_data_1:/data/rustfs1
-      - ./rustfs_data_2:/data/rustfs2
-      - ./rustfs_data_3:/data/rustfs3
-      - ./rustfs_logs:/app/logs
+      - rustfs_data_0:/data/rustfs0
+      - rustfs_data_1:/data/rustfs1
+      - rustfs_data_2:/data/rustfs2
+      - rustfs_data_3:/data/rustfs3
+      - rustfs_logs:/app/logs
     networks:
       - app-net
     ports:
@@ -214,7 +214,7 @@ services:
     ports:
       - '8108:8108'
     volumes:
-      - ./typesense-data:/data
+      - typesense_data:/data
     healthcheck:
       test:
         [
@@ -228,10 +228,13 @@ services:
       retries: 5
 
 volumes:
-  # redis_volume:
-  bun_node_modules:
+  # Data lives in Docker named volumes, not folders in the checkout: Docker
+  # Desktop puts a bind source that doesn't exist on the host into its VM's
+  # in-memory /run, which silently wiped every database on restart. Volume
+  # names are prefixed with the compose project name, so each worktree keeps
+  # its own data when its root .env sets COMPOSE_PROJECT_NAME (the
+  # setup:worktree script does). `docker compose down -v` deletes it.
   postgres_data:
-  docker-entrypoint.sh:
   rustfs_data_0:
   rustfs_data_1:
   rustfs_data_2:

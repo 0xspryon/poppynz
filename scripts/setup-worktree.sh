@@ -78,6 +78,13 @@ link_api_env "$new_worktree/packages/db/.env"
 link_api_env "$new_worktree/apps/worker/.env"
 mkdir -p "$new_worktree/bun_node_modules"
 
+# Each worktree gets its own compose project, so its postgres, typesense and
+# rustfs named volumes (and therefore its data) are separate from every other
+# checkout. The copied .env may carry the source checkout's name: replace it.
+project_name="poppynz_$(basename "$new_worktree" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_\n-' '_')"
+sed -i -e '/^COMPOSE_PROJECT_NAME=/d' -e '/^# Own compose project = own data volumes/d' "$new_worktree/.env"
+printf '\n# Own compose project = own data volumes for this worktree.\nCOMPOSE_PROJECT_NAME=%s\n' "$project_name" >> "$new_worktree/.env"
+
 (
   cd "$new_worktree"
   bun install

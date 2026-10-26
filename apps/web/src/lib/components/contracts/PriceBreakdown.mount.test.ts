@@ -28,10 +28,13 @@ describe('PriceBreakdown', () => {
 				feeBps: 500,
 				feeCents: 520,
 				feeTaxLines: [{ label: 'GST (MB) 5%', taxCents: 26 }],
-				totalCents: 10946
+				totalCents: 10946,
+				holdLeadHours: 24
 			}
 		});
 		expect(text()).toContain('Care $104.00');
+		// UAT round 2 #10: the note follows CONTRACT_HOLD_LEAD_HOURS.
+		expect(text()).toContain('held on your card 1 day before it starts');
 		expect(text()).toContain('Poppynz service fee (5%) +$5.20');
 		expect(text()).toContain('GST (MB) 5% on the fee +$0.26');
 		expect(text()).toContain('You pay $109.46');

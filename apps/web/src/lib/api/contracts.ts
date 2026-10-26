@@ -18,6 +18,10 @@ const declineEndpoint = apiClient.contracts[':id'].decline.$post;
 const requestChangesEndpoint = apiClient.contracts[':id']['request-changes'].$post;
 const endEndpoint = apiClient.contracts[':id'].end.$post;
 const seenEndpoint = apiClient.contracts[':id'].seen.$post;
+const renewEndpoint = apiClient.contracts[':id'].renew.$post;
+const retryPaymentEndpoint = apiClient.contracts[':id'].billing.retry.$post;
+const cycleEndpoint = apiClient.contracts[':id'].cycles[':cycleId'].$get;
+const landingEndpoint = apiClient.contracts.me.landing.$get;
 
 export type ContractListData = Extract<
 	Awaited<ReturnType<typeof listContracts>>,
@@ -36,6 +40,14 @@ export type ContractPricing = NonNullable<ContractTerms['pricing']>;
 export type ContractBilling = NonNullable<ContractDetail['billing']>;
 export type ContractBillingCycle = ContractBilling['cycles'][number];
 export type ContractStatus = ContractDetail['status'];
+export type ContractCycleData = Extract<
+	Awaited<ReturnType<typeof getContractCycle>>,
+	{ ok: true }
+>['data'];
+/** One billing cycle (UAT round 2 #11a): the viewer's amounts and its sessions. */
+export type ContractCycleDetail = ContractCycleData['cycle'];
+export type ContractCycleSession = ContractCycleDetail['sessions'][number];
+export type RetryPaymentError = ErrorsOf<typeof retryPaymentEndpoint>;
 export type ContractTermsInput = {
 	services: Array<{
 		serviceId: string;
@@ -122,6 +134,25 @@ export async function endContract(id: string, note?: string) {
 
 export async function markContractSeen(id: string) {
 	return call(seenEndpoint({ param: { id } }));
+}
+
+/** UAT round 2 #7b: a new draft pre-filled from a signed contract. */
+export async function renewContract(id: string) {
+	return call(renewEndpoint({ param: { id } }));
+}
+
+/** UAT round 2 #13: the family's "Retry payment" on a declined cycle. */
+export async function retryContractPayment(id: string) {
+	return call(retryPaymentEndpoint({ param: { id } }));
+}
+
+export async function getContractCycle(id: string, cycleId: string) {
+	return call(cycleEndpoint({ param: { id, cycleId } }));
+}
+
+/** UAT round 2 #5: the viewer's running contracts, for the landing. */
+export async function getContractLanding() {
+	return call(landingEndpoint());
 }
 
 export type { ApiResult };

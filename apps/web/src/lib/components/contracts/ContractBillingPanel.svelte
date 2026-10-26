@@ -2,11 +2,15 @@
 	/** A contract's billing (piece 3): where the schedule stands — waiting for
 	 * the helper's payout account, scheduled, running, suspended, cancelled —
 	 * and each 3-day cycle with the viewer's own amount (the family's charge,
-	 * or the helper's share after commission and tax). */
+	 * or the helper's share after commission and tax). Each cycle links to its
+	 * detail page (UAT round 2 #11a); a family with a declined payment can
+	 * retry it here (#13). */
 	import type { ResolvedPathname } from '$app/types';
 	import type { ContractBilling, ContractBillingCycle } from '$lib/api/contracts';
-	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	import StatusChip from '$lib/components/StatusChip.svelte';
+	import { cycleChip as chipFor } from '$lib/contract-cycle-status';
 	import { formatDateTime, formatDateWithWeekday } from '$lib/date';
+	import { formatLeadHours } from '$lib/lead-time';
 	import { formatNumber } from '$lib/locale';
 	import { formatMoney } from '$lib/money';
 	import { m } from '$lib/paraglide/messages';
@@ -18,9 +22,23 @@
 		counterpartFirstName: string;
 		billingHref: ResolvedPathname;
 		payoutsHref: ResolvedPathname;
+		/** The cycle's detail page. */
+		cycleHref?: (cycleId: string) => ResolvedPathname;
+		/** The family's "Retry payment" (offered when `billing.canRetryPayment`). */
+		onretry?: () => void;
+		retrying?: boolean;
 	}
 
-	let { billing, viewerSide, counterpartFirstName, billingHref, payoutsHref }: Props = $props();
+	let {
+		billing,
+		viewerSide,
+		counterpartFirstName,
+		billingHref,
+		payoutsHref,
+		cycleHref,
+		onretry,
+		retrying = false
+	}: Props = $props();
 
 	const isFamily = $derived(viewerSide === 'family');
 
@@ -51,7 +69,9 @@
 				return {
 					tone: 'info',
 					text: isFamily
-						? m.contracts_billing_scheduled_family()
+						? m.contracts_billing_scheduled_family({
+								lead: formatLeadHours(billing.holdLeadHours)
+							})
 						: m.contracts_billing_scheduled_provider()
 				};
 			case 'suspended':
@@ -104,45 +124,7 @@
 		success: 'bg-success-content text-success'
 	};
 
-	const cycleChip = (cycle: ContractBillingCycle): { status: ChipStatus; label: string } => {
-		switch (cycle.status) {
-			case 'scheduled':
-				return { status: 'empty', label: m.contracts_cycle_upcoming() };
-			case 'authorising':
-			case 'capturing':
-				return { status: 'in-progress', label: m.contracts_cycle_processing() };
-			case 'authorised':
-				return {
-					status: 'in-progress',
-					label: isFamily ? m.contracts_cycle_on_hold() : m.contracts_cycle_funds_on_hold()
-				};
-			case 'grace':
-				return {
-					status: 'missing',
-					label: isFamily ? m.contracts_cycle_card_declined() : m.contracts_cycle_payment_pending()
-				};
-			case 'captured':
-				return {
-					status: 'approved',
-					label: isFamily ? m.contracts_cycle_paid() : m.contracts_cycle_funded()
-				};
-			case 'suspended':
-				return { status: 'rejected', label: m.contracts_cycle_suspended() };
-			case 'capture_failed':
-				return {
-					status: 'missing',
-					label: isFamily
-						? m.contracts_cycle_payment_issue()
-						: m.contracts_cycle_funded_by_poppynz()
-				};
-			case 'cancelled':
-				return { status: 'expired', label: m.contracts_cycle_cancelled() };
-			case 'carried':
-				return { status: 'empty', label: m.contracts_cycle_carried() };
-			case 'empty':
-				return { status: 'empty', label: m.contracts_cycle_empty() };
-		}
-	};
+	const cycleChip = (cycle: ContractBillingCycle) => chipFor(cycle.status, isFamily);
 
 	const hours = (minutes: number) => formatNumber(minutes / 60, { maximumFractionDigits: 1 });
 
@@ -170,6 +152,26 @@
 			{#if banner.link}
 				<a class="ml-1 font-semibold underline" href={banner.link.href}>{banner.link.label}</a>
 			{/if}
+		</div>
+	{/if}
+
+	{#if isFamily && billing.canRetryPayment && onretry}
+		<div class="mb-3 flex flex-wrap items-center gap-2">
+			<button
+				type="button"
+				class="btn gap-1.5 btn-sm btn-primary"
+				disabled={retrying}
+				onclick={onretry}
+				data-testid="retry-payment"
+			>
+				{#if retrying}
+					<span class="loading loading-xs loading-spinner"></span>
+					{m.contracts_billing_retrying()}
+				{:else}
+					<i class="las la-redo-alt" aria-hidden="true"></i>
+					{m.contracts_billing_retry()}
+				{/if}
+			</button>
 		</div>
 	{/if}
 
@@ -215,6 +217,17 @@
 						</span>
 					{/if}
 					<StatusChip status={chip.status} label={chip.label} />
+					{#if cycleHref}
+						<a
+							class="text-[12px] font-semibold text-secondary hover:underline"
+							href={cycleHref(cycle.id)}
+							aria-label={m.contracts_cycle_details_aria({
+								dates: `${formatDateWithWeekday(cycle.startsOn)} – ${formatDateWithWeekday(cycle.endsOn)}`
+							})}
+						>
+							{m.contracts_cycle_details()}
+						</a>
+					{/if}
 				</li>
 			{/each}
 		</ul>

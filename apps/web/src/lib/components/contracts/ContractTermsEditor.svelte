@@ -45,8 +45,11 @@
 		counterpartFirstName: string;
 		/** Chat deep-link for the wizard's missing-service dialog. */
 		chatHref?: ResolvedPathname | null;
-		/** Tomorrow in the family's zone — the start-date picker's minimum. */
+		/** Today in the family's zone — the start-date picker's minimum. */
 		earliestStartsOn?: string | null;
+		/** Under the start date: how close to the first session terms can go
+		 * out (UAT round 2 #6). */
+		startsOnHint?: string | null;
 		/** "Central Time" — shown in the session wizard. */
 		timeZoneLabel?: string | null;
 		/** No saved family address: no zone, so sending is blocked. */
@@ -75,6 +78,7 @@
 		counterpartFirstName,
 		chatHref = null,
 		earliestStartsOn = null,
+		startsOnHint = null,
 		timeZoneLabel = null,
 		locationMissing = false,
 		profileHref = null,
@@ -285,12 +289,14 @@
 		{/each}
 	</ul>
 
+	<!-- UAT round 2 #1: a clearly visible primary action, not a text link. -->
 	<button
 		type="button"
-		class="mt-2 text-[13px] font-semibold text-secondary hover:underline"
+		class="btn mt-3 w-full gap-2 btn-primary sm:w-auto"
 		disabled={items.length >= 20 || providerServices.every((service) => inContract(service.id))}
 		onclick={openAdd}
 	>
+		<i class="las la-plus-circle text-xl" aria-hidden="true"></i>
 		{items.length > 0 ? m.contracts_editor_add_another() : m.contracts_editor_add_first()}
 	</button>
 	<p class="mt-0.5 text-[11px] text-outline">
@@ -308,8 +314,14 @@
 			type="date"
 			class="input input-sm w-full text-[13px]"
 			min={earliestStartsOn ?? undefined}
+			aria-describedby={startsOnHint ? 'contract-starts-hint' : undefined}
 			bind:value={startsOn}
 		/>
+		{#if startsOnHint}
+			<p id="contract-starts-hint" class="col-start-2 -mt-1 text-[11px] text-outline">
+				{startsOnHint}
+			</p>
+		{/if}
 		<span class="text-[13px] text-base-content-muted">
 			{m.contracts_terms_ends()}
 			<span class="text-[11px] text-outline">{m.contracts_optional_paren()}</span>

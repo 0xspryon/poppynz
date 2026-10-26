@@ -8,6 +8,7 @@ import {
   inArray,
   isNull,
   lte,
+  or,
   sql,
   type InferInsertModel,
   type InferSelectModel
@@ -98,6 +99,15 @@ export class ContractBillingRepo extends Context.Tag('@repo/db/ContractBillingRe
     advanceBilling: (
       contractId: string,
       input: BillingAdvanceInput
+    ) => Effect.Effect<ContractBilling | null, SqlError>;
+    /** The family's "Retry payment" rate limit: stamps `family_retry_at =
+     * now` unless a retry was claimed after `notBefore`. One atomic
+     * compare-and-set, so of two concurrent clicks exactly one wins; null
+     * for the loser (or when there is no billing row). */
+    claimFamilyRetry: (
+      contractId: string,
+      now: Date,
+      notBefore: Date
     ) => Effect.Effect<ContractBilling | null, SqlError>;
     insertCycles: (rows: ReadonlyArray<ContractCycleInsert>) => Effect.Effect<void, SqlError>;
     listCycles: (contractId: string) => Effect.Effect<Array<ContractCycle>, SqlError>;
@@ -195,6 +205,21 @@ export const ContractBillingRepoLive = Layer.effect(
             and(
               eq(contractBilling.contractId, contractId),
               inArray(contractBilling.status, [...input.from])
+            )
+          )
+          .returning()
+          .pipe(Effect.map((rows) => rows[0] ?? null)),
+      claimFamilyRetry: (contractId, now, notBefore) =>
+        db
+          .update(contractBilling)
+          .set({ familyRetryAt: now, updatedAt: now })
+          .where(
+            and(
+              eq(contractBilling.contractId, contractId),
+              or(
+                isNull(contractBilling.familyRetryAt),
+                lte(contractBilling.familyRetryAt, notBefore)
+              )
             )
           )
           .returning()
@@ -367,6 +392,14 @@ export const makeInMemoryContractBillingRepo = (
         state.billing.set(contractId, next);
         return next;
       }),
+    claimFamilyRetry: (contractId, at, notBefore) =>
+      Effect.sync(() => {
+        const row = state.billing.get(contractId);
+        if (!row || (row.familyRetryAt !== null && row.familyRetryAt > notBefore)) return null;
+        const next = { ...row, familyRetryAt: at, updatedAt: at };
+        state.billing.set(contractId, next);
+        return next;
+      }),
     insertCycles: (rows) =>
       Effect.sync(() => {
         for (const row of rows) {
@@ -500,6 +533,7 @@ export const dummyContractBilling = (
   cancelledAt: null,
   endedAt: null,
   lastError: null,
+  familyRetryAt: null,
   createdAt: new Date('2026-10-24T00:00:00.000Z'),
   updatedAt: new Date('2026-10-24T00:00:00.000Z'),
   ...overrides

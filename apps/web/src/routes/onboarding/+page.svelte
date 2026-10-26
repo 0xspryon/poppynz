@@ -5,11 +5,11 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { fetchSession } from '$lib/api/profile';
-	import { landingPathFor } from '$lib/role-landing';
+	import { resolveLanding } from '$lib/role-landing';
 
 	onMount(async () => {
 		const session = await fetchSession();
-		await goto(resolve(landingPathFor(session?.role) ?? '/'), { replaceState: true });
+		await goto((await resolveLanding(session?.role)) ?? resolve('/'), { replaceState: true });
 	});
 </script>
 

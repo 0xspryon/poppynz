@@ -5,6 +5,7 @@
 	 * the commission and its tax deducted. Billing itself charges each 3-day
 	 * cycle's real session hours, so this is per week of the agreed pattern. */
 	import type { ContractPricing } from '$lib/api/contracts';
+	import { formatLeadHours } from '$lib/lead-time';
 	import { formatNumber } from '$lib/locale';
 	import { formatMoney } from '$lib/money';
 	import { m } from '$lib/paraglide/messages';
@@ -102,7 +103,7 @@
 		</dl>
 		<p class="mt-2 text-[11px] leading-relaxed text-outline">
 			{#if pricing.side === 'family'}
-				{m.contracts_price_family_note()}
+				{m.contracts_price_family_note({ lead: formatLeadHours(pricing.holdLeadHours) })}
 			{:else}
 				{m.contracts_price_provider_note()}
 			{/if}

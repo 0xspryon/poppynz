@@ -2,27 +2,36 @@ import { Hono } from 'hono';
 import type { HonoEnv } from '../../../app-env';
 import {
   acceptContractHandler,
+  contractLandingHandler,
   contractsBadgeCountHandler,
   createContractHandler,
   declineContractHandler,
   endContractHandler,
+  getContractCycleHandler,
   getContractHandler,
   listContractsHandler,
   markContractSeenHandler,
   quoteTermsHandler,
+  renewContractHandler,
   requestChangesHandler,
+  retryContractPaymentHandler,
   saveTermsHandler,
   sendContractHandler,
   withdrawContractHandler
 } from './contracts.handler';
 
-// Literal routes go before "/:id" so "me/badge-count" never matches as a
-// contract id.
+// Literal routes go before "/:id" so "me/badge-count" and "me/landing" never
+// match as a contract id.
 export const contractsRoute = new Hono<HonoEnv>()
   .get('/', (c) => listContractsHandler(c))
   .post('/', (c) => createContractHandler(c))
   .get('/me/badge-count', (c) => contractsBadgeCountHandler(c))
+  .get('/me/landing', (c) => contractLandingHandler(c))
   .get('/:id', (c) => getContractHandler(c))
+  // A billing cycle (read-only for now; Tier 3 adds session actions under it).
+  .get('/:id/cycles/:cycleId', (c) => getContractCycleHandler(c))
+  .post('/:id/billing/retry', (c) => retryContractPaymentHandler(c))
+  .post('/:id/renew', (c) => renewContractHandler(c))
   .put('/:id/terms', (c) => saveTermsHandler(c))
   .post('/:id/quote', (c) => quoteTermsHandler(c))
   .post('/:id/send', (c) => sendContractHandler(c))

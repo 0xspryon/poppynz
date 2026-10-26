@@ -4,9 +4,13 @@ import {
   contractBillingPolicy,
   effectiveEnd,
   effectiveEndsOn,
+  familyRetryEligible,
+  firstSessionStart,
   isPaymentReady,
   loadTaxSnapshot,
   newContractBilling,
+  planCycle,
+  retryContractPayment,
   startContractBilling
 } from '@repo/billing';
 import {
@@ -29,12 +33,14 @@ import {
   type ContractServiceItem,
   type ContractSession,
   type ContractVersion,
-  type ContractWithContext
+  type ContractWithContext,
+  type DBNotFoundError
 } from '@repo/db';
-import { addDays, todayIn, zoneLabel } from '@repo/calendar';
+import { instantAt, todayIn, zoneLabel } from '@repo/calendar';
 import { zoneForLocation } from '@repo/calendar/lookup';
 import { contractConfig } from '@repo/env';
 import { publishNotificationBestEffort } from '@repo/notify';
+import type { PaymentProviderError } from '@repo/payments';
 import { Cause, Data, Effect, Exit, Option } from 'effect';
 import type { HonoContext, HonoEnv } from '../../../app-env';
 import {
@@ -73,7 +79,9 @@ import {
   validateContractSendInput
 } from './contracts.validator';
 
-export class ContractRepoError extends Data.TaggedError('ContractRepoError')<{ cause: SqlError }> {}
+export class ContractRepoError extends Data.TaggedError('ContractRepoError')<{
+  cause: SqlError | DBNotFoundError;
+}> {}
 
 /** Covers unknown ids AND non-participants — outsiders can't distinguish a
  * contract that exists from one that doesn't (same posture as conversations).
@@ -139,13 +147,21 @@ export class FamilyLocationRequiredError extends Data.TaggedError(
   'FamilyLocationRequiredError'
 )<{}> {}
 
-/** The start date must be later than today in the family's zone. */
-export class StartDateNotInFutureError extends Data.TaggedError('StartDateNotInFutureError')<{}> {}
+/** UAT round 2 (2026-10-26): terms can be sent and accepted until
+ * `CONTRACT_MIN_LEAD_MINUTES` (default 120) before the FIRST session starts,
+ * in the contract's zone. `action` picks the copy: the sender picks a later
+ * start date, the receiver asks for new terms. */
+export class FirstSessionTooSoonError extends Data.TaggedError('FirstSessionTooSoonError')<{
+  action: 'send' | 'accept';
+  minLeadMinutes: number;
+}> {}
 
-/** Acceptance is refused on or after the start date — cycle 1 must begin
- * after the contract is accepted. */
-export class ContractStartDatePassedError extends Data.TaggedError(
-  'ContractStartDatePassedError'
+/** A helper who isn't payment-ready can accept and finish payouts later —
+ * unless cycle 1's capture time (the readiness deadline) is already too close
+ * to wait for it: then payouts come first, or the contract would be cancelled
+ * the moment it is accepted. */
+export class PayoutsRequiredToAcceptError extends Data.TaggedError(
+  'PayoutsRequiredToAcceptError'
 )<{}> {}
 
 /** Sales tax on the fees depends on where each side is (piece 3 spec §3a):
@@ -158,6 +174,25 @@ export class ContractProvinceRequiredError extends Data.TaggedError(
 /** Sending terms needs a card on file — contract billing charges it. */
 export class PaymentMethodRequiredError extends Data.TaggedError(
   'PaymentMethodRequiredError'
+)<{}> {}
+
+/** The billing cycle doesn't exist on this contract (or the contract has no
+ * billing yet) — the same 404 an outsider gets for the contract. */
+export class ContractCycleNotFoundError extends Data.TaggedError('ContractCycleNotFoundError')<{}> {}
+
+/** "Retry payment" with nothing to retry: no declined hold in its grace
+ * period and no card suspension (already funded, or not the card's fault). */
+export class PaymentRetryNotNeededError extends Data.TaggedError('PaymentRetryNotNeededError')<{}> {}
+
+/** "Retry payment" is limited to once a minute per contract. */
+export class PaymentRetryRateLimitedError extends Data.TaggedError(
+  'PaymentRetryRateLimitedError'
+)<{ retryAfterSeconds: number }> {}
+
+/** The payment provider could not be reached while retrying. Nothing was
+ * lost: the attempt is retried under the same key by the billing tick. */
+export class ContractPaymentProviderError extends Data.TaggedError(
+  'ContractPaymentProviderError'
 )<{}> {}
 
 /** Postgres unique-constraint violation (SQLSTATE 23505), possibly nested a
@@ -196,14 +231,29 @@ function mapVersionInsertError<A, R>(
   );
 }
 
-/** Proposal expiry window. Config read collapses to the default rather than
- * surfacing ConfigError into every route program. */
-export const contractProposalContext = contractConfig.pipe(
-  Effect.orElseSucceed(() => ({ proposalExpiryDays: 14 })),
-  Effect.map(({ proposalExpiryDays }) => ({
-    expiryDays: proposalExpiryDays,
-    cutoff: new Date(Date.now() - proposalExpiryDays * 24 * 60 * 60 * 1000)
-  }))
+/** What decides, at read time, whether a proposal can still be accepted: the
+ * expiry window's cutoff and the lead-time rule (now + minimum lead before
+ * the first session). One value so every view applies the same rule. */
+export type ProposalClock = { cutoff: Date; now: Date; minLeadMinutes: number };
+
+/** Proposal expiry window (its config read collapses to the default rather
+ * than surfacing ConfigError into every route program) and the minimum lead
+ * before the first session (a contract billing setting: a malformed value
+ * fails loudly, like the commissions). */
+export const contractProposalContext = Effect.all([
+  contractConfig.pipe(Effect.orElseSucceed(() => ({ proposalExpiryDays: 14 }))),
+  contractBillingPolicy
+]).pipe(
+  Effect.map(([{ proposalExpiryDays }, policy]) => {
+    const now = new Date();
+    return {
+      expiryDays: proposalExpiryDays,
+      cutoff: new Date(now.getTime() - proposalExpiryDays * 24 * 60 * 60 * 1000),
+      now,
+      minLeadMinutes: policy.minLeadMinutes,
+      holdLeadHours: policy.holdLeadHours
+    };
+  })
 );
 
 const isExpired = (version: ContractVersion | null, cutoff: Date) =>
@@ -211,6 +261,40 @@ const isExpired = (version: ContractVersion | null, cutoff: Date) =>
   version.status === 'proposed' &&
   version.sentAt !== null &&
   version.sentAt < cutoff;
+
+/** The terms as billing will plan them (the version's own zone). */
+const scheduleTermsOf = (
+  version: Pick<ContractVersion, 'services' | 'endsOn' | 'endsAtMinutes'>,
+  startsOn: string,
+  timeZone: string
+) => ({
+  services: version.services,
+  startsOn,
+  timeZone,
+  endsOn: version.endsOn,
+  endsAtMinutes: version.endsOn ? version.endsAtMinutes : null
+});
+
+/** When the version's first session starts — or, for terms that never
+ * produce one, the start date's midnight in the zone. */
+const firstSessionAt = (
+  version: Pick<ContractVersion, 'services' | 'endsOn' | 'endsAtMinutes'>,
+  startsOn: string,
+  timeZone: string
+) =>
+  firstSessionStart(scheduleTermsOf(version, startsOn, timeZone)) ??
+  instantAt(startsOn, 0, timeZone);
+
+/** The lead-time rule (UAT round 2): too late once the first session starts
+ * less than `minLeadMinutes` from `now`. */
+const startsTooSoon = (
+  version: Pick<ContractVersion, 'services' | 'endsOn' | 'endsAtMinutes'>,
+  startsOn: string,
+  timeZone: string,
+  clock: Pick<ProposalClock, 'now' | 'minLeadMinutes'>
+) =>
+  firstSessionAt(version, startsOn, timeZone).getTime() - clock.now.getTime() <
+  clock.minLeadMinutes * 60 * 1000;
 
 const displayName = (
   profile: { firstName: string | null; lastName: string | null } | null,
@@ -295,26 +379,31 @@ export const weeklyEstimateCents = (services: Array<ContractServiceItem>) =>
 const contractToday = (version: ContractVersion): string | null =>
   version.timeZone ? todayIn(version.timeZone) : null;
 
-/** On or after the start date in the version's zone. A sent version with no
- * start date has not *passed* one — accept refuses it as START_DATE_REQUIRED
+/** Too late to accept by the lead-time rule: the first session starts less
+ * than the minimum lead from now, in the version's zone. A sent version with
+ * no start date has not passed one — accept refuses it as START_DATE_REQUIRED
  * and the detail view just withholds `canAccept` (development data only; send
  * always requires one). A sent version without a zone can't be accepted
  * either (the CHECK constraint makes that impossible for real rows). */
-const startDatePassed = (version: ContractVersion) => {
+const leadTimePassed = (version: ContractVersion, clock: ProposalClock) => {
   if (version.startsOn === null) return false;
-  const today = contractToday(version);
-  return today === null || today >= version.startsOn;
+  if (!version.timeZone) return true;
+  return startsTooSoon(version, version.startsOn, version.timeZone, clock);
 };
 
 /** A sent, undecided proposal that can no longer be accepted by the passage
- * of time: past the expiry window, or its start date has arrived in its zone.
+ * of time: past the expiry window, or too close to its first session.
  * Either way it presents as expired (read-time only, never written back),
  * stops awaiting the receiver and stops being news for them. The single
  * source for the detail, list, chat pill and badge so they can't disagree. */
-const proposalLapsed = (pending: ContractVersion | null, cutoff: Date) =>
+const proposalLapsed = (pending: ContractVersion | null, clock: ProposalClock) =>
   pending !== null &&
   pending.status === 'proposed' &&
-  (isExpired(pending, cutoff) || startDatePassed(pending));
+  (isExpired(pending, clock.cutoff) || leadTimePassed(pending, clock));
+
+/** The payment-readiness deadline must leave at least one billing tick
+ * (15 minutes) for the helper to finish payouts and be noticed. */
+const READINESS_MIN_WINDOW_MS = 15 * 60 * 1000;
 
 // When a contract stops working is shared with billing (@repo/billing).
 export { effectiveEnd, effectiveEndsOn };
@@ -337,7 +426,7 @@ export const presentedContractStatus = (
   contract: Contract,
   pending: ContractVersion | null,
   accepted: ContractVersion | null,
-  cutoff: Date
+  clock: ProposalClock
 ): PresentedContractStatus => {
   // Strictly past: the effective end date is the LAST WORKING day — the
   // contract is still running (payments running) for the whole of it.
@@ -351,7 +440,7 @@ export const presentedContractStatus = (
   ) {
     return 'ended';
   }
-  if (contract.status === 'proposed' && proposalLapsed(pending, cutoff)) {
+  if (contract.status === 'proposed' && proposalLapsed(pending, clock)) {
     return 'expired';
   }
   return contract.status;
@@ -366,7 +455,11 @@ const hiddenFromViewer = (contract: Contract, viewerUserId: string) =>
 /** The newest thing the viewer hasn't been told about yet. A proposal that
  * has lapsed (expiry window or start date — it presents as expired) is no
  * longer news for its receiver: there is nothing left for them to act on. */
-const newsAtFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date): Date | null => {
+const newsAtFor = (
+  row: ContractWithContext,
+  viewerUserId: string,
+  clock: ProposalClock
+): Date | null => {
   const pending = pendingOf(row.versions);
   const lastDecided = latestDecidedOf(row.versions);
   const candidates: Array<Date> = [];
@@ -374,7 +467,7 @@ const newsAtFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date)
     pending?.status === 'proposed' &&
     pending.proposedByUserId !== viewerUserId &&
     pending.sentAt !== null &&
-    !proposalLapsed(pending, cutoff)
+    !proposalLapsed(pending, clock)
   ) {
     candidates.push(pending.sentAt);
   }
@@ -392,8 +485,8 @@ const newsAtFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date)
   return new Date(Math.max(...candidates.map((at) => at.getTime())));
 };
 
-const hasNewsFor = (row: ContractWithContext, viewerUserId: string, cutoff: Date) => {
-  const newsAt = newsAtFor(row, viewerUserId, cutoff);
+const hasNewsFor = (row: ContractWithContext, viewerUserId: string, clock: ProposalClock) => {
+  const newsAt = newsAtFor(row, viewerUserId, clock);
   if (newsAt === null) return false;
   const seenAt = sideOf(row, viewerUserId) === 'family' ? row.familySeenAt : row.providerSeenAt;
   return newsAt > (seenAt ?? new Date(0));
@@ -417,6 +510,8 @@ type PricingInputs = {
   side: ContractSide;
   /** Today in the zone the dates are read in, when known. */
   today: string | null;
+  /** `CONTRACT_HOLD_LEAD_HOURS`, for the family's "held … before" note. */
+  holdLeadHours: number;
 };
 
 /** One week of the pattern, priced for the viewer's side only: the family
@@ -468,7 +563,8 @@ export const weeklyPricing = (
       feeBps: inputs.familyFeeBps,
       feeCents,
       feeTaxLines: taxLineViews(feeTax.lines),
-      totalCents: serviceCents + serviceTax.taxCents + feeCents + feeTax.taxCents
+      totalCents: serviceCents + serviceTax.taxCents + feeCents + feeTax.taxCents,
+      holdLeadHours: inputs.holdLeadHours
     };
   }
   const commissionCents = applyBps(serviceCents, inputs.providerCommissionBps);
@@ -506,6 +602,10 @@ const billingSummary = (contractId: string, side: ContractSide) =>
     return {
       status: billing.status,
       suspendedReason: billing.suspendedReason,
+      // UAT round 2 #13: the family's "Retry payment" (declined / card-suspended).
+      canRetryPayment: side === 'family' && familyRetryEligible(billing, cycles, new Date()),
+      // UAT round 2 #10: how long before a cycle starts it is held.
+      holdLeadHours: (yield* contractBillingPolicy).holdLeadHours,
       // Cancelled unless the helper is payment-ready by cycle 1's capture.
       readinessDeadline:
         billing.status === 'awaiting_payment_readiness'
@@ -587,7 +687,7 @@ const counterpartResponse = (row: ContractWithContext, viewerUserId: string) => 
 export const toContractListItem = (
   row: ContractWithContext,
   viewerUserId: string,
-  cutoff: Date
+  clock: ProposalClock
 ) => {
   const visible = visibleVersionsFor(row.versions, viewerUserId);
   const pending = pendingOf(row.versions);
@@ -596,12 +696,12 @@ export const toContractListItem = (
   return {
     id: row.id,
     conversationId: row.conversationId,
-    status: presentedContractStatus(row, pending, accepted, cutoff),
+    status: presentedContractStatus(row, pending, accepted, clock),
     awaitingYou:
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
-      !proposalLapsed(pending, cutoff),
-    hasNews: hasNewsFor(row, viewerUserId, cutoff),
+      !proposalLapsed(pending, clock),
+    hasNews: hasNewsFor(row, viewerUserId, clock),
     counterpart: counterpartResponse(row, viewerUserId),
     serviceNames: (termsSource?.services ?? []).map((service) => service.name),
     weeklyEstimateCents: termsSource !== null ? weeklyEstimateCents(termsSource.services) : null,
@@ -618,7 +718,7 @@ export const toThreadContractSummary = (
   contract: Contract,
   versions: Array<ContractVersion>,
   viewerUserId: string,
-  cutoff: Date
+  clock: ProposalClock
 ) => {
   if (!isParticipant(contract, viewerUserId) || hiddenFromViewer(contract, viewerUserId))
     return null;
@@ -628,11 +728,11 @@ export const toThreadContractSummary = (
   const termsSource = accepted ?? pendingOf(visible) ?? visible[visible.length - 1] ?? null;
   return {
     id: contract.id,
-    status: presentedContractStatus(contract, pending, accepted, cutoff),
+    status: presentedContractStatus(contract, pending, accepted, clock),
     awaitingYou:
       pending?.status === 'proposed' &&
       pending.proposedByUserId !== viewerUserId &&
-      !proposalLapsed(pending, cutoff),
+      !proposalLapsed(pending, clock),
     endsOn: effectiveEndsOn(contract, accepted),
     weeklyEstimateCents: termsSource ? weeklyEstimateCents(termsSource.services) : null
   };
@@ -948,8 +1048,12 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
     if (timeZone === null) {
       return yield* Effect.fail(new FamilyLocationRequiredError());
     }
-    if (pending.startsOn <= todayIn(timeZone)) {
-      return yield* Effect.fail(new StartDateNotInFutureError());
+    // UAT round 2: up to CONTRACT_MIN_LEAD_MINUTES before the first session.
+    const clock = yield* contractProposalContext;
+    if (startsTooSoon(pending, pending.startsOn, timeZone, clock)) {
+      return yield* Effect.fail(
+        new FirstSessionTooSoonError({ action: 'send', minLeadMinutes: clock.minLeadMinutes })
+      );
     }
     // The family service fee is taxed where the family is.
     if ((yield* profileProvince(contract.familyUserId)) === null) {
@@ -1044,15 +1148,17 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     if (contract.status !== 'proposed') {
       return yield* Effect.fail(new ContractStateError());
     }
-    const { cutoff } = yield* contractProposalContext;
-    if (isExpired(pending, cutoff)) {
+    const clock = yield* contractProposalContext;
+    if (isExpired(pending, clock.cutoff)) {
       return yield* Effect.fail(new ContractProposalExpiredError());
     }
     if (pending.startsOn === null) {
       return yield* Effect.fail(new StartDateRequiredError({ action: 'accept' }));
     }
-    if (startDatePassed(pending)) {
-      return yield* Effect.fail(new ContractStartDatePassedError());
+    if (leadTimePassed(pending, clock)) {
+      return yield* Effect.fail(
+        new FirstSessionTooSoonError({ action: 'accept', minLeadMinutes: clock.minLeadMinutes })
+      );
     }
     yield* requireContractCounterpart(pending.proposedByUserId);
     // Re-checked at acceptance: a service can lose its approval (or its
@@ -1085,14 +1191,34 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
       return yield* Effect.fail(new ContractStateError());
     }
     const acceptedAt = new Date();
+    // Accepting rarely waits on payouts: a helper who isn't ready yet puts
+    // the contract in the payment-readiness gate, whose deadline is cycle 1's
+    // capture time. A booking this late (UAT round 2: up to the minimum lead
+    // before the first session) can leave that deadline already passed or
+    // too close for the 15-minute tick to notice the helper got ready — the
+    // gate would cancel the contract on acceptance, so payouts come first.
+    const helperReady = yield* isPaymentReady(contract.providerUserId);
+    if (!helperReady) {
+      const cycleOne = planCycle(
+        {
+          ...scheduleTermsOf(pending, pending.startsOn, pending.timeZone),
+          holdLeadHours: clock.holdLeadHours
+        },
+        0
+      );
+      if (
+        cycleOne !== null &&
+        cycleOne.captureAt.getTime() - acceptedAt.getTime() < READINESS_MIN_WINDOW_MS
+      ) {
+        return yield* Effect.fail(new PayoutsRequiredToAcceptError());
+      }
+    }
     const billing = yield* newContractBilling({
       timeZone: pending.timeZone,
       startsOn: pending.startsOn,
       familyProvince,
       helperProvince,
-      // Accepting never waits on payouts: a helper who isn't ready yet puts
-      // the contract in the payment-readiness gate instead.
-      helperReady: yield* isPaymentReady(contract.providerUserId),
+      helperReady,
       now: acceptedAt
     });
 
@@ -1287,7 +1413,7 @@ export const listContractsProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
-    const { cutoff } = yield* contractProposalContext;
+    const clock = yield* contractProposalContext;
     const rows = yield* contractRepo
       .listForUser(viewer.id)
       .pipe((errors) => mapContractRepoError(errors));
@@ -1310,7 +1436,7 @@ export const listContractsProgram = (userAndSession: UserAndSession) =>
       contracts: visible.map((row) => {
         const billing = billingById.get(row.id) ?? null;
         return {
-          ...toContractListItem(row, viewer.id, cutoff),
+          ...toContractListItem(row, viewer.id, clock),
           billingStatus: billing?.status ?? null,
           billingSuspendedReason: billing?.suspendedReason ?? null
         };
@@ -1322,12 +1448,12 @@ export const contractsBadgeCountProgram = (userAndSession: UserAndSession) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
-    const { cutoff } = yield* contractProposalContext;
+    const clock = yield* contractProposalContext;
     const rows = yield* contractRepo
       .listForUser(viewer.id)
       .pipe((errors) => mapContractRepoError(errors));
     const total = rows.filter(
-      (row) => !hiddenFromViewer(row, viewer.id) && hasNewsFor(row, viewer.id, cutoff)
+      (row) => !hiddenFromViewer(row, viewer.id) && hasNewsFor(row, viewer.id, clock)
     ).length;
     return { total };
   });
@@ -1345,11 +1471,12 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
       return yield* Effect.fail(new ContractNotFoundError());
     }
 
-    const { cutoff, expiryDays } = yield* contractProposalContext;
+    const clock = yield* contractProposalContext;
+    const { expiryDays } = clock;
     const viewerSide = sideOf(row, viewer.id);
     const pending = pendingOf(row.versions);
     const accepted = acceptedOf(row.versions);
-    const presented = presentedContractStatus(row, pending, accepted, cutoff);
+    const presented = presentedContractStatus(row, pending, accepted, clock);
 
     const conversation = yield* conversationRepo
       .findById(row.conversationId)
@@ -1436,15 +1563,16 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         ? (billingRow.helperProvince as ProvinceCode)
         : yield* profileProvince(row.providerUserId),
       side: viewerSide,
-      today: timeZone ? todayIn(timeZone) : null
+      today: timeZone ? todayIn(timeZone) : null,
+      holdLeadHours: clock.holdLeadHours
     };
     const pricingOf = (version: ContractVersion) => weeklyPricing(version, pricingInputs);
     const effective = effectiveEnd(row, accepted);
     // Why the proposal can't be accepted, for both sides: the receiver's
     // Accept is gone, and the proposer is told to send a later start date.
     const acceptBlockedReason =
-      row.status === 'proposed' && pending?.status === 'proposed' && startDatePassed(pending)
-        ? ('start_date_passed' as const)
+      row.status === 'proposed' && pending?.status === 'proposed' && leadTimePassed(pending, clock)
+        ? ('starts_too_soon' as const)
         : null;
 
     return {
@@ -1487,7 +1615,10 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         endsAtMinutes: effective?.endsAtMinutes ?? null,
         timeZone,
         timeZoneLabel: timeZone ? zoneLabel(timeZone) : null,
-        earliestStartsOn: timeZone ? addDays(todayIn(timeZone), 1) : null,
+        // Today counts (UAT round 2): send checks the first session's lead.
+        earliestStartsOn: timeZone ? todayIn(timeZone) : null,
+        minLeadMinutes: clock.minLeadMinutes,
+        holdLeadHours: clock.holdLeadHours,
         acceptBlockedReason,
         hasPaymentMethod,
         payoutsReady,
@@ -1509,7 +1640,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
           canWithdraw: isFamily && row.status === 'proposed',
           canAccept:
             decidable &&
-            !proposalLapsed(pending, cutoff) &&
+            !proposalLapsed(pending, clock) &&
             pending?.startsOn != null &&
             acceptBlockedReason === null,
           canDecline: decidable,
@@ -1522,6 +1653,314 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         updatedAt: row.updatedAt.toISOString()
       }
     };
+  });
+
+/** Contract statuses that are still being negotiated — at most one per
+ * conversation (the `contracts_conversation_negotiating_uidx` index). */
+const negotiatingStatuses: ReadonlyArray<Contract['status']> = [
+  'draft',
+  'proposed',
+  'changes_requested',
+  'declined'
+];
+
+/**
+ * UAT round 2 #7b: "Start a new contract from this one". Signed contracts
+ * are never amended; the family starts a new DRAFT contract (same family,
+ * helper and conversation) pre-filled with the old contract's services,
+ * rates, expectations and weekly sessions — dates blank. Everything send
+ * checks (base-rate floor, publishable services, card on file, lead time)
+ * still applies when the new draft is sent. Services the helper no longer
+ * offers to families are left out (the draft could not be saved with them)
+ * and named in `droppedServiceIds`.
+ */
+export const renewContractProgram = (userAndSession: UserAndSession, contractId: string) =>
+  Effect.gen(function* () {
+    const contractRepo = yield* ContractRepo;
+    const conversationRepo = yield* ConversationRepo;
+    const viewer = userAndSession.user;
+    const contract = yield* loadParticipantContract(contractId, viewer.id);
+    if (sideOf(contract, viewer.id) !== 'family') {
+      return yield* Effect.fail(new NotContractActorError());
+    }
+    const { versions, pending } = yield* loadPendingVersion(contractId);
+    const accepted = acceptedOf(versions);
+    const clock = yield* contractProposalContext;
+    const presented = presentedContractStatus(contract, pending, accepted, clock);
+    if (
+      accepted === null ||
+      (presented !== 'active' && presented !== 'ending' && presented !== 'ended')
+    ) {
+      return yield* Effect.fail(new ContractStateError());
+    }
+    const conversation = yield* conversationRepo
+      .findById(contract.conversationId)
+      .pipe((errors) => mapContractRepoError(errors));
+    if (!conversation || conversation.status !== 'active') {
+      return yield* Effect.fail(new ContractConversationNotActiveError());
+    }
+
+    // One negotiation per conversation: an open one is where to go instead.
+    const negotiatingIn = (rows: ReadonlyArray<Contract>) =>
+      rows.find((row) => negotiatingStatuses.includes(row.status)) ?? null;
+    const siblings = yield* contractRepo
+      .listByConversationId(contract.conversationId)
+      .pipe((errors) => mapContractRepoError(errors));
+    const open = negotiatingIn(siblings);
+    if (open) {
+      return yield* Effect.fail(new ContractExistsError({ contractId: open.id }));
+    }
+
+    const listed = yield* ServiceOfferedRepo.pipe(
+      Effect.flatMap((repo) => repo.listPublishableByUserIds([contract.providerUserId])),
+      (errors) => mapContractRepoError(errors)
+    );
+    const listedById = new Map(listed.map((service) => [service.id, service]));
+    const services = accepted.services.flatMap((item): Array<ContractServiceItem> => {
+      const current = listedById.get(item.serviceId);
+      if (!current) return [];
+      return [
+        {
+          ...item,
+          name: current.name,
+          listedRateCents: current.hourlyRateCents,
+          currency: current.currency,
+          sessions: item.sessions.map((session) => ({ ...session }))
+        }
+      ];
+    });
+    const droppedServiceIds = accepted.services
+      .map((item) => item.serviceId)
+      .filter((id) => !listedById.has(id));
+
+    const created = yield* contractRepo
+      .create({
+        conversationId: contract.conversationId,
+        familyUserId: contract.familyUserId,
+        providerUserId: contract.providerUserId,
+        services
+      })
+      .pipe(
+        // Two clicks (or tabs) race the negotiating-unique index: the loser
+        // is pointed at the winner, as the check above would have done.
+        Effect.catchTag('SqlError', (cause) =>
+          isUniqueViolation(cause)
+            ? contractRepo.listByConversationId(contract.conversationId).pipe(
+                (errors) => mapContractRepoError(errors),
+                Effect.flatMap((rows) => {
+                  const winner = negotiatingIn(rows);
+                  return Effect.fail(
+                    winner
+                      ? new ContractExistsError({ contractId: winner.id })
+                      : new ContractRepoError({ cause })
+                  );
+                })
+              )
+            : Effect.fail(new ContractRepoError({ cause }))
+        )
+      );
+    // No notification: a draft is family-private until it is sent.
+    return { id: created.contract.id, droppedServiceIds };
+  });
+
+/** Billing failures reachable from the retry path, as route errors: the
+ * database or a missing row is a lookup failure, the provider its own 503. */
+function mapRetryError<A, R>(
+  effect: Effect.Effect<A, SqlError | DBNotFoundError | PaymentProviderError, R>
+): Effect.Effect<A, ContractRepoError | ContractPaymentProviderError, R> {
+  return effect.pipe(
+    Effect.catchTags({
+      SqlError: (cause) => Effect.fail(new ContractRepoError({ cause })),
+      DBNotFoundError: (cause) => Effect.fail(new ContractRepoError({ cause })),
+      PaymentProviderError: () => Effect.fail(new ContractPaymentProviderError())
+    })
+  );
+}
+
+/** "Retry payment" may run once a minute per contract. */
+export const PAYMENT_RETRY_INTERVAL_MS = 60 * 1000;
+
+/**
+ * UAT round 2 #13: the family's "Retry payment" on a declined or
+ * card-suspended contract. Runs the card-replaced retry path for this
+ * contract only (`retryContractPayment`: same idempotency keys and lookup
+ * guards as the worker), at most once a minute per contract — claimed by a
+ * compare-and-set, so a double click or two tabs start one retry.
+ */
+export const retryContractPaymentProgram = (userAndSession: UserAndSession, contractId: string) =>
+  Effect.gen(function* () {
+    const viewer = userAndSession.user;
+    const contract = yield* loadParticipantContract(contractId, viewer.id);
+    // Only the family pays: the helper has no card to retry.
+    if (sideOf(contract, viewer.id) !== 'family') {
+      return yield* Effect.fail(new NotContractActorError());
+    }
+    const repo = yield* ContractBillingRepo;
+    const now = new Date();
+    const billing = yield* repo
+      .findBilling(contractId)
+      .pipe((errors) => mapContractRepoError(errors));
+    const cycles = yield* repo
+      .listCycles(contractId)
+      .pipe((errors) => mapContractRepoError(errors));
+    if (!familyRetryEligible(billing, cycles, now)) {
+      return yield* Effect.fail(new PaymentRetryNotNeededError());
+    }
+    const claimed = yield* repo
+      .claimFamilyRetry(contractId, now, new Date(now.getTime() - PAYMENT_RETRY_INTERVAL_MS))
+      .pipe((errors) => mapContractRepoError(errors));
+    if (claimed === null) {
+      const last = billing?.familyRetryAt?.getTime() ?? now.getTime();
+      return yield* Effect.fail(
+        new PaymentRetryRateLimitedError({
+          retryAfterSeconds: Math.max(
+            1,
+            Math.ceil((last + PAYMENT_RETRY_INTERVAL_MS - now.getTime()) / 1000)
+          )
+        })
+      );
+    }
+    const outcome = yield* retryContractPayment(viewer.id, contractId, now).pipe((errors) =>
+      mapRetryError(errors)
+    );
+    return { outcome };
+  });
+
+const supplyLines = (
+  lines: ReadonlyArray<{ supplyType: string; label: string; taxCents: number }>,
+  supplyType: string
+) => taxLineViews(lines.filter((line) => line.supplyType === supplyType));
+
+/**
+ * UAT round 2 #11a: one billing cycle, read-only for now — its dates and
+ * status, the hold / charge (and, for the helper, transfer) instants, the
+ * viewer's own amounts (family: care + fee + tax; helper: share after the
+ * commission and its tax), and the timetable of its dated sessions in the
+ * contract zone. Only the contract's family and helper may read it (the
+ * same 404 as the contract for anybody else). Tier 3 hangs session actions
+ * (cancellation, dispute, extra sessions) off `sessions[].id`.
+ */
+export const getContractCycleProgram = (
+  userAndSession: UserAndSession,
+  contractId: string,
+  cycleId: string
+) =>
+  Effect.gen(function* () {
+    const viewer = userAndSession.user;
+    const contract = yield* loadParticipantContract(contractId, viewer.id);
+    const side = sideOf(contract, viewer.id);
+    const repo = yield* ContractBillingRepo;
+    const billing = yield* repo
+      .findBilling(contractId)
+      .pipe((errors) => mapContractRepoError(errors));
+    if (billing === null) return yield* Effect.fail(new ContractCycleNotFoundError());
+    const cycles = yield* repo
+      .listCycles(contractId)
+      .pipe((errors) => mapContractRepoError(errors));
+    const cycle = cycles.find((row) => row.id === cycleId);
+    if (!cycle) return yield* Effect.fail(new ContractCycleNotFoundError());
+    const sessions = yield* repo
+      .listSessions(contractId, cycle.id)
+      .pipe((errors) => mapContractRepoError(errors));
+    const { versions } = yield* loadPendingVersion(contractId);
+    const accepted = versions.find((version) => version.id === billing.acceptedVersionId) ?? null;
+    const serviceNames = new Map(
+      (accepted?.services ?? []).map((service) => [service.serviceId, service.name])
+    );
+    const now = new Date();
+    const counterpartUserId = side === 'family' ? contract.providerUserId : contract.familyUserId;
+    const counterpartProfile = yield* loadProfileOrNull(counterpartUserId);
+
+    const quoted = cycle.serviceCents !== null;
+    const amounts = !quoted
+      ? null
+      : side === 'family'
+        ? {
+            side: 'family' as const,
+            serviceCents: cycle.serviceCents ?? 0,
+            serviceTaxLines: supplyLines(cycle.taxLines, 'care_service_value'),
+            feeBps: cycle.familyFeeBps ?? billing.familyFeeBps,
+            feeCents: cycle.familyFeeCents ?? 0,
+            feeTaxLines: supplyLines(cycle.taxLines, 'family_service_fee'),
+            totalCents: cycle.familyTotalCents ?? 0,
+            // A reduced capture charged less than the quote.
+            chargedCents: cycle.capturedCents
+          }
+        : {
+            side: 'provider' as const,
+            serviceCents: cycle.serviceCents ?? 0,
+            serviceTaxLines: supplyLines(cycle.taxLines, 'care_service_value'),
+            commissionBps: cycle.providerCommissionBps ?? billing.providerCommissionBps,
+            commissionCents: cycle.providerCommissionCents ?? 0,
+            commissionTaxLines: supplyLines(cycle.taxLines, 'provider_commission'),
+            shareCents: cycle.providerShareCents ?? 0
+          };
+
+    return {
+      cycle: {
+        id: cycle.id,
+        contractId,
+        index: cycle.index,
+        startsOn: cycle.startsOn,
+        endsOn: cycle.endsOn,
+        status: cycle.status,
+        startsAt: cycle.startsAt.toISOString(),
+        endsAt: cycle.endsAt.toISOString(),
+        holdAt: cycle.holdAt.toISOString(),
+        captureAt: cycle.captureAt.toISOString(),
+        // Transfers are the helper's business (piece 4).
+        transferAt: side === 'provider' ? cycle.transferAt.toISOString() : null,
+        timeZone: billing.timeZone,
+        timeZoneLabel: zoneLabel(billing.timeZone),
+        viewerSide: side,
+        counterpartName: displayName(counterpartProfile, 'Poppynz member'),
+        billingStatus: billing.status,
+        suspendedReason: billing.suspendedReason,
+        amounts,
+        // Before the quote: what the scheduled sessions are worth so far.
+        estimatedServiceCents: sessions
+          .filter((session) => session.status === 'scheduled' || session.status === 'completed')
+          .reduce((total, session) => total + session.valueCents, 0),
+        carriedInCents: cycle.carriedInCents,
+        sessions: sessions.map((session) => ({
+          id: session.id,
+          date: session.date,
+          serviceId: session.serviceId,
+          serviceName: serviceNames.get(session.serviceId) ?? null,
+          startMinutes: session.startMinutes,
+          endMinutes: session.endMinutes,
+          elapsedMinutes: session.elapsedMinutes,
+          status: session.status,
+          startsAt: session.startsAt.toISOString(),
+          endsAt: session.endsAt.toISOString()
+        })),
+        canRetryPayment: side === 'family' && familyRetryEligible(billing, cycles, now)
+      }
+    };
+  });
+
+/** UAT round 2 #5: the viewer's running contracts (active or under notice —
+ * billing suspended or awaiting payment readiness included), so the landing
+ * after sign-in and the role home can open the contract view. */
+export const contractLandingProgram = (userAndSession: UserAndSession) =>
+  Effect.gen(function* () {
+    const contractRepo = yield* ContractRepo;
+    const viewer = userAndSession.user;
+    const clock = yield* contractProposalContext;
+    const rows = yield* contractRepo
+      .listForUser(viewer.id)
+      .pipe((errors) => mapContractRepoError(errors));
+    const running = rows.filter((row) => {
+      if (hiddenFromViewer(row, viewer.id)) return false;
+      const status = presentedContractStatus(
+        row,
+        pendingOf(row.versions),
+        acceptedOf(row.versions),
+        clock
+      );
+      return status === 'active' || status === 'ending';
+    });
+    return { activeContractIds: running.map((row) => row.id) };
   });
 
 // ---------------------------------------------------------------------------
@@ -1600,7 +2039,8 @@ export const quoteTermsProgram = (
         familyProvince: yield* profileProvince(contract.familyUserId),
         helperProvince: yield* profileProvince(contract.providerUserId),
         side: 'family',
-        today: timeZone ? todayIn(timeZone) : null
+        today: timeZone ? todayIn(timeZone) : null,
+        holdLeadHours: policy.holdLeadHours
       }
     );
     return { pricing, weeklyEstimateCents: weeklyEstimateCents(services) };
@@ -1709,6 +2149,51 @@ export const markContractSeenRouteProgram = (c: HonoContext<HonoEnv>, headers: H
     return yield* markContractSeenProgram(userAndSession, contractId);
   });
 
+export const renewContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function* () {
+    const contractId = yield* validateContractId(c.req.param('id'));
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
+      authenticated
+    );
+    // Starting a contract is the bookable act: the same gates as creating one.
+    yield* requireVerifiedSafety(userAndSession);
+    yield* requireLiveApproval(userAndSession);
+    return yield* renewContractProgram(userAndSession, contractId);
+  });
+
+export const retryContractPaymentRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function* () {
+    const contractId = yield* validateContractId(c.req.param('id'));
+    const authenticated = yield* authenticate(headers);
+    // The card on file is the family's billing; the contract is the subject.
+    const userAndSession = yield* requirePermissions(headers, {
+      contract: ['write'],
+      billing: ['write']
+    })(authenticated);
+    return yield* retryContractPaymentProgram(userAndSession, contractId);
+  });
+
+export const getContractCycleRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
+  Effect.gen(function* () {
+    const contractId = yield* validateContractId(c.req.param('id'));
+    const cycleId = yield* validateContractId(c.req.param('cycleId'));
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['read'] })(
+      authenticated
+    );
+    return yield* getContractCycleProgram(userAndSession, contractId, cycleId);
+  });
+
+export const contractLandingRouteProgram = (headers: Headers) =>
+  Effect.gen(function* () {
+    const authenticated = yield* authenticate(headers);
+    const userAndSession = yield* requirePermissions(headers, { contract: ['read'] })(
+      authenticated
+    );
+    return yield* contractLandingProgram(userAndSession);
+  });
+
 export type ContractRouteError =
   | Effect.Effect.Error<ReturnType<typeof createContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof listContractsRouteProgram>>
@@ -1722,7 +2207,11 @@ export type ContractRouteError =
   | Effect.Effect.Error<ReturnType<typeof declineContractRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof requestChangesRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof endContractRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof markContractSeenRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof markContractSeenRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof renewContractRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof retryContractPaymentRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof getContractCycleRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof contractLandingRouteProgram>>;
 
 const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRouteError) => {
   switch (error._tag) {
@@ -1884,25 +2373,38 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
         },
         422
       );
-    case 'StartDateNotInFutureError':
+    case 'FirstSessionTooSoonError':
+      return error.action === 'send'
+        ? c.json(
+            {
+              error: {
+                code: 'FIRST_SESSION_TOO_SOON' as const,
+                message: `The first session must start at least ${error.minLeadMinutes} minutes from now — pick a later start date.`,
+                minLeadMinutes: error.minLeadMinutes
+              }
+            },
+            422
+          )
+        : c.json(
+            {
+              error: {
+                code: 'FIRST_SESSION_TOO_SOON' as const,
+                message: `The first session starts in less than ${error.minLeadMinutes} minutes — ask the family for new terms with a later date.`,
+                minLeadMinutes: error.minLeadMinutes
+              }
+            },
+            409
+          );
+    case 'PayoutsRequiredToAcceptError':
       return c.json(
         {
           error: {
-            code: 'START_DATE_NOT_IN_FUTURE' as const,
-            message: 'The start date must be after today.'
+            code: 'PAYOUTS_REQUIRED_TO_ACCEPT' as const,
+            message:
+              'This contract starts too soon to wait for your payout account — set up payouts, then accept.'
           }
         },
         422
-      );
-    case 'ContractStartDatePassedError':
-      return c.json(
-        {
-          error: {
-            code: 'CONTRACT_START_DATE_PASSED' as const,
-            message: 'The start date has passed — ask the family for new terms with a later date.'
-          }
-        },
-        409
       );
     case 'ContractProvinceRequiredError':
       return c.json(
@@ -1930,6 +2432,48 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
           }
         },
         422
+      );
+    case 'ContractCycleNotFoundError':
+      return c.json(
+        {
+          error: {
+            code: 'CONTRACT_CYCLE_NOT_FOUND' as const,
+            message: 'Billing cycle not found.'
+          }
+        },
+        404
+      );
+    case 'PaymentRetryNotNeededError':
+      return c.json(
+        {
+          error: {
+            code: 'PAYMENT_RETRY_NOT_NEEDED' as const,
+            message: 'There is no declined payment to retry on this contract.'
+          }
+        },
+        409
+      );
+    case 'PaymentRetryRateLimitedError':
+      c.header('Retry-After', String(error.retryAfterSeconds));
+      return c.json(
+        {
+          error: {
+            code: 'PAYMENT_RETRY_RATE_LIMITED' as const,
+            message: 'A retry was just tried — wait a minute before trying again.',
+            retryAfterSeconds: error.retryAfterSeconds
+          }
+        },
+        429
+      );
+    case 'ContractPaymentProviderError':
+      return c.json(
+        {
+          error: {
+            code: 'PAYMENTS_UNAVAILABLE' as const,
+            message: 'Payments are temporarily unavailable — we will keep trying.'
+          }
+        },
+        503
       );
     case 'SafetyVerificationRequiredError':
       return c.json({ error: safetyVerificationRequiredResponseBody }, 403);
@@ -2058,5 +2602,31 @@ export async function endContractHandler(c: HonoContext<HonoEnv>) {
 export async function markContractSeenHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
   const exit = await runtime.runPromiseExit(markContractSeenRouteProgram(c, c.req.raw.headers));
+  return exitToResponse(c, exit);
+}
+
+export async function renewContractHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(renewContractRouteProgram(c, c.req.raw.headers));
+  return exitToResponse(c, exit);
+}
+
+export async function retryContractPaymentHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(
+    retryContractPaymentRouteProgram(c, c.req.raw.headers)
+  );
+  return exitToResponse(c, exit);
+}
+
+export async function getContractCycleHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(getContractCycleRouteProgram(c, c.req.raw.headers));
+  return exitToResponse(c, exit);
+}
+
+export async function contractLandingHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(contractLandingRouteProgram(c.req.raw.headers));
   return exitToResponse(c, exit);
 }

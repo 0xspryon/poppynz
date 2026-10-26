@@ -12,7 +12,7 @@ card on file) and [piece 2b](2026-10-02-stripe-connect-payouts-design.md)
 
 Once a contract is accepted, Poppynz bills it by itself: dated session records
 are materialised from the weekly pattern and grouped into 3-day cycles; each
-cycle is held on the family's saved card 2 days ahead and captured before care
+cycle is held on the family's saved card `CONTRACT_HOLD_LEAD_HOURS` (default 24) ahead and captured before care
 starts. Declines get a grace period, then suspension, then resume. A contract
 whose helper is not payment-ready is held back and cancelled at the cycle-1
 capture deadline. GST/HST is applied by province to Poppynz's own fees (the
@@ -87,7 +87,8 @@ Created by the same tick, before their sessions (which reference them).
 Instants, computed once from the contract zone and stored in UTC:
 
 - `starts_at` = 00:00 on the cycle's first day;
-- `hold_at` = 00:00 two calendar days before the first day;
+- `hold_at` = `starts_at` − `CONTRACT_HOLD_LEAD_HOURS` real hours (default 24;
+  was 00:00 two calendar days before — umbrella §6, 2026-10-26);
 - `capture_at` = min(07:00 on the first day, first session start − 1 h), or
   07:00 when the cycle has no session;
 - `transfer_at` = 00:00 after the last day, + 48 h (for piece 4).
@@ -121,7 +122,7 @@ sessions starting after it are charged and reactivated.
   2. Amounts are quoted (§3). Total 0 → `empty`; below 50¢ → `carried`.
   3. **Late booking**: the contract became billable (`billable_from`: the
      acceptance, or the moment the helper became ready) after this cycle's
-     `hold_at` *and* less than 48 h before its first session → `immediate`
+     `hold_at` *and* less than the hold lead before its first session → `immediate`
      charge. On a decline the cycle is `suspended` at once (no grace; the first
      session is not activated) and the family is told to update the card.
   4. Otherwise a `hold` — an off-session authorisation with manual capture.

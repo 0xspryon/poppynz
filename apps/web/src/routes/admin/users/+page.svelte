@@ -11,7 +11,7 @@
 		type AdminUserList
 	} from '$lib/api/admin-users';
 	import { fetchSession } from '$lib/api/profile';
-	import { landingPathFor } from '$lib/role-landing';
+	import { resolveLanding } from '$lib/role-landing';
 	import BanUserDialog from '$lib/components/admin/BanUserDialog.svelte';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import ImpersonateDialog from '$lib/components/admin/ImpersonateDialog.svelte';
@@ -152,7 +152,7 @@
 		// The cookie now belongs to the impersonated user — refresh the cached
 		// session and land where they would land.
 		const session = await fetchSession();
-		await goto(resolve(landingPathFor(session?.role) ?? '/'));
+		await goto((await resolveLanding(session?.role)) ?? resolve('/'));
 	}
 
 	async function confirmBan(reason: string | undefined) {

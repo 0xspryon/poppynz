@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPlace } from '$lib/location';
 	/** Public provider profile as seen by a family (design 13f/13g). Location
 	 * is approximate only — a shaded circle, never an exact pin or address.
 	 * The Contact CTA opens the reach-out composer (design 16a); once a
@@ -96,7 +97,12 @@
 
 	const name = $derived(
 		provider
-			? (provider.displayName ?? m.family_provider_in_city({ city: provider.location.city }))
+			? (provider.displayName ??
+					m.family_provider_in_city({
+						city:
+							formatPlace(provider.location.city, provider.location.stateProvince) ??
+							provider.location.city
+					}))
 			: ''
 	);
 	/** The first name, or null for an anonymous profile. */
@@ -238,7 +244,7 @@
 						</span>
 						<span class="inline-flex items-center gap-1 text-sm text-base-content-muted">
 							<i class="las la-map-marker" aria-hidden="true"></i>
-							{provider.location.city}, {provider.location.stateProvince}
+							{formatPlace(provider.location.city, provider.location.stateProvince)}
 						</span>
 						{#if distanceKm != null}
 							<span class="rounded-pill bg-base-500 px-2.5 py-1 text-xs font-semibold text-info">
@@ -337,7 +343,11 @@
 						class="relative flex h-40 items-center justify-center overflow-hidden rounded-lg
 							bg-base-300"
 						role="img"
-						aria-label={m.family_provider_area_aria({ city: provider.location.city })}
+						aria-label={m.family_provider_area_aria({
+							city:
+								formatPlace(provider.location.city, provider.location.stateProvince) ??
+								provider.location.city
+						})}
 					>
 						<span class="absolute size-24 rounded-full bg-primary/20"></span>
 						<span class="absolute size-12 rounded-full bg-primary/25"></span>
@@ -352,7 +362,7 @@
 							? m.family_provider_works_around_before({ name: knownFirstName })
 							: m.family_provider_works_around_before_anon()}
 						<strong class="text-base-content">
-							{provider.location.city}, {provider.location.stateProvince}</strong
+							{formatPlace(provider.location.city, provider.location.stateProvince)}</strong
 						>{m.family_provider_works_around_after()}
 					</p>
 				</section>

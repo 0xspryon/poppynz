@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPlace } from '$lib/location';
 	/** Marketplace result card (design 13e). Tolerates every data variant:
 	 * null photo → initials avatar, null name → "Provider in {city}" + generic
 	 * glyph, null bio → chips move up, distance chip only when geo-searching.
@@ -16,7 +17,12 @@
 	let { provider, href }: Props = $props();
 
 	const name = $derived(
-		provider.displayName ?? m.family_provider_in_city({ city: provider.location.city })
+		provider.displayName ??
+			m.family_provider_in_city({
+				city:
+					formatPlace(provider.location.city, provider.location.stateProvince) ??
+					provider.location.city
+			})
 	);
 	const anonymous = $derived(provider.displayName == null);
 	const initials = $derived(
@@ -70,7 +76,9 @@
 				</span>
 			</div>
 			<div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-base-content-muted">
-				<span class="truncate">{provider.location.city}, {provider.location.stateProvince}</span>
+				<span class="truncate"
+					>{formatPlace(provider.location.city, provider.location.stateProvince)}</span
+				>
 				{#if provider.distanceKm !== undefined}
 					<span class="rounded-pill bg-base-500 px-2 py-0.5 text-[11px] font-semibold text-info">
 						{provider.distanceKm} km

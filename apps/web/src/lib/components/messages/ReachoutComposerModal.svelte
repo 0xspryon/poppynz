@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPlace } from '$lib/location';
 	/** Reach-out composer (design 16a). The intro message is fixed — the same
 	 * for everyone, so receivers never screen free-text from strangers — and the
 	 * sender only picks which of the receiver-relevant services apply: a family
@@ -51,7 +52,7 @@
 		if (!open) return;
 		selected = [];
 		void getProfile().then((result) => {
-			if (result.ok) senderCity = result.data.city ?? null;
+			if (result.ok) senderCity = formatPlace(result.data.city, result.data.stateProvince);
 		});
 	});
 

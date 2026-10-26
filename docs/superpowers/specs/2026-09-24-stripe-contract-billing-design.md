@@ -95,8 +95,15 @@ Unchanged by the founder review. Full detail in the
   or 5 h (fall). A non-existent wall time moves to the moment the clock
   resumes; an ambiguous one takes its first occurrence.
 - **No overnight sessions** (two sessions instead).
-- **Start date required at send and later than today**; **acceptance refused
-  on or after the start date**.
+- **Start date required at send.** *Revised 2026-10-26 (UAT round 2,
+  user-approved):* terms can be sent (Sign & send) and accepted up to
+  `CONTRACT_MIN_LEAD_MINUTES` (default **120**, 60–10080) before the **first
+  session** starts, in the contract's time zone — the start date may be today.
+  This replaces "start date later than today" and "acceptance refused on or
+  after the start date". Enforced on the server at send
+  (`FIRST_SESSION_TOO_SOON`, 422) and at accept (`FIRST_SESSION_TOO_SOON`,
+  409); a proposal past the lead presents as expired. Terms that never produce
+  a session measure from the start date's midnight.
 - **Optional last-day end time** on a negotiated end date; sessions that day
   are cut at it. A contract ended by notice works its full schedule on the
   last day.
@@ -133,14 +140,23 @@ accepted weekly pattern.
 ### Cycles
 
 - **3-day rolling cycles** anchored to the contract start date.
-- **Hold** the cycle's amount **2 days before the cycle starts**.
+- **Hold** the cycle's amount **`CONTRACT_HOLD_LEAD_HOURS` before the cycle
+  starts** — default **24** (whole hours, 1–72; a bad value stops billing like
+  the other CONTRACT_* settings). *Revised 2026-10-26 (UAT round 2,
+  user-approved; was 2 days):* the hold instant is the cycle start (00:00 in
+  the contract zone) minus that many real hours. It is computed when a cycle
+  is planned and stored as `hold_at`: cycles already planned keep theirs, only
+  newly planned cycles use a changed value. UI copy ("held 1 day before")
+  follows the setting.
 - **Capture** at the earlier of **07:00 on the cycle's first day** and **the
   cycle's first session start minus 1 hour** (contract zone).
 - **Charge gate:** no scheduled care begins without a successful charge,
   except under the system-failure procedure below.
-- **Late bookings:** a contract accepted less than 2 days before its first
-  session is authorised **and captured as soon as it becomes binding**, before
-  care begins. There is no 48-hour card-update period. If funding fails, the
+- **Late bookings:** a contract that becomes billable after its cycle's hold
+  time and less than the hold lead before its first session — with the
+  2026-10-26 lead-time rule, possibly only `CONTRACT_MIN_LEAD_MINUTES` before
+  it — is authorised **and captured as soon as it becomes binding**, before
+  care begins. There is no card-update (grace) period. If funding fails, the
   first session is not activated.
 - **Partial last cycle:** covers sessions up to the effective end date (and
   end time); captured on the same rule.
@@ -204,8 +220,9 @@ accepted weekly pattern.
 
 ### Declines, suspension and resume
 
-- A hold that fails for a **family card reason** starts a **48-hour grace
-  period ending at the cycle start**: notify the family (update your card) and
+- A hold that fails for a **family card reason** starts a **grace period
+  running from the hold to the cycle start** (`CONTRACT_HOLD_LEAD_HOURS`, 24 h
+  by default): notify the family (update your card) and
   the helper (payment pending); retry automatically, and immediately whenever
   the card is replaced.
 - Still unfunded at cycle start → the contract is **suspended**; the helper is
@@ -229,6 +246,11 @@ accepted weekly pattern.
 - **No hold is placed on the family's card** while the helper isn't ready.
 - Deadline = the cycle-1 capture time. Still not ready → the contract is
   **cancelled**, nothing has been charged, both parties are notified.
+- *2026-10-26:* with late bookings that deadline can already have passed (or
+  be minutes away) at acceptance. A helper who isn't payment-ready is then
+  refused (`PAYOUTS_REQUIRED_TO_ACCEPT`: set up payouts, then accept) when the
+  deadline is less than 15 minutes (one billing tick) away, instead of the
+  contract being cancelled the moment it is accepted.
 
 ## 7. Session resolution (piece 5)
 

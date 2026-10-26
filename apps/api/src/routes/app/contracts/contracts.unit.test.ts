@@ -10,6 +10,7 @@ import {
   makeConversationRepoTest,
   makeInMemoryBillingCustomerRepo,
   makeInMemoryContractBillingRepo,
+  ContractBillingRepo,
   dummyContractBilling,
   dummyContractCycle,
   makePayoutAccountRepoTest,
@@ -34,21 +35,25 @@ import {
 import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
 import { makePaymentsTest } from '@repo/payments';
 import { addDays, todayIn } from '@repo/calendar';
-import { Cause, Effect, Exit, Layer, Option } from 'effect';
+import { Cause, ConfigProvider, Effect, Exit, Layer, Option } from 'effect';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
 import {
   acceptContractRouteProgram,
+  contractLandingRouteProgram,
   contractsBadgeCountRouteProgram,
   createContractRouteProgram,
   declineContractRouteProgram,
   endContractRouteProgram,
+  getContractCycleRouteProgram,
   getContractRouteProgram,
   listContractsRouteProgram,
   quoteTermsRouteProgram,
   markContractSeenRouteProgram,
+  renewContractRouteProgram,
   requestChangesRouteProgram,
+  retryContractPaymentRouteProgram,
   saveTermsRouteProgram,
   sendContractRouteProgram,
   toThreadContractSummary,
@@ -56,6 +61,8 @@ import {
 } from './contracts.handler';
 
 const CONTRACT_ID = '0198a3b0-0000-7000-8000-00000000c001';
+const NEW_CONTRACT_ID = '0198a3b0-0000-7000-8000-00000000c002';
+const CYCLE_ID = '0198a3b0-0000-7000-8000-00000000cc01';
 const CONVERSATION_ID = '0198a3b0-0000-7000-8000-000000000001';
 const SERVICE_ID = '11111111-1111-4111-8111-111111111111';
 const OTHER_SERVICE_ID = '44444444-4444-4444-8444-444444444444';
@@ -258,6 +265,8 @@ const makeLayer = (
     listForUserFailsWith?: SqlError;
     /** Per-call findByConversationId results (consumed in order). */
     findByConversationIdResults?: Array<Contract | null>;
+    /** Every contract of the conversation (listByConversationId), per call. */
+    conversationContractsResults?: Array<Array<Contract>>;
     sendPendingResult?: ContractVersion | null;
     acceptPendingResult?: ContractVersion | null;
     decidePendingResult?: ContractVersion | null;
@@ -430,6 +439,12 @@ const makeLayer = (
           options.findByConversationIdResults && options.findByConversationIdResults.length > 0
             ? (options.findByConversationIdResults.shift() ?? null)
             : null
+        ),
+      listByConversationId: () =>
+        Effect.succeed(
+          options.conversationContractsResults && options.conversationContractsResults.length > 1
+            ? (options.conversationContractsResults.shift() ?? [])
+            : (options.conversationContractsResults?.[0] ?? [])
         ),
       findWithContext: () => Effect.succeed(options.contractWithContext ?? null),
       listForUser: () =>
@@ -1247,8 +1262,10 @@ describe('POST /contracts/:id/send', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'FamilyLocationRequiredError' });
   });
 
-  it("refuses a start date that is today in the family's zone", async () => {
-    freezeNow('2026-09-10T05:30:00Z'); // Sep 10, 00:30 in Winnipeg
+  // Sep 10 2026 is a Thursday: the pattern's first session is 15:30 CDT
+  // (20:30Z) that day in Winnipeg.
+  it('refuses when the first session starts less than CONTRACT_MIN_LEAD_MINUTES away', async () => {
+    freezeNow('2026-09-10T19:00:00Z'); // 14:00 in Winnipeg, 1.5 h before
     const exit = await Effect.runPromiseExit(
       sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
@@ -1259,7 +1276,90 @@ describe('POST /contracts/:id/send', () => {
         )
       )
     );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'StartDateNotInFutureError' });
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'FirstSessionTooSoonError',
+      action: 'send',
+      minLeadMinutes: 120
+    });
+  });
+
+  it('sends a contract starting today when its first session is 2 hours or more away', async () => {
+    freezeNow('2026-09-10T18:30:00Z'); // 13:30 in Winnipeg, exactly 2 h before
+    const result = await Effect.runPromise(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion({ startsOn: '2026-09-10' })]
+          })
+        )
+      )
+    );
+    expect(result).toMatchObject({ status: 'proposed' });
+  });
+
+  it('measures the lead from the first session, not the start date', async () => {
+    // Starts Wed Sep 9 (no session that day): the first session is Thu 15:30.
+    freezeNow('2026-09-10T12:00:00Z');
+    const result = await Effect.runPromise(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion({ startsOn: '2026-09-09' })]
+          })
+        )
+      )
+    );
+    expect(result).toMatchObject({ status: 'proposed' });
+  });
+
+  it('refuses a start date already in the past', async () => {
+    freezeNow('2026-09-10T12:00:00Z');
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion({ startsOn: '2026-09-01' })]
+          })
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'FirstSessionTooSoonError', action: 'send' });
+  });
+
+  it('reads the minimum lead from CONTRACT_MIN_LEAD_MINUTES', async () => {
+    freezeNow('2026-09-10T18:00:00Z'); // 2.5 h before the first session
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract(),
+            versions: [draftVersion({ startsOn: '2026-09-10' })]
+          })
+        ),
+        Effect.withConfigProvider(
+          ConfigProvider.fromMap(new Map([['CONTRACT_MIN_LEAD_MINUTES', '240']]))
+        )
+      )
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'FirstSessionTooSoonError',
+      minLeadMinutes: 240
+    });
+  });
+
+  it('fails loudly on a malformed CONTRACT_MIN_LEAD_MINUTES', async () => {
+    const exit = await Effect.runPromiseExit(
+      sendContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
+        Effect.provide(makeLayer({ contractById: baseContract(), versions: [draftVersion()] })),
+        Effect.withConfigProvider(
+          ConfigProvider.fromMap(new Map([['CONTRACT_MIN_LEAD_MINUTES', '30']]))
+        )
+      )
+    );
+    expect(Exit.isFailure(exit) && Cause.isDie(exit.cause)).toBe(true);
   });
 
   it("allows tomorrow in the family's zone even when UTC is already there", async () => {
@@ -1373,6 +1473,73 @@ describe('POST /contracts/:id/accept', () => {
         })
       }
     ]);
+  });
+
+  describe('a late booking (UAT round 2: up to 2 hours before the first session)', () => {
+    // Sep 10 2026 (Thu): first session 15:30 CDT; cycle 1's capture is the
+    // earlier of 07:00 (12:00Z) and 14:30 — so 12:00Z.
+    const lateProposal = () =>
+      proposedVersion({ startsOn: '2026-09-10', sentAt: new Date('2026-09-09T12:00:00Z') });
+
+    it("refuses a helper without payouts once cycle 1's capture time has passed", async () => {
+      freezeNow('2026-09-10T18:00:00Z'); // 13:00, 2.5 h before the first session
+      const accepted: Array<unknown> = [];
+      const exit = await Effect.runPromiseExit(
+        acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(
+            makeLayer({
+              viewer: providerUser(),
+              contractById: baseContract({ status: 'proposed' }),
+              versions: [lateProposal()],
+              onAcceptPending: (acceptOptions) => accepted.push(acceptOptions)
+            })
+          )
+        )
+      );
+      expect(getFailure(exit)).toMatchObject({ _tag: 'PayoutsRequiredToAcceptError' });
+      expect(accepted).toEqual([]);
+    });
+
+    it('accepts it for a payment-ready helper, billable at once', async () => {
+      freezeNow('2026-09-10T18:00:00Z');
+      const accepted: Array<any> = [];
+      const result = await Effect.runPromise(
+        acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(
+            makeLayer({
+              viewer: providerUser(),
+              payoutAccountStatus: 'ready',
+              contractById: baseContract({ status: 'proposed' }),
+              versions: [lateProposal()],
+              onAcceptPending: (acceptOptions) => accepted.push(acceptOptions)
+            })
+          )
+        )
+      );
+      expect(result).toEqual({ id: CONTRACT_ID, status: 'active' });
+      expect(accepted[0].billing).toMatchObject({
+        status: 'scheduled',
+        billableFrom: new Date('2026-09-10T18:00:00Z')
+      });
+    });
+
+    it('lets a helper without payouts accept while the readiness deadline is still ahead', async () => {
+      freezeNow('2026-09-10T05:30:00Z'); // 00:30, the capture deadline 6.5 h away
+      const accepted: Array<any> = [];
+      await Effect.runPromise(
+        acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(
+            makeLayer({
+              viewer: providerUser(),
+              contractById: baseContract({ status: 'proposed' }),
+              versions: [lateProposal()],
+              onAcceptPending: (acceptOptions) => accepted.push(acceptOptions)
+            })
+          )
+        )
+      );
+      expect(accepted[0].billing).toMatchObject({ status: 'awaiting_payment_readiness' });
+    });
   });
 
   it('refuses to accept when a contracted service lost its approval since the proposal (R5)', async () => {
@@ -1545,8 +1712,8 @@ describe('POST /contracts/:id/accept', () => {
     expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
   });
 
-  it('refuses accepting on the start date in the contract zone', async () => {
-    freezeNow('2026-09-10T05:30:00Z'); // Sep 10, 00:30 in Winnipeg
+  it('refuses accepting once the first session is less than 2 hours away', async () => {
+    freezeNow('2026-09-10T19:00:00Z'); // 14:00 in Winnipeg, session at 15:30
     const exit = await Effect.runPromiseExit(
       acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
         Effect.provide(
@@ -1560,7 +1727,10 @@ describe('POST /contracts/:id/accept', () => {
         )
       )
     );
-    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStartDatePassedError' });
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'FirstSessionTooSoonError',
+      action: 'accept'
+    });
   });
 
   it('refuses a sent version without a start date as START_DATE_REQUIRED, not "passed"', async () => {
@@ -2040,7 +2210,8 @@ describe('GET /contracts/:id', () => {
       feeBps: 500,
       feeCents: 520,
       feeTaxLines: [{ label: 'GST (MB) 5%', taxCents: 26 }],
-      totalCents: 10946
+      totalCents: 10946,
+      holdLeadHours: 24
     });
   });
 
@@ -2333,7 +2504,7 @@ describe('GET /contracts/:id', () => {
     expect(contract).toMatchObject({
       timeZone: WPG,
       timeZoneLabel: 'Central Time',
-      earliestStartsOn: addDays(todayIn(WPG), 1),
+      earliestStartsOn: todayIn(WPG),
       acceptBlockedReason: null
     });
   });
@@ -2432,7 +2603,7 @@ describe('GET /contracts/:id', () => {
     expect(contract).toMatchObject({
       timeZone: WPG,
       timeZoneLabel: 'Central Time',
-      earliestStartsOn: addDays(todayIn(WPG), 1)
+      earliestStartsOn: todayIn(WPG)
     });
   });
 
@@ -2457,8 +2628,8 @@ describe('GET /contracts/:id', () => {
     expect(contract.actions).toMatchObject({ canAccept: false, canDecline: true });
   });
 
-  it('tells the provider why Accept is gone once the start date has arrived', async () => {
-    freezeNow('2026-09-10T05:30:00Z');
+  it('tells the provider why Accept is gone once the first session is too close', async () => {
+    freezeNow('2026-09-10T19:00:00Z');
     const pending = proposedVersion({
       startsOn: '2026-09-10',
       sentAt: new Date('2026-09-08T12:00:00Z')
@@ -2479,7 +2650,7 @@ describe('GET /contracts/:id', () => {
       )
     );
 
-    expect(contract.acceptBlockedReason).toBe('start_date_passed');
+    expect(contract.acceptBlockedReason).toBe('starts_too_soon');
     expect(contract.actions).toMatchObject({ canAccept: false, canDecline: true });
     expect(contract.timeZone).toBe(WPG);
   });
@@ -2749,7 +2920,8 @@ describe('POST /contracts/:id/seen', () => {
 
 describe('a proposal whose start date has arrived presents as expired', () => {
   // Sep 10, 00:30 in Winnipeg — the start date has arrived in the version's zone.
-  const ON_START_DATE = '2026-09-10T05:30:00Z';
+  // Sep 10, 14:00 in Winnipeg: the first session (15:30) is under 2 h away.
+  const ON_START_DATE = '2026-09-10T19:00:00Z';
   // Sep 9, 23:30 in Winnipeg, although UTC is already on Sep 10.
   const EVENING_BEFORE = '2026-09-10T04:30:00Z';
   const startingProposal = (overrides: Partial<ContractVersion> = {}) =>
@@ -2758,7 +2930,11 @@ describe('a proposal whose start date has arrived presents as expired', () => {
       sentAt: new Date('2026-09-08T12:00:00Z'),
       ...overrides
     });
-  const fourteenDayCutoff = () => new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  const fourteenDayCutoff = () => ({
+    cutoff: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000),
+    now: new Date(),
+    minLeadMinutes: 120
+  });
 
   it('lists as expired and no longer awaits the provider', async () => {
     freezeNow(ON_START_DATE);
@@ -2918,7 +3094,7 @@ describe('a proposal whose start date has arrived presents as expired', () => {
     );
 
     expect(contract.status).toBe('expired');
-    expect(contract.acceptBlockedReason).toBe('start_date_passed');
+    expect(contract.acceptBlockedReason).toBe('starts_too_soon');
     expect(contract.actions).toMatchObject({
       canAccept: false,
       canDecline: true,
@@ -2944,7 +3120,7 @@ describe('a proposal whose start date has arrived presents as expired', () => {
     );
 
     expect(contract.status).toBe('expired');
-    expect(contract.acceptBlockedReason).toBe('start_date_passed');
+    expect(contract.acceptBlockedReason).toBe('starts_too_soon');
     expect(contract.actions).toMatchObject({ canWithdraw: true, canAccept: false });
   });
 
@@ -3043,7 +3219,28 @@ describe('authorization', () => {
       'seen',
       () =>
         markContractSeenRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers())
-    ]
+    ],
+    [
+      'renew',
+      () => renewContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers())
+    ],
+    [
+      'retry payment',
+      () =>
+        retryContractPaymentRouteProgram(
+          makeContext({ params: { id: CONTRACT_ID } }),
+          new Headers()
+        )
+    ],
+    [
+      'cycle',
+      () =>
+        getContractCycleRouteProgram(
+          makeContext({ params: { id: CONTRACT_ID, cycleId: CYCLE_ID } }),
+          new Headers()
+        )
+    ],
+    ['landing', () => contractLandingRouteProgram(new Headers())]
   ];
 
   it.each(cases)(
@@ -3163,5 +3360,553 @@ describe('live quote for unsaved terms (B6)', () => {
       ).pipe(Effect.provide(makeLayer({ contractById: baseContract(), hasPermission: false })))
     );
     expect(getFailure(denied)).toMatchObject({ _tag: 'ForbiddenError' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// UAT round 2
+
+const signedVersion = (overrides: Partial<ContractVersion> = {}) =>
+  proposedVersion({
+    status: 'accepted',
+    decidedAt: new Date('2026-09-01T12:00:00Z'),
+    startsOn: '2026-09-07',
+    ...overrides
+  });
+
+describe('POST /contracts/:id/renew (start a new contract from this one, UAT 7b)', () => {
+  const renew = (layer: ReturnType<typeof makeLayer>) =>
+    Effect.runPromiseExit(
+      renewContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(layer)
+      )
+    );
+
+  it('opens a family-private draft pre-filled with the signed terms, dates blank', async () => {
+    const created: Array<any> = [];
+    const published: Array<Published> = [];
+    const result = await Effect.runPromise(
+      renewContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+        Effect.provide(
+          makeLayer({
+            contractById: baseContract({ status: 'active' }),
+            versions: [signedVersion({ services: [serviceItem({ rateCents: 2700 })] })],
+            conversationById: activeConversation(),
+            conversationContractsResults: [[baseContract({ status: 'active' })]],
+            offered: [offeredService({ hourlyRateCents: 2600 })],
+            onCreate: (input) => created.push(input),
+            published
+          })
+        )
+      )
+    );
+    expect(result).toMatchObject({ droppedServiceIds: [] });
+    expect(created).toEqual([
+      {
+        conversationId: CONVERSATION_ID,
+        familyUserId: 'family-1',
+        providerUserId: 'provider-1',
+        services: [
+          {
+            ...serviceItem({ rateCents: 2700 }),
+            // The listing as it is now; the agreed rate is kept (send
+            // re-checks it against the base-rate floor).
+            listedRateCents: 2600
+          }
+        ]
+      }
+    ]);
+    expect(published).toEqual([]);
+  });
+
+  it('works from an ended contract too, and leaves out services no longer offered', async () => {
+    const created: Array<any> = [];
+    const exit = await renew(
+      makeLayer({
+        contractById: baseContract({ status: 'ended' }),
+        versions: [
+          signedVersion({
+            services: [serviceItem(), serviceItem({ serviceId: OTHER_SERVICE_ID, name: 'Tutoring' })]
+          })
+        ],
+        conversationById: activeConversation(),
+        onCreate: (input) => created.push(input)
+      })
+    );
+    expect(Exit.isSuccess(exit) && exit.value).toMatchObject({
+      droppedServiceIds: [OTHER_SERVICE_ID]
+    });
+    expect(created[0].services.map((item: ContractServiceItem) => item.serviceId)).toEqual([
+      SERVICE_ID
+    ]);
+  });
+
+  it('is the family\'s to start — the helper is refused', async () => {
+    const exit = await renew(
+      makeLayer({
+        viewer: providerUser(),
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()],
+        conversationById: activeConversation()
+      })
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'NotContractActorError' });
+  });
+
+  it('needs signed terms: a contract still being negotiated is refused', async () => {
+    const exit = await renew(
+      makeLayer({
+        contractById: baseContract({ status: 'proposed' }),
+        versions: [proposedVersion()],
+        conversationById: activeConversation()
+      })
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractStateError' });
+  });
+
+  it('points at the negotiation already open in the conversation', async () => {
+    const exit = await renew(
+      makeLayer({
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()],
+        conversationById: activeConversation(),
+        conversationContractsResults: [
+          [baseContract({ id: NEW_CONTRACT_ID, status: 'draft' }), baseContract({ status: 'active' })]
+        ]
+      })
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ContractExistsError',
+      contractId: NEW_CONTRACT_ID
+    });
+  });
+
+  it("maps a lost race (double click) to CONTRACT_EXISTS with the winner's id", async () => {
+    const exit = await renew(
+      makeLayer({
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()],
+        conversationById: activeConversation(),
+        conversationContractsResults: [
+          [baseContract({ status: 'active' })],
+          [baseContract({ id: NEW_CONTRACT_ID, status: 'draft' }), baseContract({ status: 'active' })]
+        ],
+        createFailsWith: new SqlError({ cause: { code: '23505' } })
+      })
+    );
+    expect(getFailure(exit)).toMatchObject({
+      _tag: 'ContractExistsError',
+      contractId: NEW_CONTRACT_ID
+    });
+  });
+
+  it('starts from an unlocked conversation only', async () => {
+    const exit = await renew(
+      makeLayer({
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()],
+        conversationById: activeConversation({ status: 'pending' })
+      })
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractConversationNotActiveError' });
+  });
+
+  it('hides the contract from non-participants', async () => {
+    const exit = await renew(
+      makeLayer({
+        viewer: familyUser({ id: 'family-2' }),
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()]
+      })
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractNotFoundError' });
+  });
+});
+
+describe('POST /contracts/:id/billing/retry (UAT 13)', () => {
+  const graceCycle = () =>
+    dummyContractCycle({
+      id: CYCLE_ID,
+      contractId: CONTRACT_ID,
+      status: 'grace',
+      startsAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+    });
+  const billingWith = (
+    cycles: Array<ReturnType<typeof dummyContractCycle>>,
+    overrides: Partial<ReturnType<typeof dummyContractBilling>> = {}
+  ) => {
+    const repo = makeInMemoryContractBillingRepo({
+      billing: [dummyContractBilling({ contractId: CONTRACT_ID, ...overrides })]
+    });
+    repo.state.cycles.push(...cycles);
+    return repo;
+  };
+  const retry = (layer: ReturnType<typeof makeLayer>) =>
+    Effect.runPromiseExit(
+      retryContractPaymentRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID } }),
+        new Headers()
+      ).pipe(Effect.provide(layer))
+    );
+
+  it('runs the retry and reports what came of it', async () => {
+    const billing = billingWith([graceCycle()]);
+    const exit = await retry(
+      makeLayer({ contractById: baseContract({ status: 'active' }), billing })
+    );
+    // Nothing could be charged (the hold is still declined).
+    expect(Exit.isSuccess(exit) && exit.value).toEqual({ outcome: 'declined' });
+    expect(billing.state.billing.get(CONTRACT_ID)?.familyRetryAt).toBeInstanceOf(Date);
+  });
+
+  it('is also offered on a card-suspended contract', async () => {
+    const billing = billingWith([], { status: 'suspended', suspendedReason: 'card' });
+    const exit = await retry(
+      makeLayer({ contractById: baseContract({ status: 'active' }), billing })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+  });
+
+  it('refuses when there is nothing to retry', async () => {
+    for (const billing of [
+      billingWith([dummyContractCycle({ contractId: CONTRACT_ID, status: 'captured' })]),
+      billingWith([], { status: 'suspended', suspendedReason: 'helper_not_ready' }),
+      billingWith([], { status: 'suspended', suspendedReason: 'provider_unavailable' })
+    ]) {
+      const exit = await retry(
+        makeLayer({ contractById: baseContract({ status: 'active' }), billing })
+      );
+      expect(getFailure(exit)).toMatchObject({ _tag: 'PaymentRetryNotNeededError' });
+    }
+    const none = await retry(makeLayer({ contractById: baseContract({ status: 'active' }) }));
+    expect(getFailure(none)).toMatchObject({ _tag: 'PaymentRetryNotNeededError' });
+  });
+
+  it('is the family\'s only — the helper has no card to retry', async () => {
+    const exit = await retry(
+      makeLayer({
+        viewer: providerUser(),
+        contractById: baseContract({ status: 'active' }),
+        billing: billingWith([graceCycle()])
+      })
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'NotContractActorError' });
+  });
+
+  it('runs once on a double click: the second is rate-limited for a minute', async () => {
+    const billing = billingWith([graceCycle()]);
+    const layer = makeLayer({ contractById: baseContract({ status: 'active' }), billing });
+    expect(Exit.isSuccess(await retry(layer))).toBe(true);
+    const second = await retry(layer);
+    expect(getFailure(second)).toMatchObject({ _tag: 'PaymentRetryRateLimitedError' });
+    expect((getFailure(second) as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThan(
+      55
+    );
+  });
+
+  it('lets exactly one of two concurrent retries through', async () => {
+    const billing = billingWith([graceCycle()]);
+    const layer = makeLayer({ contractById: baseContract({ status: 'active' }), billing });
+    const exits = await Promise.all([retry(layer), retry(layer)]);
+    expect(exits.filter(Exit.isSuccess)).toHaveLength(1);
+    expect(getFailure(exits.find(Exit.isFailure)!)).toMatchObject({
+      _tag: 'PaymentRetryRateLimitedError'
+    });
+  });
+
+  it('allows another retry once the minute has passed', async () => {
+    const billing = billingWith([graceCycle()], {
+      familyRetryAt: new Date(Date.now() - 61 * 1000)
+    });
+    const exit = await retry(
+      makeLayer({ contractById: baseContract({ status: 'active' }), billing })
+    );
+    expect(Exit.isSuccess(exit)).toBe(true);
+  });
+
+  it('translates a billing lookup failure into ContractRepoError', async () => {
+    const repo = makeInMemoryContractBillingRepo();
+    const failing = {
+      ...repo,
+      layer: Layer.succeed(ContractBillingRepo, {
+        ...repo.service,
+        findBilling: () => Effect.fail(new SqlError({ cause: 'down' }))
+      })
+    };
+    const exit = await retry(
+      makeLayer({ contractById: baseContract({ status: 'active' }), billing: failing })
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'ContractRepoError' });
+  });
+});
+
+describe('GET /contracts/:id/cycles/:cycleId (UAT 11a)', () => {
+  const quotedCycle = () =>
+    dummyContractCycle({
+      id: CYCLE_ID,
+      contractId: CONTRACT_ID,
+      status: 'captured',
+      serviceCents: 60000,
+      serviceTaxCents: 0,
+      familyFeeBps: 500,
+      familyFeeCents: 3000,
+      familyFeeTaxCents: 150,
+      familyTotalCents: 63150,
+      capturedCents: 63150,
+      providerCommissionBps: 1500,
+      providerCommissionCents: 9000,
+      providerCommissionTaxCents: 1170,
+      providerShareCents: 49830,
+      taxLines: [
+        {
+          supplyType: 'family_service_fee',
+          jurisdiction: 'MB',
+          component: 'gst',
+          rateMillipercent: 5000,
+          baseCents: 3000,
+          taxCents: 150,
+          label: 'GST (MB) 5%',
+          registrationNumber: null
+        },
+        {
+          supplyType: 'provider_commission',
+          jurisdiction: 'ON',
+          component: 'hst',
+          rateMillipercent: 13000,
+          baseCents: 9000,
+          taxCents: 1170,
+          label: 'HST (ON) 13%',
+          registrationNumber: null
+        }
+      ] as never
+    });
+  const billingWithCycle = () => {
+    const repo = makeInMemoryContractBillingRepo({
+      billing: [
+        dummyContractBilling({
+          contractId: CONTRACT_ID,
+          acceptedVersionId: 'version-1',
+          timeZone: WPG
+        })
+      ]
+    });
+    repo.state.cycles.push(quotedCycle());
+    repo.state.sessions.push({
+      id: 'session-1',
+      contractId: CONTRACT_ID,
+      cycleId: CYCLE_ID,
+      date: '2026-11-03',
+      slot: `${SERVICE_ID}@930`,
+      serviceId: SERVICE_ID,
+      startMinutes: 930,
+      endMinutes: 1050,
+      startsAt: new Date('2026-11-03T21:30:00Z'),
+      endsAt: new Date('2026-11-03T23:30:00Z'),
+      elapsedMinutes: 120,
+      rateCents: 2600,
+      valueCents: 5200,
+      status: 'completed',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    } as never);
+    return repo;
+  };
+  const read = (layer: ReturnType<typeof makeLayer>, cycleId = CYCLE_ID) =>
+    Effect.runPromiseExit(
+      getContractCycleRouteProgram(
+        makeContext({ params: { id: CONTRACT_ID, cycleId } }),
+        new Headers()
+      ).pipe(Effect.provide(layer))
+    );
+
+  it("gives the family the care, fee and fee tax, and the cycle's timetable", async () => {
+    const exit = await read(
+      makeLayer({
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()],
+        billing: billingWithCycle()
+      })
+    );
+    if (!Exit.isSuccess(exit)) throw new Error('expected success');
+    const { cycle } = exit.value;
+    expect(cycle).toMatchObject({
+      id: CYCLE_ID,
+      status: 'captured',
+      viewerSide: 'family',
+      timeZone: WPG,
+      timeZoneLabel: 'Central Time',
+      transferAt: null,
+      counterpartName: 'Maria Tester',
+      canRetryPayment: false,
+      amounts: {
+        side: 'family',
+        serviceCents: 60000,
+        feeCents: 3000,
+        feeTaxLines: [{ label: 'GST (MB) 5%', taxCents: 150 }],
+        totalCents: 63150,
+        chargedCents: 63150
+      }
+    });
+    // The helper's side never leaks to the family.
+    expect(JSON.stringify(cycle.amounts)).not.toContain('HST (ON)');
+    expect(cycle.sessions).toEqual([
+      {
+        id: 'session-1',
+        date: '2026-11-03',
+        serviceId: SERVICE_ID,
+        serviceName: 'Childcare',
+        startMinutes: 930,
+        endMinutes: 1050,
+        elapsedMinutes: 120,
+        status: 'completed',
+        startsAt: '2026-11-03T21:30:00.000Z',
+        endsAt: '2026-11-03T23:30:00.000Z'
+      }
+    ]);
+  });
+
+  it('gives the helper the share after commission and its tax, and the transfer time', async () => {
+    const exit = await read(
+      makeLayer({
+        viewer: providerUser(),
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()],
+        billing: billingWithCycle()
+      })
+    );
+    if (!Exit.isSuccess(exit)) throw new Error('expected success');
+    const { cycle } = exit.value;
+    expect(cycle.amounts).toEqual({
+      side: 'provider',
+      serviceCents: 60000,
+      serviceTaxLines: [],
+      commissionBps: 1500,
+      commissionCents: 9000,
+      commissionTaxLines: [{ label: 'HST (ON) 13%', taxCents: 1170 }],
+      shareCents: 49830
+    });
+    expect(cycle.transferAt).toBe(quotedCycle().transferAt.toISOString());
+    expect(cycle.canRetryPayment).toBe(false);
+  });
+
+  it('has no amounts before the cycle is quoted, only the estimate', async () => {
+    const billing = billingWithCycle();
+    billing.state.cycles[0] = dummyContractCycle({
+      id: CYCLE_ID,
+      contractId: CONTRACT_ID,
+      status: 'grace',
+      startsAt: new Date(Date.now() + 24 * 60 * 60 * 1000)
+    });
+    billing.state.sessions[0] = { ...billing.state.sessions[0]!, status: 'scheduled' };
+    const exit = await read(
+      makeLayer({
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()],
+        billing
+      })
+    );
+    if (!Exit.isSuccess(exit)) throw new Error('expected success');
+    expect(exit.value.cycle).toMatchObject({
+      amounts: null,
+      estimatedServiceCents: 5200,
+      canRetryPayment: true
+    });
+  });
+
+  it("404s a cycle of another contract, an unknown cycle, and outsiders", async () => {
+    const unknown = await read(
+      makeLayer({
+        contractById: baseContract({ status: 'active' }),
+        versions: [signedVersion()],
+        billing: billingWithCycle()
+      }),
+      '0198a3b0-0000-7000-8000-00000000cc99'
+    );
+    expect(getFailure(unknown)).toMatchObject({ _tag: 'ContractCycleNotFoundError' });
+    const noBilling = await read(
+      makeLayer({ contractById: baseContract({ status: 'active' }), versions: [signedVersion()] })
+    );
+    expect(getFailure(noBilling)).toMatchObject({ _tag: 'ContractCycleNotFoundError' });
+    const outsider = await read(
+      makeLayer({
+        viewer: familyUser({ id: 'family-2' }),
+        contractById: baseContract({ status: 'active' }),
+        billing: billingWithCycle()
+      })
+    );
+    expect(getFailure(outsider)).toMatchObject({ _tag: 'ContractNotFoundError' });
+  });
+
+  it('validates both ids', async () => {
+    const exit = await read(
+      makeLayer({ contractById: baseContract({ status: 'active' }) }),
+      'not-a-uuid'
+    );
+    expect(getFailure(exit)).toMatchObject({ _tag: 'RequestValidationError' });
+  });
+
+  it('exposes Retry payment on the contract billing summary for the family only', async () => {
+    const billing = makeInMemoryContractBillingRepo({
+      billing: [
+        dummyContractBilling({ contractId: CONTRACT_ID, status: 'suspended', suspendedReason: 'card' })
+      ]
+    });
+    const detail = (viewer: User) =>
+      Effect.runPromise(
+        getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(
+            makeLayer({
+              viewer,
+              contractWithContext: withContext(
+                baseContract({ status: 'active' }),
+                [signedVersion()],
+                viewer.id
+              ),
+              conversationById: activeConversation(),
+              billing
+            })
+          )
+        )
+      );
+    expect((await detail(familyUser())).contract.billing?.canRetryPayment).toBe(true);
+    expect((await detail(providerUser())).contract.billing?.canRetryPayment).toBe(false);
+  });
+});
+
+describe('GET /contracts/me/landing (UAT 5)', () => {
+  const landing = (contracts: Array<ContractWithContext>, viewer = familyUser()) =>
+    Effect.runPromise(
+      contractLandingRouteProgram(new Headers()).pipe(
+        Effect.provide(makeLayer({ viewer, contracts }))
+      )
+    );
+
+  it('lists the running contracts: active and under notice', async () => {
+    freezeNow('2026-10-26T12:00:00Z');
+    const result = await landing([
+      withContext(baseContract({ id: 'c-active', status: 'active' }), [signedVersion()], 'family-1'),
+      withContext(
+        baseContract({
+          id: 'c-ending',
+          status: 'ending',
+          endNoticedAt: new Date('2026-10-20T12:00:00Z')
+        }),
+        [signedVersion()],
+        'family-1'
+      ),
+      withContext(baseContract({ id: 'c-draft', status: 'draft' }), [draftVersion()], 'family-1'),
+      withContext(baseContract({ id: 'c-ended', status: 'ended' }), [signedVersion()], 'family-1'),
+      // Past its negotiated end: presents as ended.
+      withContext(
+        baseContract({ id: 'c-over', status: 'active' }),
+        [signedVersion({ endsOn: '2026-10-01' })],
+        'family-1'
+      )
+    ]);
+    expect(result).toEqual({ activeContractIds: ['c-active', 'c-ending'] });
+  });
+
+  it('is empty without a running contract', async () => {
+    expect(await landing([], providerUser())).toEqual({ activeContractIds: [] });
   });
 });

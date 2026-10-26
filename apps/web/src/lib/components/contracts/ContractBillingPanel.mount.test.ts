@@ -22,6 +22,8 @@ const cycle = (overrides: Record<string, unknown> = {}) => ({
 	...overrides
 });
 
+let retries: Array<string> = [];
+
 const render = (billing: Record<string, unknown>, viewerSide: 'family' | 'provider' = 'family') => {
 	const app = mount(ContractBillingPanel, {
 		target: document.body,
@@ -31,13 +33,17 @@ const render = (billing: Record<string, unknown>, viewerSide: 'family' | 'provid
 				suspendedReason: null,
 				readinessDeadline: null,
 				feeBps: 500,
+				canRetryPayment: false,
+				holdLeadHours: 24,
 				cycles: [cycle()],
 				...billing
 			} as never,
 			viewerSide,
 			counterpartFirstName: 'Sam',
 			billingHref: '/family/billing',
-			payoutsHref: '/service-provider/payouts'
+			payoutsHref: '/service-provider/payouts',
+			cycleHref: (id: string) => `/family/contracts/c-1/cycles/${id}` as never,
+			onretry: () => retries.push('retry')
 		}
 	});
 	flushSync();
@@ -47,6 +53,42 @@ const render = (billing: Record<string, unknown>, viewerSide: 'family' | 'provid
 describe('ContractBillingPanel', () => {
 	afterEach(() => {
 		document.body.innerHTML = '';
+		retries = [];
+	});
+
+	it('links each cycle to its detail page (UAT round 2 #11a)', () => {
+		const app = render({});
+		const link = [...document.querySelectorAll('a')].find((a) =>
+			a.textContent?.includes('Details')
+		);
+		expect(link?.getAttribute('href')).toBe('/family/contracts/c-1/cycles/cycle-1');
+		unmount(app);
+	});
+
+	it('says how long before a cycle the hold is placed, from the setting (UAT round 2 #10)', () => {
+		const app = render({ status: 'scheduled', holdLeadHours: 24 });
+		expect(text()).toContain('held on your card 1 day before it starts');
+		unmount(app);
+	});
+
+	it('offers the family Retry payment on a declined payment, never the helper (UAT round 2 #13)', () => {
+		const app = render({ status: 'suspended', suspendedReason: 'card', canRetryPayment: true });
+		const button = document.querySelector<HTMLButtonElement>('[data-testid="retry-payment"]');
+		expect(button?.textContent).toContain('Retry payment');
+		button?.click();
+		expect(retries).toEqual(['retry']);
+		unmount(app);
+
+		const helper = render(
+			{ status: 'suspended', suspendedReason: 'card', canRetryPayment: true },
+			'provider'
+		);
+		expect(document.querySelector('[data-testid="retry-payment"]')).toBeNull();
+		unmount(helper);
+
+		const funded = render({ canRetryPayment: false });
+		expect(document.querySelector('[data-testid="retry-payment"]')).toBeNull();
+		unmount(funded);
 	});
 
 	it("lists each cycle with the viewer's amount and status", () => {

@@ -19,6 +19,7 @@
 		saveContractTerms,
 		sendContract,
 		quoteContractTerms,
+		renewContract,
 		withdrawContract,
 		type ContractDetail,
 		type ContractTermsInput
@@ -35,6 +36,8 @@
 	import ContractBillingPanel from '$lib/components/contracts/ContractBillingPanel.svelte';
 	import WeekAtAGlance from '$lib/components/contracts/WeekAtAGlance.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
+	import { retryPaymentWithToast } from '$lib/contract-retry';
+	import { formatLeadMinutes } from '$lib/lead-time';
 	import {
 		formatEndTime,
 		minutesToHours,
@@ -73,6 +76,7 @@
 	let declineReason = $state('');
 	let endOpen = $state(false);
 	let endNote = $state('');
+	let retrying = $state(false);
 
 	const contractId = $derived(page.params.id ?? '');
 	const listHref = $derived(
@@ -86,6 +90,12 @@
 	);
 
 	const firstName = $derived(contract?.counterpart.name.split(/\s+/)[0] ?? '');
+	/** CONTRACT_MIN_LEAD_MINUTES as words (UAT round 2 #6). */
+	const minLead = $derived(formatLeadMinutes(contract?.minLeadMinutes ?? 120));
+	const cycleHref = (cycleId: string) =>
+		role === 'family'
+			? resolve('/family/contracts/[id]/cycles/[cycleId]', { id: contractId, cycleId })
+			: resolve('/service-provider/contracts/[id]/cycles/[cycleId]', { id: contractId, cycleId });
 
 	// Monotonic fetch counter: only the newest in-flight response may land —
 	// action- and realtime-triggered refreshes overlap freely.
@@ -210,6 +220,12 @@
 			: m.contracts_error_province_helper();
 	};
 
+	/** The minimum lead a FIRST_SESSION_TOO_SOON error names, as words. */
+	const leadOf = (error: { code: string; message: string }) => {
+		const minutes = (error as { minLeadMinutes?: unknown }).minLeadMinutes;
+		return typeof minutes === 'number' ? formatLeadMinutes(minutes) : minLead;
+	};
+
 	const termsErrorToast = (error: { code: string; message: string }) => {
 		if (error.code === 'RATE_BELOW_LISTED') {
 			toast.error(m.contracts_error_rate_below_floor());
@@ -226,8 +242,8 @@
 			void refresh(contractId);
 		} else if (error.code === 'START_DATE_REQUIRED') {
 			toast.error(m.contracts_error_start_date_required());
-		} else if (error.code === 'START_DATE_NOT_IN_FUTURE') {
-			toast.error(m.contracts_error_start_date_not_future());
+		} else if (error.code === 'FIRST_SESSION_TOO_SOON') {
+			toast.error(m.contracts_error_first_session_too_soon({ lead: leadOf(error) }));
 		} else if (error.code === 'FAMILY_LOCATION_REQUIRED') {
 			toast.error(m.contracts_error_location_required());
 		} else if (error.code === 'PAYMENT_METHOD_REQUIRED') {
@@ -248,9 +264,15 @@
 	 * the viewer — "try again" would loop, so refetch and let the fresh action
 	 * flags redraw the page instead. */
 	const actionErrorToast = (error: { code: string; message: string }, fallback: string) => {
-		if (error.code === 'CONTRACT_START_DATE_PASSED') {
-			toast.error(m.contracts_error_start_date_passed());
+		if (error.code === 'FIRST_SESSION_TOO_SOON') {
+			toast.error(m.contracts_error_first_session_too_soon_accept({ lead: leadOf(error) }));
 			void refresh(contractId);
+			return;
+		}
+		if (error.code === 'PAYOUTS_REQUIRED_TO_ACCEPT') {
+			toast.error(m.contracts_error_payouts_required_to_accept(), {
+				title: m.contracts_billing_setup_payouts()
+			});
 			return;
 		}
 		if (
@@ -391,6 +413,38 @@
 		} else {
 			actionErrorToast(result.error, m.contracts_error_request_changes_failed());
 		}
+	}
+
+	/** UAT round 2 #7b: a new draft pre-filled from these signed terms. */
+	async function handleRenew() {
+		if (busy || !contract) return;
+		busy = true;
+		const result = await renewContract(contractId);
+		busy = false;
+		if (result.ok) {
+			const dropped = result.data.droppedServiceIds.length;
+			toast.success(
+				dropped > 0
+					? `${m.contracts_toast_renewed()} ${m.contracts_toast_renewed_dropped({ count: dropped })}`
+					: m.contracts_toast_renewed(),
+				{ title: m.contracts_toast_renewed_title() }
+			);
+			void goto(resolve('/family/contracts/[id]', { id: result.data.id }));
+		} else if (result.error.code === 'CONTRACT_EXISTS' && 'contractId' in result.error) {
+			toast.info(m.contracts_toast_renew_exists({ name: firstName }));
+			void goto(resolve('/family/contracts/[id]', { id: String(result.error.contractId) }));
+		} else {
+			actionErrorToast(result.error, m.contracts_error_renew_failed());
+		}
+	}
+
+	/** UAT round 2 #13: the family's "Retry payment". */
+	async function handleRetryPayment() {
+		if (retrying) return;
+		retrying = true;
+		await retryPaymentWithToast(contractId);
+		retrying = false;
+		void refresh(contractId);
 	}
 
 	async function handleEnd() {
@@ -649,8 +703,8 @@
 			<div class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3">
 				<i class="las la-hourglass-end mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
 				<p class="text-[12.5px] leading-relaxed text-neutral">
-					{#if contract.acceptBlockedReason === 'start_date_passed'}
-						{m.contracts_banner_start_passed()}
+					{#if contract.acceptBlockedReason === 'starts_too_soon'}
+						{m.contracts_banner_start_passed({ lead: minLead })}
 						{#if contract.viewerSide === 'family'}
 							{m.contracts_banner_start_passed_family()}
 						{:else}
@@ -789,6 +843,7 @@
 						counterpartFirstName={firstName}
 						{chatHref}
 						earliestStartsOn={contract.earliestStartsOn}
+						startsOnHint={m.contracts_editor_lead_hint({ lead: minLead })}
 						timeZoneLabel={contract.timeZoneLabel}
 						locationMissing={contract.timeZone === null}
 						profileHref={resolve('/family/profile')}
@@ -818,6 +873,19 @@
 						timeZoneLabel={contract.timeZoneLabel}
 						viewerIsFamily={contract.viewerSide === 'family'}
 					/>
+					{#if contract.status === 'active' || contract.status === 'ending'}
+						<!-- UAT round 2 #7a: signed terms are never amended. -->
+						<div
+							class="flex items-start gap-2.5 rounded-lg border border-base-600 bg-base-300 px-4 py-3"
+							data-testid="contract-locked"
+						>
+							<i class="las la-lock mt-0.5 shrink-0 text-neutral" aria-hidden="true"></i>
+							<p class="text-[12.5px] leading-relaxed text-neutral">
+								<strong class="font-semibold">{m.contracts_active_locked_title()}.</strong>
+								{m.contracts_active_locked_body()}
+							</p>
+						</div>
+					{/if}
 				{/if}
 
 				{#if contract.billing}
@@ -827,6 +895,9 @@
 						counterpartFirstName={firstName}
 						billingHref={resolve('/family/billing')}
 						payoutsHref={resolve('/service-provider/payouts')}
+						{cycleHref}
+						onretry={() => void handleRetryPayment()}
+						{retrying}
 					/>
 				{/if}
 
@@ -853,6 +924,27 @@
 						</button>
 					</div>
 				{/if}
+
+				{#if contract.viewerSide === 'family' && contract.acceptedVersion && (contract.status === 'active' || contract.status === 'ending' || contract.status === 'ended')}
+					<!-- UAT round 2 #7b -->
+					<div
+						class="flex flex-col gap-3 rounded-xl border border-card-border bg-base-100 px-5 py-4 sm:flex-row sm:items-center sm:gap-4"
+					>
+						<p class="min-w-0 flex-1 text-[12px] leading-relaxed text-base-content-muted">
+							{m.contracts_renew_hint()}
+						</p>
+						<button
+							type="button"
+							class="btn shrink-0 gap-1.5 btn-outline btn-sm btn-secondary"
+							disabled={busy}
+							onclick={() => void handleRenew()}
+							data-testid="renew-contract"
+						>
+							<i class="las la-copy" aria-hidden="true"></i>
+							{m.contracts_renew_button()}
+						</button>
+					</div>
+				{/if}
 			</div>
 
 			<div class="flex flex-col gap-4">
@@ -868,12 +960,12 @@
 								{m.contracts_accept_sign()}
 							</button>
 						{/if}
-						{#if contract.acceptBlockedReason === 'start_date_passed'}
+						{#if contract.acceptBlockedReason === 'starts_too_soon'}
 							<p
 								class="rounded-lg bg-base-300 px-3 py-2 text-[12px] leading-relaxed text-neutral"
 								role="status"
 							>
-								{m.contracts_start_passed_ask({ name: firstName })}
+								{m.contracts_start_passed_ask({ name: firstName, lead: minLead })}
 							</p>
 						{/if}
 						{#if contract.actions.canRequestChanges}

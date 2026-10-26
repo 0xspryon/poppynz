@@ -262,6 +262,28 @@ export const contractBillingConfig = Config.all({
       message: 'CONTRACT_BILLING_RETRY_HOURS must be a whole number of hours, at least 1',
       validation: (value) => value >= 1
     })
+  ),
+  // How long before a cycle starts (00:00 on its first day, contract zone)
+  // its amount is held on the family's card; the grace period after a
+  // declined hold runs from the hold to the cycle start. UAT round 2: 1 day
+  // (was 2). Read when a cycle is planned — cycles already planned keep the
+  // hold_at they were stored with.
+  holdLeadHours: Config.integer('CONTRACT_HOLD_LEAD_HOURS').pipe(
+    Config.withDefault(24),
+    Config.validate({
+      message: 'CONTRACT_HOLD_LEAD_HOURS must be a whole number of hours between 1 and 72',
+      validation: (value) => value >= 1 && value <= 72
+    })
+  ),
+  // UAT round 2: terms can be sent and accepted until this long before the
+  // FIRST session starts (contract zone). At least an hour: a booking this
+  // late is charged at once, and the charge must land before care begins.
+  minLeadMinutes: Config.integer('CONTRACT_MIN_LEAD_MINUTES').pipe(
+    Config.withDefault(120),
+    Config.validate({
+      message: 'CONTRACT_MIN_LEAD_MINUTES must be a whole number of minutes between 60 and 10080',
+      validation: (value) => value >= 60 && value <= 10_080
+    })
   )
 });
 

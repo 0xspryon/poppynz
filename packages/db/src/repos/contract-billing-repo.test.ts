@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
-import { dummyContractCycle, makeInMemoryContractBillingRepo } from './contract-billing-repo';
+import {
+  dummyContractBilling,
+  dummyContractCycle,
+  makeInMemoryContractBillingRepo
+} from './contract-billing-repo';
 
 describe('in-memory ContractBillingRepo', () => {
   it('appends a notice once, never overwriting notices recorded meanwhile', async () => {
@@ -23,5 +27,24 @@ describe('in-memory ContractBillingRepo', () => {
     );
     expect(stale).toBeNull();
     expect(fresh?.attempts).toBe(3);
+  });
+
+  it('claims the family retry once per interval, so a double click starts one retry', async () => {
+    const { service } = makeInMemoryContractBillingRepo({
+      billing: [dummyContractBilling({ contractId: 'contract-1' })]
+    });
+    const now = new Date('2026-11-01T12:00:00.000Z');
+    const minuteAgo = new Date(now.getTime() - 60_000);
+    const first = await Effect.runPromise(service.claimFamilyRetry('contract-1', now, minuteAgo));
+    const second = await Effect.runPromise(service.claimFamilyRetry('contract-1', now, minuteAgo));
+    expect(first?.familyRetryAt).toEqual(now);
+    expect(second).toBeNull();
+
+    const later = new Date(now.getTime() + 60_000);
+    const third = await Effect.runPromise(service.claimFamilyRetry('contract-1', later, now));
+    expect(third?.familyRetryAt).toEqual(later);
+    expect(
+      await Effect.runPromise(service.claimFamilyRetry('missing', later, now))
+    ).toBeNull();
   });
 });

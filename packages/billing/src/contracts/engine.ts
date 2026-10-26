@@ -52,7 +52,13 @@ import {
 } from '../pricing';
 import { loadTaxSnapshot } from '../tax';
 import { alertAdmins, cycleDates, personName, sendBillingNotice } from './notices';
-import { cycleIndexOf, planCycle, planWindow, type ScheduleTerms } from './schedule';
+import {
+  cycleIndexOf,
+  DEFAULT_HOLD_LEAD_HOURS,
+  planCycle,
+  planWindow,
+  type ScheduleTerms
+} from './schedule';
 import { effectiveEnd } from './terms';
 
 /**
@@ -88,7 +94,6 @@ export type BillingError = SqlError | DBNotFoundError | PaymentProviderError;
 type Step<A> = Effect.Effect<A, BillingError, BillingDeps>;
 
 const HOUR_MS = 60 * 60 * 1000;
-const LATE_BOOKING_MS = 48 * HOUR_MS;
 
 /** The commissions and the retry interval. A malformed setting fails loudly
  * (a defect, logged): billing at a wrong commission is worse than not
@@ -165,6 +170,7 @@ const loadContext = (billing: ContractBilling) =>
     const accepted = versions.find((version) => version.id === billing.acceptedVersionId);
     if (!accepted) return null;
     const end = effectiveEnd(contract, accepted);
+    const { holdLeadHours } = yield* contractBillingPolicy;
     const terms: ScheduleTerms = {
       services: accepted.services.map((service) => ({
         serviceId: service.serviceId,
@@ -175,7 +181,10 @@ const loadContext = (billing: ContractBilling) =>
       startsOn: billing.startsOn,
       timeZone: billing.timeZone,
       endsOn: end?.endsOn ?? null,
-      endsAtMinutes: end?.endsAtMinutes ?? null
+      endsAtMinutes: end?.endsAtMinutes ?? null,
+      // Only cycles planned from now on use it: a stored hold_at is never
+      // recomputed (insertCycles keeps the row on file).
+      holdLeadHours
     };
     return { contract, accepted, terms } satisfies BillingContext;
   });
@@ -749,12 +758,16 @@ const fund = (
       return yield* carry(cycle, amounts, from);
     }
     const first = billed[0]?.startsAt ?? null;
+    // A late booking: billable only after this cycle's hold time, and less
+    // than the hold lead before its first session — there is no time for a
+    // grace period, so it is charged at once (umbrella §6).
+    const lateBookingMs = (ctx.terms.holdLeadHours ?? DEFAULT_HOLD_LEAD_HOURS) * HOUR_MS;
     const late =
       cycle.attempts === 0 &&
       billing.billableFrom !== null &&
       billing.billableFrom > cycle.holdAt &&
       first !== null &&
-      first.getTime() - billing.billableFrom.getTime() < LATE_BOOKING_MS;
+      first.getTime() - billing.billableFrom.getTime() < lateBookingMs;
     const mode: ChargeMode = late || now >= cycle.captureAt ? 'immediate' : 'hold';
     return yield* attempt(ctx, cycle, mode, amounts, from, now);
   });
@@ -2198,12 +2211,20 @@ export const startContractBilling = (contractId: string, now: Date) =>
   });
 
 /** The family replaced their card: retry every declined hold and resume
- * every suspended contract at once (spec §4). */
-export const retryFamilyBilling = (userId: string, now: Date) =>
+ * every suspended contract at once (spec §4). `contractId` narrows it to one
+ * contract (the "Retry payment" button). */
+export const retryFamilyBilling = (
+  userId: string,
+  now: Date,
+  options: { contractId?: string } = {}
+) =>
   Effect.gen(function* () {
     const repo = yield* ContractBillingRepo;
     let retried = 0;
-    for (const billing of yield* repo.listLiveBillingForFamily(userId)) {
+    const live = (yield* repo.listLiveBillingForFamily(userId)).filter(
+      (billing) => options.contractId === undefined || billing.contractId === options.contractId
+    );
+    for (const billing of live) {
       const ctx = yield* loadContext(billing);
       if (ctx === null) continue;
       for (const cycle of yield* repo.listCycles(billing.contractId)) {
@@ -2239,6 +2260,39 @@ export const retryFamilyBilling = (userId: string, now: Date) =>
       }
     }
     return retried;
+  });
+
+/** UAT round 2 #13: whether the family has something to retry on this
+ * contract — a declined hold still in its grace period, or a contract
+ * suspended because the card failed. (A Poppynz/Stripe outage or a helper
+ * who isn't payment-ready is not the family's to retry.) */
+export const familyRetryEligible = (
+  billing: Pick<ContractBilling, 'status' | 'suspendedReason'> | null,
+  cycles: ReadonlyArray<Pick<ContractCycle, 'status' | 'startsAt'>>,
+  now: Date
+) =>
+  billing !== null &&
+  liveBillingStatuses.includes(billing.status) &&
+  ((billing.status === 'suspended' && billing.suspendedReason === 'card') ||
+    cycles.some((cycle) => cycle.status === 'grace' && now < cycle.startsAt));
+
+export type FamilyRetryOutcome = 'charged' | 'declined' | 'in_progress';
+
+/** The family's "Retry payment" on one contract: the card-replaced retry
+ * path (every idempotency key and lookup guard included), then what came of
+ * it — an attempt still waiting on the provider, still declined, or funded. */
+export const retryContractPayment = (userId: string, contractId: string, now: Date) =>
+  Effect.gen(function* () {
+    yield* retryFamilyBilling(userId, now, { contractId });
+    const repo = yield* ContractBillingRepo;
+    const billing = yield* repo.findBilling(contractId);
+    const cycles = yield* repo.listCycles(contractId);
+    if (cycles.some((cycle) => cycle.status === 'authorising' || cycle.status === 'capturing')) {
+      return 'in_progress' as FamilyRetryOutcome;
+    }
+    return (
+      familyRetryEligible(billing, cycles, now) ? 'declined' : 'charged'
+    ) as FamilyRetryOutcome;
   });
 
 export type ContractBillingTickSummary = {

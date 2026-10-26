@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPlace } from '$lib/location';
 	/** Family profile as seen by an approved provider. Location is approximate
 	 * only — a shaded circle, never an exact pin or address. The Contact CTA
 	 * opens the reach-out composer (design 16a); once a conversation exists it
@@ -76,7 +77,14 @@
 	}
 
 	const name = $derived(
-		family ? (family.displayName ?? m.provider_family_in_city({ city: family.location.city })) : ''
+		family
+			? (family.displayName ??
+					m.provider_family_in_city({
+						city:
+							formatPlace(family.location.city, family.location.stateProvince) ??
+							family.location.city
+					}))
+			: ''
 	);
 	const firstName = $derived(family?.displayName?.split(/\s+/)[0] ?? null);
 	const messageLabel = $derived(
@@ -185,7 +193,7 @@
 					<div class="mt-2 flex flex-wrap items-center justify-center gap-2 lg:justify-start">
 						<span class="inline-flex items-center gap-1 text-sm text-base-content-muted">
 							<i class="las la-map-marker" aria-hidden="true"></i>
-							{family.location.city}, {family.location.stateProvince}
+							{formatPlace(family.location.city, family.location.stateProvince)}
 						</span>
 						{#if distanceKm != null}
 							<span class="rounded-pill bg-base-500 px-2.5 py-1 text-xs font-semibold text-info">
@@ -268,7 +276,11 @@
 						class="relative flex h-40 items-center justify-center overflow-hidden rounded-lg
 							bg-base-300"
 						role="img"
-						aria-label={m.provider_family_area_aria({ city: family.location.city })}
+						aria-label={m.provider_family_area_aria({
+							city:
+								formatPlace(family.location.city, family.location.stateProvince) ??
+								family.location.city
+						})}
 					>
 						<span class="absolute size-24 rounded-full bg-primary/20"></span>
 						<span class="absolute size-12 rounded-full bg-primary/25"></span>
@@ -283,7 +295,7 @@
 							? m.provider_family_lives_named_before({ name: firstName })
 							: m.provider_family_lives_before()}
 						<strong class="text-base-content">
-							{family.location.city}, {family.location.stateProvince}</strong
+							{formatPlace(family.location.city, family.location.stateProvince)}</strong
 						>{m.provider_family_lives_after()}
 					</p>
 				</section>

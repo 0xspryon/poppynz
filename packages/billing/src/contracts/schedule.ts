@@ -18,6 +18,8 @@ import { sessionValueCents } from '../pricing';
 export const CYCLE_DAYS = 3;
 /** Sessions exist this many days ahead (the 2-week notice period). */
 export const SESSION_WINDOW_DAYS = 14;
+/** `CONTRACT_HOLD_LEAD_HOURS`' default (UAT round 2: 1 day, was 2). */
+export const DEFAULT_HOLD_LEAD_HOURS = 24;
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -35,6 +37,9 @@ export type ScheduleTerms = {
   /** The effective last working day, if any, and its end time. */
   readonly endsOn: IsoDate | null;
   readonly endsAtMinutes: number | null;
+  /** How long before the cycle start its amount is held
+   * (`CONTRACT_HOLD_LEAD_HOURS`); defaults to `DEFAULT_HOLD_LEAD_HOURS`. */
+  readonly holdLeadHours?: number;
 };
 
 export type PlannedSession = {
@@ -109,6 +114,12 @@ export const planSessions = (
   return planned.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
 };
 
+/** When the contract's first dated session starts (UTC), or null when the
+ * terms never produce one (an end date before the first pattern day). The
+ * weekly pattern repeats, so the first week from the start date decides. */
+export const firstSessionStart = (terms: ScheduleTerms): Date | null =>
+  planSessions(terms, terms.startsOn, addDays(terms.startsOn, 6))[0]?.startsAt ?? null;
+
 /** Cycle `index`, or null when it starts after the effective end. */
 export const planCycle = (terms: ScheduleTerms, index: number): PlannedCycle | null => {
   const startsOn = addDays(terms.startsOn, index * CYCLE_DAYS);
@@ -127,7 +138,11 @@ export const planCycle = (terms: ScheduleTerms, index: number): PlannedCycle | n
     endsOn,
     startsAt,
     endsAt,
-    holdAt: instantAt(addDays(startsOn, -2), 0, zone),
+    // The cycle start minus the hold lead: real elapsed hours, so a DST
+    // night in between doesn't move it by an hour on the wall clock.
+    holdAt: new Date(
+      startsAt.getTime() - (terms.holdLeadHours ?? DEFAULT_HOLD_LEAD_HOURS) * HOUR_MS
+    ),
     captureAt: beforeFirst !== null && beforeFirst < sevenAm ? beforeFirst : sevenAm,
     // 48 h after the cycle ends, once every session is past its report
     // window (piece 4 transfers on it).

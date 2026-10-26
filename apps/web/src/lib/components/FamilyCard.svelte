@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPlace } from '$lib/location';
 	/** Family search result card (provider marketplace). Tolerates every data
 	 * variant: null photo → initials avatar, null name → "Family in {city}" +
 	 * generic glyph, null bio → chips move up, distance chip only when
@@ -16,7 +17,11 @@
 	let { family, href }: Props = $props();
 
 	const name = $derived(
-		family.displayName ?? m.provider_family_in_city({ city: family.location.city })
+		family.displayName ??
+			m.provider_family_in_city({
+				city:
+					formatPlace(family.location.city, family.location.stateProvince) ?? family.location.city
+			})
 	);
 	const anonymous = $derived(family.displayName == null);
 	const initials = $derived(
@@ -62,7 +67,9 @@
 				<span class="font-display text-[15px] font-bold text-base-content">{name}</span>
 			</div>
 			<div class="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-base-content-muted">
-				<span class="truncate">{family.location.city}, {family.location.stateProvince}</span>
+				<span class="truncate"
+					>{formatPlace(family.location.city, family.location.stateProvince)}</span
+				>
 				{#if family.distanceKm !== undefined}
 					<span class="rounded-pill bg-base-500 px-2 py-0.5 text-[11px] font-semibold text-info">
 						{m.provider_family_distance_short({ distance: formatNumber(family.distanceKm) })}

@@ -25,6 +25,7 @@ export type ConversationWithContext = Conversation & {
   counterpartFirstName: string | null;
   counterpartLastName: string | null;
   counterpartCity: string | null;
+  counterpartStateProvince: string | null;
   lastMessageBody: string | null;
   lastMessageAt: Date | null;
   lastMessageSenderUserId: string | null;
@@ -118,6 +119,7 @@ export const ConversationRepoLive = Layer.effect(
         counterpartFirstName: string | null;
         counterpartLastName: string | null;
         counterpartCity: string | null;
+        counterpartStateProvince: string | null;
       }>
     ) =>
       Effect.gen(function* () {
@@ -161,6 +163,7 @@ export const ConversationRepoLive = Layer.effect(
               counterpartFirstName: row.counterpartFirstName,
               counterpartLastName: row.counterpartLastName,
               counterpartCity: row.counterpartCity,
+              counterpartStateProvince: row.counterpartStateProvince,
               lastMessageBody: last?.body ?? null,
               lastMessageAt: last?.createdAt ?? null,
               lastMessageSenderUserId: last?.senderUserId ?? null,
@@ -181,7 +184,8 @@ export const ConversationRepoLive = Layer.effect(
           counterpartUserId: counterpartId(viewerUserId),
           counterpartFirstName: userProfile.firstName,
           counterpartLastName: userProfile.lastName,
-          counterpartCity: userProfile.city
+          counterpartCity: userProfile.city,
+          counterpartStateProvince: userProfile.stateProvince
         })
         .from(conversation)
         .leftJoin(userProfile, eq(userProfile.userId, counterpartId(viewerUserId)));
@@ -356,6 +360,7 @@ export const dummyConversationWithContext: ConversationWithContext = {
   counterpartFirstName: 'Maria',
   counterpartLastName: 'S.',
   counterpartCity: 'Toronto',
+  counterpartStateProvince: 'ON',
   lastMessageBody: null,
   lastMessageAt: null,
   lastMessageSenderUserId: null,

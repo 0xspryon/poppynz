@@ -3,6 +3,7 @@
 	 * no side-by-side detail pane and deliberately no "New contract" button
 	 * anywhere. Contracts start in Messages; the empty state points there. */
 	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
 	import { listContracts, type ContractSummary } from '$lib/api/contracts';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
@@ -24,7 +25,17 @@
 	let contracts = $state<ContractSummary[]>([]);
 	let loading = $state(true);
 	let loadError = $state(false);
-	let filter = $state<FamilyFilter | ProviderFilter>('all');
+	// `?filter=active` (the landing with several running contracts, UAT round
+	// 2 #5) preselects a tab; anything unknown falls back to all.
+	const initialFilter = (): FamilyFilter | ProviderFilter => {
+		const requested = page.url.searchParams.get('filter');
+		const allowed: ReadonlyArray<string> =
+			role === 'family' ? ['all', 'proposed', 'active', 'drafts'] : ['all', 'awaiting', 'active'];
+		return requested && allowed.includes(requested)
+			? (requested as FamilyFilter | ProviderFilter)
+			: 'all';
+	};
+	let filter = $state<FamilyFilter | ProviderFilter>(initialFilter());
 
 	const messagesHref = $derived(
 		role === 'family' ? resolve('/family/messages') : resolve('/service-provider/messages')

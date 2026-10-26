@@ -82,9 +82,12 @@
 			deleting = null;
 			await load();
 		} else {
-			toast.error(errorText(result.error), {
-				title: m.admin_tcs_item_not_deleted_title({ title: deleting.title })
-			});
+			toast.error(
+				result.error.code === 'TC_DOCUMENT_PROTECTED'
+					? m.agreement_admin_protected()
+					: errorText(result.error),
+				{ title: m.admin_tcs_item_not_deleted_title({ title: deleting.title }) }
+			);
 			deleting = null;
 		}
 		deleteBusy = false;
@@ -156,6 +159,11 @@
 						{item.title}
 					</a>
 					<p class="font-mono text-[11px] text-base-content-muted">{item.slug}</p>
+					{#if item.kind === 'service_agreement'}
+						<span class="badge badge-sm mt-1 border-0 bg-primary/10 font-semibold text-primary">
+							{m.agreement_admin_badge()}
+						</span>
+					{/if}
 				</div>
 				<div class="py-1 lg:py-0">
 					<span class="badge badge-sm border-0 bg-base-400 font-semibold text-info">
@@ -189,14 +197,16 @@
 					>
 						<i class="las la-pen text-base" aria-hidden="true"></i>
 					</a>
-					<button
-						type="button"
-						class="btn btn-ghost btn-sm btn-square"
-						aria-label={m.admin_tcs_delete_aria({ title: item.title })}
-						onclick={() => (deleting = item)}
-					>
-						<i class="las la-trash-alt text-base" aria-hidden="true"></i>
-					</button>
+					{#if item.kind !== 'service_agreement'}
+						<button
+							type="button"
+							class="btn btn-ghost btn-sm btn-square"
+							aria-label={m.admin_tcs_delete_aria({ title: item.title })}
+							onclick={() => (deleting = item)}
+						>
+							<i class="las la-trash-alt text-base" aria-hidden="true"></i>
+						</button>
+					{/if}
 				</div>
 			</div>
 		{/each}

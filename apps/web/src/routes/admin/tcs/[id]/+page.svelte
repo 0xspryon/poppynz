@@ -14,6 +14,11 @@
 		type TcLocale
 	} from '$lib/api/tcs';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
+	// Service agreement templates (UAT round 2, item 4).
+	import AgreementPlaceholderReference from '$lib/components/admin/AgreementPlaceholderReference.svelte';
+	import AgreementSignaturesList from '$lib/components/admin/AgreementSignaturesList.svelte';
+	import AgreementTemplatePreview from '$lib/components/admin/AgreementTemplatePreview.svelte';
+	import { agreementIssueText, templateIssuesOf } from '$lib/agreement-errors';
 	import TcDocumentDialog from '$lib/components/admin/TcDocumentDialog.svelte';
 	import MarkdownView from '$lib/components/MarkdownView.svelte';
 	import TcModal from '$lib/components/TcModal.svelte';
@@ -133,8 +138,12 @@
 		editorOpen = true;
 	}
 
+	const isAgreement = $derived(doc?.kind === 'service_agreement');
+
 	const draftErrorText = (error: { code: string; message: string }) =>
-		error.code === 'TC_TRANSLATION_BASE_MISSING'
+		error.code === 'TC_TEMPLATE_INVALID'
+			? templateIssuesOf(error).slice(0, 3).map(agreementIssueText).join(' · ')
+			: error.code === 'TC_TRANSLATION_BASE_MISSING'
 			? m.admin_tcs_error_translation_base()
 			: error.code === 'TC_TRANSLATION_EXISTS'
 				? m.admin_tcs_error_translation_exists()
@@ -177,6 +186,8 @@
 			toast.error(m.admin_tcs_draft_fields_required(), {
 				title: m.admin_tcs_draft_not_saved_title()
 			});
+		} else if (result.error.code === 'TC_TEMPLATE_INVALID') {
+			toast.error(draftErrorText(result.error), { title: m.agreement_admin_issues_title() });
 		} else {
 			toast.error(draftErrorText(result.error), { title: m.admin_tcs_draft_not_saved_title() });
 		}
@@ -278,6 +289,11 @@
 			{m.admin_tcs_translation_hint()}
 		</p>
 	{/if}
+	{#if isAgreement}
+		<p class="mb-4 max-w-3xl text-[12.5px] text-base-content-muted">
+			{m.agreement_admin_template_hint()}
+		</p>
+	{/if}
 
 	{#if editorOpen}
 		<section class="mb-8 rounded-xl border border-card-border bg-base-100 p-5">
@@ -343,11 +359,22 @@
 				<legend class="fieldset-legend">{m.admin_tcs_content_legend()}</legend>
 				{#if showPreview}
 					<div class="max-h-[32rem] overflow-y-auto rounded-lg border border-base-300 p-4">
-						<MarkdownView content={draftContent} />
+						{#if isAgreement}
+							<AgreementTemplatePreview
+								documentId={doc.id}
+								content={draftContent}
+								locale={editingLocale}
+							/>
+						{:else}
+							<MarkdownView content={draftContent} />
+						{/if}
 					</div>
 				{:else}
 					<textarea class="textarea min-h-96 w-full font-mono text-xs" bind:value={draftContent}
 					></textarea>
+				{/if}
+				{#if isAgreement}
+					<AgreementPlaceholderReference documentId={doc.id} />
 				{/if}
 			</fieldset>
 		</section>
@@ -391,6 +418,10 @@
 			</div>
 		{/each}
 	</div>
+
+	{#if isAgreement}
+		<AgreementSignaturesList />
+	{/if}
 {/if}
 
 {#if doc}

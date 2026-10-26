@@ -1619,7 +1619,7 @@ with
 # mock (default; nothing is charged) or stripe. STRIPE_WEBHOOK_SECRET comes from
 # `stripe listen --print-secret` locally, or the dashboard endpoint elsewhere.
 PAYMENTS_PROVIDER=mock
-STRIPE_SECRET_KEY=sk_test_xxxxxxxxxxxxxxxxxxxxxxxx
+STRIPE_SECRET_KEY=sk_test_your_key_here
 STRIPE_WEBHOOK_SECRET=whsec_xxxxxxxxxxxxxxxxxxxxxxxx
 # A payment left unconfirmed is re-checked after this many minutes, and
 # cancelled (its order back to the basket) after this many hours.

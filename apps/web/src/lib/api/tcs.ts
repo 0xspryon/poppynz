@@ -57,6 +57,9 @@ export interface TcDocumentSummary {
 	slug: string;
 	title: string;
 	appliesToRole: TcAppliesToRole;
+	/** "service_agreement": the written agreement signed on contracts (one
+	 * live document, never deleted); "terms": everything the gate shows. */
+	kind: 'terms' | 'service_agreement';
 	deletedAt: string | null;
 	createdAt: string;
 	updatedAt: string;

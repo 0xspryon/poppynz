@@ -6,6 +6,7 @@ import { tcDocuments } from './0003_tc_documents';
 import { taxConfig } from './0004_tax_config';
 import { uatCatalogueAndScreening } from './0005_uat_catalogue_and_screening';
 import { devAccountant } from './0006_dev_accountant';
+import { serviceAgreement } from './0007_service_agreement';
 // <seed:new-imports> — `bun run seed:new` inserts above; keep this marker.
 
 /**
@@ -21,6 +22,7 @@ export const seeds: ReadonlyArray<Seed> = [
   tcDocuments,
   taxConfig,
   uatCatalogueAndScreening,
-  devAccountant
+  devAccountant,
+  serviceAgreement
   // <seed:new-entries> — `bun run seed:new` inserts above; keep this marker.
 ];

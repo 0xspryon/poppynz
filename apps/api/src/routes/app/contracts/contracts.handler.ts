@@ -22,6 +22,7 @@ import {
   type TaxSnapshot
 } from '@repo/billing/pricing';
 import {
+  ContractAgreementRepo,
   ContractBillingRepo,
   ContractRepo,
   ConversationRepo,
@@ -64,7 +65,10 @@ import {
 } from '@/api/lib/approval-gate';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import { hasReadyPayoutAccount } from '@/api/lib/payouts';
+import { agreementErrorToResponse, agreementSignature, type AgreementAssent } from './agreement';
 import {
+  contractAcceptJsonError,
+  validateContractAcceptInput,
   contractCreateJsonError,
   contractDeclineJsonError,
   contractEndJsonError,
@@ -982,7 +986,11 @@ export const saveTermsProgram = (
     return { id: contract.id, version: created.version };
   });
 
-export const sendContractProgram = (userAndSession: UserAndSession, contractId: string) =>
+export const sendContractProgram = (
+  userAndSession: UserAndSession,
+  contractId: string,
+  agreement: AgreementAssent
+) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
@@ -1070,18 +1078,36 @@ export const sendContractProgram = (userAndSession: UserAndSession, contractId: 
       return yield* Effect.fail(new PaymentMethodRequiredError());
     }
 
+    // --- Written service agreement (UAT round 2, item 4) ---
+    // The family signs the agreement rendered from exactly the terms sent.
+    const familySignature = yield* agreementSignature({
+      userAndSession,
+      contract,
+      side: 'family',
+      terms: { ...pending, services: refreshed, timeZone },
+      assent: agreement,
+      revision: null,
+      today: todayIn(timeZone)
+    });
+    // --- end agreement ---
+
     // The validated terms and the zone are written in the same guarded
     // statement as the status flip, so a concurrent draft save can't slip
     // unvalidated terms into the proposal (it is overwritten by what was
     // checked here, or lands after and finds the version no longer a draft).
     const sent = yield* contractRepo
-      .sendPendingVersion(contractId, pending.id, {
-        services: refreshed,
-        startsOn: pending.startsOn,
-        endsOn: pending.endsOn,
-        endsAtMinutes: pending.endsAtMinutes,
-        timeZone
-      })
+      .sendPendingVersion(
+        contractId,
+        pending.id,
+        {
+          services: refreshed,
+          startsOn: pending.startsOn,
+          endsOn: pending.endsOn,
+          endsAtMinutes: pending.endsAtMinutes,
+          timeZone
+        },
+        familySignature
+      )
       .pipe((errors) => mapContractRepoError(errors));
     if (!sent) {
       return yield* Effect.fail(new ContractStateError());
@@ -1133,7 +1159,11 @@ export const withdrawContractProgram = (userAndSession: UserAndSession, contract
     return { id: contract.id, status: restored };
   });
 
-export const acceptContractProgram = (userAndSession: UserAndSession, contractId: string) =>
+export const acceptContractProgram = (
+  userAndSession: UserAndSession,
+  contractId: string,
+  agreement: AgreementAssent
+) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const viewer = userAndSession.user;
@@ -1190,6 +1220,33 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     if (pending.timeZone === null) {
       return yield* Effect.fail(new ContractStateError());
     }
+
+    // --- Written service agreement (UAT round 2, item 4) ---
+    // The helper signs the template revision the family signed, on the same
+    // contract version.
+    const familySigned = yield* ContractAgreementRepo.pipe(
+      Effect.flatMap((repo) => repo.listForContract(contractId)),
+      (errors) => mapContractRepoError(errors),
+      Effect.map((signatures) =>
+        signatures.find(
+          (signature) =>
+            signature.contractVersionId === pending.id &&
+            signature.signerSide === 'family' &&
+            signature.voidedAt === null
+        )
+      )
+    );
+    const helperSignature = yield* agreementSignature({
+      userAndSession,
+      contract,
+      side: 'helper',
+      terms: { ...pending, timeZone: pending.timeZone },
+      assent: agreement,
+      revision: familySigned?.templateVersion ?? null,
+      today: todayIn(pending.timeZone)
+    });
+    // --- end agreement ---
+
     const acceptedAt = new Date();
     // Accepting rarely waits on payouts: a helper who isn't ready yet puts
     // the contract in the payment-readiness gate, whose deadline is cycle 1's
@@ -1226,7 +1283,11 @@ export const acceptContractProgram = (userAndSession: UserAndSession, contractId
     // transaction — a concurrent decline can never leave the contract without
     // an accepted version, nor an accepted contract without its billing.
     const accepted = yield* contractRepo
-      .acceptPendingVersion(contractId, pending.id, { activate: true, billing })
+      .acceptPendingVersion(contractId, pending.id, {
+        activate: true,
+        billing,
+        signature: helperSignature
+      })
       .pipe((errors) => mapContractRepoError(errors));
     if (!accepted) {
       return yield* Effect.fail(new ContractStateError());
@@ -2073,14 +2134,14 @@ export const saveTermsRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers)
 export const sendContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const contractId = yield* validateContractId(c.req.param('id'));
-    yield* validateContractSendInput(yield* parseJsonBody(c, contractSendJsonError));
+    const input = yield* validateContractSendInput(yield* parseJsonBody(c, contractSendJsonError));
     const authenticated = yield* authenticate(headers);
     const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
       authenticated
     );
     yield* requireVerifiedSafety(userAndSession);
     yield* requireLiveApproval(userAndSession);
-    return yield* sendContractProgram(userAndSession, contractId);
+    return yield* sendContractProgram(userAndSession, contractId, input.agreement);
   });
 
 export const withdrawContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
@@ -2096,13 +2157,16 @@ export const withdrawContractRouteProgram = (c: HonoContext<HonoEnv>, headers: H
 export const acceptContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
   Effect.gen(function* () {
     const contractId = yield* validateContractId(c.req.param('id'));
+    const input = yield* validateContractAcceptInput(
+      yield* parseJsonBody(c, contractAcceptJsonError)
+    );
     const authenticated = yield* authenticate(headers);
     const userAndSession = yield* requirePermissions(headers, { contract: ['write'] })(
       authenticated
     );
     yield* requireVerifiedSafety(userAndSession);
     yield* requireLiveApproval(userAndSession);
-    return yield* acceptContractProgram(userAndSession, contractId);
+    return yield* acceptContractProgram(userAndSession, contractId, input.agreement);
   });
 
 export const declineContractRouteProgram = (c: HonoContext<HonoEnv>, headers: Headers) =>
@@ -2491,6 +2555,11 @@ const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRo
       );
     case 'ApprovalGateUnavailableError':
       return c.json({ error: approvalGateUnavailableResponseBody }, 503);
+    case 'AgreementUnavailableError':
+    case 'AgreementChangedError':
+    case 'AgreementImpersonationError':
+    case 'AgreementRepoError':
+      return agreementErrorToResponse(c, error);
     case 'CounterpartNotApprovedError':
       return c.json(
         {

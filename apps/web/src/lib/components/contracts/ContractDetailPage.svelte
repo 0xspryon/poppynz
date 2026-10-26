@@ -35,6 +35,11 @@
 	import ContractTermsView from '$lib/components/contracts/ContractTermsView.svelte';
 	import ContractBillingPanel from '$lib/components/contracts/ContractBillingPanel.svelte';
 	import WeekAtAGlance from '$lib/components/contracts/WeekAtAGlance.svelte';
+	// Written service agreement (UAT round 2, item 4).
+	import AgreementSignDialog from '$lib/components/contracts/AgreementSignDialog.svelte';
+	import SignedAgreementDialog from '$lib/components/contracts/SignedAgreementDialog.svelte';
+	import { agreementErrorToast, type AgreementSignOutcome } from '$lib/agreement-errors';
+	import type { AgreementAssent } from '$lib/api/agreements';
 	import { contractsBadge } from '$lib/contracts-badge.svelte';
 	import { retryPaymentWithToast } from '$lib/contract-retry';
 	import { formatLeadMinutes } from '$lib/lead-time';
@@ -70,6 +75,7 @@
 	let acceptConfirmOpen = $state(false);
 	// The family's explicit "Sign & send" (UAT #41): terms wait here until confirmed.
 	let signTerms = $state<ContractTermsInput | null>(null);
+	let signedAgreementOpen = $state(false);
 	let withdrawConfirmOpen = $state(false);
 	let requestChangesConfirmOpen = $state(false);
 	let declineOpen = $state(false);
@@ -133,6 +139,7 @@
 			// Never render contract A (or act on its buttons) under B's URL.
 			contract = null;
 			acceptConfirmOpen = false;
+			signedAgreementOpen = false;
 			withdrawConfirmOpen = false;
 			requestChangesConfirmOpen = false;
 			declineOpen = false;
@@ -315,32 +322,41 @@
 		return result.ok ? result.data.pricing : null;
 	}
 
-	function handleSendTerms(terms: ContractTermsInput) {
+	/** Sign & send saves the terms first, so the agreement the family reads
+	 * is rendered from exactly what will be sent; then it opens. */
+	async function handleSendTerms(terms: ContractTermsInput) {
 		if (busy) return;
-		signTerms = terms;
-	}
-
-	async function signAndSend() {
-		const terms = signTerms;
-		if (busy || !terms) return;
-		signTerms = null;
 		busy = true;
 		const saved = await saveContractTerms(contractId, terms);
+		busy = false;
 		if (!saved.ok) {
-			busy = false;
 			termsErrorToast(saved.error);
 			return;
 		}
-		const sent = await sendContract(contractId);
+		signTerms = terms;
+	}
+
+	async function signAndSend(agreement: AgreementAssent): Promise<AgreementSignOutcome> {
+		if (busy || !signTerms) return 'failed';
+		busy = true;
+		const sent = await sendContract(contractId, agreement);
 		busy = false;
 		if (sent.ok) {
+			signTerms = null;
 			toast.success(m.contracts_toast_sent({ name: firstName }), {
 				title: m.contracts_toast_sent_title()
 			});
 			void refresh(contractId);
-		} else {
-			termsErrorToast(sent.error);
+			return 'signed';
 		}
+		if (sent.error.code === 'AGREEMENT_CHANGED') {
+			agreementErrorToast(sent.error);
+			return 'changed';
+		}
+		signTerms = null;
+		if (!agreementErrorToast(sent.error)) termsErrorToast(sent.error);
+		void refresh(contractId);
+		return 'failed';
 	}
 
 	async function handleWithdraw() {
@@ -370,18 +386,26 @@
 		}
 	}
 
-	async function handleAccept() {
-		if (busy) return;
-		acceptConfirmOpen = false;
+	async function handleAccept(agreement: AgreementAssent): Promise<AgreementSignOutcome> {
+		if (busy) return 'failed';
 		busy = true;
-		const result = await acceptContract(contractId);
+		const result = await acceptContract(contractId, agreement);
 		busy = false;
 		if (result.ok) {
+			acceptConfirmOpen = false;
 			toast.success(m.contracts_toast_accepted(), { title: m.contracts_toast_accepted_title() });
 			void refresh(contractId);
-		} else {
+			return 'signed';
+		}
+		if (result.error.code === 'AGREEMENT_CHANGED') {
+			agreementErrorToast(result.error);
+			return 'changed';
+		}
+		acceptConfirmOpen = false;
+		if (!agreementErrorToast(result.error)) {
 			actionErrorToast(result.error, m.contracts_error_accept_failed());
 		}
+		return 'failed';
 	}
 
 	async function handleDecline() {
@@ -687,6 +711,20 @@
 			</div>
 			<StatusChip status={chip.status} label={chip.label} />
 		</header>
+
+		<!-- Written service agreement (UAT round 2, item 4) -->
+		{#if contract.status !== 'draft' && contract.status !== 'declined' && contract.status !== 'changes_requested'}
+			<div class="-mt-2 flex justify-end">
+				<button
+					type="button"
+					class="btn btn-ghost btn-sm"
+					onclick={() => (signedAgreementOpen = true)}
+				>
+					<i class="las la-file-signature" aria-hidden="true"></i>
+					{m.agreement_view_signed()}
+				</button>
+			</div>
+		{/if}
 
 		<!-- Status banners -->
 		{#if contract.status === 'proposed' && contract.pendingVersion?.proposedByMe}
@@ -1091,30 +1129,37 @@
 	{/if}
 </div>
 
-<ConfirmDialog
+<!-- Written service agreement (UAT round 2, item 4): Accept & sign and
+	Sign & send show the agreement and need the "I have read and agree" tick. -->
+<AgreementSignDialog
 	open={acceptConfirmOpen}
-	title={m.contracts_accept_dialog_title()}
-	body={m.contracts_accept_dialog_body()}
-	confirmLabel={m.contracts_accept_sign()}
-	confirmClass="btn-primary"
+	{contractId}
+	action="accept"
+	counterpartName={firstName}
 	{busy}
-	onconfirm={handleAccept}
+	onsign={handleAccept}
 	oncancel={() => (acceptConfirmOpen = false)}
 >
+	<p class="mb-2 text-[12.5px] text-base-content-muted">{m.contracts_accept_dialog_body()}</p>
 	{#if role === 'service-provider' && contract?.payoutsReady === false}
 		<PayoutsReminder />
 	{/if}
-</ConfirmDialog>
+</AgreementSignDialog>
 
-<ConfirmDialog
+<AgreementSignDialog
 	open={signTerms !== null}
-	title={m.contracts_sign_dialog_title()}
-	body={m.contracts_sign_dialog_body({ name: firstName })}
-	confirmLabel={m.contracts_sign_send()}
-	confirmClass="btn-primary"
+	{contractId}
+	action="send"
+	counterpartName={firstName}
 	{busy}
-	onconfirm={() => void signAndSend()}
+	onsign={signAndSend}
 	oncancel={() => (signTerms = null)}
+/>
+
+<SignedAgreementDialog
+	open={signedAgreementOpen}
+	{contractId}
+	onclose={() => (signedAgreementOpen = false)}
 />
 
 <ConfirmDialog

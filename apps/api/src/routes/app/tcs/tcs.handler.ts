@@ -1,7 +1,14 @@
 import type { SqlError } from '@effect/sql/SqlError';
 import {
+  agreementPlaceholderNames,
+  agreementTemplateSchema,
+  ContractAgreementRepo,
   currentRevisionRow,
   DBNotFoundError,
+  renderTemplate,
+  sampleAgreementValues,
+  validateTemplate,
+  type TemplateIssue,
   nextDraftVersion,
   TcDocumentRepo,
   toTcLocale,
@@ -33,7 +40,8 @@ import {
   validateTcDocumentUpdateInput,
   validateTcDraftInput,
   validateTcDraftUpdateInput,
-  validateTcLocaleQuery
+  validateTcLocaleQuery,
+  validateTcPreviewInput
 } from './tcs.validator';
 
 class TcDocumentNotFoundError extends Data.TaggedError('TcDocumentNotFoundError')<{ id: string }> {}
@@ -54,6 +62,24 @@ class TcTranslationExistsError extends Data.TaggedError('TcTranslationExistsErro
   documentId: string;
   version: number;
 }> {}
+
+/** A service agreement template naming placeholders that don't exist, or
+ * with broken sections (UAT round 2, item 4). */
+class TcTemplateInvalidError extends Data.TaggedError('TcTemplateInvalidError')<{
+  issues: Array<TemplateIssue>;
+}> {}
+/** The service agreement is what contracts are signed against; it is
+ * replaced by publishing a new version, never removed. */
+class TcDocumentProtectedError extends Data.TaggedError('TcDocumentProtectedError')<{
+  id: string;
+}> {}
+
+/** Refuses a service agreement draft whose text would not render. */
+const ensureTemplateValid = (document: TcDocument, content: string | undefined) => {
+  if (document.kind !== 'service_agreement' || content === undefined) return Effect.void;
+  const issues = validateTemplate(content, agreementTemplateSchema);
+  return issues.length > 0 ? Effect.fail(new TcTemplateInvalidError({ issues })) : Effect.void;
+};
 
 function mapTcRepoError<A, R>(
   effect: Effect.Effect<A, SqlError, R>
@@ -251,6 +277,10 @@ export const deleteTcDocumentRouteProgram = (headers: Headers, id: string) =>
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { tcs: ['write'] })(authenticated);
     const repo = yield* TcDocumentRepo;
+    const existing = yield* repo.findActiveById(id).pipe((errors) => mapTcRepoError(errors));
+    if (existing.kind === 'service_agreement') {
+      return yield* Effect.fail(new TcDocumentProtectedError({ id }));
+    }
     const document = yield* repo.softDeleteDocument(id).pipe((errors) => mapTcRepoError(errors));
     return toTcDocumentResponse(document);
   });
@@ -270,6 +300,8 @@ export const createTcDraftRouteProgram = (
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { tcs: ['write'] })(authenticated);
     const repo = yield* TcDocumentRepo;
+    const document = yield* repo.findActiveById(id).pipe((errors) => mapTcRepoError(errors));
+    yield* ensureTemplateValid(document, input.content);
     const versions = yield* repo.listVersions(id).pipe((errors) => mapTcRepoError(errors));
     if (versions.some((version) => version.locale === locale && version.publishedAt === null)) {
       return yield* Effect.fail(new TcDraftExistsError({ documentId: id }));
@@ -301,6 +333,8 @@ export const updateTcDraftRouteProgram = (
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { tcs: ['write'] })(authenticated);
     const repo = yield* TcDocumentRepo;
+    const document = yield* repo.findActiveById(id).pipe((errors) => mapTcRepoError(errors));
+    yield* ensureTemplateValid(document, input.content);
     const draft = yield* repo
       .updateDraft(id, input, locale)
       .pipe((errors) => mapTcRepoError(errors));
@@ -313,10 +347,69 @@ export const publishTcDraftRouteProgram = (headers: Headers, id: string, localeQ
     const authenticated = yield* authenticate(headers);
     yield* requirePermissions(headers, { tcs: ['write'] })(authenticated);
     const repo = yield* TcDocumentRepo;
-    const published = yield* repo
-      .publishDraft(id, locale)
-      .pipe((errors) => mapTcRepoError(errors));
+    const published = yield* repo.publishDraft(id, locale).pipe((errors) => mapTcRepoError(errors));
     return toTcVersionResponse(published);
+  });
+
+/**
+ * The admin editor's preview of a service agreement draft: the text filled
+ * with sample contract data, the problems saving it would refuse, and the
+ * placeholder reference. Nothing is written.
+ */
+export const previewTcTemplateRouteProgram = (
+  c: HonoContext<HonoEnv>,
+  headers: Headers,
+  id: string
+) =>
+  Effect.gen(function* () {
+    const rawBody = yield* parseJsonBody(c, tcJsonError);
+    const input = yield* validateTcPreviewInput(rawBody);
+    const authenticated = yield* authenticate(headers);
+    yield* requirePermissions(headers, { tcs: ['write'] })(authenticated);
+    const repo = yield* TcDocumentRepo;
+    const document = yield* repo.findActiveById(id).pipe((errors) => mapTcRepoError(errors));
+    if (document.kind !== 'service_agreement') {
+      return { kind: document.kind, content: input.content, issues: [], placeholders: [] };
+    }
+    const issues = validateTemplate(input.content, agreementTemplateSchema);
+    return {
+      kind: document.kind,
+      content:
+        issues.length > 0
+          ? null
+          : renderTemplate(
+              input.content,
+              agreementTemplateSchema,
+              sampleAgreementValues(input.locale ?? 'en')
+            ),
+      issues,
+      placeholders: agreementPlaceholderNames()
+    };
+  });
+
+/** The newest agreement signatures across contracts (no text) — the admin
+ * service agreement page lists them and links to each signed agreement. */
+export const listAgreementSignaturesRouteProgram = (headers: Headers) =>
+  Effect.gen(function* () {
+    const authenticated = yield* authenticate(headers);
+    yield* requirePermissions(headers, { tcs: ['write'], contract: ['review'] })(authenticated);
+    const signatures = yield* ContractAgreementRepo.pipe(
+      Effect.flatMap((repo) => repo.listRecent(100)),
+      (errors) => mapTcRepoError(errors)
+    );
+    return signatures.map((signature) => ({
+      id: signature.id,
+      contractId: signature.contractId,
+      contractVersion: signature.contractVersion,
+      side: signature.signerSide,
+      signerName: signature.signerName,
+      signerEmail: signature.signerEmail,
+      templateVersion: signature.templateVersion,
+      locale: signature.locale,
+      sha256: signature.contentSha256,
+      signedAt: signature.signedAt.toISOString(),
+      voidedAt: toDateString(signature.voidedAt)
+    }));
   });
 
 export type TcRouteError =
@@ -330,7 +423,9 @@ export type TcRouteError =
   | Effect.Effect.Error<ReturnType<typeof deleteTcDocumentRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof createTcDraftRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof updateTcDraftRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof publishTcDraftRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof publishTcDraftRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof previewTcTemplateRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof listAgreementSignaturesRouteProgram>>;
 
 const tcErrorToResponse = (c: HonoContext<HonoEnv>, error: TcRouteError) => {
   if (isAuthError(error)) return authErrorToResponse(c, error);
@@ -400,6 +495,28 @@ const tcErrorToResponse = (c: HonoContext<HonoEnv>, error: TcRouteError) => {
           error: {
             code: 'TC_TRANSLATION_EXISTS' as const,
             message: `Version ${error.version} is already published in this language.`
+          }
+        },
+        409
+      );
+    case 'TcTemplateInvalidError':
+      return c.json(
+        {
+          error: {
+            code: 'TC_TEMPLATE_INVALID' as const,
+            message: 'The agreement template has placeholders or sections that cannot be filled.',
+            issues: error.issues
+          }
+        },
+        422
+      );
+    case 'TcDocumentProtectedError':
+      return c.json(
+        {
+          error: {
+            code: 'TC_DOCUMENT_PROTECTED' as const,
+            message:
+              'The service agreement cannot be removed — contracts are signed against it. Publish a new version instead.'
           }
         },
         409
@@ -525,5 +642,19 @@ export async function publishTcDraftHandler(c: HonoContext<HonoEnv>) {
   const exit = await runtime.runPromiseExit(
     publishTcDraftRouteProgram(headers, id, c.req.query('locale'))
   );
+  return exitToResponse(c, exit);
+}
+
+export async function previewTcTemplateHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const headers = c.req.raw.headers;
+  const id = c.req.param('id') ?? '';
+  const exit = await runtime.runPromiseExit(previewTcTemplateRouteProgram(c, headers, id));
+  return exitToResponse(c, exit);
+}
+
+export async function listAgreementSignaturesHandler(c: HonoContext<HonoEnv>) {
+  const runtime = c.get('runtime');
+  const exit = await runtime.runPromiseExit(listAgreementSignaturesRouteProgram(c.req.raw.headers));
   return exitToResponse(c, exit);
 }

@@ -82,9 +82,7 @@ export const contractTermsSchema = Schema.Struct({
   startsOn: Schema.optional(Schema.NullOr(isoCalendarDate)),
   endsOn: Schema.optional(Schema.NullOr(isoCalendarDate)),
   // Last-day end time for the negotiated end date, wall-clock minutes.
-  endsAtMinutes: Schema.optional(
-    Schema.NullOr(Schema.Int.pipe(Schema.between(1, MINUTES_PER_DAY)))
-  )
+  endsAtMinutes: Schema.optional(Schema.NullOr(Schema.Int.pipe(Schema.between(1, MINUTES_PER_DAY))))
 }).pipe(
   Schema.filter(
     (terms) =>
@@ -132,10 +130,19 @@ export const contractSendValidationError = {
   message: 'Confirm "Sign & send" to sign these terms before sending them.'
 } as const;
 
+/** The written agreement the signer displayed and ticked "I have read and
+ * agree" to (UAT round 2, item 4): its template row and the SHA-256 of the
+ * exact rendered text. Signing re-renders and compares. */
+export const agreementAssentSchema = Schema.Struct({
+  versionId: Schema.Trim.pipe(Schema.nonEmptyString(), Schema.maxLength(64)),
+  sha256: Schema.String.pipe(Schema.pattern(/^[0-9a-f]{64}$/))
+});
+
 /** Sending a proposal is the family's signature (UAT #41), so it has to be
  * an explicit confirmation — never implied by the request itself. */
 export const contractSendSchema = Schema.Struct({
-  signed: Schema.Literal(true)
+  signed: Schema.Literal(true),
+  agreement: agreementAssentSchema
 });
 
 export const validateContractSendInput = validateInput(
@@ -144,6 +151,24 @@ export const validateContractSendInput = validateInput(
 );
 
 export const contractSendJsonError = contractSendValidationError;
+
+export const contractAcceptValidationError = {
+  code: 'CONTRACT_SIGNATURE_REQUIRED',
+  message: 'Read the service agreement and tick "I have read and agree" before accepting.'
+} as const;
+
+/** Accepting is the helper's signature, on the same explicit terms. */
+export const contractAcceptSchema = Schema.Struct({
+  signed: Schema.Literal(true),
+  agreement: agreementAssentSchema
+});
+
+export const validateContractAcceptInput = validateInput(
+  contractAcceptSchema,
+  contractAcceptValidationError
+);
+
+export const contractAcceptJsonError = contractAcceptValidationError;
 
 export const contractDeclineValidationError = {
   code: 'INVALID_CONTRACT_DECLINE_INPUT',

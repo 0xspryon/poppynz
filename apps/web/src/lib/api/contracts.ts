@@ -3,6 +3,7 @@
  * versions — the initial proposal and re-sends after decline/changes are all
  * "the next version". Signed contracts are never amended: they run out or are
  * ended with notice, and a new contract is created. */
+import type { AgreementAssent } from './agreements';
 import { apiClient, call, type ApiResult, type ErrorsOf } from './client';
 
 const listEndpoint = apiClient.contracts.$get;
@@ -97,10 +98,10 @@ export async function quoteContractTerms(id: string, terms: ContractTermsInput) 
 
 /** Sending is the family's signature (UAT #41): the API only accepts it
  * with the explicit "Sign & send" confirmation. */
-export async function sendContract(id: string) {
+export async function sendContract(id: string, agreement: AgreementAssent) {
 	// The API reads the body via parseJsonBody (no hono validator), so the
 	// RPC input type omits `json` — the client still serializes it at runtime.
-	const args = { param: { id }, json: { signed: true } } as unknown as Parameters<
+	const args = { param: { id }, json: { signed: true, agreement } } as unknown as Parameters<
 		typeof sendEndpoint
 	>[0];
 	return call(sendEndpoint(args));
@@ -110,8 +111,12 @@ export async function withdrawContract(id: string) {
 	return call(withdrawEndpoint({ param: { id } }));
 }
 
-export async function acceptContract(id: string) {
-	return call(acceptEndpoint({ param: { id } }));
+/** Accepting is the helper's signature on the written agreement they read. */
+export async function acceptContract(id: string, agreement: AgreementAssent) {
+	const args = { param: { id }, json: { signed: true, agreement } } as unknown as Parameters<
+		typeof acceptEndpoint
+	>[0];
+	return call(acceptEndpoint(args));
 }
 
 export async function declineContract(id: string, reason?: string) {

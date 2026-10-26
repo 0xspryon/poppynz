@@ -16,11 +16,13 @@ import { Context, Data, Effect, Layer } from 'effect';
 import { DrizzleLive } from '../effect-db';
 import {
   contract,
+  contractAgreementSignature,
   contractBilling,
   contractVersion,
   userProfile,
   type ContractServiceItem
 } from '../schema';
+import type { ContractAgreementSignatureInput } from './contract-agreement-repo';
 
 export type Contract = InferSelectModel<typeof contract>;
 export type ContractVersion = InferSelectModel<typeof contractVersion>;
@@ -100,10 +102,16 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
         endsOn: string | null;
         endsAtMinutes: number | null;
         timeZone: string;
-      }
+      },
+      /** The family's signature on the written agreement, recorded in the
+       * same transaction (any earlier live family signature on this version
+       * is voided first). */
+      signature?: ContractAgreementSignatureInput
     ) => Effect.Effect<ContractVersion | null, SqlError>;
     /** Atomically: version proposed → draft (sent_at cleared) AND contract →
-     * restoredStatus. Resolves null when the version was not proposed. */
+     * restoredStatus, voiding the family's agreement signature on it — the
+     * edited terms must be signed again. Resolves null when the version was
+     * not proposed. */
     withdrawPendingVersion: (
       contractId: string,
       versionId: string,
@@ -126,6 +134,9 @@ export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
           InferInsertModel<typeof contractBilling>,
           'contractId' | 'acceptedVersionId'
         >;
+        /** The helper's signature on the written agreement, recorded in the
+         * same transaction as the acceptance. */
+        signature?: ContractAgreementSignatureInput;
       }
     ) => Effect.Effect<ContractVersion | null, SqlError>;
     /** Atomically: version proposed → declined/changes_requested AND (unless
@@ -226,6 +237,30 @@ export const ContractRepoLive = Layer.effect(
             })
           )
           .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
+      });
+
+    /** Voids the side's live agreement signature on a version (none: no-op). */
+    const voidSignature = (versionId: string, side: 'family' | 'helper') =>
+      db
+        .update(contractAgreementSignature)
+        .set({ voidedAt: new Date() })
+        .where(
+          and(
+            eq(contractAgreementSignature.contractVersionId, versionId),
+            eq(contractAgreementSignature.signerSide, side),
+            isNull(contractAgreementSignature.voidedAt)
+          )
+        );
+
+    const insertSignature = (
+      version: ContractVersion,
+      signature: ContractAgreementSignatureInput
+    ) =>
+      db.insert(contractAgreementSignature).values({
+        ...signature,
+        contractId: version.contractId,
+        contractVersionId: version.id,
+        contractVersion: version.version
       });
 
     /** Bump the contract so list ordering follows negotiation activity. */
@@ -337,7 +372,7 @@ export const ContractRepoLive = Layer.effect(
             Effect.map((rows) => rows[0] ?? null),
             Effect.tap((row) => (row ? touchContract(row.contractId) : Effect.void))
           ),
-      sendPendingVersion: (contractId, versionId, terms) =>
+      sendPendingVersion: (contractId, versionId, terms, signature) =>
         compound(
           Effect.gen(function* () {
             const now = new Date();
@@ -359,6 +394,10 @@ export const ContractRepoLive = Layer.effect(
               .returning();
             const version = rows[0];
             if (!version) return yield* Effect.fail(new TxAbort());
+            if (signature) {
+              yield* voidSignature(version.id, signature.signerSide);
+              yield* insertSignature(version, signature);
+            }
             yield* db
               .update(contract)
               .set({ status: 'proposed' })
@@ -376,6 +415,7 @@ export const ContractRepoLive = Layer.effect(
               .returning();
             const version = rows[0];
             if (!version) return yield* Effect.fail(new TxAbort());
+            yield* voidSignature(version.id, 'family');
             yield* db
               .update(contract)
               .set({ status: restoredStatus })
@@ -405,6 +445,10 @@ export const ContractRepoLive = Layer.effect(
               .returning();
             const version = rows[0];
             if (!version) return yield* Effect.fail(new TxAbort());
+            if (options.signature) {
+              yield* voidSignature(version.id, options.signature.signerSide);
+              yield* insertSignature(version, options.signature);
+            }
             if (options.billing) {
               yield* db
                 .insert(contractBilling)

@@ -66,6 +66,16 @@ export const tcJsonError = tcValidationError;
 /** `?locale=` on the admin draft endpoints: absent means English. */
 export const tcLocaleQuerySchema = Schema.optional(Schema.Literal('en', 'fr'));
 export const validateTcLocaleQuery = (value: string | undefined) =>
-  validateInput(Schema.Struct({ locale: tcLocaleQuerySchema }), tcValidationError)({
+  validateInput(
+    Schema.Struct({ locale: tcLocaleQuerySchema }),
+    tcValidationError
+  )({
     locale: value
   }).pipe(Effect.map((input) => input.locale ?? ('en' as const)));
+
+/** The admin preview of a service agreement draft: its text and language. */
+export const tcPreviewSchema = Schema.Struct({
+  content: Schema.String.pipe(Schema.maxLength(200_000)),
+  locale: Schema.optional(Schema.Literal('en', 'fr'))
+});
+export const validateTcPreviewInput = validateInput(tcPreviewSchema, tcValidationError);

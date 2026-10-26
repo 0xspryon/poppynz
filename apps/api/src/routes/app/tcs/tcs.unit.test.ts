@@ -63,6 +63,7 @@ const doc = (overrides: Partial<TcDocument> = {}): TcDocument => ({
   slug: 'terms_of_service',
   title: 'Terms of Service',
   appliesToRole: 'all',
+  kind: 'terms',
   createdAt: new Date('2026-07-01T00:00:00.000Z'),
   updatedAt: new Date('2026-07-01T00:00:00.000Z'),
   deletedAt: null,

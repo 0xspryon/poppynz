@@ -323,23 +323,82 @@ export const agreementTemplateSchema = {
   'cancellation.policyPublishedOn': 'text'
 } as const satisfies TemplateSchema;
 
+// ---------------------------------------------------------------------------
+// Formatting filled values, per template language. Money is Canadian dollars;
+// dates are calendar dates; times are wall-clock minutes in the contract zone.
+
+const intlLocale = (locale: TcLocale) => (locale === 'fr' ? 'fr-CA' : 'en-CA');
+
+export const formatAgreementMoney = (cents: number, locale: TcLocale, currency = 'CAD') =>
+  new Intl.NumberFormat(intlLocale(locale), { style: 'currency', currency }).format(cents / 100);
+
+/** "Monday, January 5, 2099" / "lundi 5 janvier 2099". */
+export const formatAgreementDate = (isoDate: string, locale: TcLocale) =>
+  new Intl.DateTimeFormat(intlLocale(locale), {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC'
+  }).format(new Date(`${isoDate}T00:00:00Z`));
+
+/** "October 1, 2026" / "1 octobre 2026", for an instant read in UTC. */
+export const formatAgreementDay = (at: Date, locale: TcLocale) =>
+  new Intl.DateTimeFormat(intlLocale(locale), {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    timeZone: 'UTC'
+  }).format(at);
+
+/** 930 → "3:30 p.m." / "15 h 30"; 1440 → "midnight" / "minuit". */
+export const formatAgreementTime = (minutes: number, locale: TcLocale) => {
+  if (minutes >= 24 * 60) return locale === 'fr' ? 'minuit' : 'midnight';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (locale === 'fr')
+    return rest === 0 ? `${hours} h` : `${hours} h ${String(rest).padStart(2, '0')}`;
+  const suffix = hours < 12 ? 'a.m.' : 'p.m.';
+  const clock = hours % 12 === 0 ? 12 : hours % 12;
+  return `${clock}:${String(rest).padStart(2, '0')} ${suffix}`;
+};
+
+/** Contract weekdays count from Monday = 0. */
+export const formatAgreementWeekday = (weekday: number, locale: TcLocale) =>
+  new Intl.DateTimeFormat(intlLocale(locale), { weekday: 'long', timeZone: 'UTC' }).format(
+    // 2024-01-01 was a Monday.
+    new Date(Date.UTC(2024, 0, 1 + weekday))
+  );
+
+export const formatAgreementHours = (minutes: number, locale: TcLocale) =>
+  new Intl.NumberFormat(intlLocale(locale), { maximumFractionDigits: 2 }).format(minutes / 60);
+
+export const formatAgreementPercent = (basisPoints: number, locale: TcLocale) =>
+  new Intl.NumberFormat(intlLocale(locale), { style: 'percent', maximumFractionDigits: 2 }).format(
+    basisPoints / 10_000
+  );
+
 /** A filled-in example for the admin preview, in the template's language. */
 export const sampleAgreementValues = (locale: TcLocale): TemplateValues => {
   const fr = locale === 'fr';
-  const money = (cents: number) =>
-    new Intl.NumberFormat(fr ? 'fr-CA' : 'en-CA', { style: 'currency', currency: 'CAD' }).format(
-      cents / 100
-    );
-  const tax = (label: string, cents: number) => [{ label, amount: money(cents) }];
+  const money = (cents: number) => formatAgreementMoney(cents, locale);
+  const time = (minutes: number) => formatAgreementTime(minutes, locale);
+  const service = fr ? 'Garde d’enfants' : 'Childcare';
+  const session = (weekday: number) => ({
+    day: formatAgreementWeekday(weekday, locale),
+    start: time(930),
+    end: time(1050),
+    hours: formatAgreementHours(120, locale)
+  });
   return {
     'agreement.version': '1',
     'agreement.language': fr ? 'Français' : 'English',
     'contract.reference': '0198a3b0-0000-7000-8000-00000000c001',
     'contract.version': '1',
-    'contract.startsOn': fr ? 'lundi 5 janvier 2099' : 'Monday, January 5, 2099',
+    'contract.startsOn': formatAgreementDate('2099-01-05', locale),
     'contract.hasEndDate': true,
-    'contract.endsOn': fr ? 'vendredi 26 juin 2099' : 'Friday, June 26, 2099',
-    'contract.endsAt': fr ? '18 h' : '6:00 p.m.',
+    'contract.endsOn': formatAgreementDate('2099-06-26', locale),
+    'contract.endsAt': time(1080),
     'contract.timeZone': fr ? 'heure du Centre (Winnipeg)' : 'Central Time (Winnipeg)',
     'contract.currency': 'CAD',
     'family.name': 'Priya Sample',
@@ -352,66 +411,41 @@ export const sampleAgreementValues = (locale: TcLocale): TemplateValues => {
     'helper.location': 'Winnipeg, MB',
     services: [
       {
-        name: fr ? 'Garde d’enfants' : 'Childcare',
+        name: service,
         rate: money(2600),
         hasExpectations: true,
         expectations: fr
           ? 'Aide aux devoirs et collation après l’école.'
           : 'Homework help and a snack after school.',
-        weeklyHours: '4',
+        weeklyHours: formatAgreementHours(240, locale),
         weeklyAmount: money(10400),
-        sessions: [
-          {
-            day: fr ? 'mardi' : 'Tuesday',
-            start: fr ? '15 h 30' : '3:30 p.m.',
-            end: fr ? '17 h 30' : '5:30 p.m.',
-            hours: '2'
-          },
-          {
-            day: fr ? 'jeudi' : 'Thursday',
-            start: fr ? '15 h 30' : '3:30 p.m.',
-            end: fr ? '17 h 30' : '5:30 p.m.',
-            hours: '2'
-          }
-        ]
+        sessions: [session(1), session(3)]
       }
     ],
     schedule: [
-      {
-        day: fr ? 'mardi' : 'Tuesday',
-        start: fr ? '15 h 30' : '3:30 p.m.',
-        end: fr ? '17 h 30' : '5:30 p.m.',
-        hours: '2',
-        service: fr ? 'Garde d’enfants' : 'Childcare'
-      },
-      {
-        day: fr ? 'jeudi' : 'Thursday',
-        start: fr ? '15 h 30' : '3:30 p.m.',
-        end: fr ? '17 h 30' : '5:30 p.m.',
-        hours: '2',
-        service: fr ? 'Garde d’enfants' : 'Childcare'
-      }
+      { ...session(1), service },
+      { ...session(3), service }
     ],
-    'schedule.weeklyHours': '4',
+    'schedule.weeklyHours': formatAgreementHours(240, locale),
     'fees.weeklyCare': money(10400),
     'fees.careTaxes': [],
-    'fees.familyFeePercent': fr ? '5 %' : '5%',
+    'fees.familyFeePercent': formatAgreementPercent(500, locale),
     'fees.familyFee': money(520),
-    'fees.familyFeeTaxes': tax(fr ? 'TPS' : 'GST', 26),
+    'fees.familyFeeTaxes': [{ label: fr ? 'TPS' : 'GST', amount: money(26) }],
     'fees.familyWeeklyTotal': money(10946),
-    'fees.commissionPercent': fr ? '15 %' : '15%',
+    'fees.commissionPercent': formatAgreementPercent(1500, locale),
     'fees.commission': money(1560),
-    'fees.commissionTaxes': tax(fr ? 'TPS' : 'GST', 78),
+    'fees.commissionTaxes': [{ label: fr ? 'TPS' : 'GST', amount: money(78) }],
     'fees.helperWeeklyShare': money(8762),
     'billing.cycleDays': '3',
-    'billing.holdLeadHours': '24',
+    'billing.holdLeadHours': '48',
     'billing.retryHours': '12',
     'notice.days': '14',
     'cancellation.policyTitle': fr
       ? 'Conditions d’utilisation et politique de paiement'
       : 'Terms of Service and Payment Policy',
     'cancellation.policyVersion': '1',
-    'cancellation.policyPublishedOn': fr ? '1 octobre 2026' : 'October 1, 2026'
+    'cancellation.policyPublishedOn': formatAgreementDay(new Date('2026-10-01T12:00:00Z'), locale)
   };
 };
 

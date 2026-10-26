@@ -169,3 +169,32 @@ describe('the service agreement placeholder set', () => {
     );
   });
 });
+
+describe('agreement value formatting', () => {
+  it('formats money, dates, times, weekdays, hours and percentages per language', async () => {
+    const {
+      formatAgreementDate,
+      formatAgreementHours,
+      formatAgreementMoney,
+      formatAgreementPercent,
+      formatAgreementTime,
+      formatAgreementWeekday
+    } = await import('./agreement-template');
+    expect(formatAgreementMoney(2600, 'en')).toBe('$26.00');
+    expect(formatAgreementMoney(2600, 'fr').replace(/\s/g, ' ')).toBe('26,00 $');
+    expect(formatAgreementDate('2099-01-05', 'en')).toBe('Monday, January 5, 2099');
+    expect(formatAgreementDate('2099-01-05', 'fr')).toBe('lundi 5 janvier 2099');
+    expect(formatAgreementTime(930, 'en')).toBe('3:30 p.m.');
+    expect(formatAgreementTime(0, 'en')).toBe('12:00 a.m.');
+    expect(formatAgreementTime(720, 'en')).toBe('12:00 p.m.');
+    expect(formatAgreementTime(930, 'fr')).toBe('15 h 30');
+    expect(formatAgreementTime(1080, 'fr')).toBe('18 h');
+    expect(formatAgreementTime(1440, 'fr')).toBe('minuit');
+    expect(formatAgreementWeekday(0, 'en')).toBe('Monday');
+    expect(formatAgreementWeekday(6, 'fr')).toBe('dimanche');
+    expect(formatAgreementHours(150, 'en')).toBe('2.5');
+    expect(formatAgreementHours(150, 'fr')).toBe('2,5');
+    expect(formatAgreementPercent(500, 'en')).toBe('5%');
+    expect(formatAgreementPercent(1500, 'fr').replace(/\s/g, ' ')).toBe('15 %');
+  });
+});

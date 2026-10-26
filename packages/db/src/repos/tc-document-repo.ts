@@ -353,7 +353,7 @@ export const makeTcDocumentRepoTest = (
     ...implementation
   });
 
-export const EmptyTcDocumentRepoTest = makeTcDocumentRepoTest({
+export const emptyTcDocumentRepo: TcDocumentRepoService = {
   listActive: () => Effect.succeed([]),
   findActiveById: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: '' })),
   findActiveBySlug: () => Effect.fail(new DBNotFoundError({ entity: 'tcDocument', value: '' })),
@@ -373,4 +373,6 @@ export const EmptyTcDocumentRepoTest = makeTcDocumentRepoTest({
   listAcceptancesForUser: () => Effect.succeed([]),
   findServiceAgreement: () => Effect.succeed(null),
   insertAcceptances: () => Effect.succeed([])
-});
+};
+
+export const EmptyTcDocumentRepoTest = makeTcDocumentRepoTest(emptyTcDocumentRepo);

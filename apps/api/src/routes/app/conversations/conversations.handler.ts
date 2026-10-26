@@ -157,6 +157,8 @@ export const toConversationResponse = (row: ConversationWithContext, viewerUserI
         'Poppynz member'
       ),
       city: row.counterpartCity,
+      // UAT round 2 #2: shown with the city ("Winnipeg, MB").
+      stateProvince: row.counterpartStateProvince,
       role: (sideOf(row, viewerUserId) === 'family' ? 'service-provider' : 'family') as
         | 'family'
         | 'service-provider'
@@ -436,17 +438,23 @@ export const getConversationProgram = (userAndSession: UserAndSession, conversat
 
     // The thread renders contract state (the 16h/16j pills) from this summary
     // — contract rows never enter conversation_messages.
+    // A conversation can hold several contracts over time ("Start a new
+    // contract from this one"): the pill shows the newest one the viewer may
+    // see — a family-private draft never hides the helper's running contract.
     const contractRepo = yield* ContractRepo;
-    const contractRow = yield* contractRepo
-      .findByConversationId(conversationId)
+    const contractRows = yield* contractRepo
+      .listByConversationId(conversationId)
       .pipe((errors) => mapConversationRepoError(errors));
     let contract: ReturnType<typeof toThreadContractSummary> = null;
-    if (contractRow) {
-      const versions = yield* contractRepo
-        .listVersions(contractRow.id)
-        .pipe((errors) => mapConversationRepoError(errors));
-      const { cutoff } = yield* contractProposalContext;
-      contract = toThreadContractSummary(contractRow, versions, viewer.id, cutoff);
+    if (contractRows.length > 0) {
+      const clock = yield* contractProposalContext;
+      for (const contractRow of contractRows) {
+        const versions = yield* contractRepo
+          .listVersions(contractRow.id)
+          .pipe((errors) => mapConversationRepoError(errors));
+        contract = toThreadContractSummary(contractRow, versions, viewer.id, clock);
+        if (contract !== null) break;
+      }
     }
 
     return {

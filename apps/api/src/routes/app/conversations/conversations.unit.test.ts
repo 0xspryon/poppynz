@@ -196,6 +196,9 @@ const makeLayer = (
     markRespondedResult?: Conversation | null;
     markIgnoredResult?: Conversation | null;
     contractByConversation?: Contract | null;
+    /** Every contract of the conversation, newest first (overrides the one above). */
+    conversationContracts?: Array<Contract>;
+    versionsByContract?: Record<string, Array<ContractVersion>>;
     contractVersions?: Array<ContractVersion>;
     published?: Array<Published>;
     onCreateMessage?: (input: unknown) => void;
@@ -328,9 +331,15 @@ const makeLayer = (
       create: () => Effect.die('not used'),
       findById: () => Effect.succeed(null),
       findByConversationId: () => Effect.succeed(options.contractByConversation ?? null),
+      ...(options.conversationContracts
+        ? { listByConversationId: () => Effect.succeed(options.conversationContracts ?? []) }
+        : {}),
       findWithContext: () => Effect.succeed(null),
       listForUser: () => Effect.succeed([]),
-      listVersions: () => Effect.succeed(options.contractVersions ?? []),
+      listVersions: (contractId) =>
+        Effect.succeed(
+          options.versionsByContract?.[contractId] ?? options.contractVersions ?? []
+        ),
       createVersion: () => Effect.die('not used'),
       updateVersionTerms: () => Effect.die('not used'),
       sendPendingVersion: () => Effect.die('not used'),
@@ -783,6 +792,42 @@ describe('GET /conversations/:id', () => {
       status: 'proposed',
       awaitingYou: false
     });
+  });
+
+  it("shows the helper's running contract, not the family's new private draft (UAT 7b)", async () => {
+    const layer = makeLayer({
+      viewer: providerUser(),
+      counterpart: familyUser(),
+      conversationWithContext: {
+        ...dummyConversationWithContext,
+        id: CONVERSATION_ID,
+        status: 'active',
+        counterpartUserId: 'family-1'
+      },
+      conversationContracts: [
+        { ...dummyContract, id: 'contract-new', conversationId: CONVERSATION_ID, status: 'draft' },
+        { ...dummyContract, id: 'contract-old', conversationId: CONVERSATION_ID, status: 'active' }
+      ],
+      versionsByContract: {
+        'contract-new': [{ ...dummyContractVersion, contractId: 'contract-new', status: 'draft' }],
+        'contract-old': [
+          {
+            ...dummyContractVersion,
+            contractId: 'contract-old',
+            status: 'accepted',
+            decidedAt: new Date(),
+            timeZone: 'America/Toronto'
+          }
+        ]
+      }
+    });
+    const result = await Effect.runPromise(
+      getConversationRouteProgram(
+        makeContext({ params: { id: CONVERSATION_ID } }),
+        new Headers()
+      ).pipe(Effect.provide(layer))
+    );
+    expect(result.contract).toMatchObject({ id: 'contract-old', status: 'active' });
   });
 
   it("hides a family-private draft contract from the provider's thread payload", async () => {

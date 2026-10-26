@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPlace, withProvince } from '$lib/location';
 	import { onMount } from 'svelte';
 	import {
 		getPlaceSuggestions,
@@ -231,8 +232,11 @@
 		// The saved address is Google's formatted one, which already ends in
 		// the city, province and country — appending them again showed them
 		// twice (UAT #7).
-		if (profile.address) return profile.address;
-		const parts = [profile.city, profile.stateProvince, profile.country].filter(Boolean);
+		// UAT round 2 #2: the province is always there, once.
+		if (profile.address) return withProvince(profile.address, profile.stateProvince);
+		const parts = [formatPlace(profile.city, profile.stateProvince), profile.country].filter(
+			Boolean
+		);
 		return parts.length > 0 ? parts.join(', ') : null;
 	});
 </script>

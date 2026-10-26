@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPlace } from '$lib/location';
 	import { contactDetailsWarning, standingChatNotice } from '$lib/off-platform-notice';
 	/** Shared Messages screen for both roles (design 16b/16c). Desktop shows the
 	 * conversation list and the thread side by side; on mobile the `?c=` query
@@ -522,7 +523,11 @@
 						{#if thread.conversation.counterpart.city}
 							{m.messages_counterpart_with_city({
 								role: counterpartRoleLabel,
-								city: thread.conversation.counterpart.city
+								city:
+									formatPlace(
+										thread.conversation.counterpart.city,
+										thread.conversation.counterpart.stateProvince
+									) ?? thread.conversation.counterpart.city
 							})}
 						{:else}
 							{counterpartRoleLabel}

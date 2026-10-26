@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { formatPlace } from '$lib/location';
 	/** Family marketplace search (design 13b/13c/13d): keyword + radius search
 	 * over the vetted-provider pool with service / rate / city filters. Search
 	 * state lives in the URL so returning from a profile restores it. Radius
@@ -158,7 +159,7 @@
 				// required — seeded locations have coordinates without one).
 				const profile = result.data;
 				hasLocation = profile.hasLocation;
-				originLabel = [profile.city, profile.stateProvince].filter(Boolean).join(', ');
+				originLabel = formatPlace(profile.city, profile.stateProvince) ?? '';
 				// Nearby-first default: families with a saved location start on a
 				// 10 km distance search unless the URL already carries a search.
 				if (hasLocation && !cameFromUrl) {

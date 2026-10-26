@@ -510,6 +510,8 @@ type PricingInputs = {
   side: ContractSide;
   /** Today in the zone the dates are read in, when known. */
   today: string | null;
+  /** `CONTRACT_HOLD_LEAD_HOURS`, for the family's "held … before" note. */
+  holdLeadHours: number;
 };
 
 /** One week of the pattern, priced for the viewer's side only: the family
@@ -561,7 +563,8 @@ export const weeklyPricing = (
       feeBps: inputs.familyFeeBps,
       feeCents,
       feeTaxLines: taxLineViews(feeTax.lines),
-      totalCents: serviceCents + serviceTax.taxCents + feeCents + feeTax.taxCents
+      totalCents: serviceCents + serviceTax.taxCents + feeCents + feeTax.taxCents,
+      holdLeadHours: inputs.holdLeadHours
     };
   }
   const commissionCents = applyBps(serviceCents, inputs.providerCommissionBps);
@@ -601,6 +604,8 @@ const billingSummary = (contractId: string, side: ContractSide) =>
       suspendedReason: billing.suspendedReason,
       // UAT round 2 #13: the family's "Retry payment" (declined / card-suspended).
       canRetryPayment: side === 'family' && familyRetryEligible(billing, cycles, new Date()),
+      // UAT round 2 #10: how long before a cycle starts it is held.
+      holdLeadHours: (yield* contractBillingPolicy).holdLeadHours,
       // Cancelled unless the helper is payment-ready by cycle 1's capture.
       readinessDeadline:
         billing.status === 'awaiting_payment_readiness'
@@ -1558,7 +1563,8 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         ? (billingRow.helperProvince as ProvinceCode)
         : yield* profileProvince(row.providerUserId),
       side: viewerSide,
-      today: timeZone ? todayIn(timeZone) : null
+      today: timeZone ? todayIn(timeZone) : null,
+      holdLeadHours: clock.holdLeadHours
     };
     const pricingOf = (version: ContractVersion) => weeklyPricing(version, pricingInputs);
     const effective = effectiveEnd(row, accepted);
@@ -2033,7 +2039,8 @@ export const quoteTermsProgram = (
         familyProvince: yield* profileProvince(contract.familyUserId),
         helperProvince: yield* profileProvince(contract.providerUserId),
         side: 'family',
-        today: timeZone ? todayIn(timeZone) : null
+        today: timeZone ? todayIn(timeZone) : null,
+        holdLeadHours: policy.holdLeadHours
       }
     );
     return { pricing, weeklyEstimateCents: weeklyEstimateCents(services) };

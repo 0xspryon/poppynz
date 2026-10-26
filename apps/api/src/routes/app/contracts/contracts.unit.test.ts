@@ -2210,7 +2210,8 @@ describe('GET /contracts/:id', () => {
       feeBps: 500,
       feeCents: 520,
       feeTaxLines: [{ label: 'GST (MB) 5%', taxCents: 26 }],
-      totalCents: 10946
+      totalCents: 10946,
+      holdLeadHours: 24
     });
   });
 

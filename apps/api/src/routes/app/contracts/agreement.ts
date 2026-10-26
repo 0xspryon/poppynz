@@ -77,11 +77,17 @@ export type AgreementAssent = { versionId: string; sha256: string };
 export const TERMS_OF_SERVICE_SLUG = 'terms_of_service';
 
 /**
- * Hours before a cycle starts that its hold is placed — mirrors
- * `holdAt = cycle start − 2 days` in @repo/billing's schedule. When the
- * hold lead becomes a setting (CONTRACT_HOLD_LEAD_HOURS), read it from there.
+ * Hours before a cycle starts that its hold is placed, when the billing
+ * settings don't carry it — mirrors `holdAt = cycle start − 2 days` in
+ * @repo/billing's schedule. Once the hold lead is a setting
+ * (`holdLeadHours`, CONTRACT_HOLD_LEAD_HOURS) the agreement states that.
  */
 export const HOLD_LEAD_HOURS = 48;
+
+const holdLeadHoursOf = (policy: object) => {
+  const configured = (policy as { holdLeadHours?: unknown }).holdLeadHours;
+  return typeof configured === 'number' ? configured : HOLD_LEAD_HOURS;
+};
 
 export const sha256Hex = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 
@@ -403,7 +409,7 @@ export const renderContractAgreement = (input: {
         familyFeeBps: policy.familyCommissionBps,
         providerCommissionBps: policy.providerCommissionBps,
         retryHours: policy.retryHours,
-        holdLeadHours: HOLD_LEAD_HOURS,
+        holdLeadHours: holdLeadHoursOf(policy),
         cancellationPolicy: cancellation
           ? {
               title: cancellation.document.title,

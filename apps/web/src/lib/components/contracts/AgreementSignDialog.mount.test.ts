@@ -11,6 +11,7 @@ vi.mock('$app/environment', () => ({
 	version: 'test'
 }));
 
+import type { AgreementSignOutcome } from '$lib/agreement-errors';
 import AgreementSignDialog from './AgreementSignDialog.svelte';
 
 const agreement = (overrides: Record<string, unknown> = {}) => ({
@@ -43,7 +44,10 @@ const button = (label: string) =>
 
 const checkbox = () => document.querySelector('input[type="checkbox"]') as HTMLInputElement;
 
-const open = (onsign = vi.fn(async () => 'signed' as const), action: 'send' | 'accept' = 'send') =>
+const open = (
+	onsign = vi.fn(async (): Promise<AgreementSignOutcome> => 'signed'),
+	action: 'send' | 'accept' = 'send'
+) =>
 	mount(AgreementSignDialog, {
 		target: document.body,
 		props: {
@@ -64,7 +68,7 @@ describe('AgreementSignDialog', () => {
 
 	it('shows the rendered agreement and signs only after the explicit tick', async () => {
 		getAgreementToSign.mockResolvedValue({ ok: true, data: { agreement: agreement() } });
-		const onsign = vi.fn(async () => 'signed' as const);
+		const onsign = vi.fn(async (): Promise<AgreementSignOutcome> => 'signed');
 		const app = open(onsign);
 		await settle();
 
@@ -90,7 +94,7 @@ describe('AgreementSignDialog', () => {
 				data: { agreement: agreement({ version: 2, versionId: 'v2', content: 'Updated text.' }) }
 			});
 		const app = open(
-			vi.fn(async () => 'changed' as const),
+			vi.fn(async (): Promise<AgreementSignOutcome> => 'changed'),
 			'accept'
 		);
 		await settle();

@@ -51,6 +51,15 @@ export const tcAppliesToRole = appDb.enum('tc_applies_to_role', [
   'family',
   'service-provider'
 ]);
+// "terms" documents gate sign-up and sign-in (TcGate); the one live
+// "service_agreement" document is the written agreement both parties sign on
+// a contract (UAT round 2, item 4) — a template, never shown by the gate.
+export const tcDocumentKind = appDb.enum('tc_document_kind', ['terms', 'service_agreement']);
+// Which side of a contract signed a service agreement.
+export const contractAgreementSigner = appDb.enum('contract_agreement_signer', [
+  'family',
+  'helper'
+]);
 export const conversationStatus = appDb.enum('conversation_status', [
   'pending',
   'active',
@@ -984,10 +993,9 @@ export const serviceCatalogueItem = appDb.table(
     // Credential gate: a helper may only offer (and is only listed for) this
     // service while their document of this type is admin-approved — e.g.
     // Personal support (PSW) requires an approved PSW credential.
-    requiredDocumentTypeId: uuid('required_document_type_id').references(
-      () => kycDocumentType.id,
-      { onDelete: 'restrict' }
-    ),
+    requiredDocumentTypeId: uuid('required_document_type_id').references(() => kycDocumentType.id, {
+      onDelete: 'restrict'
+    }),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -1660,6 +1668,7 @@ export const tcDocument = appDb.table(
     slug: text('slug').notNull(),
     title: text('title').notNull(),
     appliesToRole: tcAppliesToRole('applies_to_role').default('all').notNull(),
+    kind: tcDocumentKind('kind').default('terms').notNull(),
     deletedAt: timestamp('deleted_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
@@ -1669,7 +1678,11 @@ export const tcDocument = appDb.table(
   },
   (table) => [
     uniqueIndex('tc_documents_slug_uidx').on(table.slug),
-    index('tc_documents_deleted_at_idx').on(table.deletedAt)
+    index('tc_documents_deleted_at_idx').on(table.deletedAt),
+    // Signing reads THE service agreement, so there is at most one live one.
+    uniqueIndex('tc_documents_service_agreement_uidx')
+      .on(table.kind)
+      .where(sql`${table.kind} = 'service_agreement' and ${table.deletedAt} is null`)
   ]
 );
 
@@ -1746,6 +1759,65 @@ export const tcDocumentAcceptance = appDb.table(
     index('tc_document_acceptances_user_id_idx').on(table.userId),
     index('tc_document_acceptances_version_id_idx').on(table.versionId),
     uniqueIndex('tc_document_acceptances_user_id_version_id_uidx').on(table.userId, table.versionId)
+  ]
+);
+
+// One party's signature on a contract version's written service agreement
+// (UAT round 2, item 4). The row is the evidence: which template revision and
+// language was signed, the exact rendered text (content) and its SHA-256, and
+// the cancellation policy (Terms of Service revision) in force — so a later
+// dispute knows which rules applied. Append-only: a trigger refuses every
+// change except voiding, and every delete. Voiding is how a signature stops
+// counting — the family's when they withdraw a proposal to edit it (the same
+// version row is re-sent and re-signed). At most one live signature per side
+// per contract version; both sides' signatures attach to the same version.
+export const contractAgreementSignature = appDb.table(
+  'contract_agreement_signatures',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    contractVersionId: uuid('contract_version_id')
+      .notNull()
+      .references(() => contractVersion.id, { onDelete: 'restrict' }),
+    contractVersion: integer('contract_version').notNull(),
+    signerUserId: text('signer_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    signerSide: contractAgreementSigner('signer_side').notNull(),
+    templateDocumentId: uuid('template_document_id')
+      .notNull()
+      .references(() => tcDocument.id, { onDelete: 'restrict' }),
+    templateVersionId: uuid('template_version_id')
+      .notNull()
+      .references(() => tcDocumentVersion.id, { onDelete: 'restrict' }),
+    templateVersion: integer('template_version').notNull(),
+    locale: text('locale').notNull(),
+    content: text('content').notNull(),
+    contentSha256: text('content_sha256').notNull(),
+    // Null only when no Terms of Service revision was published at signing.
+    cancellationPolicyVersionId: uuid('cancellation_policy_version_id').references(
+      () => tcDocumentVersion.id,
+      { onDelete: 'restrict' }
+    ),
+    cancellationPolicyVersion: integer('cancellation_policy_version'),
+    signedAt: timestamp('signed_at').defaultNow().notNull(),
+    voidedAt: timestamp('voided_at')
+  },
+  (table) => [
+    index('contract_agreement_signatures_contract_id_idx').on(table.contractId),
+    index('contract_agreement_signatures_template_version_id_idx').on(table.templateVersionId),
+    uniqueIndex('contract_agreement_signatures_live_uidx')
+      .on(table.contractVersionId, table.signerSide)
+      .where(sql`${table.voidedAt} is null`),
+    check('contract_agreement_signatures_locale_check', sql`${table.locale} in ('en', 'fr')`),
+    check(
+      'contract_agreement_signatures_sha256_check',
+      sql`${table.contentSha256} ~ '^[0-9a-f]{64}$'`
+    )
   ]
 );
 

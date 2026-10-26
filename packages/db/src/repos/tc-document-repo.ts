@@ -96,6 +96,12 @@ export class TcDocumentRepo extends Context.Tag('@repo/db/TcDocumentRepo')<
     listAcceptancesForUser: (
       userId: string
     ) => Effect.Effect<Array<TcDocumentAcceptance>, SqlError>;
+    /** The live service agreement template (kind "service_agreement") with
+     * all its versions, newest first; null when there is none. */
+    findServiceAgreement: () => Effect.Effect<
+      { document: TcDocument; versions: Array<TcDocumentVersion> } | null,
+      SqlError
+    >;
     /** Append-only; re-accepting an already accepted version is a no-op. */
     insertAcceptances: (
       userId: string,
@@ -130,6 +136,9 @@ export const TcDocumentRepoLive = Layer.effect(
           .where(
             and(
               isNull(tcDocument.deletedAt),
+              // The service agreement is signed on a contract, never by the
+              // gate or at sign-up.
+              eq(tcDocument.kind, 'terms'),
               or(eq(tcDocument.appliesToRole, role), eq(tcDocument.appliesToRole, 'all'))
             )
           );
@@ -301,6 +310,22 @@ export const TcDocumentRepoLive = Layer.effect(
           .from(tcDocumentAcceptance)
           .where(eq(tcDocumentAcceptance.userId, userId))
           .orderBy(desc(tcDocumentAcceptance.acceptedAt)),
+      findServiceAgreement: () =>
+        Effect.gen(function* () {
+          const documents = yield* db
+            .select()
+            .from(tcDocument)
+            .where(and(eq(tcDocument.kind, 'service_agreement'), isNull(tcDocument.deletedAt)))
+            .limit(1);
+          const document = documents[0];
+          if (!document) return null;
+          const versions = yield* db
+            .select()
+            .from(tcDocumentVersion)
+            .where(eq(tcDocumentVersion.documentId, document.id))
+            .orderBy(desc(tcDocumentVersion.version));
+          return { document, versions };
+        }),
       insertAcceptances: (userId, items) =>
         items.length === 0
           ? Effect.succeed([])
@@ -315,8 +340,18 @@ export const TcDocumentRepoLive = Layer.effect(
 
 export const TcDocumentRepoDefault = TcDocumentRepoLive.pipe(Layer.provide(DrizzleLive));
 
-export const makeTcDocumentRepoTest = (implementation: Context.Tag.Service<TcDocumentRepo>) =>
-  Layer.succeed(TcDocumentRepo, implementation);
+type TcDocumentRepoService = Context.Tag.Service<TcDocumentRepo>;
+
+// `findServiceAgreement` is optional so suites written before the service
+// agreement keep compiling; it finds none unless a test supplies it.
+export const makeTcDocumentRepoTest = (
+  implementation: Omit<TcDocumentRepoService, 'findServiceAgreement'> &
+    Partial<Pick<TcDocumentRepoService, 'findServiceAgreement'>>
+) =>
+  Layer.succeed(TcDocumentRepo, {
+    findServiceAgreement: () => Effect.succeed(null),
+    ...implementation
+  });
 
 export const EmptyTcDocumentRepoTest = makeTcDocumentRepoTest({
   listActive: () => Effect.succeed([]),
@@ -336,5 +371,6 @@ export const EmptyTcDocumentRepoTest = makeTcDocumentRepoTest({
   listPublishedForRole: () => Effect.succeed([]),
   listPendingForUser: () => Effect.succeed([]),
   listAcceptancesForUser: () => Effect.succeed([]),
+  findServiceAgreement: () => Effect.succeed(null),
   insertAcceptances: () => Effect.succeed([])
 });

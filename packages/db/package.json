@@ -10,7 +10,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./schema": "./src/schema.ts",
-    "./tax-defaults": "./src/tax-defaults.ts"
+    "./tax-defaults": "./src/tax-defaults.ts",
+    "./agreement-template": "./src/agreement-template.ts"
   },
   "dependencies": {
     "@effect/sql": "^0.51.1",

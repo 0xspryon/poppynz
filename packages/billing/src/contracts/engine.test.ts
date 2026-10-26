@@ -45,7 +45,9 @@ import {
 //   fee 5% $6.25 + HST (ON) 13% $0.81 → family pays $132.06
 //   commission 15% $18.75 + GST (MB) 5% $0.94 → helper gets $105.31
 const CYCLE_1 = {
-  holdAt: new Date('2026-10-31T04:00:00.000Z'), // Sat 31 Oct 00:00 EDT
+  // CONTRACT_HOLD_LEAD_HOURS (24) real hours before the start: the fall-back
+  // night (1 Nov) is in between, so it reads 01:00 EDT on the wall clock.
+  holdAt: new Date('2026-11-01T05:00:00.000Z'), // Sun 1 Nov 01:00 EDT
   startsAt: new Date('2026-11-02T05:00:00.000Z'), // Mon 2 Nov 00:00 EST
   captureAt: new Date('2026-11-02T12:00:00.000Z') // Mon 07:00 EST
 };
@@ -282,7 +284,7 @@ describe('cycles: hold → capture', () => {
     expect(world.payments.size).toBe(0);
   });
 
-  it('holds the quoted total 2 days ahead, then captures it before care starts', async () => {
+  it('holds the quoted total a day ahead, then captures it before care starts', async () => {
     const world = makeWorld();
     await world.step(new Date('2026-10-25T12:00:00.000Z'));
     await world.step(at(CYCLE_1.holdAt, 5));
@@ -437,8 +439,8 @@ describe('declines, grace, suspension and resume', () => {
 });
 
 describe('late bookings', () => {
-  it('authorises and captures at once when accepted less than 2 days before the first session', async () => {
-    const acceptedAt = new Date('2026-11-01T14:00:00.000Z');
+  it('authorises and captures at once when accepted less than the hold lead before the first session', async () => {
+    const acceptedAt = new Date('2026-11-02T08:00:00.000Z'); // first session in 12.5 h
     const world = makeWorld({ billing: { billableFrom: acceptedAt } });
     await world.run(
       startContractBilling('contract-1', acceptedAt).pipe(Effect.provide(world.layer))
@@ -451,7 +453,7 @@ describe('late bookings', () => {
   });
 
   it('does not activate the first session when that charge is declined', async () => {
-    const acceptedAt = new Date('2026-11-01T14:00:00.000Z');
+    const acceptedAt = new Date('2026-11-02T08:00:00.000Z');
     const world = makeWorld({ billing: { billableFrom: acceptedAt }, card: 'mock_pm_decline' });
     await world.run(
       startContractBilling('contract-1', acceptedAt).pipe(Effect.provide(world.layer))
@@ -460,8 +462,8 @@ describe('late bookings', () => {
     expect(world.billing()).toMatchObject({ status: 'suspended', suspendedReason: 'card' });
   });
 
-  it('places a normal hold when accepted after the hold time but 2+ days before the first session', async () => {
-    const acceptedAt = new Date('2026-10-31T12:00:00.000Z'); // first session in 2 d 8.5 h
+  it('places a normal hold when accepted after the hold time but a lead or more before the first session', async () => {
+    const acceptedAt = new Date('2026-11-01T12:00:00.000Z'); // first session in 32.5 h
     const world = makeWorld({ billing: { billableFrom: acceptedAt } });
     await world.run(
       startContractBilling('contract-1', acceptedAt).pipe(Effect.provide(world.layer))
@@ -510,7 +512,7 @@ describe('payment-readiness gate', () => {
     const world = makeWorld({ billing: awaiting, helperReady: false });
     await world.step(new Date('2026-10-30T15:00:00.000Z'));
     world.payouts.rows.set('helper-1', readyAccount());
-    const readyAt = new Date('2026-11-01T18:00:00.000Z'); // < 48 h before Mon 15:30
+    const readyAt = new Date('2026-11-02T06:00:00.000Z'); // < 24 h before Mon 15:30
     await world.step(readyAt);
     expect(world.billing()).toMatchObject({ status: 'active', billableFrom: readyAt });
     expect((await world.cycles())[0]).toMatchObject({
@@ -1173,6 +1175,48 @@ describe('configuration (L6)', () => {
     );
     expect(Exit.isFailure(exit)).toBe(true);
     expect(world.payments.size).toBe(0);
+  });
+
+  it.each(['0', '73', 'one day', '1.5'])(
+    'refuses to bill on CONTRACT_HOLD_LEAD_HOURS=%s',
+    async (value) => {
+      const world = makeWorld();
+      const exit = await Effect.runPromiseExit(
+        runContractBilling('contract-1', at(CYCLE_1.holdAt, 5)).pipe(
+          Effect.provide(world.layer),
+          Effect.withConfigProvider(
+            ConfigProvider.fromMap(new Map([['CONTRACT_HOLD_LEAD_HOURS', value]]))
+          )
+        )
+      );
+      expect(Exit.isFailure(exit)).toBe(true);
+      expect(world.payments.size).toBe(0);
+    }
+  );
+
+  it('plans new cycles with CONTRACT_HOLD_LEAD_HOURS and keeps stored hold times', async () => {
+    const world = makeWorld();
+    const withLead = (hours: string, now: Date) =>
+      Effect.runPromise(
+        runContractBilling('contract-1', now).pipe(
+          Effect.provide(world.layer),
+          Effect.withConfigProvider(
+            ConfigProvider.fromMap(new Map([['CONTRACT_HOLD_LEAD_HOURS', hours]]))
+          )
+        )
+      );
+    // Planned with 48 h: cycle 1 is held 48 real hours before Mon 00:00 EST.
+    await withLead('48', new Date('2026-10-26T12:00:00.000Z'));
+    const planned = await world.cycles();
+    expect(planned[0]!.holdAt.toISOString()).toBe('2026-10-31T05:00:00.000Z');
+    // Changing the setting later never moves a cycle already planned; the
+    // next cycles planned (further into the window) use the new value.
+    await withLead('12', new Date('2026-10-30T12:00:00.000Z'));
+    const after = await world.cycles();
+    expect(after[0]!.holdAt.toISOString()).toBe('2026-10-31T05:00:00.000Z');
+    const fresh = after.find((cycle) => !planned.some((row) => row.index === cycle.index));
+    expect(fresh).toBeDefined();
+    expect(fresh!.holdAt.getTime()).toBe(fresh!.startsAt.getTime() - 12 * 60 * 60 * 1000);
   });
 });
 

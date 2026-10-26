@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { planCycle, planSessions, planWindow, type ScheduleTerms } from './schedule';
+import {
+  firstSessionStart,
+  planCycle,
+  planSessions,
+  planWindow,
+  type ScheduleTerms
+} from './schedule';
 
 // 2026-11-01 is the fall-back night in America/Toronto (02:00 EDT → 01:00 EST).
 const terms = (overrides: Partial<ScheduleTerms> = {}): ScheduleTerms => ({
@@ -57,12 +63,28 @@ describe('planCycle', () => {
     const cycle = planCycle(terms(), 0)!;
     expect(cycle).toMatchObject({ index: 0, startsOn: '2026-10-31', endsOn: '2026-11-02' });
     expect(cycle.startsAt.toISOString()).toBe('2026-10-31T04:00:00.000Z'); // 00:00 EDT
-    expect(cycle.holdAt.toISOString()).toBe('2026-10-29T04:00:00.000Z'); // 2 days before
+    expect(cycle.holdAt.toISOString()).toBe('2026-10-30T04:00:00.000Z'); // 24 h before
     // First session Sunday 01:00 is on day 2, so 07:00 on day 1 is earlier.
     expect(cycle.captureAt.toISOString()).toBe('2026-10-31T11:00:00.000Z');
     expect(cycle.endsAt.toISOString()).toBe('2026-11-03T05:00:00.000Z'); // 00:00 EST
     expect(cycle.transferAt.toISOString()).toBe('2026-11-05T05:00:00.000Z');
     expect(planCycle(terms(), 1)).toMatchObject({ startsOn: '2026-11-03', endsOn: '2026-11-05' });
+  });
+
+  it('holds CONTRACT_HOLD_LEAD_HOURS (real hours) before the cycle starts', () => {
+    expect(planCycle(terms({ holdLeadHours: 48 }), 0)!.holdAt.toISOString()).toBe(
+      '2026-10-29T04:00:00.000Z'
+    );
+    // Cycle 1 starts 2026-11-03 00:00 EST; 24 real hours before is 00:00 EST
+    // on 11-02. 48 h before crosses the fall-back night, so it is 01:00 EDT
+    // on 11-01 — not the wall-clock midnight (04:00Z) the old rule used.
+    expect(planCycle(terms(), 1)!.holdAt.toISOString()).toBe('2026-11-02T05:00:00.000Z');
+    expect(planCycle(terms({ holdLeadHours: 48 }), 1)!.holdAt.toISOString()).toBe(
+      '2026-11-01T05:00:00.000Z'
+    );
+    expect(planCycle(terms({ holdLeadHours: 6 }), 0)!.holdAt.toISOString()).toBe(
+      '2026-10-30T22:00:00.000Z'
+    );
   });
 
   it('captures an hour before an early first session', () => {
@@ -108,5 +130,42 @@ describe('planWindow', () => {
     const window = planWindow(terms({ endsOn: '2026-11-02' }), '2026-10-28', null);
     expect(window.through).toBe('2026-11-02');
     expect(window.cycles.map((c) => c.index)).toEqual([0]);
+  });
+});
+
+describe('firstSessionStart (UAT round 2: the lead-time rule)', () => {
+  it('is the first dated session on or after the start date', () => {
+    // Starts Sat 31 Oct; the first pattern day is Sun 1 Nov 01:00 EDT.
+    expect(firstSessionStart(terms())?.toISOString()).toBe('2026-11-01T05:00:00.000Z');
+    // Starting on a Monday: that Monday's 15:30 EST.
+    expect(firstSessionStart(terms({ startsOn: '2026-11-02' }))?.toISOString()).toBe(
+      '2026-11-02T20:30:00.000Z'
+    );
+  });
+
+  it('respects the negotiated end and its last-day end time', () => {
+    // Ends on the Saturday it starts: no session ever happens.
+    expect(firstSessionStart(terms({ endsOn: '2026-10-31' }))).toBeNull();
+    // Starts and ends Mon 2 Nov at 15:00: its 15:30 session is cut away.
+    expect(
+      firstSessionStart(
+        terms({ startsOn: '2026-11-02', endsOn: '2026-11-02', endsAtMinutes: 900 })
+      )
+    ).toBeNull();
+  });
+
+  it('finds a pattern whose only weekday is six days after the start', () => {
+    const fridayOnly = terms({
+      startsOn: '2026-10-31',
+      services: [
+        {
+          serviceId: 'svc-care',
+          name: 'Childcare',
+          rateCents: 2500,
+          sessions: [{ weekday: 4, startMinutes: 600, endMinutes: 660 }]
+        }
+      ]
+    });
+    expect(firstSessionStart(fridayOnly)?.toISOString()).toBe('2026-11-06T15:00:00.000Z');
   });
 });

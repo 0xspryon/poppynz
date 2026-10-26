@@ -52,7 +52,13 @@ import {
 } from '../pricing';
 import { loadTaxSnapshot } from '../tax';
 import { alertAdmins, cycleDates, personName, sendBillingNotice } from './notices';
-import { cycleIndexOf, planCycle, planWindow, type ScheduleTerms } from './schedule';
+import {
+  cycleIndexOf,
+  DEFAULT_HOLD_LEAD_HOURS,
+  planCycle,
+  planWindow,
+  type ScheduleTerms
+} from './schedule';
 import { effectiveEnd } from './terms';
 
 /**
@@ -88,7 +94,6 @@ export type BillingError = SqlError | DBNotFoundError | PaymentProviderError;
 type Step<A> = Effect.Effect<A, BillingError, BillingDeps>;
 
 const HOUR_MS = 60 * 60 * 1000;
-const LATE_BOOKING_MS = 48 * HOUR_MS;
 
 /** The commissions and the retry interval. A malformed setting fails loudly
  * (a defect, logged): billing at a wrong commission is worse than not
@@ -165,6 +170,7 @@ const loadContext = (billing: ContractBilling) =>
     const accepted = versions.find((version) => version.id === billing.acceptedVersionId);
     if (!accepted) return null;
     const end = effectiveEnd(contract, accepted);
+    const { holdLeadHours } = yield* contractBillingPolicy;
     const terms: ScheduleTerms = {
       services: accepted.services.map((service) => ({
         serviceId: service.serviceId,
@@ -175,7 +181,10 @@ const loadContext = (billing: ContractBilling) =>
       startsOn: billing.startsOn,
       timeZone: billing.timeZone,
       endsOn: end?.endsOn ?? null,
-      endsAtMinutes: end?.endsAtMinutes ?? null
+      endsAtMinutes: end?.endsAtMinutes ?? null,
+      // Only cycles planned from now on use it: a stored hold_at is never
+      // recomputed (insertCycles keeps the row on file).
+      holdLeadHours
     };
     return { contract, accepted, terms } satisfies BillingContext;
   });
@@ -749,12 +758,16 @@ const fund = (
       return yield* carry(cycle, amounts, from);
     }
     const first = billed[0]?.startsAt ?? null;
+    // A late booking: billable only after this cycle's hold time, and less
+    // than the hold lead before its first session — there is no time for a
+    // grace period, so it is charged at once (umbrella §6).
+    const lateBookingMs = (ctx.terms.holdLeadHours ?? DEFAULT_HOLD_LEAD_HOURS) * HOUR_MS;
     const late =
       cycle.attempts === 0 &&
       billing.billableFrom !== null &&
       billing.billableFrom > cycle.holdAt &&
       first !== null &&
-      first.getTime() - billing.billableFrom.getTime() < LATE_BOOKING_MS;
+      first.getTime() - billing.billableFrom.getTime() < lateBookingMs;
     const mode: ChargeMode = late || now >= cycle.captureAt ? 'immediate' : 'hold';
     return yield* attempt(ctx, cycle, mode, amounts, from, now);
   });

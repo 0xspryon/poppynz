@@ -4,12 +4,18 @@
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import { verifyMagicLink } from '$lib/api/auth';
+	import { getSession } from '$lib/api/profile';
+	import { resolveLanding } from '$lib/role-landing';
 	import { m } from '$lib/paraglide/messages';
 
 	onMount(async () => {
 		const token = page.url.searchParams.get('token') ?? '';
 		const result = await verifyMagicLink(token);
-		await goto(resolve(result.destination), { replaceState: true });
+		const usual = resolve(result.destination);
+		// UAT round 2 #5: a running contract takes over the landing.
+		const target =
+			result.status === 'ok' ? ((await resolveLanding(getSession()?.role, usual)) ?? usual) : usual;
+		await goto(target, { replaceState: true });
 	});
 </script>
 

@@ -3,7 +3,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { fetchSession } from '$lib/api/profile';
-	import { landingPathFor } from '$lib/role-landing';
+	import { resolveLanding } from '$lib/role-landing';
 
 	// Until there's a public landing page the root only routes: signed-in
 	// users go to their own area, everyone else enters the auth flow. The
@@ -12,7 +12,8 @@
 	// whose guard then turned the new role away (U1).
 	onMount(async () => {
 		const session = await fetchSession();
-		await goto(resolve(landingPathFor(session?.role) ?? '/auth/sign-up'), { replaceState: true });
+		const target = (await resolveLanding(session?.role)) ?? resolve('/auth/sign-up');
+		await goto(target, { replaceState: true });
 	});
 </script>
 

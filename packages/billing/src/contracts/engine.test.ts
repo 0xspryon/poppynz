@@ -26,13 +26,16 @@ import {
   makeMockPayments,
   PaymentProviderError,
   Payments,
+  type ChargeSavedCardInput,
   type MockPayments,
   type ProviderPayment
 } from '@repo/payments';
 import { ConfigProvider, Context, Effect, Exit, Layer } from 'effect';
 import {
   adoptProviderPayment,
+  familyRetryEligible,
   previewCardResumes,
+  retryContractPayment,
   retryFamilyBilling,
   runContractBilling,
   runContractBillingTick,
@@ -1159,6 +1162,76 @@ describe('carried amounts and absorbed resumes (L1, L2)', () => {
     await world.step(new Date('2026-11-05T13:00:00.000Z'));
     const absorbed = world.billingState.ledger.filter((entry) => entry.kind === 'carry_absorbed');
     expect(absorbed.map((entry) => entry.amountCents)).toEqual([1000]);
+  });
+});
+
+describe("the family's Retry payment button (UAT round 2 #13)", () => {
+  const retryNow = (world: ReturnType<typeof makeWorld>, now: Date) =>
+    world.run(retryContractPayment('family-1', 'contract-1', now).pipe(Effect.provide(world.layer)));
+  const eligible = async (world: ReturnType<typeof makeWorld>, now: Date) =>
+    familyRetryEligible(world.billing(), await world.cycles(), now);
+
+  it('has nothing to retry on a funded or merely scheduled contract', async () => {
+    const world = makeWorld();
+    expect(await eligible(world, at(CYCLE_1.holdAt, 1))).toBe(false);
+    await world.step(at(CYCLE_1.holdAt, 5));
+    expect(await eligible(world, at(CYCLE_1.holdAt, 6))).toBe(false);
+  });
+
+  it('retries a declined hold in its grace period: still declined, then held', async () => {
+    const world = makeWorld({ card: 'mock_pm_decline' });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    expect(await eligible(world, at(CYCLE_1.holdAt, 6))).toBe(true);
+    expect(await retryNow(world, at(CYCLE_1.holdAt, 10))).toBe('declined');
+    expect((await world.cycles())[0]).toMatchObject({ status: 'grace', attempts: 2 });
+
+    world.setCard('mock_pm_new');
+    expect(await retryNow(world, at(CYCLE_1.holdAt, 20))).toBe('charged');
+    expect((await world.cycles())[0]).toMatchObject({ status: 'authorised', attempts: 3 });
+    expect(await eligible(world, at(CYCLE_1.holdAt, 21))).toBe(false);
+  });
+
+  it('resumes a card-suspended contract with the prorated rest', async () => {
+    const world = makeWorld({ card: 'mock_pm_decline' });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    await world.step(at(CYCLE_1.startsAt, 1));
+    expect(world.billing()).toMatchObject({ status: 'suspended', suspendedReason: 'card' });
+    const tuesday = new Date('2026-11-03T12:00:00.000Z');
+    expect(await eligible(world, tuesday)).toBe(true);
+    world.setCard('mock_pm_new');
+    expect(await retryNow(world, tuesday)).toBe('charged');
+    expect(world.billing()).toMatchObject({ status: 'active' });
+    expect((await world.cycles())[0]).toMatchObject({ status: 'captured', chargeMode: 'resume' });
+  });
+
+  it('reports an attempt the provider has not answered as in progress', async () => {
+    let down = false;
+    const world = makeWorld({
+      card: 'mock_pm_decline',
+      payments: (mock) => ({
+        chargeSavedCard: (input: ChargeSavedCardInput) =>
+          down
+            ? Effect.fail(new PaymentProviderError({ operation: 'chargeSavedCard', cause: 'timeout' }))
+            : mock.chargeSavedCard(input)
+      })
+    });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    expect((await world.cycles())[0]!.status).toBe('grace');
+    world.setCard('mock_pm_new');
+    down = true;
+    expect(await retryNow(world, at(CYCLE_1.holdAt, 10))).toBe('in_progress');
+  });
+
+  it("never touches the family's other contracts", async () => {
+    const world = makeWorld({ card: 'mock_pm_decline' });
+    await world.step(at(CYCLE_1.holdAt, 5));
+    world.setCard('mock_pm_new');
+    await world.run(
+      retryContractPayment('family-1', 'contract-2', at(CYCLE_1.holdAt, 10)).pipe(
+        Effect.provide(world.layer)
+      )
+    );
+    expect((await world.cycles())[0]).toMatchObject({ status: 'grace', attempts: 1 });
   });
 });
 

@@ -2211,12 +2211,20 @@ export const startContractBilling = (contractId: string, now: Date) =>
   });
 
 /** The family replaced their card: retry every declined hold and resume
- * every suspended contract at once (spec §4). */
-export const retryFamilyBilling = (userId: string, now: Date) =>
+ * every suspended contract at once (spec §4). `contractId` narrows it to one
+ * contract (the "Retry payment" button). */
+export const retryFamilyBilling = (
+  userId: string,
+  now: Date,
+  options: { contractId?: string } = {}
+) =>
   Effect.gen(function* () {
     const repo = yield* ContractBillingRepo;
     let retried = 0;
-    for (const billing of yield* repo.listLiveBillingForFamily(userId)) {
+    const live = (yield* repo.listLiveBillingForFamily(userId)).filter(
+      (billing) => options.contractId === undefined || billing.contractId === options.contractId
+    );
+    for (const billing of live) {
       const ctx = yield* loadContext(billing);
       if (ctx === null) continue;
       for (const cycle of yield* repo.listCycles(billing.contractId)) {
@@ -2252,6 +2260,39 @@ export const retryFamilyBilling = (userId: string, now: Date) =>
       }
     }
     return retried;
+  });
+
+/** UAT round 2 #13: whether the family has something to retry on this
+ * contract — a declined hold still in its grace period, or a contract
+ * suspended because the card failed. (A Poppynz/Stripe outage or a helper
+ * who isn't payment-ready is not the family's to retry.) */
+export const familyRetryEligible = (
+  billing: Pick<ContractBilling, 'status' | 'suspendedReason'> | null,
+  cycles: ReadonlyArray<Pick<ContractCycle, 'status' | 'startsAt'>>,
+  now: Date
+) =>
+  billing !== null &&
+  liveBillingStatuses.includes(billing.status) &&
+  ((billing.status === 'suspended' && billing.suspendedReason === 'card') ||
+    cycles.some((cycle) => cycle.status === 'grace' && now < cycle.startsAt));
+
+export type FamilyRetryOutcome = 'charged' | 'declined' | 'in_progress';
+
+/** The family's "Retry payment" on one contract: the card-replaced retry
+ * path (every idempotency key and lookup guard included), then what came of
+ * it — an attempt still waiting on the provider, still declined, or funded. */
+export const retryContractPayment = (userId: string, contractId: string, now: Date) =>
+  Effect.gen(function* () {
+    yield* retryFamilyBilling(userId, now, { contractId });
+    const repo = yield* ContractBillingRepo;
+    const billing = yield* repo.findBilling(contractId);
+    const cycles = yield* repo.listCycles(contractId);
+    if (cycles.some((cycle) => cycle.status === 'authorising' || cycle.status === 'capturing')) {
+      return 'in_progress' as FamilyRetryOutcome;
+    }
+    return (
+      familyRetryEligible(billing, cycles, now) ? 'declined' : 'charged'
+    ) as FamilyRetryOutcome;
   });
 
 export type ContractBillingTickSummary = {

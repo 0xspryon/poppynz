@@ -41,7 +41,7 @@ All amounts are in {{contract.currency}}. For one week of the schedule above:
 - Poppynz commission ({{fees.commissionPercent}} of the care services, deducted from the Helper's earnings): {{fees.commission}}{{#fees.commissionTaxes}}, plus {{label}} of {{amount}}{{/fees.commissionTaxes}}
 - **The Helper receives {{fees.helperWeeklyShare}} a week.**
 
-Billing runs in cycles of {{billing.cycleDays}} days. Poppynz places a hold on the Family's card {{billing.holdLeadHours}} hours before each cycle starts and charges it for the sessions that took place. If a hold is declined, Poppynz retries every {{billing.retryHours}} hours and sessions are suspended until payment succeeds. The Helper is paid through Poppynz after each cycle. The Parties agree not to pay or accept payment for these services outside Poppynz.
+Billing runs in cycles of {{billing.cycleDays}} days. Poppynz places a hold on the Family's card {{billing.holdLeadHours}} hours before each cycle starts for that cycle's scheduled sessions, and charges it on the cycle's first day, before care begins. If a hold is declined, Poppynz retries every {{billing.retryHours}} hours; if payment has not succeeded by the time the cycle starts, its sessions are suspended until it does. The Helper is paid through Poppynz after each cycle. The Parties agree not to pay or accept payment for these services outside Poppynz.
 
 ## 5. Cancellations
 

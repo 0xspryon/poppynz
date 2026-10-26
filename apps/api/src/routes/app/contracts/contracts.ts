@@ -15,6 +15,7 @@ import {
   sendContractHandler,
   withdrawContractHandler
 } from './contracts.handler';
+import { getAgreementToSignHandler, getSignedAgreementHandler } from './agreement.handler';
 
 // Literal routes go before "/:id" so "me/badge-count" never matches as a
 // contract id.
@@ -23,6 +24,8 @@ export const contractsRoute = new Hono<HonoEnv>()
   .post('/', (c) => createContractHandler(c))
   .get('/me/badge-count', (c) => contractsBadgeCountHandler(c))
   .get('/:id', (c) => getContractHandler(c))
+  .get('/:id/agreement', (c) => getAgreementToSignHandler(c))
+  .get('/:id/agreement/signed', (c) => getSignedAgreementHandler(c))
   .put('/:id/terms', (c) => saveTermsHandler(c))
   .post('/:id/quote', (c) => quoteTermsHandler(c))
   .post('/:id/send', (c) => sendContractHandler(c))

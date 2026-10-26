@@ -31,6 +31,14 @@ import {
   type User,
   dummyConversation
 } from '@repo/db';
+import {
+  emptyTcDocumentRepo,
+  makeContractAgreementRepoTest,
+  makeTcDocumentRepoTest,
+  type ContractAgreementSignature,
+  type TcDocument,
+  type TcDocumentVersion
+} from '@repo/db';
 import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
 import { makePaymentsTest } from '@repo/payments';
 import { addDays, todayIn } from '@repo/calendar';
@@ -38,6 +46,7 @@ import { Cause, Effect, Exit, Layer, Option } from 'effect';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
+import { sha256Hex } from './agreement';
 import {
   acceptContractRouteProgram,
   contractsBadgeCountRouteProgram,
@@ -221,7 +230,35 @@ const activeConversation = (overrides: Partial<Conversation> = {}): Conversation
   ...overrides
 });
 
-const SIGNED = { signed: true };
+// The written service agreement (UAT round 2, item 4): a template without
+// placeholders renders to itself, so its hash is known up front.
+const AGREEMENT_TEXT = 'Service agreement between the family and the helper.';
+const agreementDocument: TcDocument = {
+  id: 'agreement-doc',
+  slug: 'service_agreement',
+  title: 'Service Agreement',
+  appliesToRole: 'all',
+  kind: 'service_agreement',
+  deletedAt: null,
+  createdAt: new Date('2026-10-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-10-01T00:00:00.000Z')
+};
+const agreementVersion: TcDocumentVersion = {
+  id: 'agreement-v1-en',
+  documentId: 'agreement-doc',
+  locale: 'en',
+  version: 1,
+  description: 'Default',
+  content: AGREEMENT_TEXT,
+  checkboxLabel: 'I have read and agree.',
+  publishedAt: new Date('2026-10-01T00:00:00.000Z'),
+  createdAt: new Date('2026-10-01T00:00:00.000Z'),
+  updatedAt: new Date('2026-10-01T00:00:00.000Z')
+};
+const SIGNED = {
+  signed: true,
+  agreement: { versionId: agreementVersion.id, sha256: sha256Hex(AGREEMENT_TEXT) }
+};
 
 const makeContext = (options: { body?: unknown; params?: Record<string, string> } = {}) =>
   ({
@@ -289,6 +326,8 @@ const makeLayer = (
     /** Contract billing state (piece 3); defaults to none. */
     billing?: ReturnType<typeof makeInMemoryContractBillingRepo>;
     onAcceptPending?: (options: unknown) => void;
+    /** Agreement signatures already on the contract. */
+    agreementSignatures?: Array<ContractAgreementSignature>;
   } = {}
 ) => {
   const viewer = options.viewer ?? familyUser();
@@ -298,6 +337,14 @@ const makeLayer = (
     // unless a test hands in billing state.
     makeIdleContractBillingLayer(),
     ...(options.billing ? [options.billing.layer] : []),
+    makeTcDocumentRepoTest({
+      ...emptyTcDocumentRepo,
+      findServiceAgreement: () =>
+        Effect.succeed({ document: agreementDocument, versions: [agreementVersion] })
+    }),
+    makeContractAgreementRepoTest({
+      listForContract: () => Effect.succeed(options.agreementSignatures ?? [])
+    }),
     // Sending needs a card on file; these suites assert other behaviour, so
     // the family has one unless a test says otherwise.
     makeInMemoryBillingCustomerRepo(options.familyCard === false ? [] : [dummyBillingCustomer()])
@@ -1346,7 +1393,7 @@ describe('POST /contracts/:id/accept', () => {
   it('inserts the billing schedule with the frozen rates and provinces in the acceptance', async () => {
     const accepted: Array<unknown> = [];
     await Effect.runPromise(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1370,7 +1417,9 @@ describe('POST /contracts/:id/accept', () => {
           timeZone: WPG,
           startsOn: '2099-01-05',
           billableFrom: null
-        })
+        }),
+        // The helper's agreement signature lands in the same transaction.
+        signature: expect.objectContaining({ signerSide: 'helper', signerUserId: 'provider-1' })
       }
     ]);
   });
@@ -1378,7 +1427,7 @@ describe('POST /contracts/:id/accept', () => {
   it('refuses to accept when a contracted service lost its approval since the proposal (R5)', async () => {
     const accepted: Array<unknown> = [];
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1399,7 +1448,7 @@ describe('POST /contracts/:id/accept', () => {
 
   it('refuses to accept until the helper has a province, telling the helper to add it', async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1419,7 +1468,7 @@ describe('POST /contracts/:id/accept', () => {
 
   it("refuses to accept a family's terms without the family's province", async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1445,7 +1494,7 @@ describe('POST /contracts/:id/accept', () => {
     });
 
     const result = await Effect.runPromise(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(layer)
       )
     );
@@ -1465,7 +1514,7 @@ describe('POST /contracts/:id/accept', () => {
 
   it('refuses the proposer accepting their own proposal', async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract({ status: 'proposed' }),
@@ -1479,7 +1528,7 @@ describe('POST /contracts/:id/accept', () => {
 
   it('refuses an expired proposal', async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1494,7 +1543,7 @@ describe('POST /contracts/:id/accept', () => {
 
   it('fails with ContractStateError when the pending version was decided concurrently', async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1510,7 +1559,7 @@ describe('POST /contracts/:id/accept', () => {
 
   it('hides the contract from non-participants', async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: familyUser({ id: 'family-2' }),
@@ -1525,7 +1574,7 @@ describe('POST /contracts/:id/accept', () => {
 
   it('refuses accepting on an active contract — signed contracts are never amended', async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             contractById: baseContract({ status: 'active' }),
@@ -1548,7 +1597,7 @@ describe('POST /contracts/:id/accept', () => {
   it('refuses accepting on the start date in the contract zone', async () => {
     freezeNow('2026-09-10T05:30:00Z'); // Sep 10, 00:30 in Winnipeg
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1565,7 +1614,7 @@ describe('POST /contracts/:id/accept', () => {
 
   it('refuses a sent version without a start date as START_DATE_REQUIRED, not "passed"', async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1582,7 +1631,7 @@ describe('POST /contracts/:id/accept', () => {
   it('allows accepting the evening before, although UTC is already on the start date', async () => {
     freezeNow('2026-09-10T04:30:00Z'); // Sep 9, 23:30 in Winnipeg
     const result = await Effect.runPromise(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -1631,7 +1680,7 @@ describe('contract approval gates', () => {
 
   it('blocks accepting terms proposed by a family that lost its approval', async () => {
     const exit = await Effect.runPromiseExit(
-      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+      acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers()).pipe(
         Effect.provide(
           makeLayer({
             viewer: providerUser(),
@@ -3017,7 +3066,7 @@ describe('authorization', () => {
     ],
     [
       'accept',
-      () => acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers())
+      () => acceptContractRouteProgram(makeContext({ params: { id: CONTRACT_ID }, body: SIGNED }), new Headers())
     ],
     [
       'decline',

@@ -15,7 +15,10 @@ export const appAc = createAccessControl({
   // The card on file and payment history. Only families keep a card (it
   // funds contract billing); helpers pay one-off and never hold this.
   billing: ['read', 'write'],
-  contract: ['read', 'write'],
+  // `review` is the admin-only capability over someone else's contracts —
+  // reading any contract's signed service agreement. Members keep read/write,
+  // and ownership of their own contracts is enforced at the route.
+  contract: ['read', 'write', 'review'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
   // `review` is the admin-only capability over someone else's documents
@@ -90,7 +93,7 @@ export const adminRole = appAc.newRole({
   ...adminAc.statements,
   approval: ['write'],
   approvalRequest: ['read', 'write', 'review'],
-  contract: ['read', 'write'],
+  contract: ['read', 'write', 'review'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
   kycDocument: ['read', 'write', 'review'],

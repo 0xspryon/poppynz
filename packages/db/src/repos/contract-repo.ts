@@ -4,6 +4,7 @@ import type { SqlError } from '@effect/sql/SqlError';
 import {
   and,
   asc,
+  desc,
   eq,
   inArray,
   isNull,
@@ -39,14 +40,22 @@ export type ContractWithContext = Contract & {
 export class ContractRepo extends Context.Tag('@repo/db/ContractRepo')<
   ContractRepo,
   {
-    /** Inserts the contract row plus its empty v1 draft. */
+    /** Inserts the contract row plus its v1 draft — empty, or pre-filled
+     * with `services` ("Start a new contract from this one"; dates stay
+     * blank). The conversation's negotiating-unique index refuses a second
+     * contract under negotiation (SQLSTATE 23505). */
     create: (input: {
       conversationId: string;
       familyUserId: string;
       providerUserId: string;
+      services?: Array<ContractServiceItem>;
     }) => Effect.Effect<{ contract: Contract; version: ContractVersion }, SqlError>;
     findById: (id: string) => Effect.Effect<Contract | null, SqlError>;
+    /** The conversation's newest contract (a conversation can hold several
+     * over time — at most one of them under negotiation). */
     findByConversationId: (conversationId: string) => Effect.Effect<Contract | null, SqlError>;
+    /** Every live contract of the conversation, newest first. */
+    listByConversationId: (conversationId: string) => Effect.Effect<Array<Contract>, SqlError>;
     findWithContext: (
       id: string,
       viewerUserId: string
@@ -242,7 +251,7 @@ export const ContractRepoLive = Layer.effect(
               version: 1,
               proposedByUserId: input.familyUserId,
               status: 'draft',
-              services: [],
+              services: input.services ?? [],
               startsOn: null,
               endsOn: null
             })
@@ -261,8 +270,15 @@ export const ContractRepoLive = Layer.effect(
           .select()
           .from(contract)
           .where(and(eq(contract.conversationId, conversationId), isNull(contract.deletedAt)))
+          .orderBy(desc(contract.createdAt))
           .limit(1)
           .pipe(Effect.map((rows) => rows[0] ?? null)),
+      listByConversationId: (conversationId) =>
+        db
+          .select()
+          .from(contract)
+          .where(and(eq(contract.conversationId, conversationId), isNull(contract.deletedAt)))
+          .orderBy(desc(contract.createdAt)),
       findWithContext: (id, viewerUserId) =>
         selectWithCounterpart(viewerUserId)
           .where(and(eq(contract.id, id), isNull(contract.deletedAt)))
@@ -484,9 +500,18 @@ type ContractRepoService = Context.Tag.Service<ContractRepo>;
 // `endForBilling` is optional so suites written before contract billing keep
 // compiling; it matches nothing unless a test supplies it.
 export const makeContractRepoTest = (
-  implementation: Omit<ContractRepoService, 'endForBilling'> &
-    Partial<Pick<ContractRepoService, 'endForBilling'>>
-) => Layer.succeed(ContractRepo, { endForBilling: () => Effect.succeed(null), ...implementation });
+  implementation: Omit<ContractRepoService, 'endForBilling' | 'listByConversationId'> &
+    Partial<Pick<ContractRepoService, 'endForBilling' | 'listByConversationId'>>
+) =>
+  Layer.succeed(ContractRepo, {
+    endForBilling: () => Effect.succeed(null),
+    // By default the conversation holds just what findByConversationId finds.
+    listByConversationId: (conversationId) =>
+      implementation
+        .findByConversationId(conversationId)
+        .pipe(Effect.map((row) => (row ? [row] : []))),
+    ...implementation
+  });
 
 export const dummyContract: Contract = {
   id: 'contract-1',

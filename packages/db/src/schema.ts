@@ -1311,9 +1311,15 @@ export const contract = appDb.table(
       .notNull()
   },
   (table) => [
-    uniqueIndex('contracts_conversation_uidx')
+    // One contract under negotiation per conversation; earlier contracts
+    // (active, ending, ended) stay alongside it — "Start a new contract from
+    // this one" opens the next draft while the old one still runs (0039).
+    uniqueIndex('contracts_conversation_negotiating_uidx')
       .on(table.conversationId)
-      .where(sql`${table.deletedAt} is null`),
+      .where(
+        sql`${table.deletedAt} is null AND ${table.status} IN ('draft', 'proposed', 'changes_requested', 'declined')`
+      ),
+    index('contracts_conversation_id_idx').on(table.conversationId),
     index('contracts_family_user_id_idx').on(table.familyUserId),
     index('contracts_provider_user_id_idx').on(table.providerUserId),
     index('contracts_status_idx').on(table.status)
@@ -1480,6 +1486,8 @@ export const contractBilling = appDb.table(
     cancelledAt: timestamp('cancelled_at'),
     endedAt: timestamp('ended_at'),
     lastError: text('last_error'),
+    // The family's last "Retry payment" (rate limit, claimed by CAS — 0039).
+    familyRetryAt: timestamp('family_retry_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()

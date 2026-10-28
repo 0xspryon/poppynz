@@ -23,6 +23,9 @@ const renewEndpoint = apiClient.contracts[':id'].renew.$post;
 const retryPaymentEndpoint = apiClient.contracts[':id'].billing.retry.$post;
 const cycleEndpoint = apiClient.contracts[':id'].cycles[':cycleId'].$get;
 const landingEndpoint = apiClient.contracts.me.landing.$get;
+const sessionActionEndpoint = apiClient.contracts[':id'].sessions[':sessionId'].actions.$post;
+const sessionRespondEndpoint = apiClient.contracts[':id'].sessions[':sessionId'].respond.$post;
+const pendingSessionsEndpoint = apiClient.contracts[':id'].sessions.pending.$get;
 
 export type ContractListData = Extract<
 	Awaited<ReturnType<typeof listContracts>>,
@@ -49,6 +52,25 @@ export type ContractCycleData = Extract<
 export type ContractCycleDetail = ContractCycleData['cycle'];
 export type ContractCycleSession = ContractCycleDetail['sessions'][number];
 export type RetryPaymentError = ErrorsOf<typeof retryPaymentEndpoint>;
+/** Tier 3: what happened to a session, as the viewer sees it. */
+export type SessionResolution = NonNullable<ContractCycleSession['resolution']>;
+export type SessionAction = ContractCycleSession['actions'][number];
+export type SessionResponse = ContractCycleSession['responses'][number];
+export type SessionWindow = ContractCycleDetail['sessionWindow'];
+export type SessionActionInput = {
+	action: SessionAction;
+	reason?: SessionReasonCode | null;
+	note?: string | null;
+	minutesWorked?: number | null;
+};
+export type SessionReasonCode = NonNullable<SessionResolution['reason']>;
+export type SessionActionError =
+	| ErrorsOf<typeof sessionActionEndpoint>
+	| ErrorsOf<typeof sessionRespondEndpoint>;
+export type PendingSessionResponse = Extract<
+	Awaited<ReturnType<typeof listPendingSessionResponses>>,
+	{ ok: true }
+>['data']['items'][number];
 export type ContractTermsInput = {
 	services: Array<{
 		serviceId: string;
@@ -153,6 +175,37 @@ export async function retryContractPayment(id: string) {
 
 export async function getContractCycle(id: string, cycleId: string) {
 	return call(cycleEndpoint({ param: { id, cycleId } }));
+}
+
+/** Tier 3: cancel a session, propose a day off, report or dispute. */
+export async function recordSessionAction(
+	id: string,
+	sessionId: string,
+	input: SessionActionInput
+) {
+	// The API reads the body via parseJsonBody (no hono validator), so the
+	// RPC input type omits `json` — the client still serializes it at runtime.
+	const args = { param: { id, sessionId }, json: input } as unknown as Parameters<
+		typeof sessionActionEndpoint
+	>[0];
+	return call(sessionActionEndpoint(args));
+}
+
+/** Tier 3: accept, contest (a report) or decline (a day off). */
+export async function respondToSession(
+	id: string,
+	sessionId: string,
+	input: { response: SessionResponse; note?: string | null }
+) {
+	const args = { param: { id, sessionId }, json: input } as unknown as Parameters<
+		typeof sessionRespondEndpoint
+	>[0];
+	return call(sessionRespondEndpoint(args));
+}
+
+/** Tier 3: what on this contract waits for the viewer's answer. */
+export async function listPendingSessionResponses(id: string) {
+	return call(pendingSessionsEndpoint({ param: { id } }));
 }
 
 /** UAT round 2 #5: the viewer's running contracts, for the landing. */

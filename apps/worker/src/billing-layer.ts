@@ -5,6 +5,7 @@ import {
   ContractRepoDefault,
   PaymentRepoDefault,
   PayoutAccountRepoDefault,
+  SessionResolutionRepoDefault,
   TaxConfigRepoDefault,
   UserProfileRepoDefault,
   UserRepoDefault
@@ -22,6 +23,8 @@ export const ContractBillingBaseLive = Layer.mergeAll(
   PaymentRepoDefault,
   BillingCustomerRepoDefault,
   PayoutAccountRepoDefault,
+  // Tier 3: the session-resolution step of the same tick.
+  SessionResolutionRepoDefault,
   TaxConfigRepoDefault,
   UserRepoDefault,
   UserProfileRepoDefault,

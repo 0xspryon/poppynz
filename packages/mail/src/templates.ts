@@ -1046,23 +1046,32 @@ export const contractBillingNoticeMail = (mail: {
   paragraphs: ReadonlyArray<string>;
   link: string;
   linkLabel: string;
+  secondaryLink?: { href: string; label: string; intro?: string } | null;
   locale?: MailLocale;
 }): MailContent => {
   const locale = mail.locale ?? defaultMailLocale;
   const greeting = greetings[locale](mail.name);
+  const second = mail.secondaryLink ?? null;
   return {
     subject: mail.subject,
     html: layout(
       paragraph(escapeHtml(greeting)) +
         mail.paragraphs.map((text) => paragraph(escapeHtml(text))).join('') +
-        button(mail.link, mail.linkLabel),
+        button(mail.link, mail.linkLabel) +
+        (second
+          ? (second.intro ? paragraph(escapeHtml(second.intro)) : '') +
+            button(second.href, second.label)
+          : ''),
       locale
     ),
     text: [
       greeting,
       '',
       ...mail.paragraphs.flatMap((text) => [text, '']),
-      labelled[locale](mail.linkLabel, mail.link)
+      labelled[locale](mail.linkLabel, mail.link),
+      ...(second
+        ? ['', ...(second.intro ? [second.intro] : []), labelled[locale](second.label, second.href)]
+        : [])
     ].join('\n')
   };
 };

@@ -15,6 +15,12 @@ built in this order, each step its own branch, reviewed and browser-tested:
 
 1. **Session events and actions** (no money): days off, cancellations, reports,
    disputes, the other side's response, the admin dispute queue. UAT item 11b.
+   Step 1 deliberately leaves billing unchanged: resolutions are recorded,
+   confirmed, contested and decided, but nothing they say changes what is
+   held, charged or paid — not even `contract_sessions.status`, because the
+   engine charges every `scheduled`/`completed` session and a `cancelled` or
+   `disputed` one would silently drop out of the next quote. The outcome is
+   shown from the resolution; step 2 applies the money (and the status).
 1b. **Replacement from a template**: from a helper's cancellation, the family
    picks another helper (search filtered by the cancelled service) and gets a
    short draft contract pre-filled from the current contract's terms for the

@@ -20,6 +20,11 @@ import {
   withdrawContractHandler
 } from './contracts.handler';
 import { getAgreementToSignHandler, getSignedAgreementHandler } from './agreement.handler';
+import {
+  listPendingSessionResponsesHandler,
+  recordSessionActionHandler,
+  respondToSessionHandler
+} from './sessions.handler';
 
 // Literal routes go before "/:id" so "me/badge-count" and "me/landing" never
 // match as a contract id.
@@ -29,8 +34,12 @@ export const contractsRoute = new Hono<HonoEnv>()
   .get('/me/badge-count', (c) => contractsBadgeCountHandler(c))
   .get('/me/landing', (c) => contractLandingHandler(c))
   .get('/:id', (c) => getContractHandler(c))
-  // A billing cycle (read-only for now; Tier 3 adds session actions under it).
+  // A billing cycle, with each session's resolution and the viewer's actions.
   .get('/:id/cycles/:cycleId', (c) => getContractCycleHandler(c))
+  // Tier 3 session actions (cancel, day off, reports, disputes, answers).
+  .get('/:id/sessions/pending', (c) => listPendingSessionResponsesHandler(c))
+  .post('/:id/sessions/:sessionId/actions', (c) => recordSessionActionHandler(c))
+  .post('/:id/sessions/:sessionId/respond', (c) => respondToSessionHandler(c))
   .post('/:id/billing/retry', (c) => retryContractPaymentHandler(c))
   .post('/:id/renew', (c) => renewContractHandler(c))
   .get('/:id/agreement', (c) => getAgreementToSignHandler(c))

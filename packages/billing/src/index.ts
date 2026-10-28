@@ -9,3 +9,5 @@ export * from './contracts/terms';
 export * from './contracts/schedule';
 export * from './contracts/notices';
 export * from './contracts/engine';
+export * from './contracts/resolutions';
+export * from './contracts/resolution-notices';

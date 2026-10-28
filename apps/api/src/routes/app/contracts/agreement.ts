@@ -325,7 +325,7 @@ const rowOfRevision = (
 
 /** The Terms of Service revision in force — its section 10 is the
  * cancellation policy every agreement refers to. Null when none. */
-const loadCancellationPolicy = Effect.gen(function* () {
+export const loadCancellationPolicy = Effect.gen(function* () {
   const repo = yield* TcDocumentRepo;
   const document = yield* repo.findActiveBySlug(TERMS_OF_SERVICE_SLUG).pipe(
     Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)),

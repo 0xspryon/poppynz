@@ -16,8 +16,10 @@ import { sessionValueCents } from '../pricing';
  */
 
 export const CYCLE_DAYS = 3;
-/** Sessions exist this many days ahead (the 2-week notice period). */
-export const SESSION_WINDOW_DAYS = 14;
+/** `CONTRACT_SESSION_WINDOW_DAYS`' default: sessions exist this many days
+ * ahead (the 2-week notice period). The setting, not this constant, is what
+ * the worker and the API read. */
+export const DEFAULT_SESSION_WINDOW_DAYS = 14;
 /** `CONTRACT_HOLD_LEAD_HOURS`' default (UAT round 2: 1 day, was 2). */
 export const DEFAULT_HOLD_LEAD_HOURS = 24;
 
@@ -40,6 +42,9 @@ export type ScheduleTerms = {
   /** How long before the cycle start its amount is held
    * (`CONTRACT_HOLD_LEAD_HOURS`); defaults to `DEFAULT_HOLD_LEAD_HOURS`. */
   readonly holdLeadHours?: number;
+  /** How many days ahead dated sessions exist (`CONTRACT_SESSION_WINDOW_DAYS`);
+   * defaults to `DEFAULT_SESSION_WINDOW_DAYS`. */
+  readonly sessionWindowDays?: number;
 };
 
 export type PlannedSession = {
@@ -151,8 +156,8 @@ export const planCycle = (terms: ScheduleTerms, index: number): PlannedCycle | n
 };
 
 /** The materialisation step for one tick: every cycle and session dated
- * from the day after `materialisedThrough` (or the start) up to `today + 13`
- * in the contract zone. Cycles come whole, so a cycle straddling the window
+ * from the day after `materialisedThrough` (or the start) up to `today +
+ * window − 1` (`today + 13` by default) in the contract zone. Cycles come whole, so a cycle straddling the window
  * edge is planned once with all its instants; its later sessions arrive on
  * later ticks. */
 export const planWindow = (
@@ -165,7 +170,10 @@ export const planWindow = (
   /** The new `materialised_through`; unchanged when nothing was due. */
   through: IsoDate | null;
 } => {
-  const windowEnd = addDays(today, SESSION_WINDOW_DAYS - 1);
+  const windowEnd = addDays(
+    today,
+    (terms.sessionWindowDays ?? DEFAULT_SESSION_WINDOW_DAYS) - 1
+  );
   const through = terms.endsOn !== null && terms.endsOn < windowEnd ? terms.endsOn : windowEnd;
   const from = materialisedThrough === null ? terms.startsOn : addDays(materialisedThrough, 1);
   if (from > through) return { cycles: [], sessions: [], through: materialisedThrough };

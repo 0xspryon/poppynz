@@ -1,7 +1,9 @@
 /**
  * DEV ONLY — run the contract-billing tick "as of" an instant, to watch a
  * contract go hold → capture, or decline → grace → suspension → resume,
- * without waiting days. Exactly the worker's tick, with `now` replaced.
+ * without waiting days. Exactly the worker's tick, with `now` replaced —
+ * including its session-resolution step (silence confirms a report once its
+ * response window closes; an unconfirmed day off lapses at its cutoff).
  *
  *   docker compose exec worker sh -c 'cd /usr/src/app && ENVIRONMENT=dev \
  *     BILLING_DEV_CLOCK=enabled bun apps/worker/src/dev/billing-tick.ts \
@@ -18,8 +20,8 @@
  * test-mode calls made at the real time; payout readiness is Stripe's real
  * state. Must run in UTC, like the containers (see ./guard.ts).
  */
-import { ContractBillingRepo } from '@repo/db';
-import { runContractBillingTick } from '@repo/billing';
+import { ContractBillingRepo, SessionResolutionRepo } from '@repo/db';
+import { runContractBillingTick, runSessionResolutionTick } from '@repo/billing';
 import { Effect, ManagedRuntime } from 'effect';
 import { ContractBillingBaseLive, withCycleSettlement } from '../billing-layer';
 import { requireDevClock, requireLocalDatabase } from './guard';
@@ -54,6 +56,15 @@ const show = Effect.gen(function* () {
         (billing.suspendedReason ? ` (${billing.suspendedReason})` : '') +
         ` · zone ${billing.timeZone} · starts ${billing.startsOn}`
     );
+    const resolutions = (yield* (yield* SessionResolutionRepo).listForContract(
+      billing.contractId
+    )).filter((row) => row.status === 'proposed' || row.status === 'contested');
+    for (const row of resolutions) {
+      console.log(
+        `  session ${row.sessionId}: ${row.kind} ${row.status}` +
+          (row.respondBy ? ` · answer by ${row.respondBy.toISOString()}` : '')
+      );
+    }
     const cycles = yield* repo.listCycles(billing.contractId);
     for (const cycle of cycles.slice(0, 8)) {
       const amount =
@@ -76,6 +87,12 @@ const main = Effect.gen(function* () {
     const summary = yield* runContractBillingTick(asOf, contractId ? { contractId } : {});
     console.log(
       `[dev-billing] ${summary.ran} ran, ${summary.failed} failed of ${summary.contracts}`
+    );
+    // The same tick's session-resolution step: silence confirms reports whose
+    // response window closed, unconfirmed days off lapse at their cutoff.
+    const resolutions = yield* runSessionResolutionTick(asOf);
+    console.log(
+      `[dev-billing] session resolutions: ${resolutions.confirmed} confirmed, ${resolutions.lapsed} lapsed, ${resolutions.failed} failed`
     );
   }
   yield* show;

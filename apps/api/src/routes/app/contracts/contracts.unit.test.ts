@@ -3799,7 +3799,7 @@ describe('GET /contracts/:id/cycles/:cycleId (UAT 11a)', () => {
     // The helper's side never leaks to the family.
     expect(JSON.stringify(cycle.amounts)).not.toContain('HST (ON)');
     expect(cycle.sessions).toEqual([
-      {
+      expect.objectContaining({
         id: 'session-1',
         date: '2026-11-03',
         serviceId: SERVICE_ID,
@@ -3809,9 +3809,19 @@ describe('GET /contracts/:id/cycles/:cycleId (UAT 11a)', () => {
         elapsedMinutes: 120,
         status: 'completed',
         startsAt: '2026-11-03T21:30:00.000Z',
-        endsAt: '2026-11-03T23:30:00.000Z'
-      }
+        endsAt: '2026-11-03T23:30:00.000Z',
+        // Tier 3: no resolution yet; the cutoff is 24 h earlier, Winnipeg time.
+        resolution: null,
+        cutoffAt: '2026-11-02T21:30:00.000Z'
+      })
     ]);
+    // The window explainer's numbers come from the settings.
+    expect(cycle.sessionWindow).toEqual({
+      windowDays: 14,
+      cancellationNoticeHours: 24,
+      reportResponseHours: 48,
+      reportWindowHours: 48
+    });
   });
 
   it('gives the helper the share after commission and its tax, and the transfer time', async () => {

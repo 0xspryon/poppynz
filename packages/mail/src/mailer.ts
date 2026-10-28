@@ -175,6 +175,8 @@ export type ContractBillingNoticeMail = {
   paragraphs: ReadonlyArray<string>;
   link: string;
   linkLabel: string;
+  /** A second call to action under the first (e.g. "Find a replacement"). */
+  secondaryLink?: { href: string; label: string; intro?: string } | null;
   /** The recipient's language; English when unknown. */
   locale?: MailLocale;
 };

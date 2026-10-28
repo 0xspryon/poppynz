@@ -328,10 +328,15 @@ recoveries per session.
    family cancellation, helper day off = helper cancellation; both always
    emailed (§3a).
 4. ~~Past extra sessions~~ — decided: up to 14 days back, no further (step 3).
-5. **Re-signing:** must existing contracts re-sign the agreement version that
-   adds extra-session consent?
+5. ~~Re-signing~~ — default (2026-10-28): existing contracts don't re-sign. Each
+   extra session needs the family's explicit "I authorise this charge" when
+   confirming it; new contracts get the consent clause in the next agreement
+   template version (step 3).
 6. ~~Manual payouts~~ — decided: each needs approval by at least one admin (step 2).
-7. **Tax on refunds:** credit-note wording and period treatment (accountant).
+7. ~~Tax on refunds~~ — default (2026-10-28): a refund reduces tax collected in
+   the refund's period; the family receives a refund receipt (credit note)
+   listing the tax returned. The accountant can change the treatment later
+   (step 2).
 8. ~~Recovery from a helper~~ — decided: recovered from the helper's earnings
    going forward (deducted from their next transfers until repaid), not by
    reversing past transfers (step 2).

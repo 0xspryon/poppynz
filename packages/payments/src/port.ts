@@ -193,6 +193,75 @@ export type ProviderPayout = {
   readonly failureReason: string | null;
 };
 
+/** One movement of a dispute on Poppynz's balance (Tier 3 step 4): the
+ * debit when it opened (`withdrawal`, a negative amount on Stripe) or the
+ * money given back when it was won (`reinstatement`), with its fee. */
+export type ProviderDisputeBalanceTransaction = {
+  readonly reference: string;
+  readonly kind: 'withdrawal' | 'reinstatement';
+  /** Always positive: how much moved. */
+  readonly amountCents: number;
+  /** The provider's fee on this movement (the dispute fee on a withdrawal;
+   * negative when a fee is given back). */
+  readonly feeCents: number;
+};
+
+/** A card dispute (chargeback) as the provider reports it, re-fetched. */
+export type ProviderDispute = {
+  readonly reference: string;
+  /** The provider's lifecycle, verbatim: `warning_needs_response`,
+   * `warning_under_review`, `warning_closed`, `needs_response`,
+   * `under_review`, `won`, `lost`, `prevented`. */
+  readonly status: string;
+  readonly amountCents: number;
+  readonly currency: string;
+  readonly reason: string;
+  /** The intent the disputed charge belongs to. */
+  readonly paymentReference: string | null;
+  readonly chargeReference: string | null;
+  readonly evidenceDueBy: Date | null;
+  /** Whether the charge can still be refunded (an inquiry can be). */
+  readonly chargeRefundable: boolean;
+  readonly hasEvidence: boolean;
+  readonly submissionCount: number;
+  readonly balanceTransactions: ReadonlyArray<ProviderDisputeBalanceTransaction>;
+  readonly createdAt: Date;
+};
+
+/** The dispute evidence text fields Poppynz fills, and their limits as the
+ * provider enforces them (verified in Stripe test mode, 2026-10-28): long
+ * fields 20,000 characters, short ones 5,000, all of them together 150,000. */
+export const disputeEvidenceTextLimits = {
+  product_description: 20_000,
+  uncategorized_text: 20_000,
+  cancellation_policy_disclosure: 20_000,
+  refund_policy_disclosure: 20_000,
+  cancellation_rebuttal: 20_000,
+  access_activity_log: 20_000,
+  customer_name: 5_000,
+  customer_email_address: 5_000,
+  service_date: 5_000
+} as const;
+export type DisputeEvidenceTextField = keyof typeof disputeEvidenceTextLimits;
+export const DISPUTE_EVIDENCE_TOTAL_CHARS = 150_000;
+
+/** Evidence fields that take an uploaded file (PDF, JPEG or PNG only). */
+export type DisputeEvidenceFileField =
+  | 'service_documentation'
+  | 'customer_communication'
+  | 'cancellation_policy'
+  | 'uncategorized_file';
+
+export type UpdateDisputeEvidenceInput = {
+  readonly reference: string;
+  readonly text: Partial<Record<DisputeEvidenceTextField, string>>;
+  /** Uploaded file references (`uploadDisputeFile`). */
+  readonly files: Partial<Record<DisputeEvidenceFileField, string>>;
+  /** true sends it to the bank (final); false only stages it. */
+  readonly submit: boolean;
+  readonly metadata?: Record<string, string>;
+};
+
 export type CardSetup = {
   readonly reference: string;
   readonly clientSecret: string;
@@ -266,7 +335,10 @@ export type PaymentOperation =
   | 'getRefund'
   | 'createTransfer'
   | 'getTransfer'
-  | 'getPayout';
+  | 'getPayout'
+  | 'getDispute'
+  | 'updateDispute'
+  | 'uploadDisputeFile';
 
 export class PaymentDeclinedError extends Data.TaggedError('PaymentDeclinedError')<{
   reason: string;
@@ -283,7 +355,7 @@ export class PaymentProviderError extends Data.TaggedError('PaymentProviderError
   /** Set when the provider answered and REFUSED the request for a business
    * reason (e.g. a refund on a disputed or already refunded charge): the
    * same request under the same key will be refused again, so it is not an
-   * outage to retry. Only `createRefund` sets it. */
+   * outage to retry. Only `createRefund` and `updateDispute` set it. */
   refusal?: string;
 }> {}
 
@@ -390,6 +462,19 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
       account: string;
       reference: string;
     }) => Effect.Effect<ProviderPayout, PaymentProviderError>;
+    /** A card dispute, re-fetched (Tier 3 step 4: webhooks only say "it
+     * changed"). */
+    getDispute: (reference: string) => Effect.Effect<ProviderDispute, PaymentProviderError>;
+    /** Stages or submits evidence on a dispute. A refusal (the evidence is
+     * over a limit, the dispute is no longer open) carries `refusal`. */
+    updateDisputeEvidence: (
+      input: UpdateDisputeEvidenceInput
+    ) => Effect.Effect<ProviderDispute, PaymentProviderError>;
+    /** Uploads one evidence document (a PDF). */
+    uploadDisputeFile: (input: {
+      name: string;
+      bytes: Uint8Array;
+    }) => Effect.Effect<{ reference: string }, PaymentProviderError>;
     /** Creates the helper's connected account. Same user → same account
      * (idempotency key `payout-account:<userId>`). */
     createPayoutAccount: (input: {

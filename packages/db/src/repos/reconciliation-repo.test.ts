@@ -35,7 +35,7 @@ const txn = (reference: string, overrides: Partial<BalanceTransactionUpsert> = {
   }) satisfies BalanceTransactionUpsert;
 
 const run = <A, E>(
-  layer: Layer.Layer<ReconciliationRepo>,
+  layer: Layer.Layer<ReconciliationRepo, unknown>,
   effect: Effect.Effect<A, E, ReconciliationRepo>
 ) => Effect.runPromise(Effect.provide(effect, layer));
 
@@ -51,7 +51,7 @@ const startInput = (startedAt: Date) => ({
 
 /** Shared by the in-memory stand-in and the Postgres repo: the same rules. */
 const contract = (
-  makeLayer: () => Promise<{ layer: Layer.Layer<ReconciliationRepo>; provider: string }>
+  makeLayer: () => Promise<{ layer: Layer.Layer<ReconciliationRepo, unknown>; provider: string }>
 ) => {
   it('runs one at a time; a stale running run is abandoned', async () => {
     const { layer, provider } = await makeLayer();

@@ -464,8 +464,8 @@ export const runScheduledReconciliation = (now: Date) =>
 // The accountant's view of a period
 
 export type ReconciliationItem = {
-  /** `txn:<reference>` or `<kind>:<id>` for our side — the audit entity id
-   * of its resolution. */
+  /** `txn:<row id>` (stable across re-imports) or `<kind>:<id>` for our
+   * side — the audit entity id of its resolution. */
   key: string;
   side: 'provider' | 'ours';
   kind: string;
@@ -485,7 +485,7 @@ export type ReconciliationItem = {
 };
 
 export const providerItem = (row: ProviderBalanceTransactionRow): ReconciliationItem => ({
-  key: `txn:${row.reference}`,
+  key: `txn:${row.id}`,
   side: 'provider',
   kind: row.type,
   reference: row.reference,

@@ -217,6 +217,55 @@ describe('one card dispute', () => {
 		expect(api.toastSuccess).toHaveBeenCalledWith('Evidence submitted to Stripe');
 	});
 
+	it('names the session report and a refund waiting for the dispute in plain words', async () => {
+		const pack = detail().pack;
+		api.getCardDispute.mockResolvedValue({
+			ok: true,
+			data: {
+				dispute: detail({
+					pack: {
+						...pack,
+						sessions: [
+							{
+								...session,
+								resolution: {
+									kind: 'family_cancelled_early',
+									status: 'confirmed',
+									reportedBySide: 'family',
+									recordedAt: '2026-11-01T00:00:00.000Z',
+									note: null,
+									response: null,
+									respondedAt: null,
+									decision: null,
+									decisionReason: null,
+									decidedAt: null,
+									policyVersion: 1,
+									events: []
+								}
+							}
+						],
+						refunds: [
+							{
+								id: 'refund-1',
+								sessionId: 'session-1',
+								totalCents: 6604,
+								status: 'pending',
+								refundedAt: null,
+								createdAt: '2026-11-03T00:00:00.000Z'
+							}
+						]
+					}
+				})
+			}
+		});
+		mount(CardDisputeDetailPage, { target: document.body });
+		await settle();
+		expect(text()).not.toContain('family_cancelled_early');
+		expect(text()).not.toContain('family cancelled early');
+		expect(text()).toContain('Waiting for the dispute');
+		expect(text()).not.toContain('· pending');
+	});
+
 	it('saves a draft, and refuses an empty summary', async () => {
 		api.getCardDispute.mockResolvedValue({ ok: true, data: { dispute: detail() } });
 		api.saveCardDisputeSummary.mockResolvedValue({

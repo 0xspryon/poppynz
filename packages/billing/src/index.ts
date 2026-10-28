@@ -12,3 +12,5 @@ export * from './contracts/engine';
 export * from './contracts/resolutions';
 export * from './contracts/resolution-notices';
 export * from './contracts/session-money';
+export * from './contracts/money';
+export * from './contracts/money-notices';

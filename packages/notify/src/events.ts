@@ -98,7 +98,13 @@ export type NotificationPayloads = {
       | 'suspended'
       | 'resumed'
       | 'helper_not_ready'
-      | 'charge_failed';
+      | 'charge_failed'
+      // Tier 3 step 2: session refunds and helper transfers.
+      | 'refund_issued'
+      | 'refund_succeeded'
+      | 'refund_failed'
+      | 'transfer_sent'
+      | 'transfer_held';
   };
   /** Something happened to one of the contract's sessions (Tier 3): a
    * cancellation, day off, report or dispute was recorded, answered,

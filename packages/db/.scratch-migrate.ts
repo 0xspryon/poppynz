@@ -1,0 +1,20 @@
+import { Client } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { migrate } from 'drizzle-orm/node-postgres/migrator';
+const base = process.env.BASE_URL!;
+const name = process.env.SCRATCH_DB!;
+const admin = new Client({ connectionString: `${base}/postgres` });
+await admin.connect();
+const mode = process.argv[2];
+if (mode === 'drop') { await admin.query(`DROP DATABASE IF EXISTS ${name}`); await admin.end(); process.exit(0); }
+await admin.query(`DROP DATABASE IF EXISTS ${name}`);
+await admin.query(`CREATE DATABASE ${name}`);
+await admin.end();
+const client = new Client({ connectionString: `${base}/${name}` });
+await client.connect();
+const cfg = await client.query("select version()");
+console.log(cfg.rows[0].version.slice(0, 40));
+const db = drizzle(client);
+await migrate(db, { migrationsFolder: process.env.MIGRATIONS! , migrationsSchema: 'drizzle_app_db' });
+console.log('migrated');
+await client.end();

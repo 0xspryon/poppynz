@@ -11,6 +11,7 @@ import {
   newContractBilling,
   planCycle,
   retryContractPayment,
+  sessionResolutionPolicy,
   startContractBilling
 } from '@repo/billing';
 import {
@@ -66,6 +67,7 @@ import {
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import { hasReadyPayoutAccount } from '@/api/lib/payouts';
 import { agreementErrorToResponse, agreementSignature, type AgreementAssent } from './agreement';
+import { cycleSessionResolutions, sessionWindowView } from './sessions';
 import {
   contractAcceptJsonError,
   validateContractAcceptInput,
@@ -610,6 +612,9 @@ const billingSummary = (contractId: string, side: ContractSide) =>
       canRetryPayment: side === 'family' && familyRetryEligible(billing, cycles, new Date()),
       // UAT round 2 #10: how long before a cycle starts it is held.
       holdLeadHours: (yield* contractBillingPolicy).holdLeadHours,
+      // Tier 3: the window explainer's numbers (sessions appear N days ahead;
+      // cancelling at least the cutoff before a session is free).
+      sessionWindow: sessionWindowView(yield* sessionResolutionPolicy),
       // Cancelled unless the helper is payment-ready by cycle 1's capture.
       readinessDeadline:
         billing.status === 'awaiting_payment_readiness'
@@ -1904,7 +1909,9 @@ const supplyLines = (
 export const getContractCycleProgram = (
   userAndSession: UserAndSession,
   contractId: string,
-  cycleId: string
+  cycleId: string,
+  /** Whether the viewer holds the session-resolution permission (actions). */
+  canAct = true
 ) =>
   Effect.gen(function* () {
     const viewer = userAndSession.user;
@@ -1931,6 +1938,19 @@ export const getContractCycleProgram = (
     const now = new Date();
     const counterpartUserId = side === 'family' ? contract.providerUserId : contract.familyUserId;
     const counterpartProfile = yield* loadProfileOrNull(counterpartUserId);
+    // Tier 3: each session's resolution and what the viewer may do now.
+    const resolutions = yield* cycleSessionResolutions({
+      contract,
+      viewerUserId: viewer.id,
+      sessions,
+      zone: billing.timeZone,
+      now,
+      canAct
+    }).pipe(
+      Effect.catchTag('SessionRepoError', (error) =>
+        Effect.fail(new ContractRepoError({ cause: error.cause }))
+      )
+    );
 
     const quoted = cycle.serviceCents !== null;
     const amounts = !quoted
@@ -1993,8 +2013,16 @@ export const getContractCycleProgram = (
           elapsedMinutes: session.elapsedMinutes,
           status: session.status,
           startsAt: session.startsAt.toISOString(),
-          endsAt: session.endsAt.toISOString()
+          endsAt: session.endsAt.toISOString(),
+          ...(resolutions.perSession.get(session.id) ?? {
+            resolution: null,
+            actions: [],
+            responses: [],
+            cancelOutcome: null,
+            cutoffAt: null
+          })
         })),
+        sessionWindow: resolutions.sessionWindow,
         canRetryPayment: side === 'family' && familyRetryEligible(billing, cycles, now)
       }
     };
@@ -2246,7 +2274,14 @@ export const getContractCycleRouteProgram = (c: HonoContext<HonoEnv>, headers: H
     const userAndSession = yield* requirePermissions(headers, { contract: ['read'] })(
       authenticated
     );
-    return yield* getContractCycleProgram(userAndSession, contractId, cycleId);
+    // Actions are offered only with the session-resolution permission.
+    const canAct = yield* requirePermissions(headers, { sessionResolution: ['write'] })(
+      authenticated
+    ).pipe(
+      Effect.as(true),
+      Effect.catchTag('ForbiddenError', () => Effect.succeed(false))
+    );
+    return yield* getContractCycleProgram(userAndSession, contractId, cycleId, canAct);
   });
 
 export const contractLandingRouteProgram = (headers: Headers) =>

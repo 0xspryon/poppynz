@@ -41,6 +41,14 @@ export const appAc = createAccessControl({
   serviceNeeded: ['read', 'write'],
   // `review` is the admin-only decision on a helper's custom service.
   serviceOffered: ['read', 'write', 'review'],
+  // Tier 3: the admin dispute queue — reading contested session resolutions
+  // (statements, the session, nearby messages, the signed agreement) and
+  // deciding them. Admin-only; every decision is audited.
+  sessionDispute: ['read', 'decide'],
+  // Tier 3: a party's own session actions — cancelling, proposing a day off,
+  // reporting, disputing and answering the other side. Being the contract's
+  // family or helper is enforced at the route.
+  sessionResolution: ['read', 'write'],
   // Sales-tax configuration (rates, supply-type treatments, registrations)
   // and its reports — the tax portal. Granted to admins and to the
   // accountant role; always checked as a permission, never a role.
@@ -64,6 +72,7 @@ export const familyRole = appAc.newRole({
   serviceCatalogue: ['read'],
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write'],
+  sessionResolution: ['read', 'write'],
   tcs: ['read', 'accept'],
   userSearch: ['write'],
   vouch: ['read', 'write']
@@ -83,6 +92,7 @@ export const spRole = appAc.newRole({
   safetyVerification: ['read', 'write'],
   serviceCatalogue: ['read'],
   serviceOffered: ['read', 'write'],
+  sessionResolution: ['read', 'write'],
   tcs: ['read', 'accept'],
   vouch: ['read', 'write']
 });
@@ -105,6 +115,7 @@ export const adminRole = appAc.newRole({
   serviceCatalogue: ['read', 'write'],
   serviceNeeded: ['read', 'write'],
   serviceOffered: ['read', 'write', 'review'],
+  sessionDispute: ['read', 'decide'],
   tax: ['read', 'write'],
   taxReport: ['read'],
   tcs: ['read', 'accept', 'write'],

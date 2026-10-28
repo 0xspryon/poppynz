@@ -30,6 +30,7 @@ export * from './repos/conversation-repo';
 export * from './repos/contract-repo';
 export * from './repos/contract-billing-repo';
 export * from './repos/contract-agreement-repo';
+export * from './repos/contract-replacement-repo';
 export * from './repos/session-resolution-repo';
 export * from './repos/user-directory-repo';
 export * from './repos/user-search-repo';

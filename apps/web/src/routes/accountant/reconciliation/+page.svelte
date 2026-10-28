@@ -9,6 +9,8 @@
 		getReconciliation,
 		matchKindLabel,
 		reconciliationCsvUrl,
+		reconciliationNoteText,
+		reconciliationRunErrorText,
 		reconciliationStatusLabel,
 		resolveReconciliationItem,
 		runReconciliation,
@@ -79,7 +81,9 @@
 		}
 		const run = result.data.run;
 		if (run.status === 'failed') {
-			toast.error(m.books_recon_run_failed({ error: run.error ?? '—' }));
+			toast.error(
+				m.books_recon_run_failed({ error: reconciliationRunErrorText(run.error) || '—' })
+			);
 		} else {
 			toast.success(
 				m.books_recon_run_done({
@@ -234,7 +238,7 @@
 								{#if item.resolution}
 									{m.books_recon_resolved_by({ note: item.resolution.note ?? '—' })}
 								{:else}
-									{item.note ?? ''}
+									{reconciliationNoteText(item.note)}
 								{/if}
 							</td>
 							<td>
@@ -295,7 +299,9 @@
 									unmatched: String(run.unmatchedCount),
 									exact: String(run.payoutsExactCount)
 								})}
-								{#if run.error}<span class="block text-error">{run.error}</span>{/if}
+								{#if run.error}<span class="block text-error"
+										>{reconciliationRunErrorText(run.error)}</span
+									>{/if}
 							</td>
 						</tr>
 					{/each}

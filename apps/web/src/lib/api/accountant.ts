@@ -3,6 +3,7 @@
  * Stripe. Access follows the `reimbursements` and `reconciliation`
  * permissions (the accountant and admins), never the role. */
 import { API_BASE_PATH } from 'api/hc';
+import { formatMoney } from '$lib/money';
 import { m } from '$lib/paraglide/messages';
 import { apiClient, call, type ErrorsOf } from './client';
 
@@ -348,6 +349,48 @@ export const reportLabel = (report: ReportKind): string => {
 		case 'fees':
 			return m.books_report_fees();
 	}
+};
+
+/** The server's matching note (written in English, stored with the
+ * transaction) in the reader's language; an unknown one as it is. */
+export const reconciliationNoteText = (note: string | null): string => {
+	if (note === null) return '';
+	switch (note) {
+		case 'no payment of ours for this charge':
+			return m.books_recon_note_no_payment();
+		case 'no refund of ours for this refund':
+			return m.books_recon_note_no_refund();
+		case 'no helper transfer of ours for this transfer':
+			return m.books_recon_note_no_transfer();
+		case 'no card dispute on file for this dispute':
+			return m.books_recon_note_no_dispute();
+		case 'not found in the provider’s balance transactions for the period':
+			return m.books_recon_note_not_at_provider();
+	}
+	const amounts = /^amount (-?\d+) at the provider, (-?\d+) on our side$/.exec(note);
+	if (amounts) {
+		return m.books_recon_note_amounts({
+			provider: formatMoney(Number(amounts[1])),
+			ours: formatMoney(Number(amounts[2]))
+		});
+	}
+	const unknown = /^unrecognised (\S+) (transaction|on a helper's account)$/.exec(note);
+	if (unknown) return m.books_recon_note_unrecognised({ type: unknown[1]! });
+	return note;
+};
+
+/** A run's recorded error in the reader's language (the provider's own
+ * message is kept after it). */
+export const reconciliationRunErrorText = (error: string | null): string => {
+	if (error === null) return '';
+	if (error === 'abandoned (still running)') return m.books_recon_error_abandoned();
+	if (error === 'database error') return m.books_recon_error_database();
+	const pages = /^stopped after (\d+) pages$/.exec(error);
+	if (pages) return m.books_recon_error_pages({ pages: pages[1]! });
+	if (error.startsWith('provider: ')) {
+		return m.books_recon_error_provider({ detail: error.slice('provider: '.length) });
+	}
+	return error;
 };
 
 /** The toast for a refused or failed request. */

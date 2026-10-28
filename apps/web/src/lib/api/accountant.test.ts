@@ -5,6 +5,8 @@ import {
 	causeLabel,
 	matchKindLabel,
 	reconciliationCsvUrl,
+	reconciliationNoteText,
+	reconciliationRunErrorText,
 	reimbursementStatusLabel,
 	reimbursementStatusTone,
 	reimbursementTypeLabel,
@@ -62,5 +64,26 @@ describe('the books’ words (Tier 3 step 5)', () => {
 		);
 		overwriteGetLocale(() => 'fr');
 		expect(accountantErrorText({ code: 'ACCOUNTANT_WRITE_IMPERSONATED' })).toMatch(/usurpation/);
+	});
+
+	it('puts the server’s matching notes and run errors in the reader’s language', () => {
+		overwriteGetLocale(() => 'fr');
+		expect(reconciliationNoteText('no payment of ours for this charge')).toBe(
+			'Aucun paiement chez nous pour ce débit.'
+		);
+		expect(
+			reconciliationNoteText('not found in the provider\u2019s balance transactions for the period')
+		).toContain('Introuvable');
+		expect(reconciliationNoteText('amount -6049 at the provider, -6050 on our side')).toMatch(
+			/60,49.*chez Stripe.*60,50.*chez nous/
+		);
+		expect(reconciliationNoteText('unrecognised topup transaction')).toContain('topup');
+		expect(reconciliationNoteText('something new')).toBe('something new');
+		expect(reconciliationNoteText(null)).toBe('');
+		expect(reconciliationRunErrorText('provider: Error: connection')).toBe(
+			'Stripe était injoignable (Error: connection).'
+		);
+		expect(reconciliationRunErrorText('stopped after 200 pages')).toContain('200');
+		expect(reconciliationRunErrorText(null)).toBe('');
 	});
 });

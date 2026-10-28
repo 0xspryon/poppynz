@@ -17,6 +17,7 @@
  * written agreement) still applies. The replacement link is stored with the
  * draft (`contract_replacements`) for later steps and admins.
  */
+import { planSessions } from '@repo/billing';
 import { weekdayOf } from '@repo/calendar';
 import {
   ContractBillingRepo,
@@ -59,11 +60,18 @@ import { isHelperCancellation } from './sessions';
 // Errors
 
 /** The sessions named can't be replaced: one isn't on this contract, the
- * helper didn't cancel it, it has already started, or they mix services. */
+ * helper didn't cancel it, it has already started, they mix services, or no
+ * single short contract books exactly them (`not_one_stretch`: its weekly
+ * pattern would also book sessions in between that weren't cancelled). */
 export class ReplacementSessionsInvalidError extends Data.TaggedError(
   'ReplacementSessionsInvalidError'
 )<{
-  reason: 'unknown_session' | 'not_cancelled_by_helper' | 'already_started' | 'mixed_services';
+  reason:
+    | 'unknown_session'
+    | 'not_cancelled_by_helper'
+    | 'already_started'
+    | 'mixed_services'
+    | 'not_one_stretch';
 }> {}
 
 /** The helper who cancelled can't be their own replacement. */
@@ -190,6 +198,57 @@ export const replacementSchedule = (
   };
 };
 
+type SessionSlot = Pick<SessionRecord, 'date' | 'startMinutes' | 'endMinutes'>;
+
+const slotKey = (slot: SessionSlot) => `${slot.date}@${slot.startMinutes}-${slot.endMinutes}`;
+
+/**
+ * Whether the short contract `replacementSchedule` makes from these
+ * sessions books exactly them. A weekly pattern between two dates books
+ * every occurrence in between — a Monday cancelled in week 1 and in week 3
+ * would also book week 2's Monday, which the helper still works — and the
+ * first day can't start part-way through, so such a set needs two contracts.
+ */
+export const coversExactly = (sessions: ReadonlyArray<SessionSlot>): boolean => {
+  if (sessions.length === 0) return false;
+  const schedule = replacementSchedule(sessions);
+  const booked = planSessions(
+    {
+      services: [{ serviceId: 'replacement', name: '', rateCents: 0, sessions: schedule.sessions }],
+      startsOn: schedule.startsOn,
+      // Only dates and wall-clock minutes are compared: the zone is moot.
+      timeZone: 'UTC',
+      endsOn: schedule.endsOn,
+      endsAtMinutes: schedule.endsAtMinutes
+    },
+    schedule.startsOn,
+    schedule.endsOn
+  )
+    .map(slotKey)
+    .sort();
+  const wanted = Array.from(new Set(sessions.map(slotKey))).sort();
+  return booked.length === wanted.length && booked.every((key, index) => key === wanted[index]);
+};
+
+/**
+ * Splits cancelled sessions of one service, in time order, into the fewest
+ * consecutive stretches that one short contract each books exactly.
+ */
+export const replacementStretches = <T extends SessionSlot>(
+  sessions: ReadonlyArray<T>
+): Array<Array<T>> => {
+  const sorted = [...sessions].sort((a, b) =>
+    a.date === b.date ? a.startMinutes - b.startMinutes : a.date < b.date ? -1 : 1
+  );
+  const stretches: Array<Array<T>> = [];
+  for (const session of sorted) {
+    const current = stretches[stretches.length - 1];
+    if (current && coversExactly([...current, session])) current.push(session);
+    else stretches.push([session]);
+  }
+  return stretches;
+};
+
 /** The new helper's matching service: the same catalogue service, else the
  * same name (custom services, or a catalogue link that is gone). */
 export const matchingService = <T extends Pick<ServiceOffered, 'catalogueServiceId' | 'name'>>(
@@ -287,6 +346,9 @@ const pickSessions = (
     if (new Set(picked.map((session) => session.serviceId)).size > 1) {
       return yield* Effect.fail(new ReplacementSessionsInvalidError({ reason: 'mixed_services' }));
     }
+    if (!coversExactly(picked)) {
+      return yield* Effect.fail(new ReplacementSessionsInvalidError({ reason: 'not_one_stretch' }));
+    }
     return picked;
   });
 
@@ -331,21 +393,35 @@ export const replacementContextProgram = (
       replacements.map((row) => [row.sessionId, row.contractId])
     );
     const name = yield* helperName(loaded.contract, userAndSession.user.id);
+    // What "Find a replacement" searches for: the sessions not yet covered,
+    // per service, in stretches that one short contract each books exactly.
+    const sorted = [...sessions].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    const byService = new Map<string, Array<CancelledSession>>();
+    for (const session of sorted) {
+      if (replacementBySession.has(session.id)) continue;
+      byService.set(session.serviceId, [...(byService.get(session.serviceId) ?? []), session]);
+    }
+    const stretches = [...byService.values()]
+      .flatMap((group) => replacementStretches(group))
+      .sort((a, b) => a[0]!.startsAt.getTime() - b[0]!.startsAt.getTime())
+      .map((stretch) => ({
+        serviceName: stretch[0]!.serviceName,
+        sessionIds: stretch.map((session) => session.id)
+      }));
     return {
       replacement: {
         contractId,
         helper: { userId: loaded.contract.providerUserId, name },
-        sessions: [...sessions]
-          .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime())
-          .map((session) => ({
-            id: session.id,
-            cycleId: session.cycleId,
-            date: session.date,
-            serviceName: session.serviceName,
-            startMinutes: session.startMinutes,
-            endMinutes: session.endMinutes,
-            replacementContractId: replacementBySession.get(session.id) ?? null
-          }))
+        sessions: sorted.map((session) => ({
+          id: session.id,
+          cycleId: session.cycleId,
+          date: session.date,
+          serviceName: session.serviceName,
+          startMinutes: session.startMinutes,
+          endMinutes: session.endMinutes,
+          replacementContractId: replacementBySession.get(session.id) ?? null
+        })),
+        stretches
       }
     };
   });

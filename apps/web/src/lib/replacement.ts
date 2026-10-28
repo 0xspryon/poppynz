@@ -122,7 +122,9 @@ export const replacementErrorMessage = (
 		case 'REPLACEMENT_SESSIONS_INVALID':
 			return error.reason === 'already_started'
 				? m.replacement_error_started()
-				: m.replacement_error_sessions();
+				: error.reason === 'not_one_stretch'
+					? m.replacement_error_not_one_stretch()
+					: m.replacement_error_sessions();
 		case 'REPLACEMENT_SAME_HELPER':
 			return m.replacement_error_same_helper();
 		case 'REPLACEMENT_SERVICE_NOT_OFFERED':

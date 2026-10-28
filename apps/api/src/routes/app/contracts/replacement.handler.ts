@@ -22,7 +22,9 @@ const invalidSessionsMessage: Record<ReplacementSessionsInvalidError['reason'], 
   unknown_session: 'One of these sessions is not on this contract.',
   not_cancelled_by_helper: 'Only sessions the helper cancelled can be replaced.',
   already_started: 'One of these sessions has already started.',
-  mixed_services: 'Replace sessions of one service at a time.'
+  mixed_services: 'Replace sessions of one service at a time.',
+  not_one_stretch:
+    "One short contract can't cover exactly these sessions: replace them in separate stretches."
 };
 
 const replacementErrorToResponse = (c: HonoContext<HonoEnv>, error: ReplacementRouteError) => {

@@ -6,6 +6,7 @@
 	import { resolve } from '$app/paths';
 	import { getReplacementContext, type ReplacementContext } from '$lib/api/contracts';
 	import { notifications } from '$lib/notifications.svelte';
+	import { formatDate } from '$lib/date';
 	import { m } from '$lib/paraglide/messages';
 	import { findReplacementHref, replacementSessionLabel } from '$lib/replacement';
 	import { onMount } from 'svelte';
@@ -37,17 +38,29 @@
 		})
 	);
 
-	/** Uncovered sessions grouped by service: one Find help search each. */
-	const searches = $derived.by(() => {
-		const groups: Array<{ serviceName: string; sessionIds: Array<string> }> = [];
-		for (const session of context?.sessions ?? []) {
-			if (session.replacementContractId !== null) continue;
-			const group = groups.find((entry) => entry.serviceName === session.serviceName);
-			if (group) group.sessionIds.push(session.id);
-			else groups.push({ serviceName: session.serviceName, sessionIds: [session.id] });
+	/** One Find help search per stretch the API groups the uncovered
+	 * sessions into (one service each, and dates one short contract can book
+	 * exactly — never sessions the helper still works in between). */
+	const searches = $derived(context?.stretches ?? []);
+	const manyServices = $derived(new Set(searches.map((search) => search.serviceName)).size > 1);
+
+	function searchLabel(search: { serviceName: string; sessionIds: Array<string> }) {
+		const parts: Array<string> = [m.replacement_find_action()];
+		if (manyServices) parts.push(search.serviceName);
+		if (searches.length > 1) {
+			const dates = (context?.sessions ?? [])
+				.filter((session) => search.sessionIds.includes(session.id))
+				.map((session) => session.date);
+			const first = dates[0];
+			const last = dates[dates.length - 1];
+			if (first && last) {
+				parts.push(
+					first === last ? formatDate(first) : `${formatDate(first)} – ${formatDate(last)}`
+				);
+			}
 		}
-		return groups;
-	});
+		return parts.join(' · ');
+	}
 </script>
 
 {#if context && context.sessions.length > 0}
@@ -82,7 +95,7 @@
 		</ul>
 		{#if searches.length > 0}
 			<div class="mt-2 flex flex-wrap gap-2">
-				{#each searches as search (search.serviceName)}
+				{#each searches as search (search.sessionIds.join(','))}
 					<a
 						class="btn btn-sm btn-secondary"
 						href={findReplacementHref(search.serviceName, {
@@ -92,7 +105,7 @@
 						data-testid="contract-find-replacement"
 					>
 						<i class="las la-search" aria-hidden="true"></i>
-						{m.replacement_find_action()}{searches.length > 1 ? ` · ${search.serviceName}` : ''}
+						{searchLabel(search)}
 					</a>
 				{/each}
 			</div>

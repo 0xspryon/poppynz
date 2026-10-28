@@ -4,8 +4,10 @@ import {
 	readReplacementParams,
 	recallReplacement,
 	rememberReplacement,
+	replacementErrorMessage,
 	writeReplacementParams
 } from './replacement';
+import { m } from '$lib/paraglide/messages';
 
 const CONTRACT = '0198a3b0-0000-7000-8000-00000000c001';
 const S1 = '0198a3b0-0000-7000-8000-00000000ee01';
@@ -78,5 +80,19 @@ describe('remembered across a reach-out', () => {
 			rememberReplacement('helper-2', { contractId: CONTRACT, sessionIds: [S1] })
 		).not.toThrow();
 		expect(recallReplacement('helper-2')).toBeNull();
+	});
+});
+
+describe('replacementErrorMessage', () => {
+	it('explains sessions that one short contract cannot cover on their own', () => {
+		const error = {
+			code: 'REPLACEMENT_SESSIONS_INVALID',
+			message: '',
+			reason: 'not_one_stretch'
+		} as unknown as Parameters<typeof replacementErrorMessage>[0];
+		expect(replacementErrorMessage(error, 'Robin')).toBe(m.replacement_error_not_one_stretch());
+		expect(
+			replacementErrorMessage({ ...error, reason: 'already_started' } as typeof error, 'Robin')
+		).toBe(m.replacement_error_started());
 	});
 });

@@ -2373,6 +2373,7 @@
 	"replacement_error_not_available": "{name}'s listing for this service isn't approved for families yet. Choose another helper.",
 	"replacement_error_not_found": "This contract wasn't found.",
 	"replacement_error_not_offered": "{name} doesn't offer this service. Choose another helper.",
+	"replacement_error_not_one_stretch": "These sessions aren't one continuous stretch, so one short contract can't cover just them. Find a replacement for each stretch from the contract page.",
 	"replacement_error_pending": "{name} hasn't accepted your message yet. You can start the replacement once they do.",
 	"replacement_error_reach_out": "Reach out to {name} first.",
 	"replacement_error_same_helper": "Choose a different helper than the one who cancelled.",

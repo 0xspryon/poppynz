@@ -24,12 +24,14 @@ import { Context, Effect, Exit, Layer } from 'effect';
 import { describe, expect, it } from 'vitest';
 import type { UserAndSession } from '@/api/lib/effect-auth';
 import {
+  coversExactly,
   createReplacementProgram,
   matchingService,
   parseSessionIdsQuery,
   replacementContextProgram,
   replacementRateCents,
-  replacementSchedule
+  replacementSchedule,
+  replacementStretches
 } from './replacement';
 import {
   CONTRACT_ID,
@@ -50,6 +52,7 @@ const S2 = '0198a3b0-0000-7000-8000-00000000ee02'; // Tue 10 Nov 15:30–17:30, 
 const S3 = '0198a3b0-0000-7000-8000-00000000ee03'; // Thu 5 Nov, family cancelled
 const S4 = '0198a3b0-0000-7000-8000-00000000ee04'; // Tue 27 Oct (past), helper cancelled
 const S5 = '0198a3b0-0000-7000-8000-00000000ee05'; // Wed 4 Nov, pet care, helper cancelled
+const S6 = '0198a3b0-0000-7000-8000-00000000ee06'; // Tue 17 Nov 15:30–17:30, helper cancelled
 const NEW_CONVERSATION = '0198a3b0-0000-7000-8000-000000000002';
 
 const family: UserAndSession = {
@@ -141,6 +144,12 @@ const makeWorld = (options: WorldOptions = {}) => {
       serviceName: 'Pet care',
       startsAt: new Date('2026-11-04T20:30:00.000Z'),
       endsAt: new Date('2026-11-04T22:30:00.000Z')
+    }),
+    session({
+      id: S6,
+      date: '2026-11-17',
+      startsAt: new Date('2026-11-17T20:30:00.000Z'),
+      endsAt: new Date('2026-11-17T22:30:00.000Z')
     })
   );
   const resolution = (id: string, sessionId: string, overrides = {}) =>
@@ -165,7 +174,8 @@ const makeWorld = (options: WorldOptions = {}) => {
         reportedBySide: 'family'
       }),
       resolution('r4', S4),
-      resolution('r5', S5)
+      resolution('r5', S5),
+      resolution('r6', S6)
     ]
   });
 
@@ -344,6 +354,35 @@ describe('replacementSchedule', () => {
   });
 });
 
+describe('coversExactly / replacementStretches', () => {
+  const tue3 = { date: '2026-11-03', startMinutes: 930, endMinutes: 1050 };
+  const tue10 = { date: '2026-11-10', startMinutes: 930, endMinutes: 1050 };
+  const tue17 = { date: '2026-11-17', startMinutes: 930, endMinutes: 1050 };
+  const thu5 = { date: '2026-11-05', startMinutes: 600, endMinutes: 720 };
+  const tue10Morning = { date: '2026-11-10', startMinutes: 540, endMinutes: 660 };
+
+  it('accepts sessions the weekly pattern books exactly', () => {
+    expect(coversExactly([tue3])).toBe(true);
+    expect(coversExactly([tue3, tue10, tue17])).toBe(true);
+    expect(coversExactly([tue3, thu5, tue10])).toBe(true);
+  });
+
+  it('refuses a set whose pattern would also book sessions that were not cancelled', () => {
+    // Tuesday the 10th sits between and would be booked twice.
+    expect(coversExactly([tue3, tue17])).toBe(false);
+    // The Tuesday morning slot would also be booked on the 3rd.
+    expect(coversExactly([tue3, tue10Morning])).toBe(false);
+    // Thursday the 12th would be booked too.
+    expect(coversExactly([thu5, tue17])).toBe(false);
+  });
+
+  it('splits sessions into the fewest consecutive stretches', () => {
+    expect(replacementStretches([tue17, tue3, tue10])).toEqual([[tue3, tue10, tue17]]);
+    expect(replacementStretches([tue17, tue3])).toEqual([[tue3], [tue17]]);
+    expect(replacementStretches([tue3, thu5, tue17])).toEqual([[tue3, thu5], [tue17]]);
+  });
+});
+
 describe('matchingService / replacementRateCents', () => {
   it('matches the same catalogue service first, else the same name', () => {
     const byCatalogue = offered({ id: 'a', name: 'Garde', catalogueServiceId: 'cat-childcare' });
@@ -394,7 +433,15 @@ describe('replacementContextProgram (GET /contracts/:id/replacement)', () => {
     expect(replacement.sessions.map((row) => [row.id, row.replacementContractId])).toEqual([
       [S1, null],
       [S5, null],
-      [S2, 'earlier']
+      [S2, 'earlier'],
+      [S6, null]
+    ]);
+    // One search per stretch a short contract books exactly: S1 and S6 are
+    // two weeks apart around S2 (already covered), so they go separately.
+    expect(replacement.stretches).toEqual([
+      { serviceName: 'Childcare', sessionIds: [S1] },
+      { serviceName: 'Pet care', sessionIds: [S5] },
+      { serviceName: 'Childcare', sessionIds: [S6] }
     ]);
   });
 
@@ -550,6 +597,8 @@ describe('createReplacementProgram (POST /contracts/:id/replacement)', () => {
       [[S3], 'not_cancelled_by_helper'],
       [[S4], 'already_started'],
       [[S1, S5], 'mixed_services'],
+      // Tue 3 and Tue 17 would also book Tue 10 for the new helper.
+      [[S1, S6], 'not_one_stretch'],
       [['0198a3b0-0000-7000-8000-00000000ffff'], 'unknown_session']
     ];
     for (const [sessionIds, reason] of cases) {

@@ -2373,6 +2373,7 @@
 	"replacement_error_not_available": "L’offre de {name} pour ce service n’est pas encore approuvée pour les familles. Choisissez un(e) autre aidant(e).",
 	"replacement_error_not_found": "Ce contrat est introuvable.",
 	"replacement_error_not_offered": "{name} n’offre pas ce service. Choisissez un(e) autre aidant(e).",
+	"replacement_error_not_one_stretch": "Ces séances ne forment pas une seule période : un court contrat ne peut pas couvrir uniquement celles-ci. Trouvez un remplacement pour chaque période depuis la page du contrat.",
 	"replacement_error_pending": "{name} n’a pas encore accepté votre message. Vous pourrez commencer le remplacement ensuite.",
 	"replacement_error_reach_out": "Écrivez d’abord à {name}.",
 	"replacement_error_same_helper": "Choisissez un(e) autre aidant(e) que la personne qui a annulé.",

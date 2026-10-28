@@ -118,6 +118,12 @@ describe('planWindow', () => {
     expect(next.cycles.map((c) => c.index)).toEqual([3]);
   });
 
+  it('plans as many days as CONTRACT_SESSION_WINDOW_DAYS says', () => {
+    const week = planWindow(terms({ sessionWindowDays: 7 }), '2026-10-28', null);
+    expect(week.through).toBe('2026-11-03');
+    expect(week.sessions.map((s) => s.date)).toEqual(['2026-11-01', '2026-11-02']);
+  });
+
   it('plans nothing while the start is beyond the window', () => {
     expect(planWindow(terms({ startsOn: '2026-12-31' }), '2026-10-28', null)).toEqual({
       cycles: [],

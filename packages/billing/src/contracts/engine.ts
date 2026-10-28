@@ -170,7 +170,7 @@ const loadContext = (billing: ContractBilling) =>
     const accepted = versions.find((version) => version.id === billing.acceptedVersionId);
     if (!accepted) return null;
     const end = effectiveEnd(contract, accepted);
-    const { holdLeadHours } = yield* contractBillingPolicy;
+    const { holdLeadHours, sessionWindowDays } = yield* contractBillingPolicy;
     const terms: ScheduleTerms = {
       services: accepted.services.map((service) => ({
         serviceId: service.serviceId,
@@ -184,7 +184,8 @@ const loadContext = (billing: ContractBilling) =>
       endsAtMinutes: end?.endsAtMinutes ?? null,
       // Only cycles planned from now on use it: a stored hold_at is never
       // recomputed (insertCycles keeps the row on file).
-      holdLeadHours
+      holdLeadHours,
+      sessionWindowDays
     };
     return { contract, accepted, terms } satisfies BillingContext;
   });

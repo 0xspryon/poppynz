@@ -284,7 +284,46 @@ export const contractBillingConfig = Config.all({
       message: 'CONTRACT_MIN_LEAD_MINUTES must be a whole number of minutes between 60 and 10080',
       validation: (value) => value >= 60 && value <= 10_080
     })
+  ),
+  // Dated sessions exist this many days ahead (the rolling materialisation
+  // window, contract billing §1). Session actions (cancel, day off, reports)
+  // act only on sessions that exist, and the UI explains the window with this
+  // number. Was the SESSION_WINDOW_DAYS constant.
+  sessionWindowDays: Config.integer('CONTRACT_SESSION_WINDOW_DAYS').pipe(
+    Config.withDefault(14),
+    Config.validate({
+      message: 'CONTRACT_SESSION_WINDOW_DAYS must be a whole number of days between 1 and 60',
+      validation: (value) => value >= 1 && value <= 60
+    })
   )
+});
+
+const wholeHours = (name: string, fallback: number, min: number, max: number) =>
+  Config.integer(name).pipe(
+    Config.withDefault(fallback),
+    Config.validate({
+      message: `${name} must be a whole number of hours between ${min} and ${max}`,
+      validation: (value) => value >= min && value <= max
+    })
+  );
+
+// Session resolution (Tier 3, spec 2026-10-28 §3a, §6). Same posture as
+// contract billing: a malformed value is a ConfigError, never a silent
+// default — classifying a cancellation by the wrong cutoff is worse than not
+// accepting it until the setting is fixed.
+export const sessionResolutionConfig = Config.all({
+  // A family cancellation recorded at least this long before the session
+  // starts (same wall-clock time, contract zone) is early, i.e. free.
+  // Unanswered day-off proposals lapse at that same cutoff.
+  cancellationNoticeHours: wholeHours('CONTRACT_CANCELLATION_NOTICE_HOURS', 24, 1, 168),
+  // How long the other side has to accept or contest a one-sided report;
+  // silence past it counts as acceptance.
+  reportResponseHours: wholeHours('CONTRACT_REPORT_RESPONSE_HOURS', 48, 1, 336),
+  // How long after a session ends a report or dispute may still be filed.
+  reportWindowHours: wholeHours('CONTRACT_REPORT_WINDOW_HOURS', 48, 1, 336),
+  // Step 2 (money effects): the share of a late-cancelled session's care
+  // value paid to the helper as compensation. Defined now, unused until then.
+  lateCancellationHelperBps: basisPoints('CONTRACT_LATE_CANCELLATION_HELPER_BPS', 2500)
 });
 
 // Helper payout accounts (Stripe Connect, piece 2b).

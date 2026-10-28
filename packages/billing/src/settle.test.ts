@@ -76,6 +76,7 @@ const fetched = (overrides: Partial<ProviderPayment> = {}): ProviderPayment => (
   capturableCents: 0,
   receivedCents: 7500,
   captureBefore: null,
+  chargeReference: null,
   ...overrides
 });
 

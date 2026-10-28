@@ -10,6 +10,7 @@ import {
   emptyTcDocumentRepo,
   makeContractAgreementRepoTest,
   makeInMemoryContractBillingRepo,
+  makeInMemorySessionMoneyRepo,
   makeInMemorySessionResolutionRepo,
   makeSessionRepoTest,
   makeTcDocumentRepoTest,
@@ -22,6 +23,8 @@ import {
   type SessionResolution,
   type User
 } from '@repo/db';
+import { makeIdleContractBillingLayer } from '@repo/billing';
+import { makeMockPayments, Payments } from '@repo/payments';
 import { makeMailerTest, type ContractBillingNoticeMail } from '@repo/mail';
 import { makeNotificationHubTest, type NotificationInput } from '@repo/notify';
 import { Cause, Context, Effect, Exit, Layer, Option } from 'effect';
@@ -158,6 +161,7 @@ export const makeSessionWorld = (
         ])
       )
     : resolutions.service;
+  const money = makeInMemorySessionMoneyRepo({ billing: billing.state });
   const mails: Array<ContractBillingNoticeMail> = [];
   const alerts: Array<string> = [];
   const published: Array<Published> = [];
@@ -188,6 +192,11 @@ export const makeSessionWorld = (
     options.publishedTermsVersion === undefined ? 6 : options.publishedTermsVersion;
 
   const layer = Layer.mergeAll(
+    // Every contract-billing dependency the money step reaches, inert;
+    // the world's own layers below override them.
+    makeIdleContractBillingLayer(),
+    Layer.succeed(Payments, makeMockPayments()),
+    money.layer,
     makeAuthServiceTest({
       getSession: () => Effect.succeed({ user: { id: viewer.id }, session: { id: 'session-1' } }),
       userHasPermission: (_headers, permissions) =>
@@ -289,6 +298,7 @@ export const makeSessionWorld = (
   return {
     layer,
     billing,
+    money,
     resolutions,
     mails,
     alerts,

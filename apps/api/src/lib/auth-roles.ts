@@ -29,9 +29,17 @@ export const appAc = createAccessControl({
   // A helper's own payout account (Stripe Connect). Ownership is implicit:
   // every /payouts route acts on the session user only.
   payouts: ['read', 'write'],
+  // Tier 3 step 2: the manual payout queue — reading transfers that could
+  // not be sent, recording a payout made outside Stripe, and approving one
+  // another admin recorded (never your own). Admin-only; every action is
+  // audited.
+  payoutQueue: ['read', 'record', 'approve'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
   referral: ['read', 'write'],
+  // Tier 3 step 2: failed session refunds — reading them, retrying one and
+  // marking one settled another way. Admins and the accountant.
+  refundQueue: ['read', 'write'],
   // `review` is the admin-only decision capability: approving or rejecting a
   // verification, and reading the underlying report. Applicants get read+write
   // for their own record only — ownership is enforced at the route, since a
@@ -108,9 +116,11 @@ export const adminRole = appAc.newRole({
   familySearch: ['read', 'reindex'],
   kycDocument: ['read', 'write', 'review'],
   kycDocumentType: ['read', 'write'],
+  payoutQueue: ['read', 'record', 'approve'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
   referral: ['read', 'write'],
+  refundQueue: ['read', 'write'],
   safetyVerification: ['read', 'write', 'review'],
   serviceCatalogue: ['read', 'write'],
   serviceNeeded: ['read', 'write'],
@@ -123,9 +133,12 @@ export const adminRole = appAc.newRole({
   vouch: ['read', 'write', 'review']
 });
 
-/** Poppynz's accountant: the tax portal only — the configuration (read and
- * correct, every change audited) and the tax-collected reports. */
+/** Poppynz's accountant: the tax portal — the configuration (read and
+ * correct, every change audited) and the tax-collected reports — and the
+ * failed session refunds. */
 export const accountantRole = appAc.newRole({
+  // Failed session refunds land with the accountant too (Tier 3 step 2).
+  refundQueue: ['read', 'write'],
   tax: ['read', 'write'],
   taxReport: ['read']
 });

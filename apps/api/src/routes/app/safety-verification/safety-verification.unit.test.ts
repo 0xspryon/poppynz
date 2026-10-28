@@ -470,6 +470,7 @@ const makeLayer = (
           capturableCents: 0,
           receivedCents: 0,
           captureBefore: null,
+          chargeReference: null,
           paymentMethod: null
         });
       },
@@ -489,6 +490,7 @@ const makeLayer = (
           capturableCents: 0,
           receivedCents: 0,
           captureBefore: null,
+          chargeReference: null,
           paymentMethod: null
         });
       }

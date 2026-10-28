@@ -24,7 +24,8 @@ import { createReplacementHandler, replacementContextHandler } from './replaceme
 import {
   listPendingSessionResponsesHandler,
   recordSessionActionHandler,
-  respondToSessionHandler
+  respondToSessionHandler,
+  previewSessionActionHandler
 } from './sessions.handler';
 
 // Literal routes go before "/:id" so "me/badge-count" and "me/landing" never
@@ -41,6 +42,8 @@ export const contractsRoute = new Hono<HonoEnv>()
   .get('/:id/sessions/pending', (c) => listPendingSessionResponsesHandler(c))
   .post('/:id/sessions/:sessionId/actions', (c) => recordSessionActionHandler(c))
   .post('/:id/sessions/:sessionId/respond', (c) => respondToSessionHandler(c))
+  // Tier 3 step 2: what an action would do to the session's money.
+  .post('/:id/sessions/:sessionId/preview', (c) => previewSessionActionHandler(c))
   .post('/:id/billing/retry', (c) => retryContractPaymentHandler(c))
   .post('/:id/renew', (c) => renewContractHandler(c))
   // Tier 3 step 1b: replace sessions the helper cancelled with another helper.

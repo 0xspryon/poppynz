@@ -1,10 +1,13 @@
 import {
+  alertAdmins,
   applyCardSetup,
+  handlePayoutEvent,
   mismatchReason,
   retryFamilyBilling,
-  settlePaymentByReference
+  settlePaymentByReference,
+  settleSessionRefundByReference
 } from '@repo/billing';
-import { PaymentRepo, StripeWebhookEventRepo } from '@repo/db';
+import { PaymentRepo, SessionMoneyRepo, StripeWebhookEventRepo } from '@repo/db';
 import { Payments, type PaymentWebhookEvent } from '@repo/payments';
 import { Cause, Effect, Exit } from 'effect';
 import { Hono } from 'hono';
@@ -40,8 +43,37 @@ const paymentIntentEvents = new Set([
   'payment_intent.processing'
 ]);
 
+/** Tier 3 step 2: a refund's own events (created, updated, failed). The
+ * refund is re-fetched and its session refund settled (succeeded or failed
+ * — at most once each, so a duplicate delivery changes nothing). */
+const refundEvents = new Set([
+  'refund.created',
+  'refund.updated',
+  'refund.failed',
+  'charge.refund.updated'
+]);
+
+/** Connect: a helper's bank payout moved (on their connected account). */
+const payoutEvents = new Set(['payout.paid', 'payout.failed']);
+
+/** Settles the session refunds still pending on a refunded charge's intent. */
+const settlePendingSessionRefunds = (paymentId: string) =>
+  Effect.gen(function* () {
+    const refunds = yield* (yield* SessionMoneyRepo).listRefunds({
+      paymentIds: [paymentId],
+      statuses: ['pending']
+    });
+    for (const refund of refunds) {
+      if (refund.providerReference) {
+        yield* settleSessionRefundByReference(refund.providerReference, new Date());
+      }
+    }
+    return refunds.length;
+  });
+
 /** A charge was refunded. Only a FULL refund moves our row (the worker's
- * refund path has usually got there first); partial refunds are piece 4. */
+ * refund path has usually got there first); partial session refunds are
+ * settled from their own refund (Tier 3 step 2). */
 const recordRefund = (event: PaymentWebhookEvent) =>
   Effect.gen(function* () {
     if (event.paymentReference === null) return 'no payment intent on the charge';
@@ -55,7 +87,10 @@ const recordRefund = (event: PaymentWebhookEvent) =>
     const fetched = yield* payments.getPayment(event.paymentReference);
     const mismatch = mismatchReason(row, fetched);
     if (mismatch !== null) return `ignored: ${mismatch}`;
-    if (fetched.refundedCents < row.totalCents) return 'partial refund — left for dispute handling';
+    const settled = yield* settlePendingSessionRefunds(row.id);
+    if (fetched.refundedCents < row.totalCents) {
+      return `partial refund — ${settled} session refund(s) settled`;
+    }
     const refunded = yield* paymentRepo.advance(row.id, {
       from: ['captured', 'authorised'],
       set: { status: 'refunded', refundedAt: new Date() }
@@ -86,8 +121,14 @@ export const processStripeEvent = (event: PaymentWebhookEvent) =>
     // not the platform's: only `account.updated` is handled for them. The
     // rest are recorded and acknowledged, never dispatched — `stripe listen
     // --forward-connect-to` forwards every Connect event.
+    if (event.account !== null && payoutEvents.has(event.type)) {
+      return `payout: ${yield* handlePayoutEvent(event.account, event.objectId)}`;
+    }
     if (event.account !== null && event.type !== 'account.updated') {
       return 'ignored: connected-account event';
+    }
+    if (refundEvents.has(event.type)) {
+      return `session refund: ${yield* settleSessionRefundByReference(event.objectId, new Date())}`;
     }
     if (paymentIntentEvents.has(event.type)) {
       const result = yield* settlePaymentByReference(event.objectId);
@@ -108,6 +149,14 @@ export const processStripeEvent = (event: PaymentWebhookEvent) =>
       }
       case 'charge.refunded':
         return yield* recordRefund(event);
+      case 'transfer.reversed': {
+        // Poppynz never reverses a helper transfer (recoveries come from
+        // future transfers): one reversed at Stripe needs a person.
+        yield* alertAdmins(`A helper transfer was reversed at Stripe (${event.objectId})`, [
+          'Poppynz never reverses transfers; check who reversed it in the Stripe dashboard.'
+        ]);
+        return 'transfer reversed: admins alerted';
+      }
       case 'charge.dispute.created':
         return yield* flagDispute(event);
       case 'account.updated': {

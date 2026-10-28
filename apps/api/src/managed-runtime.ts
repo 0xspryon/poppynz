@@ -6,6 +6,7 @@ import {
   ContractAgreementRepoDefault,
   ContractReplacementRepoDefault,
   SessionResolutionRepoDefault,
+  SessionMoneyRepoDefault,
   ContractBillingRepoDefault,
   ContractRepoDefault,
   ConversationRepoDefault,
@@ -90,6 +91,8 @@ const BaseLive = Layer.mergeAll(
   ContractAgreementRepoDefault,
   ContractReplacementRepoDefault,
   SessionResolutionRepoDefault,
+  // Tier 3 step 2: session refunds, transfers, the manual payout queue.
+  SessionMoneyRepoDefault,
   NotificationHubLive,
   GooglePlacesLive,
   MailerLive,

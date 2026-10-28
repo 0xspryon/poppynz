@@ -47,6 +47,7 @@ const intent = (status: ProviderPayment['status']): ProviderPayment => ({
   capturableCents: 0,
   receivedCents: 0,
   captureBefore: null,
+  chargeReference: null,
   paymentMethod: null
 });
 

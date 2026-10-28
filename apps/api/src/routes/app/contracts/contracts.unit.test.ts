@@ -3876,7 +3876,8 @@ describe('GET /contracts/:id/cycles/:cycleId (UAT 11a)', () => {
       commissionBps: 1500,
       commissionCents: 9000,
       commissionTaxLines: [{ label: 'HST (ON) 13%', taxCents: 1170 }],
-      shareCents: 49830
+      shareCents: 49830,
+      compensationCents: 0
     });
     expect(cycle.transferAt).toBe(quotedCycle().transferAt.toISOString());
     expect(cycle.canRetryPayment).toBe(false);

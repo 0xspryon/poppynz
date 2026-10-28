@@ -9,6 +9,13 @@ import {
   type PaymentOperation,
   type PaymentRefund,
   type ProviderCardSetup,
+  type CreateRefundInput,
+  type CreateTransferInput,
+  type ProviderPayout,
+  type ProviderRefund,
+  type ProviderRefundStatus,
+  type ProviderTransfer,
+  type TransferResult,
   type ChargeSavedCardInput,
   type ProviderPayment,
   type StartPaymentInput
@@ -20,6 +27,14 @@ export const IDEMPOTENCY_WINDOW_MS = 24 * 60 * 60 * 1000;
 /** The mock, plus every intent it holds (for assertions). */
 export type MockPayments = Context.Tag.Service<Payments> & {
   intents: () => ReadonlyArray<ProviderPayment>;
+  /** Every partial refund made (for assertions). */
+  refunds: () => ReadonlyArray<ProviderRefund>;
+  /** Every transfer made (for assertions). */
+  transfers: () => ReadonlyArray<ProviderTransfer>;
+  /** Sets a refund's state, as the provider would later (a failure). */
+  settleRefund: (reference: string, status: ProviderRefundStatus, reason?: string) => void;
+  /** Puts a connected account's payout on file (payout events). */
+  setPayout: (account: string, payout: ProviderPayout) => void;
 };
 
 const sameCharge = (a: ChargeSavedCardInput, b: ChargeSavedCardInput) =>
@@ -60,6 +75,14 @@ export const makeMockPayments = (
     /** Search is eventually consistent: an intent younger than this is not
      * found by `findPaymentByRowId` yet. */
     searchLagMs?: number;
+    /** The state a new partial refund is created in (default succeeded). */
+    refundOutcome?: (input: CreateRefundInput) => ProviderRefundStatus;
+    /** A refund the provider refuses (the reason), or null to accept. */
+    refundRefusal?: (input: CreateRefundInput) => string | null;
+    /** A transfer the provider refuses (the reason), or null to accept. */
+    transferRefusal?: (input: CreateTransferInput) => string | null;
+    /** Refunds and transfers fail as if the provider were down. */
+    moneyDown?: () => boolean;
     now?: () => Date;
   } = {}
 ): MockPayments => {
@@ -70,6 +93,15 @@ export const makeMockPayments = (
   const byReference = new Map<string, ProviderPayment>();
   const refunds = new Map<string, PaymentRefund>();
   const setups = new Map<string, ProviderCardSetup>();
+  const partialRefunds = new Map<string, ProviderRefund>();
+  const refundKeys = new Map<string, string>();
+  const transfers = new Map<string, ProviderTransfer>();
+  const transferKeys = new Map<string, string>();
+  const payouts = new Map<string, ProviderPayout>();
+  const down = (operation: PaymentOperation) =>
+    options.moneyDown?.() || options.providerDown
+      ? Effect.fail(new PaymentProviderError({ operation, cause: 'mock provider down' }))
+      : null;
 
   /** The provider's answer — or, when responses are being lost, nothing. */
   const answer = (payment: ProviderPayment) =>
@@ -114,7 +146,8 @@ export const makeMockPayments = (
             paymentMethod: mockCard(input.savedCard ?? `mock_pm_${input.idempotencyKey}`),
             capturableCents: 0,
             receivedCents: input.quote.totalCents,
-            captureBefore: null
+            captureBefore: null,
+            chargeReference: `mock_ch_${input.idempotencyKey}`
           });
         }
         return {
@@ -239,7 +272,8 @@ export const makeMockPayments = (
           capturableCents: !declined && input.capture === 'manual' ? input.amountCents : 0,
           receivedCents: !declined && input.capture === 'automatic' ? input.amountCents : 0,
           captureBefore:
-            input.capture === 'manual' ? new Date(at.getTime() + 114 * 60 * 60 * 1000) : null
+            input.capture === 'manual' ? new Date(at.getTime() + 114 * 60 * 60 * 1000) : null,
+          chargeReference: declined ? null : `mock_ch_${reference}`
         };
         charges.set(input.idempotencyKey, { input, reference, at });
         createdAt.set(reference, at);
@@ -268,6 +302,7 @@ export const makeMockPayments = (
         const captured: ProviderPayment = {
           ...payment,
           status: 'succeeded',
+          chargeReference: payment.chargeReference ?? `mock_ch_${reference}`,
           capturableCents: 0,
           receivedCents: Math.min(amountCents, payment.capturableCents)
         };
@@ -294,6 +329,115 @@ export const makeMockPayments = (
               ) ?? null
           ),
 
+    // Partial refunds (Tier 3 step 2): several per intent, never above what
+    // it received; same key → the same refund.
+    createRefund: (input) =>
+      Effect.suspend(() => {
+        const failure = down('createRefund');
+        if (failure) return failure;
+        if (options.failRefund) {
+          return Effect.fail(
+            new PaymentProviderError({ operation: 'createRefund', cause: 'mock refund failure' })
+          );
+        }
+        const known = refundKeys.get(input.idempotencyKey);
+        if (known) return Effect.succeed(partialRefunds.get(known)!);
+        const refusal = options.refundRefusal?.(input) ?? null;
+        if (refusal) {
+          return Effect.fail(
+            new PaymentProviderError({ operation: 'createRefund', cause: refusal, refusal })
+          );
+        }
+        const payment = byReference.get(input.paymentReference);
+        if (!payment) return unknown('createRefund', input.paymentReference);
+        const refunded = [...partialRefunds.values()]
+          .filter(
+            (r) =>
+              r.paymentReference === input.paymentReference &&
+              r.status !== 'failed' &&
+              r.status !== 'canceled'
+          )
+          .reduce((t, r) => t + r.amountCents, 0);
+        if (refunded + input.amountCents > payment.receivedCents) {
+          const reason = `mock: refund of ${input.amountCents} exceeds what is left on ${input.paymentReference}`;
+          return Effect.fail(
+            new PaymentProviderError({ operation: 'createRefund', cause: reason, refusal: reason })
+          );
+        }
+        const status = options.refundOutcome?.(input) ?? 'succeeded';
+        const refund: ProviderRefund = {
+          reference: `mock_re_${partialRefunds.size + 1}`,
+          status,
+          amountCents: input.amountCents,
+          paymentReference: input.paymentReference,
+          metadata: { ...input.metadata },
+          failureReason: status === 'failed' ? 'mock: refund failed' : null,
+          createdAt: now()
+        };
+        partialRefunds.set(refund.reference, refund);
+        refundKeys.set(input.idempotencyKey, refund.reference);
+        byReference.set(input.paymentReference, {
+          ...payment,
+          refundedCents: payment.refundedCents + (status === 'failed' ? 0 : input.amountCents)
+        });
+        return Effect.succeed(refund);
+      }),
+
+    getRefund: (reference) => {
+      const refund = partialRefunds.get(reference);
+      return refund ? Effect.succeed(refund) : unknown('getRefund', reference);
+    },
+
+    createTransfer: (input) =>
+      Effect.suspend((): Effect.Effect<TransferResult, PaymentProviderError> => {
+        const failure = down('createTransfer');
+        if (failure) return failure;
+        const known = transferKeys.get(input.idempotencyKey);
+        if (known)
+          return Effect.succeed({ status: 'created' as const, transfer: transfers.get(known)! });
+        const refused = options.transferRefusal?.(input) ?? null;
+        if (refused) return Effect.succeed({ status: 'refused' as const, reason: refused });
+        if (input.sourceTransaction !== null) {
+          // Like Stripe: transfers from a charge never exceed what it took
+          // minus its refunds and the earlier transfers from it.
+          const source = [...byReference.values()].find(
+            (payment) => payment.chargeReference === input.sourceTransaction
+          );
+          const earlier = [...transfers.values()]
+            .filter((transfer) => transfer.sourceTransaction === input.sourceTransaction)
+            .reduce((total, transfer) => total + transfer.amountCents, 0);
+          const left = source ? source.receivedCents - source.refundedCents - earlier : 0;
+          if (input.amountCents > left) {
+            return Effect.succeed({
+              status: 'refused' as const,
+              reason: `Transfers using this transaction as a source must not exceed the source amount (${left} left)`
+            });
+          }
+        }
+        const transfer: ProviderTransfer = {
+          reference: `mock_tr_${transfers.size + 1}`,
+          amountCents: input.amountCents,
+          destination: input.destination,
+          sourceTransaction: input.sourceTransaction,
+          metadata: { ...input.metadata },
+          reversedCents: 0,
+          createdAt: now()
+        };
+        transfers.set(transfer.reference, transfer);
+        transferKeys.set(input.idempotencyKey, transfer.reference);
+        return Effect.succeed({ status: 'created' as const, transfer });
+      }),
+
+    getTransfer: (reference) => {
+      const transfer = transfers.get(reference);
+      return transfer ? Effect.succeed(transfer) : unknown('getTransfer', reference);
+    },
+
+    getPayout: ({ account, reference }) => {
+      const payout = payouts.get(`${account}/${reference}`);
+      return payout ? Effect.succeed(payout) : unknown('getPayout', reference);
+    },
+
     // Payout accounts: enabled straight away, so the whole helper flow runs
     // without Stripe. The "hosted onboarding" is the return page itself.
     createPayoutAccount: ({ userId }) => Effect.succeed({ reference: `mock_acct_${userId}` }),
@@ -316,9 +460,26 @@ export const makeMockPayments = (
     createDashboardLink: () => Effect.succeed({ url: 'about:blank' }),
 
     verifyWebhook: () =>
-      Effect.fail(new PaymentWebhookSignatureError({ reason: 'the mock provider has no webhooks' })),
+      Effect.fail(
+        new PaymentWebhookSignatureError({ reason: 'the mock provider has no webhooks' })
+      ),
 
-    intents: () => [...byReference.values()]
+    intents: () => [...byReference.values()],
+    refunds: () => [...partialRefunds.values()],
+    transfers: () => [...transfers.values()],
+    settleRefund: (reference, status, reason) => {
+      const refund = partialRefunds.get(reference);
+      if (refund) {
+        partialRefunds.set(reference, {
+          ...refund,
+          status,
+          failureReason: status === 'failed' ? (reason ?? 'mock: refund failed') : null
+        });
+      }
+    },
+    setPayout: (account, payout) => {
+      payouts.set(`${account}/${payout.reference}`, payout);
+    }
   };
 };
 

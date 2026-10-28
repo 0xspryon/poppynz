@@ -11,6 +11,8 @@
 		type BillingPayment
 	} from '$lib/api/billing';
 	import PaymentModal from '$lib/components/payments/PaymentModal.svelte';
+	// Tier 3 step 2: a charge's session refunds.
+	import PaymentRefunds from '$lib/components/billing/PaymentRefunds.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { formatDate } from '$lib/date';
 	import { intlLocale } from '$lib/locale';
@@ -42,7 +44,8 @@
 
 	onMount(() => {
 		void load();
-		// A contract hold, charge or decline moved: show the fresh history.
+		// A contract hold, charge or decline moved, or a session refund (issued,
+		// succeeded, failed): show the fresh history.
 		return notifications.on('contract.billing', () => void load());
 	});
 
@@ -227,6 +230,15 @@
 									{/if}
 								</td>
 							</tr>
+							<!-- Tier 3 step 2: the charge's session refunds, under it. -->
+							{#if row.refunds && row.refunds.length > 0}
+								<tr>
+									<td></td>
+									<td colspan="4" class="pt-0">
+										<PaymentRefunds refunds={row.refunds} />
+									</td>
+								</tr>
+							{/if}
 						{/each}
 					</tbody>
 				</table>

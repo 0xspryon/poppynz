@@ -119,11 +119,78 @@ export type ProviderPayment = {
   readonly receivedCents: number;
   /** The card network's deadline for capturing a hold, when known. */
   readonly captureBefore: Date | null;
+  /** The charge that took the money (`ch_…`), once there is one: what a
+   * helper transfer names as its `source_transaction`. */
+  readonly chargeReference: string | null;
 };
 
 export type PaymentRefund = {
   readonly refundReference: string;
   readonly refundedAt: Date;
+};
+
+/** A partial refund's state at the provider (Tier 3 step 2). */
+export type ProviderRefundStatus = 'pending' | 'succeeded' | 'failed' | 'canceled';
+
+export type ProviderRefund = {
+  readonly reference: string;
+  readonly status: ProviderRefundStatus;
+  readonly amountCents: number;
+  /** The intent refunded. */
+  readonly paymentReference: string | null;
+  readonly metadata: Readonly<Record<string, string>>;
+  readonly failureReason: string | null;
+  readonly createdAt: Date;
+};
+
+export type CreateRefundInput = {
+  /** The intent (one charge per cycle) to refund part of. */
+  readonly paymentReference: string;
+  readonly amountCents: number;
+  /** Same key → the same refund, never a second one. */
+  readonly idempotencyKey: string;
+  /** `refund_id`, `session_id`, `cycle_id` (spec §7). */
+  readonly metadata: Record<string, string>;
+};
+
+/** A transfer to a helper's connected account (Tier 3 step 2). */
+export type ProviderTransfer = {
+  readonly reference: string;
+  readonly amountCents: number;
+  readonly destination: string;
+  readonly sourceTransaction: string | null;
+  readonly metadata: Readonly<Record<string, string>>;
+  readonly reversedCents: number;
+  readonly createdAt: Date;
+};
+
+export type CreateTransferInput = {
+  readonly amountCents: number;
+  readonly currency: 'CAD';
+  /** The helper's connected account (`acct_…`). */
+  readonly destination: string;
+  /** The cycle's charge (`ch_…`): the provider waits for its funds. */
+  readonly sourceTransaction: string | null;
+  readonly idempotencyKey: string;
+  readonly metadata: Record<string, string>;
+  readonly description?: string;
+};
+
+/** A refusal is DATA (the account can't receive it, the balance is short):
+ * a business outcome for an admin. Only trouble reaching the provider
+ * fails the effect. */
+export type TransferResult =
+  | { readonly status: 'created'; readonly transfer: ProviderTransfer }
+  | { readonly status: 'refused'; readonly reason: string };
+
+/** A connected account's bank payout, re-fetched. */
+export type ProviderPayout = {
+  readonly reference: string;
+  readonly status: 'pending' | 'in_transit' | 'paid' | 'failed' | 'canceled';
+  readonly amountCents: number;
+  readonly arrivalDate: Date | null;
+  readonly createdAt: Date;
+  readonly failureReason: string | null;
 };
 
 export type CardSetup = {
@@ -194,7 +261,12 @@ export type PaymentOperation =
   | 'createDashboardLink'
   | 'chargeSavedCard'
   | 'capturePayment'
-  | 'findPaymentByRowId';
+  | 'findPaymentByRowId'
+  | 'createRefund'
+  | 'getRefund'
+  | 'createTransfer'
+  | 'getTransfer'
+  | 'getPayout';
 
 export class PaymentDeclinedError extends Data.TaggedError('PaymentDeclinedError')<{
   reason: string;
@@ -208,6 +280,11 @@ export class PaymentProviderError extends Data.TaggedError('PaymentProviderError
    * accepted again for this request); `in_flight` — the first request under
    * the key is still being processed. Neither says whether money moved. */
   idempotency?: 'mismatch' | 'in_flight';
+  /** Set when the provider answered and REFUSED the request for a business
+   * reason (e.g. a refund on a disputed or already refunded charge): the
+   * same request under the same key will be refused again, so it is not an
+   * outage to retry. Only `createRefund` sets it. */
+  refusal?: string;
 }> {}
 
 export class PaymentWebhookSignatureError extends Data.TaggedError('PaymentWebhookSignatureError')<{
@@ -298,6 +375,21 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
     findPaymentByRowId: (
       paymentId: string
     ) => Effect.Effect<ProviderPayment | null, PaymentProviderError>;
+    /** A partial refund of a captured intent (several may be made, up to
+     * what it captured). A refund the provider accepted but will fail later
+     * comes back `pending`, then `failed` on a re-fetch. */
+    createRefund: (input: CreateRefundInput) => Effect.Effect<ProviderRefund, PaymentProviderError>;
+    getRefund: (reference: string) => Effect.Effect<ProviderRefund, PaymentProviderError>;
+    /** Sends money to a helper's connected account. */
+    createTransfer: (
+      input: CreateTransferInput
+    ) => Effect.Effect<TransferResult, PaymentProviderError>;
+    getTransfer: (reference: string) => Effect.Effect<ProviderTransfer, PaymentProviderError>;
+    /** A connected account's payout (webhooks only say "it changed"). */
+    getPayout: (input: {
+      account: string;
+      reference: string;
+    }) => Effect.Effect<ProviderPayout, PaymentProviderError>;
     /** Creates the helper's connected account. Same user → same account
      * (idempotency key `payout-account:<userId>`). */
     createPayoutAccount: (input: {

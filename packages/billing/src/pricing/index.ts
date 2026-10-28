@@ -3,3 +3,4 @@
 export * from './rounding';
 export * from './tax';
 export * from './amounts';
+export * from './split';

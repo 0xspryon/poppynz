@@ -69,6 +69,7 @@ import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schem
 import { hasReadyPayoutAccount } from '@/api/lib/payouts';
 import { agreementErrorToResponse, agreementSignature, type AgreementAssent } from './agreement';
 import { cycleSessionResolutions, sessionWindowView } from './sessions';
+import { cycleMoneyView, cycleTransfersView } from './session-money';
 import {
   contractAcceptJsonError,
   validateContractAcceptInput,
@@ -1970,6 +1971,18 @@ export const getContractCycleProgram = (
       )
     );
 
+    // Tier 3 step 2: each session's refund / transfer status, and (for the
+    // helper) the cycle's transfers.
+    const money = yield* cycleMoneyView(
+      contractId,
+      sessions.map((session) => session.id),
+      side
+    ).pipe((errors) => mapContractRepoError(errors));
+    const transfers =
+      side === 'provider'
+        ? yield* cycleTransfersView(cycle.id).pipe((errors) => mapContractRepoError(errors))
+        : [];
+
     const quoted = cycle.serviceCents !== null;
     const amounts = !quoted
       ? null
@@ -1983,7 +1996,9 @@ export const getContractCycleProgram = (
             feeTaxLines: supplyLines(cycle.taxLines, 'family_service_fee'),
             totalCents: cycle.familyTotalCents ?? 0,
             // A reduced capture charged less than the quote.
-            chargedCents: cycle.capturedCents
+            chargedCents: cycle.capturedCents,
+            // Late cancellations before the charge: compensation only.
+            compensationCents: cycle.compensationCents
           }
         : {
             side: 'provider' as const,
@@ -1992,7 +2007,8 @@ export const getContractCycleProgram = (
             commissionBps: cycle.providerCommissionBps ?? billing.providerCommissionBps,
             commissionCents: cycle.providerCommissionCents ?? 0,
             commissionTaxLines: supplyLines(cycle.taxLines, 'provider_commission'),
-            shareCents: cycle.providerShareCents ?? 0
+            shareCents: cycle.providerShareCents ?? 0,
+            compensationCents: cycle.compensationCents
           };
 
     return {
@@ -2039,8 +2055,10 @@ export const getContractCycleProgram = (
             cancelOutcome: null,
             cutoffAt: null,
             canFindReplacement: false
-          })
+          }),
+          money: money.get(session.id) ?? null
         })),
+        transfers,
         sessionWindow: resolutions.sessionWindow,
         canRetryPayment: side === 'family' && familyRetryEligible(billing, cycles, now)
       }

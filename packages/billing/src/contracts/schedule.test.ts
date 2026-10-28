@@ -87,6 +87,15 @@ describe('planCycle', () => {
     );
   });
 
+  it('transfers CONTRACT_TRANSFER_DELAY_HOURS (real hours, default 48) after the cycle ends', () => {
+    expect(planCycle(terms({ transferDelayHours: 72 }), 0)!.transferAt.toISOString()).toBe(
+      '2026-11-06T05:00:00.000Z'
+    );
+    expect(planCycle(terms({ transferDelayHours: 0 }), 0)!.transferAt.toISOString()).toBe(
+      '2026-11-03T05:00:00.000Z'
+    );
+  });
+
   it('captures an hour before an early first session', () => {
     const early = planCycle(terms({ startsOn: '2026-11-01' }), 0)!;
     // Sunday 01:00 EDT − 1 h = 00:00 EDT, earlier than 07:00 EST.
@@ -154,9 +163,7 @@ describe('firstSessionStart (UAT round 2: the lead-time rule)', () => {
     expect(firstSessionStart(terms({ endsOn: '2026-10-31' }))).toBeNull();
     // Starts and ends Mon 2 Nov at 15:00: its 15:30 session is cut away.
     expect(
-      firstSessionStart(
-        terms({ startsOn: '2026-11-02', endsOn: '2026-11-02', endsAtMinutes: 900 })
-      )
+      firstSessionStart(terms({ startsOn: '2026-11-02', endsOn: '2026-11-02', endsAtMinutes: 900 }))
     ).toBeNull();
   });
 

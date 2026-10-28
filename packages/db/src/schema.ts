@@ -1451,7 +1451,21 @@ export const billingLedgerKind = appDb.enum('billing_ledger_kind', [
   'capture',
   'carry_forward',
   'carry_absorbed',
-  'hold_released'
+  'hold_released',
+  // Tier 3 step 2 (spec 2026-10-28 §4.4): each carries its session_id; its
+  // key derives from the refund, recovery or transfer, so a rerun is a no-op.
+  'session_refund_care',
+  'session_refund_fee',
+  'session_refund_fee_tax',
+  'cancellation_compensation',
+  'commission_reversal',
+  'commission_tax_reversal',
+  'transfer',
+  'transfer_held',
+  'transfer_reversal',
+  'helper_recovery',
+  'manual_payout',
+  'platform_absorbed'
 ]);
 export const billingLedgerParty = appDb.enum('billing_ledger_party', [
   'family',
@@ -1461,6 +1475,14 @@ export const billingLedgerParty = appDb.enum('billing_ledger_party', [
 
 /** A frozen tax line on a cycle (same shape as on payments). */
 export type CycleTaxLine = PaymentTaxLine;
+
+/** A session as the cycle's frozen quote charged it (Tier 3 step 2). */
+export type ChargedSession = {
+  sessionId: string;
+  valueCents: number;
+  /** > 0: cancelled late before the capture, charged this compensation only. */
+  compensationCents: number;
+};
 
 /** One accepted contract's billing schedule and its frozen terms. */
 export const contractBilling = appDb.table(
@@ -1544,6 +1566,15 @@ export const contractCycle = appDb.table(
       .$type<Array<CycleTaxLine>>()
       .notNull()
       .default(sql`'[]'::jsonb`),
+    // Tier 3 step 2: compensation charged for sessions cancelled late before
+    // the capture (no fee, no commission; all the helper's), and the
+    // sessions the frozen quote charged — the per-session split is made from
+    // exactly these at capture (see migrations/0043_session_money).
+    compensationCents: integer('compensation_cents').notNull().default(0),
+    chargedSessions: jsonb('charged_sessions')
+      .$type<Array<ChargedSession>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
     carriedOutCents: integer('carried_out_cents').notNull().default(0),
     heldCents: integer('held_cents'),
     capturedCents: integer('captured_cents'),
@@ -1597,6 +1628,9 @@ export const contractSession = appDb.table(
     rateCents: integer('rate_cents').notNull(),
     valueCents: integer('value_cents').notNull(),
     status: contractSessionStatus('status').notNull().default('scheduled'),
+    // Tier 3 step 2: a session cancelled late BEFORE its cycle's capture is
+    // `cancelled` and still charged this compensation (0 otherwise).
+    compensationCents: integer('compensation_cents').notNull().default(0),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()
@@ -1997,6 +2031,301 @@ export const sessionResolutionEvent = appDb.table(
   ]
 );
 
+// ---------------------------------------------------------------------------
+// Session money (Tier 3 step 2, spec 2026-10-28 §4.2–§4.4, §7, §8; see
+// migrations/0043_session_money.sql). Every foreign key is restrict.
+
+/** The frozen per-session split of a captured cycle (spec §5): written in the
+ * capture's transaction, never changed. */
+export const contractSessionCharge = appDb.table(
+  'contract_session_charges',
+  {
+    sessionId: uuid('session_id')
+      .primaryKey()
+      .references(() => contractSession.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id')
+      .notNull()
+      .references(() => contractCycle.id, { onDelete: 'restrict' }),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payment.id, { onDelete: 'restrict' }),
+    // `compensation`: cancelled late before the capture, charged the
+    // compensation only.
+    basis: text('basis').$type<'session' | 'compensation'>().notNull(),
+    careCents: integer('care_cents').notNull(),
+    careTaxLines: jsonb('care_tax_lines').$type<Array<PaymentTaxLine>>().notNull(),
+    careTaxCents: integer('care_tax_cents').notNull(),
+    familyFeeCents: integer('family_fee_cents').notNull(),
+    familyFeeTaxLines: jsonb('family_fee_tax_lines').$type<Array<PaymentTaxLine>>().notNull(),
+    familyFeeTaxCents: integer('family_fee_tax_cents').notNull(),
+    familyTotalCents: integer('family_total_cents').notNull(),
+    commissionCents: integer('commission_cents').notNull(),
+    commissionTaxLines: jsonb('commission_tax_lines').$type<Array<PaymentTaxLine>>().notNull(),
+    commissionTaxCents: integer('commission_tax_cents').notNull(),
+    helperShareCents: integer('helper_share_cents').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    index('contract_session_charges_cycle_id_idx').on(table.cycleId),
+    check(
+      'contract_session_charges_basis_check',
+      sql`${table.basis} in ('session', 'compensation')`
+    ),
+    check(
+      'contract_session_charges_family_total_check',
+      sql`${table.familyTotalCents} = ${table.careCents} + ${table.careTaxCents} + ${table.familyFeeCents} + ${table.familyFeeTaxCents}`
+    ),
+    check(
+      'contract_session_charges_helper_share_check',
+      sql`${table.helperShareCents} = ${table.careCents} + ${table.careTaxCents} - ${table.commissionCents} - ${table.commissionTaxCents}`
+    ),
+    check(
+      'contract_session_charges_amounts_check',
+      sql`${table.careCents} >= 0 and ${table.familyFeeCents} >= 0 and ${table.commissionCents} >= 0`
+    )
+  ]
+);
+
+export const sessionRefundStatus = appDb.enum('session_refund_status', [
+  'pending',
+  'succeeded',
+  'failed',
+  'cancelled'
+]);
+
+/** One refund, always for one session (spec §4.3). Its id is the provider's
+ * idempotency key. The database refuses refunds above the session's frozen
+ * family total or the payment's captured amount (trigger, 0043). */
+export const sessionRefund = appDb.table(
+  'session_refunds',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    // `<resolutionId>:<outcome>`: the same outcome is refunded once however
+    // often it is applied (a double click, a retry, a duplicate webhook).
+    refundKey: text('refund_key').notNull(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => contractSession.id, { onDelete: 'restrict' }),
+    resolutionId: uuid('resolution_id')
+      .notNull()
+      .references(() => sessionResolution.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id')
+      .notNull()
+      .references(() => contractCycle.id, { onDelete: 'restrict' }),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payment.id, { onDelete: 'restrict' }),
+    careCents: integer('care_cents').notNull(),
+    careTaxLines: jsonb('care_tax_lines').$type<Array<PaymentTaxLine>>().notNull(),
+    careTaxCents: integer('care_tax_cents').notNull(),
+    feeCents: integer('fee_cents').notNull(),
+    feeTaxLines: jsonb('fee_tax_lines').$type<Array<PaymentTaxLine>>().notNull(),
+    feeTaxCents: integer('fee_tax_cents').notNull(),
+    totalCents: integer('total_cents').notNull(),
+    // The commission (and its tax) not kept on the cancelled hours: reverses
+    // collected commission tax in the refund's period too.
+    commissionCents: integer('commission_cents').notNull().default(0),
+    commissionTaxLines: jsonb('commission_tax_lines')
+      .$type<Array<PaymentTaxLine>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    status: sessionRefundStatus('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    providerReference: text('provider_reference'),
+    failureReason: text('failure_reason'),
+    noticesSent: jsonb('notices_sent')
+      .$type<Array<string>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    refundedAt: timestamp('refunded_at'),
+    resolvedByUserId: text('resolved_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    resolvedNote: text('resolved_note'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    uniqueIndex('session_refunds_refund_key_uidx').on(table.refundKey),
+    index('session_refunds_session_id_idx').on(table.sessionId),
+    index('session_refunds_payment_id_idx').on(table.paymentId),
+    index('session_refunds_status_idx').on(table.status),
+    check(
+      'session_refunds_total_check',
+      sql`${table.totalCents} > 0 and ${table.totalCents} = ${table.careCents} + ${table.careTaxCents} + ${table.feeCents} + ${table.feeTaxCents}`
+    ),
+    check(
+      'session_refunds_amounts_check',
+      sql`${table.careCents} >= 0 and ${table.feeCents} >= 0 and ${table.commissionCents} >= 0`
+    )
+  ]
+);
+
+export const helperRecoveryStatus = appDb.enum('helper_recovery_status', [
+  'outstanding',
+  'repaid',
+  'waived'
+]);
+
+/** Pay already transferred for a session that later turned out not to be
+ * owed: deducted from the helper's next transfers until repaid — past
+ * transfers are never reversed (spec §12 decision 8). */
+export const helperRecovery = appDb.table(
+  'helper_recoveries',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    recoveryKey: text('recovery_key').notNull(),
+    helperUserId: text('helper_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => contractSession.id, { onDelete: 'restrict' }),
+    resolutionId: uuid('resolution_id').references(() => sessionResolution.id, {
+      onDelete: 'restrict'
+    }),
+    amountCents: integer('amount_cents').notNull(),
+    recoveredCents: integer('recovered_cents').notNull().default(0),
+    status: helperRecoveryStatus('status').notNull().default('outstanding'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    uniqueIndex('helper_recoveries_recovery_key_uidx').on(table.recoveryKey),
+    index('helper_recoveries_helper_status_idx').on(table.helperUserId, table.status),
+    check(
+      'helper_recoveries_amounts_check',
+      sql`${table.amountCents} > 0 and ${table.recoveredCents} >= 0 and ${table.recoveredCents} <= ${table.amountCents}`
+    )
+  ]
+);
+
+export const helperTransferStatus = appDb.enum('helper_transfer_status', [
+  // Due (at `due_at`), not fixed yet.
+  'due',
+  // Not sent: the helper's payout account is restricted or not ready.
+  'paused',
+  // Amount fixed (items written); the provider call is being made.
+  'sending',
+  // In the helper's provider balance, on its way to the bank.
+  'sent',
+  // The helper's bank payout has been paid.
+  'paid',
+  // The provider refused the transfer: admin attention.
+  'failed',
+  // Nothing was due (everything held, cancelled or recovered).
+  'settled',
+  // Moved to the admins' manual payout queue.
+  'manual_review',
+  // Paid outside the provider and approved: never sent through it.
+  'manual_paid'
+]);
+
+/** One transfer of a cycle's session payables to the helper (spec §8): the
+ * cycle's first (sequence 1) at its transfer time, then follow-ups for
+ * sessions decided later. */
+export const helperTransfer = appDb.table(
+  'helper_transfers',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    cycleId: uuid('cycle_id')
+      .notNull()
+      .references(() => contractCycle.id, { onDelete: 'restrict' }),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    helperUserId: text('helper_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    sequence: integer('sequence').notNull(),
+    status: helperTransferStatus('status').notNull(),
+    dueAt: timestamp('due_at').notNull(),
+    // Fixed with the items: the session payables, the recoveries deducted
+    // from them, and what is sent.
+    grossCents: integer('gross_cents'),
+    recoveredCents: integer('recovered_cents'),
+    amountCents: integer('amount_cents'),
+    attempts: integer('attempts').notNull().default(0),
+    providerReference: text('provider_reference'),
+    sourceReference: text('source_reference'),
+    failureReason: text('failure_reason'),
+    noticesSent: jsonb('notices_sent')
+      .$type<Array<string>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    fixedAt: timestamp('fixed_at'),
+    sentAt: timestamp('sent_at'),
+    paidAt: timestamp('paid_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    uniqueIndex('helper_transfers_cycle_sequence_uidx').on(table.cycleId, table.sequence),
+    index('helper_transfers_helper_idx').on(table.helperUserId),
+    index('helper_transfers_status_idx').on(table.status),
+    uniqueIndex('helper_transfers_provider_reference_uidx')
+      .on(table.providerReference)
+      .where(sql`${table.providerReference} is not null`),
+    check(
+      'helper_transfers_amount_check',
+      sql`${table.amountCents} is null or (${table.amountCents} >= 0 and ${table.amountCents} = ${table.grossCents} - ${table.recoveredCents})`
+    )
+  ]
+);
+
+/** What a transfer paid: a session's payable, a held session (0), or a
+ * recovery deducted (negative). */
+export const helperTransferItem = appDb.table(
+  'helper_transfer_items',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    transferId: uuid('transfer_id')
+      .notNull()
+      .references(() => helperTransfer.id, { onDelete: 'restrict' }),
+    kind: text('kind').$type<'session' | 'held' | 'recovery'>().notNull(),
+    sessionId: uuid('session_id').references(() => contractSession.id, { onDelete: 'restrict' }),
+    recoveryId: uuid('recovery_id').references(() => helperRecovery.id, { onDelete: 'restrict' }),
+    amountCents: integer('amount_cents').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    index('helper_transfer_items_transfer_id_idx').on(table.transferId),
+    index('helper_transfer_items_session_id_idx').on(table.sessionId),
+    check(
+      'helper_transfer_items_kind_check',
+      sql`(${table.kind} = 'session' and ${table.sessionId} is not null and ${table.amountCents} >= 0)
+        or (${table.kind} = 'held' and ${table.sessionId} is not null and ${table.amountCents} = 0)
+        or (${table.kind} = 'recovery' and ${table.recoveryId} is not null and ${table.amountCents} <= 0)`
+    )
+  ]
+);
+
 // Tier 3, step 1b (migration 0042): a replacement contract started from a
 // helper's cancellation, one row per cancelled session it covers. Written
 // with the replacement's draft and never changed; later steps (money, admin
@@ -2027,6 +2356,110 @@ export const contractReplacement = appDb.table(
       sql`${table.contractId} <> ${table.replacesContractId}`
     )
   ]
+);
+
+export const manualPayoutStatus = appDb.enum('manual_payout_status', [
+  'pending_approval',
+  'approved',
+  'rejected'
+]);
+
+/** A payable paid outside the provider (e.g. Interac e-Transfer), recorded
+ * by one admin and approved by another; the transfer is then settled so it
+ * can never also go out through the provider (umbrella §8). */
+export const manualPayout = appDb.table(
+  'manual_payouts',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    transferId: uuid('transfer_id')
+      .notNull()
+      .references(() => helperTransfer.id, { onDelete: 'restrict' }),
+    helperUserId: text('helper_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    amountCents: integer('amount_cents').notNull(),
+    method: text('method').notNull(),
+    reference: text('reference').notNull(),
+    reason: text('reason').notNull(),
+    status: manualPayoutStatus('status').notNull().default('pending_approval'),
+    recordedByUserId: text('recorded_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    recordedAt: timestamp('recorded_at').notNull(),
+    decidedByUserId: text('decided_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    decidedAt: timestamp('decided_at'),
+    decisionNote: text('decision_note'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    // One live (pending or approved) manual payout per transfer.
+    uniqueIndex('manual_payouts_transfer_live_uidx')
+      .on(table.transferId)
+      .where(sql`${table.status} <> 'rejected'`),
+    check('manual_payouts_amount_check', sql`${table.amountCents} > 0`),
+    // Approval needs a second admin.
+    check(
+      'manual_payouts_second_admin_check',
+      sql`${table.decidedByUserId} is null or ${table.decidedByUserId} <> ${table.recordedByUserId}`
+    )
+  ]
+);
+
+/** How a session's resolution was applied to the money (one row per
+ * session, kept current): what the cycle state allowed and the amounts. */
+export const sessionMoneyEffect = appDb.table('session_money_effects', {
+  sessionId: uuid('session_id')
+    .primaryKey()
+    .references(() => contractSession.id, { onDelete: 'restrict' }),
+  resolutionId: uuid('resolution_id').references(() => sessionResolution.id, {
+    onDelete: 'restrict'
+  }),
+  contractId: uuid('contract_id')
+    .notNull()
+    .references(() => contract.id, { onDelete: 'restrict' }),
+  cycleId: uuid('cycle_id')
+    .notNull()
+    .references(() => contractCycle.id, { onDelete: 'restrict' }),
+  outcome: text('outcome').notNull(),
+  // excluded | reduced_capture | refund | refund_recovery | held | none
+  mechanism: text('mechanism').notNull(),
+  familyRefundCents: integer('family_refund_cents').notNull().default(0),
+  helperOwedCents: integer('helper_owed_cents').notNull().default(0),
+  signature: text('signature').notNull(),
+  appliedAt: timestamp('applied_at').notNull(),
+  updatedAt: timestamp('updated_at')
+    .defaultNow()
+    .$onUpdate(() => /* @__PURE__ */ new Date())
+    .notNull()
+});
+
+/** Append-only audit of money actions (manual payouts, refund handling,
+ * transfer retries): who, when, before and after. A trigger refuses UPDATE
+ * and DELETE. */
+export const billingAuditEvent = appDb.table(
+  'billing_audit_events',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    entity: text('entity').notNull(),
+    entityId: text('entity_id').notNull(),
+    action: text('action').notNull(),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'restrict' }),
+    note: text('note'),
+    before: jsonb('before'),
+    after: jsonb('after'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [index('billing_audit_events_entity_idx').on(table.entity, table.entityId)]
 );
 
 export const session = appDb.table(

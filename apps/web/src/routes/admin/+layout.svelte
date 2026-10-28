@@ -66,7 +66,14 @@
 			href: resolve('/admin/session-disputes'),
 			label: m.nav_admin_session_disputes(),
 			icon: 'la-balance-scale'
-		}
+		},
+		// Tier 3 step 2: the money queues.
+		{
+			href: resolve('/admin/payouts'),
+			label: m.nav_admin_payouts(),
+			icon: 'la-hand-holding-usd'
+		},
+		{ href: resolve('/admin/refunds'), label: m.nav_admin_refunds(), icon: 'la-undo-alt' }
 	];
 	const items = $derived<Array<SidebarItem>>(
 		taxAccess

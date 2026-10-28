@@ -10,6 +10,9 @@ import {
   type Payments,
   type ProviderPayment,
   type ProviderPaymentStatus,
+  type ProviderPayout,
+  type ProviderRefund,
+  type ProviderTransfer,
   type StartedPayment
 } from './port';
 import { makeStripeConnectOperations, type StripeConnectClient } from './stripe-connect';
@@ -37,7 +40,9 @@ export type StripeApi = {
   setupIntents: Pick<Stripe['setupIntents'], 'create' | 'retrieve'>;
   customers: Pick<Stripe['customers'], 'create'>;
   paymentMethods: Pick<Stripe['paymentMethods'], 'detach'>;
-  refunds: Pick<Stripe['refunds'], 'create'>;
+  refunds: Pick<Stripe['refunds'], 'create' | 'retrieve'>;
+  transfers: Pick<Stripe['transfers'], 'create' | 'retrieve'>;
+  payouts: Pick<Stripe['payouts'], 'retrieve'>;
   webhooks: Pick<Stripe['webhooks'], 'constructEventAsync'>;
 } & StripeConnectClient;
 
@@ -109,9 +114,62 @@ export const normalisePaymentIntent = (intent: Stripe.PaymentIntent): ProviderPa
     paymentMethod: cardDetails(intent.payment_method),
     capturableCents: intent.amount_capturable ?? 0,
     receivedCents: intent.amount_received ?? 0,
-    captureBefore: captureBeforeOf(charge)
+    captureBefore: captureBeforeOf(charge),
+    chargeReference: idOf(intent.latest_charge)
   };
 };
+
+/** Stripe's refund statuses (`requires_action` is a pending bank refund). */
+export const normaliseRefund = (refund: Stripe.Refund): ProviderRefund => ({
+  reference: refund.id,
+  status:
+    refund.status === 'succeeded'
+      ? 'succeeded'
+      : refund.status === 'failed'
+        ? 'failed'
+        : refund.status === 'canceled'
+          ? 'canceled'
+          : 'pending',
+  amountCents: refund.amount,
+  paymentReference: idOf(refund.payment_intent as string | { id: string } | null),
+  metadata: { ...(refund.metadata ?? {}) },
+  failureReason: refund.failure_reason ?? null,
+  createdAt: new Date(refund.created * 1000)
+});
+
+export const normaliseTransfer = (transfer: Stripe.Transfer): ProviderTransfer => ({
+  reference: transfer.id,
+  amountCents: transfer.amount,
+  destination: idOf(transfer.destination as string | { id: string } | null) ?? '',
+  sourceTransaction: idOf(transfer.source_transaction as string | { id: string } | null),
+  metadata: { ...transfer.metadata },
+  reversedCents: transfer.amount_reversed,
+  createdAt: new Date(transfer.created * 1000)
+});
+
+export const normalisePayout = (payout: Stripe.Payout): ProviderPayout => ({
+  reference: payout.id,
+  status: payout.status as ProviderPayout['status'],
+  amountCents: payout.amount,
+  arrivalDate: payout.arrival_date ? new Date(payout.arrival_date * 1000) : null,
+  createdAt: new Date(payout.created * 1000),
+  failureReason: payout.failure_message ?? payout.failure_code ?? null
+});
+
+/** A transfer Stripe refuses for a business reason (the account can't
+ * receive it, the balance or the source charge is short, a parameter is
+ * wrong): data for an admin, not an outage. Idempotency refusals are not. */
+const isTransferRefusal = (cause: unknown) =>
+  cause instanceof Stripe.errors.StripeInvalidRequestError ||
+  cause instanceof Stripe.errors.StripePermissionError;
+
+/** A refund Stripe refuses for a business reason (verified in test mode:
+ * `Refund amount ($20.00) is greater than unrefunded amount on charge`,
+ * `charge_already_refunded`, a disputed charge): an invalid request that is
+ * not about the idempotency key. */
+const isRefundRefusal = (cause: unknown) =>
+  cause instanceof Stripe.errors.StripeInvalidRequestError &&
+  !(cause instanceof Stripe.errors.StripeIdempotencyError);
 
 /** `payment_method_details.card.capture_before` — the real deadline of a
  * hold (umbrella §11), in seconds. */
@@ -159,9 +217,7 @@ const isUnexpectedState = (cause: unknown) =>
 
 /** Stripe refusing the idempotency key itself (not the charge): reused with
  * different parameters, or the first request is still running. */
-export const idempotencyOf = (
-  cause: unknown
-): { idempotency?: 'mismatch' | 'in_flight' } =>
+export const idempotencyOf = (cause: unknown): { idempotency?: 'mismatch' | 'in_flight' } =>
   cause instanceof Stripe.errors.StripeIdempotencyError
     ? { idempotency: 'mismatch' }
     : cause instanceof Stripe.errors.StripeError && cause.code === 'idempotency_key_in_use'
@@ -381,6 +437,89 @@ export const makeStripePayments = (options: {
         })
       ),
 
+    // Tier 3 step 2: partial refunds of a cycle's charge, keyed by our
+    // refund id exactly (spec §7), with its metadata.
+    createRefund: ({ paymentReference, amountCents, idempotencyKey, metadata }) =>
+      Effect.tryPromise({
+        try: () =>
+          client.refunds.create(
+            {
+              payment_intent: paymentReference,
+              amount: amountCents,
+              reason: 'requested_by_customer',
+              metadata
+            },
+            { idempotencyKey }
+          ),
+        // Stripe answers a refund it won't make (above what is left on the
+        // charge, a disputed or already refunded charge) with an invalid
+        // request, replayed under the same key: a refusal, not an outage.
+        catch: (cause) =>
+          new PaymentProviderError({
+            operation: 'createRefund',
+            cause,
+            ...idempotencyOf(cause),
+            ...(isRefundRefusal(cause) ? { refusal: (cause as Error).message } : {})
+          })
+      }).pipe(Effect.map(normaliseRefund)),
+
+    getRefund: (reference) =>
+      call('getRefund', () => client.refunds.retrieve(reference)).pipe(Effect.map(normaliseRefund)),
+
+    createTransfer: ({
+      amountCents,
+      currency,
+      destination,
+      sourceTransaction,
+      idempotencyKey,
+      metadata,
+      description
+    }) =>
+      Effect.tryPromise({
+        try: () =>
+          client.transfers.create(
+            {
+              amount: amountCents,
+              currency: currency.toLowerCase(),
+              destination,
+              ...(sourceTransaction ? { source_transaction: sourceTransaction } : {}),
+              metadata,
+              ...(description ? { description } : {})
+            },
+            { idempotencyKey }
+          ),
+        catch: (cause) => cause
+      }).pipe(
+        Effect.map((transfer) => ({
+          status: 'created' as const,
+          transfer: normaliseTransfer(transfer)
+        })),
+        Effect.catchAll((cause) =>
+          isTransferRefusal(cause) && Object.keys(idempotencyOf(cause)).length === 0
+            ? Effect.succeed({
+                status: 'refused' as const,
+                reason: cause instanceof Error ? cause.message : 'refused by the provider'
+              })
+            : Effect.fail(
+                new PaymentProviderError({
+                  operation: 'createTransfer',
+                  cause,
+                  ...idempotencyOf(cause)
+                })
+              )
+        )
+      ),
+
+    getTransfer: (reference) =>
+      call('getTransfer', () => client.transfers.retrieve(reference)).pipe(
+        Effect.map(normaliseTransfer)
+      ),
+
+    getPayout: ({ account, reference }) =>
+      call('getPayout', () =>
+        client.payouts.retrieve(reference, {}, { stripeAccount: account })
+      ).pipe(Effect.map(normalisePayout)),
+
     // Helper payout accounts (Stripe Connect Express, piece 2b).
     ...makeStripeConnectOperations(client),
 
@@ -403,7 +542,9 @@ export const makeStripePayments = (options: {
           try: () =>
             constructEventWithAnySecret(
               (secret) => client.webhooks.constructEventAsync(rawBody, signatureHeader, secret),
-              connectWebhookSecret === null ? [webhookSecret] : [webhookSecret, connectWebhookSecret]
+              connectWebhookSecret === null
+                ? [webhookSecret]
+                : [webhookSecret, connectWebhookSecret]
             ),
           catch: (cause) =>
             new PaymentWebhookSignatureError({
@@ -411,6 +552,7 @@ export const makeStripePayments = (options: {
             })
         });
         const object = event.data.object as RoutedObject;
+        // A refund event's object is the refund; its intent routes it.
         return {
           eventId: event.id,
           type: event.type,

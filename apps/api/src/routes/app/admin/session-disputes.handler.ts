@@ -12,10 +12,10 @@
  * Gated by the `sessionDispute` permission (granted to admins), never by a
  * role. Every decision is a compare-and-set that writes its audit row (who,
  * when, before and after) in the same transaction, then tells both parties.
- * Step 1 records the decision only; step 2 applies its money.
+ * Step 2 applies the decision's money at once (`reconcileSession`).
  */
 import type { SqlError } from '@effect/sql/SqlError';
-import { noticeFor } from '@repo/billing';
+import { noticeFor, reconcileSession } from '@repo/billing';
 import { zoneLabel } from '@repo/calendar';
 import {
   ContractAgreementRepo,
@@ -324,6 +324,9 @@ export const decideSessionDisputeProgram = (
     // Another admin decided it a moment ago.
     if (!decided) return yield* Effect.fail(new SessionDisputeNotOpenError());
     yield* noticeFor(decided, 'decided');
+    // Tier 3 step 2: the decision's money (a refund, a recovery, a held
+    // session paid in a follow-up transfer) is applied at once.
+    yield* reconcileSession(decided.contractId, decided.sessionId, now);
     return { id: decided.id, status: decided.status, decision: decided.decision };
   });
 

@@ -2,6 +2,7 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
+	import HelperTransfers from '$lib/components/payouts/HelperTransfers.svelte';
 	import PayoutsPage from '$lib/components/payouts/PayoutsPage.svelte';
 	import { m } from '$lib/paraglide/messages';
 
@@ -28,3 +29,7 @@
 </svelte:head>
 
 <PayoutsPage {returnState} onreturnhandled={dropQuery} />
+<!-- Tier 3 step 2: what was (or will be) sent, per cycle. -->
+<div class="mx-auto max-w-3xl">
+	<HelperTransfers />
+</div>

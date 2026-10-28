@@ -420,10 +420,12 @@ export const reportProgram = (report: ReportKind, from: string, to: string, now:
     if (report === 'fees') {
       const payments = yield* Payments;
       const range = dayRange(`${months[0]}-01`, to);
-      const transactions = yield* (yield* ReconciliationRepo)
-        .listTransactions({ provider: payments.provider, from: range.from, to: range.to })
-        .pipe((errors) => repoFailure(errors));
-      const fees = feesByMonth(transactions, months);
+      const repo = yield* ReconciliationRepo;
+      const [transactions, imported] = yield* Effect.all([
+        repo.listTransactions({ provider: payments.provider, from: range.from, to: range.to }),
+        repo.listImportedPeriods({ provider: payments.provider, from: range.from, to: range.to })
+      ]).pipe((errors) => repoFailure(errors));
+      const fees = feesByMonth(transactions, months, { ranges: imported, now });
       return {
         report: 'fees',
         provider: payments.provider,
@@ -466,7 +468,7 @@ export const reportCsv = (result: Effect.Effect.Success<ReturnType<typeof report
     case 'absorbed':
       return absorbedCsv(result.rows);
     case 'fees':
-      return feesCsv(result.rows);
+      return feesCsv(result.rows, result.gaps);
   }
 };
 

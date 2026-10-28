@@ -18,6 +18,10 @@ export const monthEnd = (month: string, zone = BOOKS_ZONE): Date => {
   return instantAt(next, 0, zone);
 };
 
+/** The first instant of `month` ("2026-11" → Nov 1st 00:00 Toronto). */
+export const monthStart = (month: string, zone = BOOKS_ZONE): Date =>
+  instantAt(`${month}-01`, 0, zone);
+
 /** Every month from `from` to `to` (Toronto dates, inclusive). */
 export const monthsBetween = (from: string, to: string): Array<string> => {
   const months: Array<string> = [];

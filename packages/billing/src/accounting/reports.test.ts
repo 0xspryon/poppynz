@@ -283,6 +283,33 @@ describe('provider fees per month', () => {
     expect(feesCsv(rows).split('\n')[2]).toBe('2026-12,0,0.00,0.00,0.00,0.00,no');
   });
 
+  it('reports a month as a gap unless the successful imports span all of it', () => {
+    const now = new Date('2026-12-15T17:00:00Z');
+    const months = ['2026-10', '2026-11', '2026-12'];
+    const at = (iso: string) => new Date(iso);
+    // October imported only from the 20th; November in two runs that
+    // overlap, with no transaction at all; December up to now.
+    const { rows, gaps } = feesByMonth([txn({})], months, {
+      now,
+      ranges: [
+        { from: at('2026-10-20T04:00:00Z'), to: at('2026-11-10T05:00:00Z') },
+        { from: at('2026-11-09T05:00:00Z'), to: at('2026-12-01T05:00:00Z') },
+        { from: at('2026-12-01T05:00:00Z'), to: now }
+      ]
+    });
+    expect(gaps).toEqual(['2026-10']);
+    expect(
+      feesCsv(rows, gaps)
+        .split('\n')
+        .slice(1, 4)
+        .map((line) => line.split(',').at(-1))
+    ).toEqual(['no', 'yes', 'yes']);
+    expect(
+      feesByMonth([], ['2026-12'], { now, ranges: [{ from: at('2026-12-02T05:00:00Z'), to: now }] })
+        .gaps
+    ).toEqual(['2026-12']);
+  });
+
   it('counts neither a cycle payment refunded through its sessions twice nor a recovered system failure', () => {
     const refundedAt = new Date('2026-11-21T05:00:00Z');
     const sources = accountingSources({

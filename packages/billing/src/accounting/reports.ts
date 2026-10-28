@@ -1,7 +1,7 @@
 import { unpaidExtraSessionStatuses, type AccountingSources } from '@repo/db';
 import type { ProviderBalanceTransactionRow } from '@repo/db';
 import { isCardDisputeEntryKey, type BorneCardDispute } from './card-dispute-adapter';
-import { csv, dollars, monthEnd, monthOf } from './books';
+import { csv, dollars, monthEnd, monthOf, monthStart } from './books';
 import { fundedIncidentRecoveredAt, oneOffPaymentRefunds, type AbsorbedCause } from './obligations';
 
 /**
@@ -291,11 +291,26 @@ export type FeesRow = {
 
 const FEE_TYPES = new Set(['stripe_fee', 'application_fee', 'tax_fee', 'stripe_fx_fee']);
 
+/** Whether `[from, to)` lies inside the union of `ranges`. */
+const covered = (from: Date, to: Date, ranges: ReadonlyArray<{ from: Date; to: Date }>) => {
+  let cursor = from.getTime();
+  for (const range of [...ranges].sort((a, b) => a.from.getTime() - b.from.getTime())) {
+    if (range.from.getTime() > cursor) break;
+    cursor = Math.max(cursor, range.to.getTime());
+    if (cursor >= to.getTime()) return true;
+  }
+  return cursor >= to.getTime();
+};
+
 /** The provider's fees per month, from the PLATFORM's imported balance
- * transactions. A month with none imported is a gap, reported as such. */
+ * transactions. A month is a gap — its fees may be incomplete — when the
+ * successful imports (`coverage`: their periods) don't span all of it (up
+ * to `now` for the month in progress); without `coverage`, when it has no
+ * imported transaction. */
 export const feesByMonth = (
   transactions: ReadonlyArray<ProviderBalanceTransactionRow>,
-  months: ReadonlyArray<string>
+  months: ReadonlyArray<string>,
+  coverage?: { ranges: ReadonlyArray<{ from: Date; to: Date }>; now: Date }
 ): { rows: Array<FeesRow>; gaps: Array<string> } => {
   const rows = new Map(
     months.map((month) => [
@@ -328,10 +343,19 @@ export const feesByMonth = (
     ...row,
     totalCents: row.processingFeeCents + row.disputeFeeCents + row.otherFeeCents
   }));
-  return { rows: list, gaps: list.filter((row) => row.transactions === 0).map((row) => row.month) };
+  const isGap = (row: FeesRow) => {
+    if (!coverage) return row.transactions === 0;
+    const start = monthStart(row.month);
+    if (start >= coverage.now) return false;
+    const end = monthEnd(row.month);
+    return !covered(start, end < coverage.now ? end : coverage.now, coverage.ranges);
+  };
+  return { rows: list, gaps: list.filter(isGap).map((row) => row.month) };
 };
 
-export const feesCsv = (rows: ReadonlyArray<FeesRow>) =>
+/** `gaps` (from `feesByMonth`) marks the months not fully imported;
+ * without it a month with no transaction is "not recorded". */
+export const feesCsv = (rows: ReadonlyArray<FeesRow>, gaps?: ReadonlyArray<string>) =>
   csv(
     [
       'month',
@@ -349,6 +373,6 @@ export const feesCsv = (rows: ReadonlyArray<FeesRow>) =>
       dollars(row.disputeFeeCents),
       dollars(row.otherFeeCents),
       dollars(row.totalCents),
-      row.transactions > 0 ? 'yes' : 'no'
+      (gaps ? !gaps.includes(row.month) : row.transactions > 0) ? 'yes' : 'no'
     ])
   );

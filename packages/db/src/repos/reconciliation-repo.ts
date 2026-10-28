@@ -115,6 +115,13 @@ export class ReconciliationRepo extends Context.Tag('@repo/db/ReconciliationRepo
       provider: string,
       limit: number
     ) => Effect.Effect<Array<ReconciliationRun>, SqlError>;
+    /** The periods imported in full (succeeded runs) that overlap
+     * `[from, to)` — what the fees report counts as recorded. */
+    listImportedPeriods: (input: {
+      provider: string;
+      from: Date;
+      to: Date;
+    }) => Effect.Effect<Array<{ from: Date; to: Date }>, SqlError>;
     /** Inserts new references, updates known ones (status, fees, match). */
     upsertTransactions: (
       runId: string,
@@ -264,6 +271,19 @@ export const ReconciliationRepoLive = Layer.effect(
           .orderBy(desc(reconciliationRun.startedAt))
           .limit(1)
           .pipe(Effect.map((rows) => rows[0] ?? null)),
+
+      listImportedPeriods: ({ provider, from, to }) =>
+        db
+          .select({ from: reconciliationRun.periodFrom, to: reconciliationRun.periodTo })
+          .from(reconciliationRun)
+          .where(
+            and(
+              eq(reconciliationRun.provider, provider),
+              eq(reconciliationRun.status, 'succeeded'),
+              lt(reconciliationRun.periodFrom, to),
+              gte(reconciliationRun.periodTo, from)
+            )
+          ),
 
       listRuns: (provider, limit) =>
         db
@@ -539,6 +559,18 @@ export const makeInMemoryReconciliationRepo = (
           [...state.runs]
             .filter((run) => run.provider === provider && (!trigger || run.trigger === trigger))
             .sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())[0] ?? null
+      ),
+    listImportedPeriods: ({ provider, from, to }) =>
+      Effect.sync(() =>
+        state.runs
+          .filter(
+            (run) =>
+              run.provider === provider &&
+              run.status === 'succeeded' &&
+              run.periodFrom < to &&
+              run.periodTo >= from
+          )
+          .map((run) => ({ from: run.periodFrom, to: run.periodTo }))
       ),
     listRuns: (provider, limit) =>
       Effect.sync(() =>

@@ -271,7 +271,7 @@ const copy: Record<
               subject: `${who} propose une séance supplémentaire le ${v.day}`,
               paragraphs: [
                 `${who} propose une séance supplémentaire : ${v.session}.`,
-                `Si vous la confirmez, Poppynz prélève ${v.amount} sur votre carte pour cette séance (services, frais de service et taxes). Veuillez la confirmer ou la refuser d’ici le ${v.deadline}. Sans réponse, elle expire et rien n’est prélevé.`
+                `Si vous la confirmez, Poppynz prélèvera ${v.amount} sur votre carte pour cette séance (services, frais de service et taxes). Veuillez la confirmer ou la refuser d’ici le ${v.deadline}. Sans réponse, elle expire et rien n’est prélevé.`
               ],
               link: 'session'
             }
@@ -329,7 +329,7 @@ const copy: Record<
               subject: `Séance supplémentaire confirmée le ${v.day}`,
               paragraphs: [
                 `La séance supplémentaire avec ${v.counterpart} est confirmée : ${v.session}.`,
-                `La famille est facturée dans ${v.delay}, et vous êtes payé(e) pour cette séance dès que son paiement est accepté. L’un ou l’autre peut l’annuler sans frais d’ici là.`
+                `La famille sera facturée dans ${v.delay}, et vous serez payé(e) pour cette séance dès que son paiement est accepté. L’un ou l’autre peut l’annuler sans frais d’ici là.`
               ],
               link: 'session'
             };

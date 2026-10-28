@@ -938,7 +938,7 @@ describe('notices in both languages', () => {
   it('asks the family to confirm and authorise, in French', () => {
     const copy = extraSessionCopyFor('proposed', 'family', ctx('helper-1'), names, 'fr');
     expect(copy.subject).toBe('Maria T. propose une séance supplémentaire le mar. 3 nov.');
-    expect(plain(copy.paragraphs[1])).toContain('Poppynz prélève 52,83 $ sur votre carte');
+    expect(plain(copy.paragraphs[1])).toContain('Poppynz prélèvera 52,83 $ sur votre carte');
   });
 
   it('states the delay and the amount once agreed, in both languages', () => {

@@ -258,6 +258,46 @@ describe('mock partial refunds and transfers (Tier 3 step 2)', () => {
     expect((await Effect.runPromise(payments.getPayment(reference))).refundedCents).toBe(11641);
   });
 
+  it('caps transfers from a charge at what it took minus refunds and earlier transfers', async () => {
+    const payments = makeMockPayments();
+    const reference = await held(payments);
+    const { chargeReference } = await Effect.runPromise(payments.getPayment(reference));
+    await Effect.runPromise(
+      payments.createRefund({
+        paymentReference: reference,
+        amountCents: 6602,
+        idempotencyKey: 'r',
+        metadata: {}
+      })
+    );
+    const transfer = (key: string, amountCents: number, sourceTransaction: string | null) =>
+      Effect.runPromise(
+        payments.createTransfer({
+          amountCents,
+          currency: 'CAD',
+          destination: 'acct_ok',
+          sourceTransaction,
+          idempotencyKey: key,
+          metadata: {}
+        })
+      );
+    expect((await transfer('t-1', 5265, chargeReference)).status).toBe('created');
+    expect((await transfer('t-2', 5266, chargeReference)).status).toBe('refused');
+    expect((await transfer('t-3', 1339, chargeReference)).status).toBe('created');
+    expect((await transfer('t-4', 5266, null)).status).toBe('created');
+  });
+
+  it('refuses a refund it is told to refuse, as a refusal', async () => {
+    const payments = makeMockPayments({ refundRefusal: () => 'charge disputed' });
+    const reference = await held(payments);
+    const error = await Effect.runPromise(
+      payments
+        .createRefund({ paymentReference: reference, amountCents: 1, idempotencyKey: 'r', metadata: {} })
+        .pipe(Effect.flip)
+    );
+    expect(error.refusal).toBe('charge disputed');
+  });
+
   it('reaches the failure paths: a refund that fails later, a refused transfer, an outage', async () => {
     const payments = makeMockPayments({
       refundOutcome: () => 'pending',
@@ -279,13 +319,14 @@ describe('mock partial refunds and transfers (Tier 3 step 2)', () => {
       status: 'failed',
       failureReason: 'card closed'
     });
+    const { chargeReference } = await Effect.runPromise(payments.getPayment(reference));
     const transfer = (destination: string) =>
       Effect.runPromise(
         payments.createTransfer({
           amountCents: 500,
           currency: 'CAD',
           destination,
-          sourceTransaction: 'mock_ch_1',
+          sourceTransaction: chargeReference,
           idempotencyKey: `t-${destination}`,
           metadata: {}
         })

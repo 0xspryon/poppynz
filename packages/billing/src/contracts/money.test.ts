@@ -476,6 +476,51 @@ describe('session-based transfers (spec §8)', () => {
     expect(w.money.state.transfers[0]).toMatchObject({ status: 'sent', amountCents: 10531 });
   });
 
+  it('a follow-up beyond what the charge has left is sent from the balance', async () => {
+    // The helper's no-show is refunded in full; an admin later decides the
+    // session went ahead. The refund is absorbed, and the helper's pay for it
+    // no longer fits under the charge (Stripe caps source_transaction
+    // transfers at the charge minus its refunds and earlier transfers).
+    const w = await charged();
+    const row = w.resolve('2026-11-04', {
+      kind: 'helper_no_show',
+      status: 'confirmed',
+      reportedBySide: 'family'
+    });
+    await w.tick(at(TRANSFER_1, -60));
+    expect(w.money.state.refunds[0]).toMatchObject({ totalCents: 6602 });
+    await w.tick(at(TRANSFER_1, 1));
+    expect(w.money.state.transfers[0]).toMatchObject({ status: 'sent', amountCents: 5265 });
+    w.decide(row.id, 'as_scheduled');
+    await w.tick(at(TRANSFER_1, 60));
+    await w.tick(at(TRANSFER_1, 75));
+    expect(w.money.state.transfers.map((t) => [t.sequence, t.status, t.amountCents])).toEqual([
+      [1, 'sent', 5265],
+      [2, 'sent', 5266]
+    ]);
+    expect(w.mock.transfers().map((t) => t.sourceTransaction === null)).toEqual([false, true]);
+  });
+
+  it('a transfer waits when its source charge cannot be looked up', async () => {
+    let lookupDown = true;
+    const w = await charged({
+      payments: (mock) => ({
+        getPayment: (reference) =>
+          lookupDown
+            ? Effect.fail(new PaymentProviderError({ operation: 'getPayment', cause: 'down' }))
+            : mock.getPayment(reference)
+      })
+    });
+    await w.tick(at(TRANSFER_1, 1));
+    expect(w.mock.transfers()).toHaveLength(0);
+    expect(w.money.state.transfers[0]).toMatchObject({ status: 'sending' });
+    lookupDown = false;
+    await w.tick(at(TRANSFER_1, 16));
+    expect(w.mock.transfers()).toEqual([
+      expect.objectContaining({ sourceTransaction: expect.stringContaining('mock_ch_') })
+    ]);
+  });
+
   it('a refused transfer fails for an admin', async () => {
     const w = await charged({ mock: { transferRefusal: () => 'Insufficient funds' } });
     await w.tick(at(TRANSFER_1, 1));

@@ -467,9 +467,11 @@ export const reconcileSession = (
         yield* sendRefund(applied.right.refund, now);
       }
     }
-    // A decided session whose pay was already sent short: a follow-up
-    // transfer pays the rest.
-    if (!money.held && helper.transferred && helper.paid < money.helperOwed.totalCents) {
+    // A decided session whose pay was already sent short — or not sent at
+    // all because it was owed nothing when the cycle's transfer went out (a
+    // helper no-show later decided as scheduled): a follow-up transfer pays
+    // the rest. Nothing happens before the cycle's first transfer.
+    if (!money.held && helper.paid < money.helperOwed.totalCents) {
       yield* ensureFollowUpTransfer(cycle, now);
     }
     return (unchanged && previous ? previous.mechanism : mechanism) as ReconcileResult;
@@ -867,15 +869,37 @@ const fixTransfer = (
     });
   });
 
-/** The cycle's charge (`ch_…`), the transfer's source. */
-const sourceOf = (cycle: ContractCycle) =>
+/** `source_reference` of a transfer sent from the platform balance (no
+ * `source_transaction`). */
+export const PLATFORM_BALANCE_SOURCE = 'platform_balance';
+
+/**
+ * The transfer's source: the cycle's charge (`ch_…`) when the amount fits
+ * under it, else the platform balance. Stripe caps the transfers made from
+ * a charge at what it took minus its refunds and the transfers already made
+ * from it (verified in test mode), so a follow-up that pays a session whose
+ * refund was absorbed (decided as scheduled after a full refund) can't come
+ * from the charge. `undefined` when the provider can't be reached: the
+ * transfer waits for the next tick rather than go out without its source.
+ */
+const sourceOf = (transfer: HelperTransfer, cycle: ContractCycle) =>
   Effect.gen(function* () {
     const payment = yield* findPaymentRow(cycle.paymentId);
-    if (!payment?.providerReference) return null;
+    if (!payment?.providerReference) return PLATFORM_BALANCE_SOURCE;
     const fetched = yield* (yield* Payments)
       .getPayment(payment.providerReference)
       .pipe(Effect.either);
-    return Either.isRight(fetched) ? fetched.right.chargeReference : null;
+    if (Either.isLeft(fetched)) return undefined;
+    const charge = fetched.right.chargeReference;
+    if (charge === null) return PLATFORM_BALANCE_SOURCE;
+    const earlier = (yield* (yield* SessionMoneyRepo).listTransfers({ cycleId: cycle.id }))
+      .filter(
+        (row) =>
+          row.id !== transfer.id && row.providerReference !== null && row.sourceReference === charge
+      )
+      .reduce((total, row) => total + (row.amountCents ?? 0), 0);
+    const left = fetched.right.receivedCents - fetched.right.refundedCents - earlier;
+    return (transfer.amountCents ?? 0) <= left ? charge : PLATFORM_BALANCE_SOURCE;
   });
 
 const transferKey = (transfer: HelperTransfer) => {
@@ -901,13 +925,23 @@ const sendTransfer = (
     const payments = yield* Payments;
     const account = yield* (yield* PayoutAccountRepo).findByUserId(transfer.helperUserId);
     if (!account) return transfer;
-    const source = transfer.sourceReference ?? (yield* sourceOf(cycle));
+    // The source is chosen once and kept: a retry under the same key must
+    // send the same request.
+    const source = transfer.sourceReference ?? (yield* sourceOf(transfer, cycle));
+    if (source === undefined) return transfer;
+    if (transfer.sourceReference === null) {
+      const kept = yield* repo.advanceTransfer(transfer.id, {
+        from: ['sending'],
+        set: { sourceReference: source }
+      });
+      if (!kept) return transfer;
+    }
     const result = yield* payments
       .createTransfer({
         amountCents: transfer.amountCents ?? 0,
         currency: 'CAD',
         destination: account.accountReference,
-        sourceTransaction: source,
+        sourceTransaction: source === PLATFORM_BALANCE_SOURCE ? null : source,
         idempotencyKey: transferKey(transfer),
         metadata: {
           transfer_id: transfer.id,
@@ -1226,9 +1260,11 @@ export const retryTransfer = (id: string, actorUserId: string, now: Date) =>
     if (transfer.status !== 'failed') return yield* refuseAdmin('not_failed');
     const retries = transfer.noticesSent.filter((n) => n.startsWith('retry:')).length;
     yield* repo.appendTransferNotice(id, `retry:${retries + 1}`);
+    // The source is chosen again (a new key may send a new request): a
+    // refusal by the charge's cap goes out from the balance this time.
     const moved = yield* repo.advanceTransfer(id, {
       from: ['failed'],
-      set: { status: 'sending', failureReason: null }
+      set: { status: 'sending', failureReason: null, sourceReference: null }
     });
     if (!moved) return yield* refuseAdmin('not_failed');
     yield* repo.appendAudit({

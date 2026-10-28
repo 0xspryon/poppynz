@@ -397,6 +397,23 @@ export const makeMockPayments = (
           return Effect.succeed({ status: 'created' as const, transfer: transfers.get(known)! });
         const refused = options.transferRefusal?.(input) ?? null;
         if (refused) return Effect.succeed({ status: 'refused' as const, reason: refused });
+        if (input.sourceTransaction !== null) {
+          // Like Stripe: transfers from a charge never exceed what it took
+          // minus its refunds and the earlier transfers from it.
+          const source = [...byReference.values()].find(
+            (payment) => payment.chargeReference === input.sourceTransaction
+          );
+          const earlier = [...transfers.values()]
+            .filter((transfer) => transfer.sourceTransaction === input.sourceTransaction)
+            .reduce((total, transfer) => total + transfer.amountCents, 0);
+          const left = source ? source.receivedCents - source.refundedCents - earlier : 0;
+          if (input.amountCents > left) {
+            return Effect.succeed({
+              status: 'refused' as const,
+              reason: `Transfers using this transaction as a source must not exceed the source amount (${left} left)`
+            });
+          }
+        }
         const transfer: ProviderTransfer = {
           reference: `mock_tr_${transfers.size + 1}`,
           amountCents: input.amountCents,

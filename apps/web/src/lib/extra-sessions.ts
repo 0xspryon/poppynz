@@ -69,6 +69,10 @@ export const extraSessionLabel = (
 	})}`;
 
 /** Where the extra session stands, in the viewer's words. */
+/** A date and time inside a sentence: "4:21 p.m." loses its own full stop,
+ * so a message that ends the sentence after it never reads "p.m..". */
+export const sentenceDateTime = (value: string) => formatDateTime(value).replace(/\.$/, '');
+
 export const extraSessionStateText = (
 	row: ExtraSession,
 	viewerSide: 'family' | 'helper',
@@ -79,7 +83,7 @@ export const extraSessionStateText = (
 	);
 	switch (row.status) {
 		case 'proposed': {
-			const deadline = formatDateTime(row.respondBy);
+			const deadline = sentenceDateTime(row.respondBy);
 			if (row.proposedByMe) {
 				return m.extra_sessions_state_awaiting_mine({ name: counterpartName, deadline });
 			}

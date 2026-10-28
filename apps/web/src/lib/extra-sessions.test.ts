@@ -66,6 +66,24 @@ describe('extra session copy', () => {
 		);
 	});
 
+	it('never ends a sentence with a double full stop after "p.m."', () => {
+		const text = extraSessionStateText(
+			row({ status: 'proposed', proposedByMe: true, actions: ['withdraw'] }),
+			'family',
+			'Maria'
+		);
+		expect(text).toMatch(/[ap]\.m\. Without an answer/);
+		expect(text).not.toContain('..');
+		const due = extraSessionStateText(
+			row({ status: 'proposed', proposedByMe: false, actions: ['accept', 'decline'] }),
+			'helper',
+			'Maria'
+		);
+		expect(due).not.toContain('..');
+		// Mid-sentence, "p.m." keeps its full stop.
+		expect(extraSessionStateText(row(), 'family', 'Maria')).toMatch(/[ap]\.m\. unless/);
+	});
+
 	it('tells the helper they are paid once the charge succeeds', () => {
 		expect(extraSessionStateText(row({ status: 'charge_failed' }), 'helper', 'Priya')).toBe(
 			'The family’s payment hasn’t gone through yet. You’re paid for this session once it does.'

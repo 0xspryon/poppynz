@@ -38,10 +38,20 @@ export const dayRange = (from: string, to: string, zone = BOOKS_ZONE) => ({
 
 export const dollars = (cents: number) => (cents / 100).toFixed(2);
 
-/** A CSV field: quoted when it holds a comma, a quote or a line break. */
+/** A plain number ("-12.50", "3"): left as is, so a spreadsheet sums it. */
+const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
+/** What a spreadsheet would read as a formula (or a DDE call). */
+const FORMULA_START = /^[=+\-@\t\r]/;
+
+/** A CSV field: quoted when it holds a comma, a quote or a line break.
+ * Text a spreadsheet would run as a formula (`=`, `+`, `-`, `@`, tab or
+ * carriage return first — a family's name, an admin's note, a provider
+ * description) is neutralised with a leading apostrophe (OWASP "CSV
+ * injection"); plain numbers, negative amounts included, are left alone. */
 export const csvField = (value: string | number | null | undefined) => {
   if (value === null || value === undefined) return '';
-  const text = String(value);
+  let text = String(value);
+  if (FORMULA_START.test(text) && !PLAIN_NUMBER.test(text)) text = `'${text}`;
   return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 

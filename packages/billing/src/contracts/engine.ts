@@ -16,6 +16,7 @@ import {
   PaymentRepo,
   liveBillingStatuses,
   type BillingLedgerInsert,
+  type ChargedSession,
   type Contract,
   type ContractBilling,
   type ContractBillingInsert,
@@ -23,6 +24,7 @@ import {
   type ContractCycleStatus,
   type ContractVersion,
   type Payment,
+  type SessionChargeInsert,
   type SessionRecord,
   type DBNotFoundError,
   PayoutAccountRepo,
@@ -47,6 +49,7 @@ import { paymentReadiness } from '../payouts';
 import {
   MINIMUM_CHARGE_CENTS,
   quoteContractAmounts,
+  splitCycleCharge,
   type ContractAmounts,
   type ProvinceCode,
   type TaxLine
@@ -203,13 +206,29 @@ const loadContext = (billing: ContractBilling) =>
     return { contract, accepted, terms } satisfies BillingContext;
   });
 
-type Quote = { ok: true; amounts: ContractAmounts } | { ok: false; reason: string };
+type Quote =
+  | { ok: true; amounts: ContractAmounts; charged: Array<ChargedSession> }
+  | { ok: false; reason: string };
 
-const quoteFor = (billing: ContractBilling, cycle: ContractCycle, serviceCents: number) =>
+/** Quotes a cycle for `sessions` (charged at their value) plus, Tier 3 step
+ * 2, the compensation of its sessions cancelled late before the capture
+ * (`compensated`: no fee, no commission). The charged set is frozen on the
+ * cycle with the quote: the per-session split is made from exactly it. */
+const quoteFor = (
+  billing: ContractBilling,
+  cycle: ContractCycle,
+  sessions: ReadonlyArray<SessionRecord>,
+  compensated: ReadonlyArray<SessionRecord> = []
+) =>
   Effect.gen(function* () {
     const snapshot = yield* loadTaxSnapshot;
+    const compensationCents = compensated.reduce(
+      (total, session) => total + session.compensationCents,
+      0
+    );
     const quoted = quoteContractAmounts({
-      serviceCents,
+      serviceCents: valueOf(sessions) + cycle.carriedInCents,
+      compensationCents,
       familyFeeBps: billing.familyFeeBps,
       providerCommissionBps: billing.providerCommissionBps,
       snapshot,
@@ -217,9 +236,21 @@ const quoteFor = (billing: ContractBilling, cycle: ContractCycle, serviceCents: 
       familyProvince: billing.familyProvince as ProvinceCode,
       helperProvince: billing.helperProvince as ProvinceCode
     });
+    const charged: Array<ChargedSession> = [
+      ...sessions.map((session) => ({
+        sessionId: session.id,
+        valueCents: session.valueCents,
+        compensationCents: 0
+      })),
+      ...compensated.map((session) => ({
+        sessionId: session.id,
+        valueCents: session.valueCents,
+        compensationCents: session.compensationCents
+      }))
+    ];
     return (
       quoted.ok
-        ? { ok: true, amounts: quoted.amounts }
+        ? { ok: true, amounts: quoted.amounts, charged }
         : { ok: false, reason: `tax: ${quoted.error.reason} (${quoted.error.supplyType})` }
     ) as Quote;
   });
@@ -227,14 +258,32 @@ const quoteFor = (billing: ContractBilling, cycle: ContractCycle, serviceCents: 
 const allTaxLines = (amounts: ContractAmounts): Array<TaxLine> => [
   ...amounts.serviceTaxLines,
   ...amounts.familyFeeTaxLines,
-  ...amounts.providerCommissionTaxLines
+  ...amounts.providerCommissionTaxLines,
+  ...amounts.compensationTaxLines
 ];
+
+/** The family-side tax lines (what the family's payment row carries). */
+const familyTaxLines = (amounts: ContractAmounts): Array<TaxLine> => [
+  ...amounts.serviceTaxLines,
+  ...amounts.familyFeeTaxLines,
+  ...amounts.compensationTaxLines
+];
+
+/** Supply types the family pays (its payment row's lines). */
+const familySupplyTypes = new Set([
+  'care_service_value',
+  'family_service_fee',
+  'cancellation_compensation'
+]);
 
 const sum = (lines: ReadonlyArray<TaxLine>) =>
   lines.reduce((total, line) => total + line.taxCents, 0);
 
-/** The frozen quote, as cycle columns. */
-const quoteColumns = (amounts: ContractAmounts) => ({
+/** The frozen quote, as cycle columns (with the sessions it charged, when
+ * known — a quote kept as it was keeps its charged set). */
+const quoteColumns = (amounts: ContractAmounts, charged?: ReadonlyArray<ChargedSession>) => ({
+  compensationCents: amounts.compensationCents,
+  ...(charged ? { chargedSessions: charged.map((session) => ({ ...session })) } : {}),
   serviceCents: amounts.serviceCents,
   serviceTaxCents: sum(amounts.serviceTaxLines),
   familyFeeBps: amounts.familyFeeBps,
@@ -248,8 +297,21 @@ const quoteColumns = (amounts: ContractAmounts) => ({
   taxLines: allTaxLines(amounts).map((line) => ({ ...line }))
 });
 
+/** Sessions charged at their value. Tier 3 step 2: a `disputed` session is
+ * still charged (its money is held back from the helper, not the family's
+ * charge); a `cancelled` one is not (a late one before the capture is
+ * charged its compensation instead — `compensatedSessions`). */
 const billedSessions = (sessions: ReadonlyArray<SessionRecord>) =>
-  sessions.filter((session) => session.status === 'scheduled' || session.status === 'completed');
+  sessions.filter(
+    (session) =>
+      session.status === 'scheduled' ||
+      session.status === 'completed' ||
+      session.status === 'disputed'
+  );
+
+/** Sessions cancelled late before the capture: charged compensation only. */
+const compensatedSessions = (sessions: ReadonlyArray<SessionRecord>) =>
+  sessions.filter((session) => session.status === 'cancelled' && session.compensationCents > 0);
 
 const valueOf = (sessions: ReadonlyArray<SessionRecord>) =>
   sessions.reduce((total, session) => total + session.valueCents, 0);
@@ -539,10 +601,7 @@ const chargeAndSettle = (
 // ---------------------------------------------------------------------------
 // Attempts the provider never answered (M4)
 
-type Lookup =
-  | { kind: 'found'; payment: ProviderPayment }
-  | { kind: 'none' }
-  | { kind: 'unknown' };
+type Lookup = { kind: 'found'; payment: ProviderPayment } | { kind: 'none' } | { kind: 'unknown' };
 
 /** What became of an unanswered attempt at the provider. Asked before the
  * attempt is given up or replaced, so a charge whose response was lost is
@@ -605,13 +664,18 @@ const releaseUnanswered = (cycle: ContractCycle, payment: Payment, now: Date): S
     const after =
       found.payment.status === 'succeeded'
         ? found.payment
-        : yield* payments.cancelPayment(reference).pipe(Effect.either).pipe(
-            Effect.map((either) => (Either.isRight(either) ? either.right : null))
-          );
+        : yield* payments
+            .cancelPayment(reference)
+            .pipe(Effect.either)
+            .pipe(Effect.map((either) => (Either.isRight(either) ? either.right : null)));
     if (after === null) return false;
     if (after.status === 'succeeded') {
       const refund = yield* payments
-        .refund({ reference, reason: 'unanswered contract charge', idempotencyKey: `unanswered-${payment.id}` })
+        .refund({
+          reference,
+          reason: 'unanswered contract charge',
+          idempotencyKey: `unanswered-${payment.id}`
+        })
         .pipe(Effect.either);
       if (Either.isLeft(refund)) {
         yield* paymentRepo.update(payment.id, {
@@ -661,7 +725,9 @@ const attempt = (
   mode: ChargeMode,
   amounts: ContractAmounts,
   from: ReadonlyArray<ContractCycleStatus>,
-  now: Date
+  now: Date,
+  /** The sessions the quote charges (frozen with it). */
+  charged?: ReadonlyArray<ChargedSession>
 ): Step<'lost' | 'provider_error' | 'settled' | 'declined' | 'conflict'> =>
   Effect.gen(function* () {
     const payments = yield* Payments;
@@ -683,13 +749,11 @@ const attempt = (
       userId: ctx.contract.familyUserId,
       kind: 'contract_cycle',
       provider: payments.provider,
-      amountCents: amounts.serviceCents,
+      amountCents: amounts.serviceCents + amounts.compensationCents,
       feeCents: amounts.familyFeeCents,
-      taxCents: sum(amounts.serviceTaxLines) + sum(amounts.familyFeeTaxLines),
+      taxCents: sum(familyTaxLines(amounts)),
       totalCents: amounts.familyTotalCents,
-      taxLines: [...amounts.serviceTaxLines, ...amounts.familyFeeTaxLines].map((line) => ({
-        ...line
-      })),
+      taxLines: familyTaxLines(amounts).map((line) => ({ ...line })),
       description,
       cardReference: card?.reference ?? null,
       chargeKey: attemptKey(cycle, mode, cycle.attempts + 1)
@@ -705,7 +769,7 @@ const attempt = (
         paymentId: payment.id,
         nextRetryAt: null,
         lastError: null,
-        ...(cycle.status === 'capture_failed' ? {} : quoteColumns(amounts))
+        ...(cycle.status === 'capture_failed' ? {} : quoteColumns(amounts, charged))
       }
     });
     if (!claimed) {
@@ -742,7 +806,7 @@ const fund = (
     }
     const sessions = yield* repo.listSessions(cycle.contractId, cycle.id);
     const billed = billedSessions(sessions);
-    const quote = yield* quoteFor(billing, cycle, valueOf(billed) + cycle.carriedInCents);
+    const quote = yield* quoteFor(billing, cycle, billed, compensatedSessions(sessions));
     if (!quote.ok) {
       // A Poppynz configuration failure, never the family's: alert, and
       // never let the cycle start unfunded.
@@ -764,12 +828,12 @@ const fund = (
     if (amounts.familyTotalCents === 0) {
       yield* repo.advanceCycle(cycle.id, {
         from,
-        set: { status: 'empty', ...quoteColumns(amounts) }
+        set: { status: 'empty', ...quoteColumns(amounts, quote.charged) }
       });
       return;
     }
     if (amounts.familyTotalCents < MINIMUM_CHARGE_CENTS) {
-      return yield* carry(cycle, amounts, from);
+      return yield* carry(cycle, amounts, from, quote.charged);
     }
     const first = billed[0]?.startsAt ?? null;
     // A late booking: billable only after this cycle's hold time, and less
@@ -783,7 +847,7 @@ const fund = (
       first !== null &&
       first.getTime() - billing.billableFrom.getTime() < lateBookingMs;
     const mode: ChargeMode = late || now >= cycle.captureAt ? 'immediate' : 'hold';
-    return yield* attempt(ctx, cycle, mode, amounts, from, now);
+    return yield* attempt(ctx, cycle, mode, amounts, from, now, quote.charged);
   });
 
 /** Under the provider's minimum: the service value rolls into the next
@@ -791,13 +855,18 @@ const fund = (
 const carry = (
   cycle: ContractCycle,
   amounts: ContractAmounts,
-  from: ReadonlyArray<ContractCycleStatus>
+  from: ReadonlyArray<ContractCycleStatus>,
+  charged: ReadonlyArray<ChargedSession>
 ) =>
   Effect.gen(function* () {
     const repo = yield* ContractBillingRepo;
     const carried = yield* repo.advanceCycle(cycle.id, {
       from,
-      set: { status: 'carried', carriedOutCents: amounts.serviceCents, ...quoteColumns(amounts) }
+      set: {
+        status: 'carried',
+        carriedOutCents: amounts.serviceCents + amounts.compensationCents,
+        ...quoteColumns(amounts, charged)
+      }
     });
     if (!carried) return;
     const next = (yield* repo.listCycles(cycle.contractId)).find(
@@ -807,7 +876,9 @@ const carry = (
       next && next.status === 'scheduled'
         ? yield* repo.advanceCycle(next.id, {
             from: ['scheduled'],
-            set: { carriedInCents: next.carriedInCents + amounts.serviceCents }
+            set: {
+              carriedInCents: next.carriedInCents + amounts.serviceCents + amounts.compensationCents
+            }
           })
         : null;
     const entries: Array<BillingLedgerInsert> = [
@@ -817,7 +888,7 @@ const carry = (
         entryKey: `cycle:${cycle.id}:carry_forward`,
         kind: 'carry_forward',
         party: 'family',
-        amountCents: amounts.serviceCents
+        amountCents: amounts.serviceCents + amounts.compensationCents
       }
     ];
     if (!forwarded) {
@@ -841,12 +912,9 @@ const carry = (
 const syncCaptureBreakdown = (cycle: ContractCycle, payment: Payment) =>
   Effect.gen(function* () {
     if (cycle.serviceCents === null || cycle.familyFeeCents === null) return payment;
-    const taxLines = cycle.taxLines.filter(
-      (line) =>
-        line.supplyType === 'care_service_value' || line.supplyType === 'family_service_fee'
-    );
+    const taxLines = cycle.taxLines.filter((line) => familySupplyTypes.has(line.supplyType));
     const breakdown = {
-      amountCents: cycle.serviceCents,
+      amountCents: cycle.serviceCents + cycle.compensationCents,
       feeCents: cycle.familyFeeCents,
       taxCents: sum(taxLines as ReadonlyArray<TaxLine>),
       taxLines: taxLines.map((line) => ({ ...line }))
@@ -901,14 +969,21 @@ const capture = (billing: ContractBilling, ctx: BillingContext, cycle: ContractC
       }
       return;
     }
-    const billed = billedSessions(yield* repo.listSessions(cycle.contractId, cycle.id));
-    const quote = yield* quoteFor(billing, cycle, valueOf(billed) + cycle.carriedInCents);
+    // Tier 3 step 2: a session cancelled since the hold is not charged (a
+    // late one only its compensation) — the capture is reduced for it.
+    const sessions = yield* repo.listSessions(cycle.contractId, cycle.id);
+    const quote = yield* quoteFor(
+      billing,
+      cycle,
+      billedSessions(sessions),
+      compensatedSessions(sessions)
+    );
     const held = cycle.heldCents ?? payment.totalCents;
     const amounts = quote.ok ? quote.amounts : null;
     if (amounts !== null && amounts.familyTotalCents === 0) {
       const emptied = yield* repo.advanceCycle(cycle.id, {
         from: ['authorised'],
-        set: { status: 'empty', ...quoteColumns(amounts) }
+        set: { status: 'empty', ...quoteColumns(amounts, quote.ok ? quote.charged : undefined) }
       });
       if (emptied) yield* releaseHold(payment);
       return;
@@ -918,7 +993,10 @@ const capture = (billing: ContractBilling, ctx: BillingContext, cycle: ContractC
     const requoted = amounts !== null && amounts.familyTotalCents <= held ? amounts : null;
     const claimed = yield* repo.advanceCycle(cycle.id, {
       from: ['authorised'],
-      set: { status: 'capturing', ...(requoted ? quoteColumns(requoted) : {}) }
+      set: {
+        status: 'capturing',
+        ...(requoted && quote.ok ? quoteColumns(requoted, quote.charged) : {})
+      }
     });
     if (!claimed) return;
     // A crash before this write is repaired by the `capturing` branch.
@@ -954,9 +1032,7 @@ const captureClaimed = (
     }
     yield* Effect.logWarning(`[billing] capture failed for cycle ${cycle.id}`, result.left);
     const retry = (lastError: string) =>
-      repo
-        .advanceCycle(cycle.id, { from: ['capturing'], set: { lastError } })
-        .pipe(Effect.asVoid);
+      repo.advanceCycle(cycle.id, { from: ['capturing'], set: { lastError } }).pipe(Effect.asVoid);
     const fetched = yield* payments.getPayment(reference).pipe(Effect.either);
     if (Either.isLeft(fetched)) return yield* retry('capture failed at the provider — retrying');
     const row = yield* paymentRepo.findById(payment.id);
@@ -982,7 +1058,8 @@ const captureClaimed = (
           from: ['capturing'],
           set: { status: 'capture_failed', lastError: 'the provider refused to capture the hold' }
         });
-        if (failed) yield* systemFailure(ctx, failed, 'the provider refused to capture the hold', now);
+        if (failed)
+          yield* systemFailure(ctx, failed, 'the provider refused to capture the hold', now);
       }
     }
   });
@@ -1249,7 +1326,9 @@ export const adoptProviderPayment = (
           })) ?? (yield* paymentRepo.findById(row.id)))
         : row;
     const live =
-      current.status === 'pending' || current.status === 'authorised' || current.status === 'captured';
+      current.status === 'pending' ||
+      current.status === 'authorised' ||
+      current.status === 'captured';
     if (live && current.providerReference === fetched.reference) {
       return yield* settleCycleRow(current, now, fetched);
     }
@@ -1290,13 +1369,14 @@ const processCycle = (
         return yield* fund(billing, ctx, cycle, ['grace'], now);
       }
       case 'authorising': {
-    const payment = yield* findPayment(cycle.paymentId);
+        const payment = yield* findPayment(cycle.paymentId);
         if (payment === null) return;
         if (payment.status === 'pending' && payment.providerReference === null) {
           // The provider never answered this attempt. Retry under the same
           // key while the quote still holds; then resolve it at the provider.
           if (cycle.chargeMode === 'resume') {
-            if (yield* resumeQuoteStale(cycle, now)) return yield* giveUpResume(cycle, payment, now);
+            if (yield* resumeQuoteStale(cycle, now))
+              return yield* giveUpResume(cycle, payment, now);
           } else if (now >= cycle.startsAt) {
             return yield* giveUpAtStart(ctx, cycle, payment, now);
           }
@@ -1329,7 +1409,7 @@ const processCycle = (
         // The recovery never started (a surviving hold could not be
         // cancelled first): start it now.
         if (cycle.chargeMode !== 'resume') return yield* recover(ctx, cycle, now);
-    const payment = yield* findPayment(cycle.paymentId);
+        const payment = yield* findPayment(cycle.paymentId);
         if (payment === null) return;
         if (payment.status === 'pending' && payment.providerReference === null) {
           // Unanswered: the same request again (never a second charge), or
@@ -1430,7 +1510,11 @@ const recover = (ctx: BillingContext, cycle: ContractCycle, now: Date): Step<voi
       providerCommissionTaxLines: cycle.taxLines.filter(
         (line) => line.supplyType === 'provider_commission'
       ) as Array<TaxLine>,
-      providerShareCents: cycle.providerShareCents ?? 0
+      providerShareCents: cycle.providerShareCents ?? 0,
+      compensationCents: cycle.compensationCents,
+      compensationTaxLines: cycle.taxLines.filter(
+        (line) => line.supplyType === 'cancellation_compensation'
+      ) as Array<TaxLine>
     };
     yield* attempt(ctx, cycle, 'resume', amounts, ['capture_failed'], now);
   });
@@ -1510,7 +1594,7 @@ const resumePlan = (billing: ContractBilling, now: Date) =>
       (session) => session.status === 'suspended' && session.startsAt > now
     );
     if (remaining.length === 0) return null;
-    const quote = yield* quoteFor(billing, current, valueOf(remaining) + current.carriedInCents);
+    const quote = yield* quoteFor(billing, current, remaining);
     return { current, remaining, quote };
   });
 
@@ -1560,7 +1644,7 @@ const resume = (
       // paid (nothing to charge), so its sessions complete as they end.
       const absorbed = yield* repo.advanceCycle(current.id, {
         from: ['suspended'],
-        set: { status: 'empty', resumeFrom: now, ...quoteColumns(quote.amounts) }
+        set: { status: 'empty', resumeFrom: now, ...quoteColumns(quote.amounts, quote.charged) }
       });
       if (!absorbed) return;
       yield* repo.setSessionStatus(
@@ -1588,7 +1672,7 @@ const resume = (
       });
       return;
     }
-    yield* attempt(ctx, current, 'resume', quote.amounts, ['suspended'], now);
+    yield* attempt(ctx, current, 'resume', quote.amounts, ['suspended'], now, quote.charged);
   });
 
 /** What replacing the card would charge at once on each of the family's
@@ -1684,20 +1768,150 @@ const writeLedger = (cycle: ContractCycle, payment: Payment) =>
     ]);
   });
 
+/**
+ * The frozen per-session split of a captured cycle (Tier 3 step 2, spec §5):
+ * the cycle's charged amounts divided among the sessions its quote charged.
+ * `mismatch` when the split would not add up to what was captured (the
+ * cycle's frozen quote and the capture disagree): no split is written and
+ * an incident is raised, so no refund can ever exceed the charge.
+ */
+export const cycleSplitCharges = (
+  cycle: ContractCycle,
+  payment: Pick<Payment, 'id' | 'capturedCents' | 'totalCents'>,
+  sessions: ReadonlyArray<SessionRecord>
+): { ok: true; charges: Array<SessionChargeInsert> } | { ok: false; reason: string } => {
+  const byId = new Map(sessions.map((session) => [session.id, session]));
+  const charged: ReadonlyArray<ChargedSession> =
+    cycle.chargedSessions.length > 0
+      ? cycle.chargedSessions
+      : // Quoted before the charged set was frozen: what it charged then.
+        [
+          ...billedSessions(sessions).map((session) => ({
+            sessionId: session.id,
+            valueCents: session.valueCents,
+            compensationCents: 0
+          })),
+          ...compensatedSessions(sessions).map((session) => ({
+            sessionId: session.id,
+            valueCents: session.valueCents,
+            compensationCents: session.compensationCents
+          }))
+        ];
+  const missing = charged.find((row) => !byId.has(row.sessionId));
+  if (missing) return { ok: false, reason: `charged session ${missing.sessionId} not found` };
+  const lines = (supplyType: string) =>
+    cycle.taxLines.filter((line) => line.supplyType === supplyType);
+  const split = splitCycleCharge({
+    sessions: charged.map((row) => ({
+      sessionId: row.sessionId,
+      startsAt: byId.get(row.sessionId)!.startsAt,
+      slot: byId.get(row.sessionId)!.slot,
+      valueCents: row.valueCents,
+      compensationCents: row.compensationCents
+    })),
+    carriedInCents: cycle.carriedInCents,
+    serviceTaxLines: lines('care_service_value'),
+    familyFeeCents: cycle.familyFeeCents ?? 0,
+    familyFeeTaxLines: lines('family_service_fee'),
+    providerCommissionCents: cycle.providerCommissionCents ?? 0,
+    providerCommissionTaxLines: lines('provider_commission'),
+    compensationTaxLines: lines('cancellation_compensation')
+  });
+  const total =
+    split.sessions.reduce((sum, row) => sum + row.familyTotalCents, 0) +
+    (split.carry?.familyTotalCents ?? 0);
+  const captured = payment.capturedCents ?? payment.totalCents;
+  if (total !== captured) {
+    return { ok: false, reason: `split total ${total} differs from the capture ${captured}` };
+  }
+  return {
+    ok: true,
+    charges: split.sessions.map((row) => ({
+      sessionId: row.sessionId,
+      cycleId: cycle.id,
+      contractId: cycle.contractId,
+      paymentId: payment.id,
+      basis: row.basis === 'compensation' ? ('compensation' as const) : ('session' as const),
+      careCents: row.careCents,
+      careTaxLines: row.careTaxLines.map((line) => ({ ...line })),
+      careTaxCents: row.careTaxCents,
+      familyFeeCents: row.familyFeeCents,
+      familyFeeTaxLines: row.familyFeeTaxLines.map((line) => ({ ...line })),
+      familyFeeTaxCents: row.familyFeeTaxCents,
+      familyTotalCents: row.familyTotalCents,
+      commissionCents: row.commissionCents,
+      commissionTaxLines: row.commissionTaxLines.map((line) => ({ ...line })),
+      commissionTaxCents: row.commissionTaxCents,
+      helperShareCents: row.helperShareCents
+    }))
+  };
+};
+
+/** The split of a cycle captured without one (before this step shipped, or
+ * after a mismatch was fixed): written once, idempotently. */
+export const ensureCycleSplit = (cycle: ContractCycle) =>
+  Effect.gen(function* () {
+    if (cycle.status !== 'captured' || cycle.paymentId === null) return [];
+    const repo = yield* ContractBillingRepo;
+    const existing = yield* repo.listSessionCharges(cycle.contractId, cycle.id);
+    if (existing.length > 0) return existing;
+    const payment = yield* findPayment(cycle.paymentId);
+    if (payment === null || payment.status !== 'captured') return [];
+    const split = cycleSplitCharges(
+      cycle,
+      payment,
+      yield* repo.listSessions(cycle.contractId, cycle.id)
+    );
+    if (!split.ok) {
+      yield* recordSplitMismatch(cycle, split.reason);
+      return [];
+    }
+    yield* repo.insertSessionCharges(split.charges);
+    return yield* repo.listSessionCharges(cycle.contractId, cycle.id);
+  });
+
+const recordSplitMismatch = (cycle: ContractCycle, reason: string) =>
+  Effect.gen(function* () {
+    const recorded = yield* (yield* ContractBillingRepo).recordIncident({
+      contractId: cycle.contractId,
+      cycleId: cycle.id,
+      kind: 'split_mismatch',
+      detail: reason
+    });
+    if (recorded) {
+      yield* alertAdmins(`Cycle ${cycle.id} cannot be split per session`, [
+        `Contract ${cycle.contractId}, cycle ${cycle.index + 1} (${cycleDates(cycle)}): ${reason}.`,
+        'Session refunds and transfers for this cycle wait until it is fixed.'
+      ]);
+    }
+  });
+
 const onCaptured = (cycle: ContractCycle, payment: Payment, now: Date) =>
   Effect.gen(function* () {
     const repo = yield* ContractBillingRepo;
-    const moved = yield* repo.advanceCycle(cycle.id, {
-      from: ['authorising', 'authorised', 'capturing', 'capture_failed'],
-      paymentId: payment.id,
-      set: {
-        status: 'captured',
-        capturedCents: payment.capturedCents ?? payment.totalCents,
-        capturedAt: now,
-        fundedAt: cycle.fundedAt ?? now,
-        lastError: null
-      }
-    });
+    // Tier 3 step 2: the per-session split is frozen in the capture's
+    // transaction, from what was captured.
+    const split = cycleSplitCharges(
+      cycle,
+      payment,
+      yield* repo.listSessions(cycle.contractId, cycle.id)
+    );
+    const moved = yield* repo.captureCycle(
+      cycle.id,
+      {
+        from: ['authorising', 'authorised', 'capturing', 'capture_failed'],
+        paymentId: payment.id,
+        set: {
+          status: 'captured',
+          capturedCents: payment.capturedCents ?? payment.totalCents,
+          capturedAt: now,
+          fundedAt: cycle.fundedAt ?? now,
+          lastError: null
+        }
+      },
+      split.ok ? split.charges : []
+    );
+    if (moved && !split.ok) yield* recordSplitMismatch(moved, split.reason);
     const current =
       moved ??
       (yield* repo.listCycles(cycle.contractId)).find((row) => row.id === cycle.id) ??
@@ -2247,7 +2461,9 @@ export const retryFamilyBilling = (
           yield* fund(billing, ctx, cycle, ['grace'], now);
         }
         const unanswered =
-          (cycle.status === 'authorising' && cycle.chargeMode !== 'resume' && now < cycle.startsAt) ||
+          (cycle.status === 'authorising' &&
+            cycle.chargeMode !== 'resume' &&
+            now < cycle.startsAt) ||
           (recoveryPending(cycle) && cycle.chargeMode === 'resume');
         if (recoveryPending(cycle) && cycle.chargeMode === 'resume') {
           // A declined recovery after a system failure: the new card, now.

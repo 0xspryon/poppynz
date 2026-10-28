@@ -32,6 +32,12 @@ export type ContractAmounts = {
   readonly providerCommissionCents: number;
   readonly providerCommissionTaxLines: ReadonlyArray<TaxLine>;
   readonly providerShareCents: number;
+  /** Tier 3 step 2: compensation for sessions cancelled late before the
+   * capture — charged to the family with no fee, paid to the helper with no
+   * commission (and its tax, out of scope by default). Included in the
+   * family total and the helper's share. */
+  readonly compensationCents: number;
+  readonly compensationTaxLines: ReadonlyArray<TaxLine>;
 };
 
 export type ContractAmountsResult =
@@ -47,6 +53,8 @@ export const quoteContractAmounts = (input: {
   on: IsoDate;
   familyProvince: ProvinceCode | null;
   helperProvince: ProvinceCode | null;
+  /** Late-cancellation compensation charged on top (default 0). */
+  compensationCents?: number;
 }): ContractAmountsResult => {
   // The family pays; the contract's location is the family's; the helper
   // receives the commission's supply.
@@ -58,7 +66,11 @@ export const quoteContractAmounts = (input: {
   const familyFeeCents = applyBps(input.serviceCents, input.familyFeeBps);
   const providerCommissionCents = applyBps(input.serviceCents, input.providerCommissionBps);
   const tax = (
-    supplyType: 'care_service_value' | 'family_service_fee' | 'provider_commission',
+    supplyType:
+      | 'care_service_value'
+      | 'family_service_fee'
+      | 'provider_commission'
+      | 'cancellation_compensation',
     baseCents: number
   ) =>
     computeSupplyTax({ snapshot: input.snapshot, supplyType, baseCents, on: input.on, provinces });
@@ -69,6 +81,13 @@ export const quoteContractAmounts = (input: {
   if (!feeTax.ok) return feeTax;
   const commissionTax = tax('provider_commission', providerCommissionCents);
   if (!commissionTax.ok) return commissionTax;
+  const compensationCents = input.compensationCents ?? 0;
+  const compensationTax =
+    compensationCents > 0
+      ? tax('cancellation_compensation', compensationCents)
+      : ({ ok: true, lines: [] } as const);
+  if (!compensationTax.ok) return compensationTax;
+  const compensationTotal = compensationCents + sumTax(compensationTax.lines);
 
   const serviceTaxCents = sumTax(serviceTax.lines);
   return {
@@ -80,12 +99,22 @@ export const quoteContractAmounts = (input: {
       familyFeeCents,
       familyFeeTaxLines: feeTax.lines,
       familyTotalCents:
-        input.serviceCents + serviceTaxCents + familyFeeCents + sumTax(feeTax.lines),
+        input.serviceCents +
+        serviceTaxCents +
+        familyFeeCents +
+        sumTax(feeTax.lines) +
+        compensationTotal,
       providerCommissionBps: input.providerCommissionBps,
       providerCommissionCents,
       providerCommissionTaxLines: commissionTax.lines,
       providerShareCents:
-        input.serviceCents + serviceTaxCents - providerCommissionCents - sumTax(commissionTax.lines)
+        input.serviceCents +
+        serviceTaxCents -
+        providerCommissionCents -
+        sumTax(commissionTax.lines) +
+        compensationTotal,
+      compensationCents,
+      compensationTaxLines: compensationTax.lines
     }
   };
 };

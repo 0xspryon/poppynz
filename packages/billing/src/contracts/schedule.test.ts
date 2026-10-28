@@ -163,9 +163,7 @@ describe('firstSessionStart (UAT round 2: the lead-time rule)', () => {
     expect(firstSessionStart(terms({ endsOn: '2026-10-31' }))).toBeNull();
     // Starts and ends Mon 2 Nov at 15:00: its 15:30 session is cut away.
     expect(
-      firstSessionStart(
-        terms({ startsOn: '2026-11-02', endsOn: '2026-11-02', endsAtMinutes: 900 })
-      )
+      firstSessionStart(terms({ startsOn: '2026-11-02', endsOn: '2026-11-02', endsAtMinutes: 900 }))
     ).toBeNull();
   });
 

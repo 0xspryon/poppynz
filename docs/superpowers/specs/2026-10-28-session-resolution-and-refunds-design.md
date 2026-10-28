@@ -409,6 +409,28 @@ recoveries per session.
   the automatic case is exercised with the adapter's request shape (`payout`
   + `expand` + `stripeAccount`) and the mock; the manual case falls back to
   the timing match, labelled approximate.
+- **Step-5 review (2026-10-28)**, re-run with throwaway scripts: the
+  platform's balance transactions of two days, read 25 at a time with
+  `expand: ['data.source']` and `created[gte|lt]`, came back as 78 unique
+  rows over 4 pages (types `charge`, `refund`, `refund_failure` with a
+  `refund` source, `transfer`, and `adjustment` with a `du_…` dispute
+  source in `dispute` / `dispute_reversal`); a connected account lists the
+  arrivals as `payment` (`py_…`, `source_transfer: tr_…`) and its payouts
+  as `payout`. `payout=` on a manual payout is still refused with the same
+  message. **An automatic payout could not be produced today:** Canadian
+  custom accounts start on a 7-day daily schedule, `delay_days: 'minimum'`
+  resolves to 7 and `delay_days: 2` is refused ("You cannot lower this
+  merchant's delay below 7"); there is no API to trigger a scheduled payout.
+  `acct_1UVYVL25pUls3rNB` already has CAD 252.74 *available* on a daily
+  schedule, so its first automatic payout should appear after Stripe's next
+  payout run — list it with `payouts.list` on that account and try
+  `balance_transactions.list({ payout })` to confirm the exact path. The
+  `pm_card_refundFail` refund turned `failed` (`expired_or_canceled_card`)
+  about five minutes after it was created, longer than "a minute or two".
+  The whole set reconciled from the page: four cycle charges and an extra
+  session's charge, two refunds and a refund failure, a transfer and the
+  dispute's withdrawal (by `du_…`) all matched by reference. `stripe listen
+  --events '*'` is no longer accepted by the CLI; use `--all-snapshot`.
 - **Card disputes (step 4)**, confirmed 2026-10-28 with throwaway
   scripts. `pm_card_createDispute` (4000 0000 0000 0259) opens a
   `fraudulent` dispute seconds after the charge succeeds (also after the
@@ -772,6 +794,50 @@ Defaults taken while the user was away — each **default (2026-10-28)**:
     (Reimbursements, Money reports, Reconciliation, Failed refunds), each
     shown by permission (`/accountant/access`); the existing tax "Reports"
     keep their name. Admins reach the area through the Accountant link.
+
+### Step-5 review (2026-10-28) — fixes and the defaults they took
+
+Reviewed and browser-tested on the stack with real test-mode money (a
+contract moved a week back, the dev clock, `pm_card_bypassPending`,
+`pm_card_refundFail`, `pm_card_createDispute`). Each **default (2026-10-28)**:
+
+15. **One-off refunds** are payments refunded in full that have no session
+    refunds. A cycle payment whose session refunds add up to all of it is
+    marked `refunded` by the `charge.refunded` webhook; it was counted a
+    second time in the ledger and the refunds report.
+16. **Poppynz-funded helper pay** (`capture_failed`) counts as recovered once
+    the recovery charge captured the cycle again (nothing ever resolves
+    those incidents); the absorbed-costs report leaves recovered ones out —
+    it shows what Poppynz still bears, so a later recovery changes a past
+    month's figure.
+17. **CSV exports** neutralise text a spreadsheet would run as a formula
+    (`=`, `+`, `-`, `@`, tab or carriage return first) with a leading
+    apostrophe; plain numbers, negative amounts included, are left alone.
+18. **A failed scheduled reconciliation** (the provider unreachable) is
+    tried again an hour later (at most `RECONCILIATION_INTERVAL_HOURS`),
+    not a whole interval later. Seen on a stack's first worker boot.
+19. **Stripe fees gaps** come from what was imported, not from what was
+    found: a month is "recorded" when the succeeded runs' periods span all
+    of it — the month in progress up to its latest import. A month imported
+    from the 20th only, which used to look complete, is a gap; a fully
+    imported month without any transaction is not.
+20. **On-demand imports** starting in the future are refused
+    (`RECONCILIATION_PERIOD_IN_FUTURE`, 422) instead of a 500. Imports are
+    written in batches of 500 rows, one per reference, so a large run no
+    longer exceeds Postgres's bind parameters.
+21. **Month-end snapshots** show their instant in Toronto time whatever the
+    viewer's zone ("Oct 31, 11:59 p.m.", not "Nov 1, 4:59" in Paris). The
+    books' months are Toronto's throughout, like the tax report.
+22. **Matching notes and run errors** stay in English on the row (the CSV
+    keeps them as stored) and are translated on the page.
+
+Known limits, not changed: the ledger and reports read every money row
+on each request (default 1); each run re-lists every payout of the period's
+helpers and each automatic payout's transactions, even those already matched
+exactly (one provider call per helper and per payout); an on-demand import
+runs inside the HTTP request (a long period can take a while); ledger kinds
+and resolution kinds in the drawer's trail are shown as their codes.
+
 ## 15. Card disputes (step 4) — as built, with the defaults taken
 
 Built 2026-10-28 (branch `feature/card-disputes`, migration 0045). Umbrella

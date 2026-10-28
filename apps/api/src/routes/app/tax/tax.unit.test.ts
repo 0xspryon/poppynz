@@ -537,6 +537,26 @@ describe('tax collected report', () => {
     ]);
   });
 
+  it('ends a range on the day DST ends at the next midnight, 25 hours later', async () => {
+    const { layer } = makeLayer({
+      sources: [
+        {
+          source: 'contract_cycle',
+          id: 'late-on-dst-day',
+          // 23:30 on 1 Nov 2026 in Toronto (EST since 02:00 that day).
+          capturedAt: new Date('2026-11-02T04:30:00.000Z'),
+          taxLines: [line({ baseCents: 313, taxCents: 41 })]
+        }
+      ]
+    });
+    const result = await Effect.runPromise(
+      taxCollectedReportRouteProgram(new Headers(), { from: '2026-11-01', to: '2026-11-01' }).pipe(
+        Effect.provide(layer)
+      )
+    );
+    expect(result.totalTaxCents).toBe(41);
+  });
+
   it('exports CSV', () => {
     const csv = taxCollectedCsv(aggregateTaxCollected(sources, 'month'));
     expect(csv.split('\n').slice(0, 3)).toEqual([

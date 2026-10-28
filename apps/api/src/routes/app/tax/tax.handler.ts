@@ -1,5 +1,5 @@
 import type { SqlError } from '@effect/sql/SqlError';
-import { instantAt, todayIn } from '@repo/calendar';
+import { addDays, instantAt, todayIn } from '@repo/calendar';
 import { inForce } from '@repo/billing/pricing';
 import {
   TaxConfigRepo,
@@ -384,7 +384,9 @@ export const taxCollectedReportRouteProgram = (
     const period: TaxReportPeriod = input.period ?? 'month';
     const from = instantAt(input.from, 0, TAX_REPORT_ZONE);
     // `to` is inclusive: up to the start of the next day.
-    const to = new Date(instantAt(input.to, 0, TAX_REPORT_ZONE).getTime() + 86_400_000);
+    // (The next day's midnight, not 24 hours later: a DST change day is 23
+    // or 25 hours long.)
+    const to = instantAt(addDays(input.to, 1), 0, TAX_REPORT_ZONE);
     const repo = yield* TaxReportRepo;
     const sources = yield* repo
       .listCollected({ from, to })

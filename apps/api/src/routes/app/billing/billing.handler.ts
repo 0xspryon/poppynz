@@ -101,7 +101,10 @@ export const getBillingRouteProgram = (headers: Headers) =>
     );
     // Tier 3 step 2: session refunds under their cycle's charge.
     const refunds = yield* refundsByPayment(
-      history.filter((row) => row.kind === 'contract_cycle').map((row) => row.id)
+      // Tier 3 step 3: an extra session's own payment carries its refunds too.
+      history
+        .filter((row) => row.kind === 'contract_cycle' || row.kind === 'contract_extra_session')
+        .map((row) => row.id)
     ).pipe((errors) => mapRepoError(errors));
 
     return {

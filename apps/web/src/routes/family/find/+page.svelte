@@ -19,6 +19,7 @@
 		getFamilyOnboardingState,
 		type FamilyOnboardingState
 	} from '$lib/api/onboarding';
+	import { getReplacementContext, type ReplacementContext } from '$lib/api/contracts';
 	import { getProfile } from '$lib/api/provider-profile';
 	import { listLiveCatalogue } from '$lib/api/service-catalogue';
 	import { reportUserSearch } from '$lib/api/user-searches';
@@ -26,10 +27,16 @@
 	import Pagination from '$lib/components/Pagination.svelte';
 	import ProviderCard from '$lib/components/ProviderCard.svelte';
 	import RequestSearchHelpModal from '$lib/components/RequestSearchHelpModal.svelte';
+	import ReplacementBanner from '$lib/components/replacement/ReplacementBanner.svelte';
 	import { centsToDollars, dollarsToCents, formatMoney } from '$lib/money';
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 	import { withQuery } from '$lib/nav';
+	import {
+		readReplacementParams,
+		replacementErrorMessage,
+		writeReplacementParams
+	} from '$lib/replacement';
 	import { startTourOnce } from '$lib/tour';
 	import { SvelteURLSearchParams } from 'svelte/reactivity';
 
@@ -100,6 +107,44 @@
 	let rateMaxInput = $state(initialMax == null ? '' : centsToDollars(initialMax));
 	let serviceQuery = $state('');
 	let sheetOpen = $state(false);
+
+	// --- Find a replacement (Tier 3 step 1b): a helper cancelled; search for
+	// another one offering the same service, without them, and carry the
+	// context to the profile where the contract can be used as a template. ---
+	const initialReplacement = readReplacementParams(initial);
+	let replacement = $state(initialReplacement);
+	let replacementContext = $state<ReplacementContext | null>(null);
+	// The first search waits for the context, so the helper who cancelled
+	// never flashes into the results.
+	let replacementReady = $state(initialReplacement === null);
+
+	onMount(() => {
+		const wanted = initialReplacement;
+		if (!wanted) return;
+		void getReplacementContext(wanted.contractId, wanted.sessionIds).then((result) => {
+			if (result.ok) {
+				replacementContext = result.data.replacement;
+				const serviceName = result.data.replacement.sessions[0]?.serviceName;
+				if (!service && serviceName) service = serviceName;
+			} else {
+				// Not replaceable any more (started, or not found): a regular search.
+				toast.error(
+					result.error.code === 'REPLACEMENT_SESSIONS_INVALID' ||
+						result.error.code === 'CONTRACT_NOT_FOUND'
+						? replacementErrorMessage(result.error, '')
+						: m.replacement_context_error()
+				);
+				replacement = null;
+			}
+			replacementReady = true;
+		});
+	});
+
+	function exitReplacement() {
+		replacement = null;
+		replacementContext = null;
+		resetToFirstPage();
+	}
 
 	// --- family home location (search origin) ---
 	let profileLoaded = $state(false);
@@ -188,12 +233,14 @@
 		if (maxCents != null) params.set('max', String(maxCents));
 		if (sort !== 'relevance') params.set('sort', sort);
 		if (pageNumber > 1) params.set('page', String(pageNumber));
+		writeReplacementParams(params, replacement);
 		return params.toString();
 	});
 
 	$effect(() => {
-		if (!profileLoaded) return;
+		if (!profileLoaded || !replacementReady) return;
 		void retryTick;
+		const excludeUserId = replacementContext?.helper.userId;
 		const snapshot = qs;
 		const id = ++requestId;
 		loading = true;
@@ -212,7 +259,8 @@
 			maxHourlyRateCents: maxCents ?? undefined,
 			sort,
 			page: pageNumber,
-			perPage: PER_PAGE
+			perPage: PER_PAGE,
+			excludeUserId
 		}).then((result) => {
 			if (id !== requestId) return;
 			loading = false;
@@ -373,6 +421,7 @@
 		const params = new SvelteURLSearchParams();
 		if (qs) params.set('from', qs);
 		if (distanceKm !== undefined) params.set('d', String(distanceKm));
+		writeReplacementParams(params, replacement);
 		return params.toString();
 	}
 </script>
@@ -522,6 +571,20 @@
 			</a>
 		</div>
 	{:else}
+		{#if replacementContext}
+			<ReplacementBanner context={replacementContext} showHidden>
+				{#snippet actions()}
+					<button
+						type="button"
+						class="text-xs font-semibold text-primary"
+						onclick={exitReplacement}
+						data-testid="replacement-exit"
+					>
+						{m.replacement_find_exit()}
+					</button>
+				{/snippet}
+			</ReplacementBanner>
+		{/if}
 		<!-- Search header -->
 		<form
 			class="flex flex-col gap-3 rounded-xl border border-card-border bg-base-100 p-4"

@@ -15,6 +15,7 @@
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import { formatDateTime } from '$lib/date';
 	import { m } from '$lib/paraglide/messages';
+	import { findReplacementHref } from '$lib/replacement';
 	import {
 		noticeHoursText,
 		resolutionKindLabel,
@@ -266,8 +267,22 @@
 		</div>
 	{/if}
 
-	{#if session.actions.length > 0}
+	{#if session.actions.length > 0 || session.canFindReplacement}
 		<div class="flex flex-wrap gap-1.5">
+			{#if session.canFindReplacement}
+				<!-- Tier 3 step 1b: the helper cancelled — find someone else. -->
+				<a
+					href={findReplacementHref(session.serviceName, {
+						contractId: cycle.contractId,
+						sessionIds: [session.id]
+					})}
+					class="btn btn-xs btn-secondary"
+					data-testid="session-find-replacement"
+				>
+					<i class="las la-search" aria-hidden="true"></i>
+					{m.replacement_find_action()}
+				</a>
+			{/if}
 			{#each session.actions as action (action)}
 				<button
 					type="button"

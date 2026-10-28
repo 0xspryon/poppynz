@@ -22,6 +22,12 @@
 	import { createContract } from '$lib/api/contracts';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import ReachoutCard from '$lib/components/messages/ReachoutCard.svelte';
+	import {
+		forgetReplacement,
+		readReplacementParams,
+		recallReplacement,
+		startReplacementWithToast
+	} from '$lib/replacement';
 	import { notifications } from '$lib/notifications.svelte';
 	import { toast } from '$lib/toast.svelte';
 	import { unread } from '$lib/unread.svelte';
@@ -63,6 +69,39 @@
 		role === 'family'
 			? resolve('/family/providers/[userId]', { userId })
 			: resolve('/service-provider/families/[userId]', { userId });
+
+	// Find a replacement (Tier 3 step 1b): the family reached out to this
+	// helper to replace cancelled sessions (the context comes in the URL, or
+	// was remembered when the reach-out was sent). Once the conversation is
+	// unlocked, the thread offers the contract as a template.
+	let replacementDismissedFor = $state<string | null>(null);
+	let startingReplacement = $state(false);
+	const threadReplacement = $derived.by(() => {
+		if (role !== 'family' || !thread) return null;
+		const counterpartId = thread.conversation.counterpart.userId;
+		if (replacementDismissedFor === counterpartId) return null;
+		if (thread.conversation.status !== 'active' && thread.conversation.status !== 'pending') {
+			return null;
+		}
+		return readReplacementParams(page.url.searchParams) ?? recallReplacement(counterpartId);
+	});
+
+	async function handleUseTemplate() {
+		const current = thread;
+		if (!current || !threadReplacement || startingReplacement) return;
+		startingReplacement = true;
+		await startReplacementWithToast(threadReplacement, {
+			userId: current.conversation.counterpart.userId,
+			name: threadFirstName
+		});
+		startingReplacement = false;
+	}
+
+	function dismissReplacement() {
+		if (!thread) return;
+		forgetReplacement(thread.conversation.counterpart.userId);
+		replacementDismissedFor = thread.conversation.counterpart.userId;
+	}
 
 	const contractHref = (contractId: string) =>
 		role === 'family'
@@ -576,6 +615,54 @@
 					onignore={() => (ignoreConfirmOpen = true)}
 					{responding}
 				/>
+
+				{#if threadReplacement}
+					<div
+						class="flex flex-col gap-2 rounded-xl border border-accent/40 bg-base-100 px-4 py-3"
+						data-testid="thread-replacement"
+					>
+						<div class="flex items-start gap-2.5">
+							<i class="las la-user-friends mt-0.5 shrink-0 text-lg text-accent" aria-hidden="true"
+							></i>
+							<div class="min-w-0 flex-1">
+								<p class="text-[13px] font-bold text-base-content">
+									{m.replacement_thread_title()}
+								</p>
+								<p class="mt-0.5 text-[12.5px] leading-relaxed text-base-content-muted">
+									{thread.conversation.status === 'active'
+										? m.replacement_thread_body({ name: threadFirstName })
+										: m.replacement_thread_pending({ name: threadFirstName })}
+								</p>
+							</div>
+							<button
+								type="button"
+								class="btn btn-circle btn-ghost btn-xs"
+								aria-label={m.common_dismiss()}
+								onclick={dismissReplacement}
+							>
+								<i class="las la-times" aria-hidden="true"></i>
+							</button>
+						</div>
+						{#if thread.conversation.status === 'active'}
+							<div class="pl-7">
+								<button
+									type="button"
+									class="btn btn-sm btn-secondary"
+									disabled={startingReplacement}
+									onclick={() => void handleUseTemplate()}
+									data-testid="thread-use-template"
+								>
+									{#if startingReplacement}
+										<span class="loading loading-xs loading-spinner"></span>
+									{:else}
+										<i class="las la-copy" aria-hidden="true"></i>
+									{/if}
+									{m.replacement_use_template()}
+								</button>
+							</div>
+						{/if}
+					</div>
+				{/if}
 
 				{#if thread.contract && ['active', 'declined', 'ending', 'ended'].includes(thread.contract.status)}
 					<!-- 16h/16j: contract state rendered from the thread summary — no

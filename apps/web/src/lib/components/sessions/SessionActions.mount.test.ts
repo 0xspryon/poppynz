@@ -93,6 +93,23 @@ describe('SessionActions (Tier 3)', () => {
 		unmount(app);
 	});
 
+	it('links the family to Find help in replacement mode for a session the helper cancelled', () => {
+		const app = render({ actions: [], canFindReplacement: true });
+		flushSync();
+		const link = document.querySelector<HTMLAnchorElement>(
+			'[data-testid="session-find-replacement"]'
+		);
+		expect(link?.textContent?.trim()).toBe('Find a replacement');
+		const href = new URL(link!.getAttribute('href')!, 'https://app.test');
+		expect(href.pathname).toBe('/family/find');
+		expect(Object.fromEntries(href.searchParams)).toEqual({
+			service: 'Childcare',
+			replace: 'contract-1',
+			sessions: 'session-1'
+		});
+		unmount(app);
+	});
+
 	it('lets the proposer withdraw a pending day-off request', async () => {
 		recordSessionAction.mockResolvedValue({ ok: true, data: { resolution: {} } });
 		const app = render({

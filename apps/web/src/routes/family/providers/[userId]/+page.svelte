@@ -9,13 +9,24 @@
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
-	import { createContract } from '$lib/api/contracts';
+	import {
+		createContract,
+		getReplacementContext,
+		type ReplacementContext
+	} from '$lib/api/contracts';
 	import { lookupConversation, type ConversationLookup } from '$lib/api/conversations';
 	import { getProvider, type ProviderDetail } from '$lib/api/providers';
 	import ReachoutComposerModal from '$lib/components/messages/ReachoutComposerModal.svelte';
+	import ReplacementBanner from '$lib/components/replacement/ReplacementBanner.svelte';
 	import { centsToCompactDollars, rateRangeLabel } from '$lib/money';
 	import { withQuery } from '$lib/nav';
 	import { m } from '$lib/paraglide/messages';
+	import {
+		readReplacementParams,
+		rememberReplacement,
+		startReplacementWithToast,
+		writeReplacementParams
+	} from '$lib/replacement';
 	import { toast } from '$lib/toast.svelte';
 
 	let provider = $state<ProviderDetail | null>(null);
@@ -73,8 +84,41 @@
 		});
 	});
 
+	// --- Find a replacement (Tier 3 step 1b): arrived from Find help's
+	// replacement mode. The contract becomes a template once a conversation
+	// with this helper is unlocked; until then the normal reach-out applies.
+	const replacement = $derived(readReplacementParams(page.url.searchParams));
+	let replacementContext = $state<ReplacementContext | null>(null);
+	let startingReplacement = $state(false);
+
+	$effect(() => {
+		const wanted = replacement;
+		replacementContext = null;
+		if (!wanted) return;
+		void getReplacementContext(wanted.contractId, wanted.sessionIds).then((result) => {
+			if (result.ok && replacement === wanted) replacementContext = result.data.replacement;
+		});
+	});
+
+	async function handleUseTemplate() {
+		if (!replacement || startingReplacement) return;
+		startingReplacement = true;
+		await startReplacementWithToast(replacement, { userId, name: firstName }, () => {
+			composerOpen = true;
+		});
+		startingReplacement = false;
+	}
+
 	function openConversation(conversationId: string) {
-		void goto(withQuery(resolve('/family/messages'), `c=${encodeURIComponent(conversationId)}`));
+		const params = new URLSearchParams({ c: conversationId });
+		if (replacement) {
+			// Kept for when the helper accepts: the conversation offers the
+			// template then.
+			rememberReplacement(userId, replacement);
+			writeReplacementParams(params, replacement);
+			toast.info(m.replacement_toast_reach_out_kept({ name: firstName }));
+		}
+		void goto(withQuery(resolve('/family/messages'), params.toString()));
 	}
 
 	let proposingTerms = $state(false);
@@ -208,6 +252,21 @@
 			</button>
 		</div>
 	{:else if provider}
+		{#if replacementContext}
+			<ReplacementBanner context={replacementContext}>
+				{#snippet actions()}
+					{#if !conversation}
+						<p class="text-[12px] leading-relaxed text-base-content-muted">
+							{m.replacement_reach_out_hint({ name: firstName })}
+						</p>
+					{:else if conversation.status === 'pending'}
+						<p class="text-[12px] leading-relaxed text-base-content-muted">
+							{m.replacement_pending_hint({ name: firstName })}
+						</p>
+					{/if}
+				{/snippet}
+			</ReplacementBanner>
+		{/if}
 		<!-- Header card -->
 		<div class="rounded-xl border border-card-border bg-base-100 p-6">
 			<div
@@ -276,6 +335,22 @@
 									? m.family_provider_awaiting_you()
 									: m.family_provider_awaiting_response()}
 							</span>
+						{:else if conversation.status === 'active' && replacement}
+							<!-- Find a replacement: the template replaces "Propose terms". -->
+							<button
+								type="button"
+								class="btn btn-secondary"
+								disabled={startingReplacement}
+								onclick={() => void handleUseTemplate()}
+								data-testid="use-template"
+							>
+								{#if startingReplacement}
+									<span class="loading loading-xs loading-spinner"></span>
+								{:else}
+									<i class="las la-copy" aria-hidden="true"></i>
+								{/if}
+								{m.replacement_use_template()}
+							</button>
 						{:else if conversation.status === 'active'}
 							<button
 								type="button"
@@ -406,7 +481,16 @@
 					>
 						{m.family_provider_message({ name: firstName })}
 					</a>
-					{#if conversation.status === 'active'}
+					{#if conversation.status === 'active' && replacement}
+						<button
+							type="button"
+							class="btn flex-1 btn-secondary"
+							disabled={startingReplacement}
+							onclick={() => void handleUseTemplate()}
+						>
+							{m.replacement_use_template()}
+						</button>
+					{:else if conversation.status === 'active'}
 						<button
 							type="button"
 							class="btn flex-1 btn-outline"

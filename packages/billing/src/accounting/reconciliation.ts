@@ -52,6 +52,10 @@ export class ReconciliationBusyError extends Data.TaggedError('ReconciliationBus
 /** Runs still `running` after this long were abandoned (a crash). */
 const STALE_RUN_MS = 6 * 3600_000;
 
+/** A scheduled run that failed (the provider was unreachable, say) is tried
+ * again this soon rather than a whole interval later. */
+const FAILED_RUN_RETRY_MS = 3600_000;
+
 export type MatchResult = {
   matchStatus: BalanceTransactionMatchStatus;
   matchKind: BalanceTransactionMatchKind | null;
@@ -448,9 +452,11 @@ export const runScheduledReconciliation = (now: Date) =>
     const config = yield* reconciliationConfig;
     const payments = yield* Payments;
     const last = yield* (yield* ReconciliationRepo).lastRun(payments.provider, 'schedule');
-    if (last && now.getTime() - last.startedAt.getTime() < config.intervalHours * 3600_000) {
-      return null;
-    }
+    const wait =
+      last?.status === 'failed'
+        ? Math.min(FAILED_RUN_RETRY_MS, config.intervalHours * 3600_000)
+        : config.intervalHours * 3600_000;
+    if (last && now.getTime() - last.startedAt.getTime() < wait) return null;
     return yield* runReconciliation({
       trigger: 'schedule',
       requestedByUserId: null,

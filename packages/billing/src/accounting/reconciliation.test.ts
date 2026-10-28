@@ -379,6 +379,29 @@ describe('reconciliation matching', () => {
     );
     expect(next?.run.id).not.toBe(first?.run.id);
   });
+
+  it('tries a failed scheduled run again an hour later, not a whole interval later', async () => {
+    const repo = makeInMemoryReconciliationRepo(seed());
+    const at = (providerDown: boolean, now: Date) => {
+      const payments = makeMockPayments({ providerDown });
+      payments.setBalanceTransactions(null, platformTransactions);
+      return Effect.runPromise(
+        runScheduledReconciliation(now).pipe(
+          Effect.provide(
+            Layer.mergeAll(
+              Layer.succeed(Payments, payments),
+              repo.layer,
+              makeCardDisputeLedgerTest()
+            )
+          )
+        )
+      );
+    };
+    expect((await at(true, NOW))?.run.status).toBe('failed');
+    expect(await at(false, new Date(NOW.getTime() + 59 * 60_000))).toBeNull();
+    expect((await at(false, new Date(NOW.getTime() + 60 * 60_000)))?.run.status).toBe('succeeded');
+    expect(await at(false, new Date(NOW.getTime() + 2 * 3600_000))).toBeNull();
+  });
 });
 
 describe('paid to the bank (§13.4)', () => {

@@ -15,11 +15,11 @@ export const environmentConfig = Config.string('ENVIRONMENT').pipe(
     return isAppEnvironment(value)
       ? Either.right(value)
       : Either.left(
-          ConfigError.InvalidData(
-            [],
-            `ENVIRONMENT must be one of: ${appEnvironments.join(', ')} — got "${raw}"`
-          )
-        );
+        ConfigError.InvalidData(
+          [],
+          `ENVIRONMENT must be one of: ${appEnvironments.join(', ')} — got "${raw}"`
+        )
+      );
   })
 );
 
@@ -224,10 +224,9 @@ export const safetyVerificationConfig = Config.all({
 // re-fetched by the worker after PAYMENTS_SETTLE_AFTER_MINUTES and cancelled
 // after PAYMENTS_ABANDON_AFTER_HOURS, which returns its order to the basket.
 export const stripeConfig = Config.all({
-  provider: Config.literal(
-    'mock',
-    'stripe'
-  )('PAYMENTS_PROVIDER').pipe(Config.withDefault('mock' as const)),
+  provider: Config.literal('mock', 'stripe')('PAYMENTS_PROVIDER').pipe(
+    Config.withDefault('mock' as const)
+  ),
   secretKey: Config.option(Config.redacted('STRIPE_SECRET_KEY')),
   webhookSecret: Config.option(Config.redacted('STRIPE_WEBHOOK_SECRET')),
   // The Connect endpoint's signing secret (account.updated on connected
@@ -367,5 +366,7 @@ export const payoutsConfig = Config.all({
     Config.withDefault('https://app.poppynz.com'),
     Config.map((origin) => origin.trim().replace(/\/+$/, ''))
   ),
-  refreshAfterMinutes: Config.integer('PAYOUTS_REFRESH_AFTER_MINUTES').pipe(Config.withDefault(60))
+  refreshAfterMinutes: Config.integer('PAYOUTS_REFRESH_AFTER_MINUTES').pipe(
+    Config.withDefault(60)
+  )
 });

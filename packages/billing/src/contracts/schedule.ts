@@ -178,7 +178,10 @@ export const planWindow = (
   /** The new `materialised_through`; unchanged when nothing was due. */
   through: IsoDate | null;
 } => {
-  const windowEnd = addDays(today, (terms.sessionWindowDays ?? DEFAULT_SESSION_WINDOW_DAYS) - 1);
+  const windowEnd = addDays(
+    today,
+    (terms.sessionWindowDays ?? DEFAULT_SESSION_WINDOW_DAYS) - 1
+  );
   const through = terms.endsOn !== null && terms.endsOn < windowEnd ? terms.endsOn : windowEnd;
   const from = materialisedThrough === null ? terms.startsOn : addDays(materialisedThrough, 1);
   if (from > through) return { cycles: [], sessions: [], through: materialisedThrough };

@@ -682,8 +682,8 @@ export const SessionMoneyRepoDefault = SessionMoneyRepoLive.pipe(Layer.provide(D
 // In-memory stand-in with the live repo's semantics (limits included), for
 // unit tests.
 
-let memoryId = 0;
-const nextId = (prefix: string) => `${prefix}-${++memoryId}`;
+/** UUID-shaped, like the database's, so route validation accepts them. */
+const nextId = (_kind: string) => crypto.randomUUID();
 
 export const makeInMemorySessionMoneyRepo = (
   options: {

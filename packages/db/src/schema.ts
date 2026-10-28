@@ -1880,7 +1880,10 @@ export const sessionResolutionKinds = [
   'day_off_agreed',
   'disputed'
 ] as const;
-export const sessionResolutionKind = appDb.enum('session_resolution_kind', sessionResolutionKinds);
+export const sessionResolutionKind = appDb.enum(
+  'session_resolution_kind',
+  sessionResolutionKinds
+);
 export const sessionResolutionStatus = appDb.enum('session_resolution_status', [
   'proposed',
   'confirmed',

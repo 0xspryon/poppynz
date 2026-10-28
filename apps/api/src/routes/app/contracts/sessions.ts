@@ -86,6 +86,7 @@ export const sessionActionSchema = Schema.Struct({
   action: Schema.Literal(
     'cancel',
     'propose_day_off',
+    'withdraw_day_off',
     'report_no_show',
     'report_reduced_hours',
     'dispute'
@@ -340,6 +341,23 @@ export const recordSessionActionProgram = (
         .pipe((errors) => mapSessionRepoError(errors));
       if (!moved) return yield* refuse('not_disputable');
       yield* noticeFor(moved, 'contested');
+      return { resolution: resolutionView(moved, viewer.id, ctx.session, ctx.zone, ctx.policy) };
+    }
+
+    if (input.action === 'withdraw_day_off') {
+      // The proposer takes their day-off request back before it is
+      // answered: the session goes ahead, and the other side may act on it
+      // again (cancel, propose their own day off).
+      const moved = yield* repo
+        .advance(
+          ctx.active!.id,
+          { from: ['proposed'], set: { status: 'reversed' } },
+          { actorUserId: viewer.id, actorSide: ctx.side, action: 'withdrawn', note }
+        )
+        .pipe((errors) => mapSessionRepoError(errors));
+      // Answered, or lapsed by the worker, a moment ago.
+      if (!moved) return yield* refuse('response_window_closed');
+      yield* noticeFor(moved, 'withdrawn');
       return { resolution: resolutionView(moved, viewer.id, ctx.session, ctx.zone, ctx.policy) };
     }
 

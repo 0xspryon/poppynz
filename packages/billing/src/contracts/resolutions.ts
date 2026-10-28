@@ -32,11 +32,15 @@ export type SessionAction =
   | 'propose_day_off'
   | 'report_no_show'
   | 'report_reduced_hours'
-  | 'dispute';
+  | 'dispute'
+  /** The proposer takes back their own day-off request before it is
+   * answered or lapses (step 1 follow-up). */
+  | 'withdraw_day_off';
 
 export const sessionActions: ReadonlyArray<SessionAction> = [
   'cancel',
   'propose_day_off',
+  'withdraw_day_off',
   'report_no_show',
   'report_reduced_hours',
   'dispute'
@@ -73,7 +77,9 @@ export type SessionActionRefusal =
   /** A report is accepted or contested; a day off accepted or declined. */
   | 'invalid_response'
   /** Reduced hours need the minutes worked, below the session's minutes. */
-  | 'invalid_minutes';
+  | 'invalid_minutes'
+  /** No day-off request of the viewer's is waiting for an answer. */
+  | 'nothing_to_withdraw';
 
 export type ResolutionPolicy = {
   windowDays: number;
@@ -182,6 +188,17 @@ export const checkSessionAction = (
       const cutoff = cancellationCutoff(session, ctx.zone, ctx.policy.cancellationNoticeHours);
       return now.getTime() >= cutoff.getTime() ? 'day_off_too_late' : null;
     }
+    case 'withdraw_day_off':
+      // Only your own request, while it still waits for an answer: once the
+      // other side answered, or it lapsed at the cutoff, it is settled.
+      if (!active || active.kind !== 'day_off_agreed' || active.status !== 'proposed') {
+        return 'nothing_to_withdraw';
+      }
+      if (active.reportedBySide !== side) return 'wrong_side';
+      if (active.respondBy !== null && now.getTime() >= active.respondBy.getTime()) {
+        return 'response_window_closed';
+      }
+      return null;
     case 'report_no_show':
     case 'report_reduced_hours':
       if (!started) return 'not_started';
@@ -232,7 +249,7 @@ export const availableSessionActions = (ctx: ActionContext) => ({
 
 /** What recording `action` now would store (status, kind and deadline). */
 export const plannedResolution = (
-  action: Exclude<SessionAction, 'dispute'> | 'dispute_new',
+  action: Exclude<SessionAction, 'dispute' | 'withdraw_day_off'> | 'dispute_new',
   ctx: Pick<ActionContext, 'session' | 'zone' | 'now' | 'policy' | 'side'>
 ): {
   kind: SessionResolutionKind;

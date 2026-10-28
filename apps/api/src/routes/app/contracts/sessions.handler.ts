@@ -155,6 +155,16 @@ const refusalToResponse = (c: HonoContext<HonoEnv>, error: SessionActionRefusedE
         },
         422
       );
+    case 'nothing_to_withdraw':
+      return c.json(
+        {
+          error: {
+            code: 'SESSION_NOTHING_TO_WITHDRAW' as const,
+            message: 'There is no day-off request of yours waiting for an answer.'
+          }
+        },
+        409
+      );
     default:
       return handleNever(c, reason);
   }

@@ -208,6 +208,86 @@ describe('days off', () => {
     });
   });
 
+  describe('withdrawing your own request', () => {
+    const familyDayOff = () =>
+      dummySessionResolution({
+        id: 'day-off-1',
+        sessionId: SESSION_ID,
+        contractId: CONTRACT_ID,
+        cycleId: CYCLE_ID,
+        kind: 'day_off_agreed',
+        reportedByUserId: 'family-1',
+        reportedBySide: 'family',
+        status: 'proposed',
+        recordedAt: BEFORE,
+        respondBy: CUTOFF
+      });
+
+    it('reverses it, audits it, tells both sides and frees the session for the other side', async () => {
+      const family = makeSessionWorld({ resolutions: [familyDayOff()] });
+      // While it waits, the helper can only answer it — not cancel.
+      const helperBefore = makeSessionWorld({ viewer: HELPER, resolutions: [familyDayOff()] });
+      expect(failureOf(await act(helperBefore, { action: 'cancel' }))?.reason).toBe(
+        'already_resolved'
+      );
+
+      const withdrawn = resolutionOf(
+        await act(family, { action: 'withdraw_day_off', note: 'Plans changed' })
+      );
+      expect(withdrawn).toMatchObject({
+        kind: 'day_off_agreed',
+        status: 'reversed',
+        response: null
+      });
+      expect(
+        family.resolutions.state.events.map((event) => [
+          event.action,
+          event.actorSide,
+          event.fromStatus,
+          event.toStatus,
+          event.note
+        ])
+      ).toEqual([['withdrawn', 'family', 'proposed', 'reversed', 'Plans changed']]);
+      expect(family.mails.map((mail) => [mail.email, mail.subject])).toEqual([
+        ['family-1@example.test', 'You withdrew your day-off request for Tue, Nov 3'],
+        ['helper-1@example.test', 'Priya T. a retiré sa demande de congé (mar. 3 nov.)']
+      ]);
+      expect(family.published.map((row) => row.input.payload)).toEqual([
+        expect.objectContaining({ event: 'withdrawn' }),
+        expect.objectContaining({ event: 'withdrawn' })
+      ]);
+
+      // Nothing waits for the helper any more, and they can cancel.
+      const helper = makeSessionWorld({
+        viewer: HELPER,
+        resolutions: [...family.resolutions.state.resolutions]
+      });
+      expect((await pending(helper, BEFORE)).items).toEqual([]);
+      expect(resolutionOf(await act(helper, { action: 'cancel' })).kind).toBe('helper_cancelled');
+    });
+
+    it("refuses the other side's request, an answered one and one past its cutoff", async () => {
+      const helper = makeSessionWorld({ viewer: HELPER, resolutions: [familyDayOff()] });
+      expect(failureOf(await act(helper, { action: 'withdraw_day_off' }))?.reason).toBe(
+        'wrong_side'
+      );
+      const answered = makeSessionWorld({
+        resolutions: [{ ...familyDayOff(), status: 'confirmed', response: 'accepted' }]
+      });
+      expect(failureOf(await act(answered, { action: 'withdraw_day_off' }))?.reason).toBe(
+        'nothing_to_withdraw'
+      );
+      const late = makeSessionWorld({ resolutions: [familyDayOff()] });
+      expect(failureOf(await act(late, { action: 'withdraw_day_off' }, CUTOFF))?.reason).toBe(
+        'response_window_closed'
+      );
+      const none = makeSessionWorld();
+      expect(failureOf(await act(none, { action: 'withdraw_day_off' }))?.reason).toBe(
+        'nothing_to_withdraw'
+      );
+    });
+  });
+
   it('refuses a day off proposed at or after the cutoff', async () => {
     const world = makeSessionWorld();
     expect(failureOf(await act(world, { action: 'propose_day_off' }, CUTOFF))?.reason).toBe(

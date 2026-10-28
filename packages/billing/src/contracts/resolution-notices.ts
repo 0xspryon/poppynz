@@ -28,6 +28,7 @@ export type ResolutionEvent =
   | 'confirmed'
   | 'contested'
   | 'declined'
+  | 'withdrawn'
   | 'lapsed'
   | 'decided';
 
@@ -260,6 +261,20 @@ const copy: Record<
               : `${who} declined the day off on ${stop(v.session)} The session goes ahead as agreed.`
           ]
         };
+      case 'withdrawn':
+        return mine
+          ? {
+              subject: `You withdrew your day-off request for ${v.day}`,
+              paragraphs: [
+                `You withdrew your request for a day off on ${stop(v.session)} The session goes ahead as agreed.`
+              ]
+            }
+          : {
+              subject: `${who} withdrew the day-off request for ${v.day}`,
+              paragraphs: [
+                `${who} withdrew their request for a day off on ${stop(v.session)} The session goes ahead as agreed.`
+              ]
+            };
       case 'lapsed':
         return {
           subject: `Day-off request lapsed for ${v.day}`,
@@ -405,6 +420,20 @@ const copy: Record<
               : `${who} a refusé le congé pour la séance (${v.session}). La séance a lieu comme convenu.`
           ]
         };
+      case 'withdrawn':
+        return mine
+          ? {
+              subject: `Vous avez retiré votre demande de congé (${v.day})`,
+              paragraphs: [
+                `Vous avez retiré votre demande de congé pour la séance (${v.session}). La séance a lieu comme convenu.`
+              ]
+            }
+          : {
+              subject: `${who} a retiré sa demande de congé (${v.day})`,
+              paragraphs: [
+                `${who} a retiré sa demande de congé pour la séance (${v.session}). La séance a lieu comme convenu.`
+              ]
+            };
       case 'lapsed':
         return {
           subject: `Demande de congé expirée (${v.day})`,
@@ -428,6 +457,7 @@ const copy: Record<
 const actorOf = (event: ResolutionEvent, r: SessionResolution): string | null => {
   switch (event) {
     case 'recorded':
+    case 'withdrawn':
       return r.reportedByUserId;
     case 'confirmed':
     case 'declined':

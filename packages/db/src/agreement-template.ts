@@ -315,6 +315,12 @@ export const agreementTemplateSchema = {
   'billing.cycleDays': 'text',
   'billing.holdLeadHours': 'text',
   'billing.retryHours': 'text',
+  // Extra sessions (Tier 3 step 3): how long after both sides agreed the
+  // family's card is charged, how far back one may be dated, and how long
+  // the other side has to confirm before a proposal lapses.
+  'billing.extraSessionDelayMinutes': 'text',
+  'billing.extraSessionLookbackDays': 'text',
+  'billing.extraSessionResponseHours': 'text',
   // Ending the contract.
   'notice.days': 'text',
   // The cancellation policy in force (the Terms of Service revision).
@@ -440,6 +446,9 @@ export const sampleAgreementValues = (locale: TcLocale): TemplateValues => {
     'billing.cycleDays': '3',
     'billing.holdLeadHours': '48',
     'billing.retryHours': '12',
+    'billing.extraSessionDelayMinutes': '60',
+    'billing.extraSessionLookbackDays': '14',
+    'billing.extraSessionResponseHours': '48',
     'notice.days': '14',
     'cancellation.policyTitle': fr
       ? 'Conditions d’utilisation et politique de paiement'

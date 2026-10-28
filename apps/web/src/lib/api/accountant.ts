@@ -369,6 +369,8 @@ export const accountantErrorText = (error: { code: string; status?: number | nul
 			return m.books_error_range();
 		case 'RECONCILIATION_BUSY':
 			return m.books_error_busy();
+		case 'RECONCILIATION_PERIOD_IN_FUTURE':
+			return m.books_error_future();
 		case 'INVALID_REIMBURSEMENT_QUERY':
 		case 'INVALID_ITEM_KEY':
 		case 'INVALID_REIMBURSEMENT_NOTE':

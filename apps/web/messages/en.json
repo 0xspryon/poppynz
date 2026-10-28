@@ -3259,6 +3259,7 @@
 	"books_error_not_settled": "Only a settled item can be marked reconciled.",
 	"books_error_range": "Pick an end date on or after the start date, within the allowed range.",
 	"books_error_busy": "A reconciliation is already running. Try again in a few minutes.",
+	"books_error_future": "The period starts in the future: there is nothing to import yet.",
 	"books_error_matched": "This item is matched; there is nothing to resolve.",
 	"books_error_invalid": "Check what you entered.",
 	"books_error_generic": "Something went wrong. Try again.",

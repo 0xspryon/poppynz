@@ -103,6 +103,10 @@ export class ReconciliationItemMatchedError extends Data.TaggedError(
 export class AccountantRangeError extends Data.TaggedError('AccountantRangeError')<{
   maxDays: number;
 }> {}
+/** An import that would start in the future: nothing to read yet. */
+export class ReconciliationFuturePeriodError extends Data.TaggedError(
+  'ReconciliationFuturePeriodError'
+)<{}> {}
 /** Notes, marks and resolutions name their author: never while
  * impersonating. */
 export class AccountantImpersonatedWriteError extends Data.TaggedError(
@@ -652,6 +656,7 @@ export const runReconciliationRouteProgram = (
     const config = yield* configFailure(reconciliationConfig);
     yield* checkRange(input.from, input.to, config.maxRangeDays);
     const range = dayRange(input.from, input.to);
+    if (range.from >= now) return yield* Effect.fail(new ReconciliationFuturePeriodError());
     const summary = yield* runReconciliation({
       trigger: 'manual',
       requestedByUserId: actor.user.id,
@@ -795,6 +800,16 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: AccountantRouteError) =
           error: {
             code: 'ACCOUNTANT_RANGE_INVALID' as const,
             message: `Pick an end date on or after the start date, at most ${error.maxDays} days later.`
+          }
+        },
+        422
+      );
+    case 'ReconciliationFuturePeriodError':
+      return c.json(
+        {
+          error: {
+            code: 'RECONCILIATION_PERIOD_IN_FUTURE' as const,
+            message: 'The period starts in the future: there is nothing to import yet.'
           }
         },
         422

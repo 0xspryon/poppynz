@@ -490,6 +490,14 @@ describe('reconciliation', () => {
       ).pipe(Effect.provide(world.as(ACCOUNTING_IDS.admin, ADMIN)))
     );
     expect(failure(tooLong)?._tag).toBe('AccountantRangeError');
+    const future = await Effect.runPromiseExit(
+      runReconciliationRouteProgram(
+        context({}, { from: '2026-12-16', to: '2026-12-20' }),
+        new Headers(),
+        NOW
+      ).pipe(Effect.provide(world.as(ACCOUNTING_IDS.admin, ADMIN)))
+    );
+    expect(failure(future)?._tag).toBe('ReconciliationFuturePeriodError');
     expect(world.reconciliation.state.runs).toHaveLength(0);
   });
 

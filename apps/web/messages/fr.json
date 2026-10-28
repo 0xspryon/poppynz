@@ -3259,6 +3259,7 @@
 	"books_error_not_settled": "Seul un élément réglé peut être marqué comme rapproché.",
 	"books_error_range": "Choisissez une date de fin égale ou postérieure à la date de début, dans la plage permise.",
 	"books_error_busy": "Un rapprochement est déjà en cours. Réessayez dans quelques minutes.",
+	"books_error_future": "La période commence dans le futur : il n’y a encore rien à importer.",
 	"books_error_matched": "Cet élément est rapproché ; il n’y a rien à résoudre.",
 	"books_error_invalid": "Vérifiez votre saisie.",
 	"books_error_generic": "Une erreur s’est produite. Réessayez.",

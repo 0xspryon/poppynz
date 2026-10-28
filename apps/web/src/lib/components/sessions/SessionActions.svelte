@@ -279,6 +279,7 @@
 		title={dialog.title}
 		body={dialog.body}
 		confirmLabel={m.common_confirm()}
+		cancelLabel={m.common_back()}
 		confirmClass={pending?.kind === 'action' && pending.action === 'cancel'
 			? 'btn-error'
 			: 'btn-primary'}

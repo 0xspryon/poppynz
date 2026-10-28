@@ -142,7 +142,7 @@ describe('ExtraSessions', () => {
 			authorisedCents: 5283
 		});
 		expect(toastSuccess).toHaveBeenCalledWith(
-			'You’ll be charged $52.83 for these sessions in 1 hour unless you change them.'
+			'Extra session confirmed. You’ll be charged $52.83 in 1 hour unless either of you cancels it.'
 		);
 		unmount(component);
 	});

@@ -1663,7 +1663,7 @@
 	"extra_sessions_state_pending_helper": "The family is charged at {time}, and you’re paid for it once their payment succeeds. Either of you can cancel it for free until then.",
 	"extra_sessions_state_withdrawn": "Withdrawn — nothing charged.",
 	"extra_sessions_toast_cancelled": "Extra session cancelled. Nothing was charged.",
-	"extra_sessions_toast_charge_soon": "You’ll be charged {amount} for these sessions in {delay} unless you change them.",
+	"extra_sessions_toast_charge_soon": "Extra session confirmed. You’ll be charged {amount} in {delay} unless either of you cancels it.",
 	"extra_sessions_toast_confirmed_helper": "Extra session confirmed. The family is charged in {delay}.",
 	"extra_sessions_toast_declined": "Extra session declined. {name} has been told.",
 	"extra_sessions_toast_proposed": "Extra session proposed. {name} has been asked to confirm it.",

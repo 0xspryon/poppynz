@@ -723,6 +723,19 @@ describe('a declined card', () => {
     return { w, extra, due: at(NOV_5, 65) };
   };
 
+  it('counts a decline once in the tick summary', async () => {
+    const w = world();
+    await captured(w);
+    const NOV_5 = new Date('2026-11-05T14:00:00.000Z');
+    await w.tick(NOV_5);
+    await w.agreed('helper', TUESDAY, NOV_5);
+    w.setCard('mock_pm_decline');
+    const { extra: summary } = await w.tick(at(NOV_5, 65));
+    expect(summary).toMatchObject({ charged: 0, declined: 1 });
+    const later = await w.tick(at(NOV_5, 65 + 60));
+    expect(later.extra.declined).toBe(0);
+  });
+
   it('never suspends the contract; tells the family to update the card', async () => {
     const { w, extra, due } = await declinedWorld();
     expect(w.extra(extra.id)).toMatchObject({

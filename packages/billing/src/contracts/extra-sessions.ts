@@ -1403,7 +1403,8 @@ const unpaidAlert = (extra: ExtraSession, now: Date) =>
     if (due === null || now.getTime() < due.getTime() + unpaidAlertDays * DAY_MS) return;
     const repo = yield* ExtraSessionRepo;
     if (!(yield* repo.appendNotice(extra.id, 'unpaid_alert'))) return;
-    const detail = `Extra session ${extra.id} (${extra.serviceName}, ${extra.date}) unpaid for ${unpaidAlertDays} days: ${extra.lastError ?? 'still being charged'}`;
+    const reason = (extra.lastError ?? 'still being charged').replace(/\.+$/, '');
+    const detail = `Extra session ${extra.id} (${extra.serviceName}, ${extra.date}) unpaid for ${unpaidAlertDays} days: ${reason}`;
     yield* (yield* ContractBillingRepo).recordIncident({
       contractId: extra.contractId,
       cycleId: extra.cycleId,
@@ -1527,9 +1528,10 @@ export const runExtraSessionTick = (now: Date) =>
           if (!chargeable(yield* sessionOf(extra))) {
             return yield* abandon(extra, 'its session no longer takes place');
           }
-          if (extra.nextRetryAt === null || now < extra.nextRetryAt) return extra;
+          // Not retried now: not counted again (it was counted when declined).
+          if (extra.nextRetryAt === null || now < extra.nextRetryAt) return null;
           if (extra.chargeAttempts >= policy.maxChargeAttempts && extra.lastError !== UNANSWERED) {
-            return extra;
+            return null;
           }
           return yield* startCharge(extra, ['charge_failed'], now);
         })

@@ -224,6 +224,16 @@ BEGIN
 	IF NEW.status = 'cancelled' THEN
 		RETURN NEW;
 	END IF;
+	-- The same refund applied twice (a retry, a race): the insert is a no-op
+	-- (ON CONFLICT on refund_key), so it is not counted against the limits.
+	-- Checked after the lock below would be too late for a racing insert,
+	-- so the charge row is locked first.
+	PERFORM 1 FROM "app_db"."contract_session_charges" WHERE session_id = NEW.session_id FOR UPDATE;
+	IF TG_OP = 'INSERT' AND EXISTS (
+		SELECT 1 FROM "app_db"."session_refunds" WHERE refund_key = NEW.refund_key
+	) THEN
+		RETURN NEW;
+	END IF;
 	SELECT family_total_cents INTO charged FROM "app_db"."contract_session_charges"
 		WHERE session_id = NEW.session_id AND payment_id = NEW.payment_id FOR UPDATE;
 	IF charged IS NULL THEN

@@ -31,6 +31,13 @@
 	import { formatDateTime, formatDateWithWeekday } from '$lib/date';
 	import { dollarsToCents, formatMoney } from '$lib/money';
 	import { m } from '$lib/paraglide/messages';
+	import {
+		resolutionKindLabel,
+		resolutionStatusChip,
+		type ResolutionKind,
+		type ResolutionStatus
+	} from '$lib/session-resolution';
+	import { refundStatusChip, type RefundStatus } from '$lib/session-money';
 	import { toast } from '$lib/toast.svelte';
 
 	const id = $derived(page.params.id ?? '');
@@ -282,8 +289,8 @@
 						<p class="text-[12.5px]">
 							{row.resolution
 								? m.admin_card_disputes_session_report({
-										kind: row.resolution.kind.replaceAll('_', ' '),
-										status: row.resolution.status
+										kind: resolutionKindLabel(row.resolution.kind as ResolutionKind),
+										status: resolutionStatusChip(row.resolution.status as ResolutionStatus).label
 									})
 								: m.admin_card_disputes_session_no_report()}
 						</p>
@@ -520,7 +527,10 @@
 					<li>
 						{m.admin_card_disputes_refund_line({
 							amount: formatMoney(refund.totalCents),
-							status: refund.status
+							status:
+								refund.status === 'pending' && dispute.closedAt === null
+									? m.admin_card_disputes_refund_waiting()
+									: refundStatusChip(refund.status as RefundStatus).label
 						})}
 					</li>
 				{/each}
@@ -537,7 +547,10 @@
 				{#each pack.messages as message, index (index)}
 					<li>
 						<span class="text-outline"
-							>{formatDateTime(message.sentAt)} · {sideLabel(message.side)}:</span
+							>{m.admin_card_disputes_message_meta({
+								when: formatDateTime(message.sentAt),
+								side: sideLabel(message.side)
+							})}</span
 						>
 						{message.body}
 					</li>

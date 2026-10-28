@@ -1829,6 +1829,174 @@ export const contractAgreementSignature = appDb.table(
   ]
 );
 
+// ---------------------------------------------------------------------------
+// Session resolution (Tier 3, step 1 — spec 2026-10-28 §4.1, migration
+// 0041). What happened to one dated session: a cancellation, an agreed day
+// off, a no-show, reduced hours or a dispute; who reported it and when; the
+// other side's answer; an admin's decision. Step 1 records only — nothing
+// here changes what billing holds, charges or pays (step 2 applies it).
+
+export const sessionResolutionKinds = [
+  'family_cancelled_early',
+  'family_cancelled_late',
+  'family_no_show',
+  'family_reduced_hours',
+  'helper_cancelled',
+  'helper_no_show',
+  'day_off_agreed',
+  'disputed'
+] as const;
+export const sessionResolutionKind = appDb.enum(
+  'session_resolution_kind',
+  sessionResolutionKinds
+);
+export const sessionResolutionStatus = appDb.enum('session_resolution_status', [
+  'proposed',
+  'confirmed',
+  'contested',
+  'decided',
+  'lapsed',
+  'reversed'
+]);
+export const sessionResolutionSide = appDb.enum('session_resolution_side', [
+  'family',
+  'helper',
+  'admin'
+]);
+/** The other side's answer to a one-sided report or a day-off proposal. */
+export const sessionResolutionResponse = appDb.enum('session_resolution_response', [
+  'accepted',
+  'contested',
+  'declined'
+]);
+/** An admin's outcome for a contested resolution: what happened to the
+ * session (`as_scheduled`: it went ahead as agreed, nothing to apply). */
+export const sessionResolutionDecisions = [
+  'family_cancelled_early',
+  'family_cancelled_late',
+  'family_no_show',
+  'family_reduced_hours',
+  'helper_cancelled',
+  'helper_no_show',
+  'day_off_agreed',
+  'as_scheduled'
+] as const;
+export const sessionResolutionDecision = appDb.enum(
+  'session_resolution_decision',
+  sessionResolutionDecisions
+);
+
+export const sessionResolution = appDb.table(
+  'session_resolutions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => contractSession.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id')
+      .notNull()
+      .references(() => contractCycle.id, { onDelete: 'restrict' }),
+    kind: sessionResolutionKind('kind').notNull(),
+    reportedByUserId: text('reported_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    // Also who proposed a day off: a family's day off is a family
+    // cancellation, a helper's a helper cancellation (spec §3a).
+    reportedBySide: sessionResolutionSide('reported_by_side').notNull(),
+    // The instant the cancellation-notice rule measures (a phone call
+    // doesn't count until it is recorded here).
+    recordedAt: timestamp('recorded_at').notNull(),
+    reason: text('reason'),
+    note: text('note'),
+    minutesWorked: integer('minutes_worked'),
+    status: sessionResolutionStatus('status').notNull(),
+    // The other side's deadline while `proposed`: recorded_at + the response
+    // window for a report, the cancellation cutoff for a day-off proposal.
+    respondBy: timestamp('respond_by'),
+    respondedByUserId: text('responded_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    respondedAt: timestamp('responded_at'),
+    response: sessionResolutionResponse('response'),
+    responseNote: text('response_note'),
+    decidedByUserId: text('decided_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    decidedAt: timestamp('decided_at'),
+    decision: sessionResolutionDecision('decision'),
+    decisionMinutesWorked: integer('decision_minutes_worked'),
+    decisionReason: text('decision_reason'),
+    // The cancellation policy (Terms of Service revision) in force: the one
+    // the contract's latest live agreement signature references, else the
+    // current published one. Null only when none was ever published.
+    policyVersionId: uuid('policy_version_id').references(() => tcDocumentVersion.id, {
+      onDelete: 'restrict'
+    }),
+    policyVersion: integer('policy_version'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    // One active resolution per session. A lapsed day-off proposal or a
+    // reversed resolution is history and frees the session.
+    uniqueIndex('session_resolutions_session_active_uidx')
+      .on(table.sessionId)
+      .where(sql`${table.status} not in ('reversed', 'lapsed')`),
+    index('session_resolutions_contract_id_idx').on(table.contractId),
+    index('session_resolutions_status_respond_by_idx').on(table.status, table.respondBy),
+    check(
+      'session_resolutions_minutes_worked_check',
+      sql`${table.minutesWorked} is null or ${table.minutesWorked} >= 0`
+    ),
+    check(
+      'session_resolutions_decision_minutes_check',
+      sql`${table.decisionMinutesWorked} is null or ${table.decisionMinutesWorked} >= 0`
+    )
+  ]
+);
+
+/** Who moved a resolution: a party, an admin, or the worker (silence). */
+export type SessionResolutionActorSide = 'family' | 'helper' | 'admin' | 'system';
+
+// Append-only audit of every resolution change (recorded, accepted,
+// contested, confirmed by silence, lapsed, declined, decided): who, when, and
+// the row before and after. A trigger refuses UPDATE and DELETE.
+export const sessionResolutionEvent = appDb.table(
+  'session_resolution_events',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    resolutionId: uuid('resolution_id')
+      .notNull()
+      .references(() => sessionResolution.id, { onDelete: 'restrict' }),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'restrict' }),
+    actorSide: text('actor_side').$type<SessionResolutionActorSide>().notNull(),
+    action: text('action').notNull(),
+    fromStatus: sessionResolutionStatus('from_status'),
+    toStatus: sessionResolutionStatus('to_status').notNull(),
+    before: jsonb('before'),
+    after: jsonb('after').notNull(),
+    note: text('note'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    index('session_resolution_events_resolution_id_idx').on(table.resolutionId),
+    check(
+      'session_resolution_events_actor_side_check',
+      sql`${table.actorSide} in ('family', 'helper', 'admin', 'system')`
+    )
+  ]
+);
+
 export const session = appDb.table(
   'session',
   {

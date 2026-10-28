@@ -15,6 +15,8 @@
 	} from '$lib/api/admin-money';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
+	// Tier 3 step 3: extra sessions whose own charge is unpaid.
+	import UnpaidExtraSessions from '$lib/components/admin/UnpaidExtraSessions.svelte';
 	import { formatDate, formatDateTime, formatDateWithWeekday } from '$lib/date';
 	import { centsToDollars, dollarsToCents, formatMoney } from '$lib/money';
 	import { m } from '$lib/paraglide/messages';
@@ -385,6 +387,8 @@
 		{/each}
 	</ul>
 {/if}
+
+<UnpaidExtraSessions />
 
 {#if deciding}
 	<ConfirmDialog

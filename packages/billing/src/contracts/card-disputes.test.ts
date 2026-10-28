@@ -183,6 +183,33 @@ describe('dispute webhooks: one idempotent sync for every lifecycle event', () =
     expect(w.mailTo('family').filter((s) => /dispute|review/i.test(s))).toEqual([]);
   });
 
+  it('an extra session charged on its own payment: the dispute maps to that session', async () => {
+    const w = await charged();
+    const wed = w.sessionOn('2026-11-04');
+    // As step 3 freezes it: the extra session's split row names its own payment.
+    const cyclePayment = await w.cyclePayment();
+    const extra = {
+      ...cyclePayment,
+      id: '0198a3b0-0000-7000-8000-00000000e001',
+      kind: 'contract_extra_session' as const,
+      providerReference: 'mock_pi_extra',
+      totalCents: 6602,
+      capturedCents: 6602
+    };
+    w.payments.set(extra.id, extra);
+    const charge = w.billingState.charges.find((row) => row.sessionId === wed.id)!;
+    w.billingState.charges.splice(w.billingState.charges.indexOf(charge), 1, {
+      ...charge,
+      paymentId: extra.id
+    });
+    const provider = w.mock.openDispute('mock_pi_extra', { amountCents: 6602 });
+    await w.sync(provider.reference, at(AFTER_CAPTURE, 60));
+    expect(w.dispute()).toMatchObject({ scope: 'extra_session', paymentId: extra.id, cycleId: wed.cycleId });
+    expect(w.cardDisputes.state.sessions.map((row) => [row.sessionId, row.disputedCents])).toEqual([
+      [wed.id, 6602]
+    ]);
+  });
+
   it('a partial dispute is attributed across the sessions, cents exact', async () => {
     const { w } = await disputed({ amountCents: 5000 });
     expect(w.cardDisputes.state.sessions.map((row) => row.disputedCents)).toEqual([2500, 2500]);

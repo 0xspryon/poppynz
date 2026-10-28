@@ -285,7 +285,7 @@ const settleRow = (row: Payment, now: () => Date) =>
 
     // Contract billing holds and captures: their own follow-ups (a hold is
     // not final, and there is no order to finish).
-    if (row.kind === 'contract_cycle') {
+    if (row.kind === 'contract_cycle' || row.kind === 'contract_extra_session') {
       return (yield* settleContractCycle(row, now())) as SettleResult;
     }
 
@@ -366,7 +366,7 @@ export const settlePaymentByReference = (reference: string, now: () => Date = ()
     if (named === null || named.provider !== payments.provider) {
       return { outcome: 'unknown' as const };
     }
-    if (named.kind === 'contract_cycle') {
+    if (named.kind === 'contract_cycle' || named.kind === 'contract_extra_session') {
       const settlement = yield* Effect.serviceOption(CycleSettlement);
       if (Option.isNone(settlement)) {
         yield* Effect.logWarning(`[billing] no cycle settlement here; left ${named.id} for later`);

@@ -3,6 +3,7 @@ import type { HonoEnv } from '@/api/app-env';
 import {
   decideManualPayoutHandler,
   listFailedRefundsHandler,
+  listUnpaidExtraSessionsHandler,
   listPayoutQueueHandler,
   markRefundHandledHandler,
   recordManualPayoutHandler,
@@ -18,5 +19,7 @@ export const adminMoneyRoute = new Hono<HonoEnv>()
   .post('/transfers/:id/retry', (c) => retryTransferHandler(c))
   .post('/manual-payouts/:id/decide', (c) => decideManualPayoutHandler(c))
   .get('/refunds', (c) => listFailedRefundsHandler(c))
+  // Tier 3 step 3: extra sessions whose own charge is still unpaid.
+  .get('/extra-sessions', (c) => listUnpaidExtraSessionsHandler(c))
   .post('/refunds/:id/retry', (c) => retryRefundHandler(c))
   .post('/refunds/:id/handled', (c) => markRefundHandledHandler(c));

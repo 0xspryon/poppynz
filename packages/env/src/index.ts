@@ -383,6 +383,61 @@ export const sessionMoneyConfig = Config.all({
   )
 });
 
+// Extra sessions (Tier 3 step 3, spec 2026-10-28 §1 step 3, §12 decision 4).
+// Same posture: a malformed value is a ConfigError, never a silent default —
+// charging an extra session at the wrong moment is worse than not offering
+// extra sessions until the setting is fixed.
+export const extraSessionConfig = Config.all({
+  // How far back an extra session may be dated (a session that took place):
+  // today minus this many days, in the contract zone (decision 4: 14).
+  lookbackDays: Config.integer('CONTRACT_EXTRA_SESSION_LOOKBACK_DAYS').pipe(
+    Config.withDefault(14),
+    Config.validate({
+      message: 'CONTRACT_EXTRA_SESSION_LOOKBACK_DAYS must be a whole number of days between 0 and 60',
+      validation: (value) => value >= 0 && value <= 60
+    })
+  ),
+  // Once both sides agreed, the charge waits this long; either side may
+  // cancel the extra session at no cost until then.
+  chargeDelayMinutes: Config.integer('CONTRACT_EXTRA_SESSION_CHARGE_DELAY_MINUTES').pipe(
+    Config.withDefault(60),
+    Config.validate({
+      message:
+        'CONTRACT_EXTRA_SESSION_CHARGE_DELAY_MINUTES must be a whole number of minutes between 0 and 1440',
+      validation: (value) => value >= 0 && value <= 1440
+    })
+  ),
+  // An extra session's own charge still unpaid this many days after it was
+  // due raises an admin incident (once).
+  unpaidAlertDays: Config.integer('CONTRACT_EXTRA_SESSION_UNPAID_ALERT_DAYS').pipe(
+    Config.withDefault(7),
+    Config.validate({
+      message:
+        'CONTRACT_EXTRA_SESSION_UNPAID_ALERT_DAYS must be a whole number of days between 1 and 90',
+      validation: (value) => value >= 1 && value <= 90
+    })
+  ),
+  // A declined extra-session charge is retried every
+  // CONTRACT_BILLING_RETRY_HOURS, at most this many automatic attempts in
+  // all; replacing the card always retries it at once.
+  maxChargeAttempts: Config.integer('CONTRACT_EXTRA_SESSION_MAX_CHARGE_ATTEMPTS').pipe(
+    Config.withDefault(15),
+    Config.validate({
+      message:
+        'CONTRACT_EXTRA_SESSION_MAX_CHARGE_ATTEMPTS must be a whole number between 1 and 100',
+      validation: (value) => value >= 1 && value <= 100
+    })
+  ),
+  // The shortest extra session that may be proposed, in minutes.
+  minMinutes: Config.integer('CONTRACT_EXTRA_SESSION_MIN_MINUTES').pipe(
+    Config.withDefault(15),
+    Config.validate({
+      message: 'CONTRACT_EXTRA_SESSION_MIN_MINUTES must be a whole number of minutes between 1 and 720',
+      validation: (value) => value >= 1 && value <= 720
+    })
+  )
+});
+
 // Helper payout accounts (Stripe Connect, piece 2b).
 // APP_WEB_ORIGIN is the ONE web origin Stripe's hosted onboarding returns to;
 // TRUSTED_ORIGINS is a list, so it can't serve as a single return address.

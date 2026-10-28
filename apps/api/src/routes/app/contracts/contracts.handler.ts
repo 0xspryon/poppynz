@@ -186,16 +186,20 @@ export class PaymentMethodRequiredError extends Data.TaggedError(
 
 /** The billing cycle doesn't exist on this contract (or the contract has no
  * billing yet) — the same 404 an outsider gets for the contract. */
-export class ContractCycleNotFoundError extends Data.TaggedError('ContractCycleNotFoundError')<{}> {}
+export class ContractCycleNotFoundError extends Data.TaggedError(
+  'ContractCycleNotFoundError'
+)<{}> {}
 
 /** "Retry payment" with nothing to retry: no declined hold in its grace
  * period and no card suspension (already funded, or not the card's fault). */
-export class PaymentRetryNotNeededError extends Data.TaggedError('PaymentRetryNotNeededError')<{}> {}
+export class PaymentRetryNotNeededError extends Data.TaggedError(
+  'PaymentRetryNotNeededError'
+)<{}> {}
 
 /** "Retry payment" is limited to once a minute per contract. */
-export class PaymentRetryRateLimitedError extends Data.TaggedError(
-  'PaymentRetryRateLimitedError'
-)<{ retryAfterSeconds: number }> {}
+export class PaymentRetryRateLimitedError extends Data.TaggedError('PaymentRetryRateLimitedError')<{
+  retryAfterSeconds: number;
+}> {}
 
 /** The payment provider could not be reached while retrying. Nothing was
  * lost: the attempt is retried under the same key by the billing tick. */
@@ -2034,7 +2038,13 @@ export const getContractCycleProgram = (
         amounts,
         // Before the quote: what the scheduled sessions are worth so far.
         estimatedServiceCents: sessions
-          .filter((session) => session.status === 'scheduled' || session.status === 'completed')
+          .filter(
+            (session) =>
+              (session.status === 'scheduled' || session.status === 'completed') &&
+              // Tier 3 step 3: an extra session charged on its own (or still
+              // in its charge delay) is not part of the cycle's charge.
+              (session.chargeRoute ?? 'cycle') === 'cycle'
+          )
           .reduce((total, session) => total + session.valueCents, 0),
         carriedInCents: cycle.carriedInCents,
         sessions: sessions.map((session) => ({
@@ -2046,6 +2056,8 @@ export const getContractCycleProgram = (
           endMinutes: session.endMinutes,
           elapsedMinutes: session.elapsedMinutes,
           status: session.status,
+          // Tier 3 step 3: an extra session both sides agreed to.
+          origin: session.origin ?? 'scheduled',
           startsAt: session.startsAt.toISOString(),
           endsAt: session.endsAt.toISOString(),
           ...(resolutions.perSession.get(session.id) ?? {
@@ -2757,9 +2769,7 @@ export async function renewContractHandler(c: HonoContext<HonoEnv>) {
 
 export async function retryContractPaymentHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
-  const exit = await runtime.runPromiseExit(
-    retryContractPaymentRouteProgram(c, c.req.raw.headers)
-  );
+  const exit = await runtime.runPromiseExit(retryContractPaymentRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 

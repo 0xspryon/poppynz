@@ -3,6 +3,7 @@ import {
   applyCardSetup,
   ensureBillingCustomer,
   previewCardResumes,
+  retryExtraSessionCharges,
   retryFamilyBilling,
   toCard
 } from '@repo/billing';
@@ -100,7 +101,10 @@ export const getBillingRouteProgram = (headers: Headers) =>
     );
     // Tier 3 step 2: session refunds under their cycle's charge.
     const refunds = yield* refundsByPayment(
-      history.filter((row) => row.kind === 'contract_cycle').map((row) => row.id)
+      // Tier 3 step 3: an extra session's own payment carries its refunds too.
+      history
+        .filter((row) => row.kind === 'contract_cycle' || row.kind === 'contract_extra_session')
+        .map((row) => row.id)
     ).pipe((errors) => mapRepoError(errors));
 
     return {
@@ -184,6 +188,12 @@ export const confirmCardSetupRouteProgram = (c: HonoContext<HonoEnv>, headers: H
         yield* retryFamilyBilling(userAndSession.user.id, new Date()).pipe(
           Effect.catchAllCause((cause) =>
             Effect.logError('[billing] retry after card replacement failed', cause)
+          )
+        );
+        // Tier 3 step 3: every declined extra-session charge, at once too.
+        yield* retryExtraSessionCharges(userAndSession.user.id, new Date()).pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.logError('[billing] extra session retry after card replacement failed', cause)
           )
         );
         return { card: toCardSummary(result.card) };

@@ -1,6 +1,8 @@
 import { makeIdleContractBillingLayer } from '@repo/billing';
 import {
+  makeInMemoryExtraSessionRepo,
   makeInMemorySessionMoneyRepo,
+  type ExtraSession,
   makeSessionRepoTest,
   makeUserRepoTest,
   type Session,
@@ -16,6 +18,7 @@ import {
   decideManualPayoutRouteProgram,
   listFailedRefundsRouteProgram,
   listPayoutQueueRouteProgram,
+  listUnpaidExtraSessionsRouteProgram,
   markRefundHandledRouteProgram,
   recordManualPayoutRouteProgram,
   retryRefundRouteProgram
@@ -239,6 +242,61 @@ describe('the refund-failure list', () => {
     const world = makeWorld();
     const exit = await Effect.runPromiseExit(
       listFailedRefundsRouteProgram(new Headers()).pipe(Effect.provide(world.as('family-1', [])))
+    );
+    expect(failure(exit)?._tag).toBe('ForbiddenError');
+  });
+});
+
+describe('unpaid extra sessions (Tier 3 step 3)', () => {
+  const extras = makeInMemoryExtraSessionRepo({
+    extras: [
+      {
+        id: 'extra-1',
+        contractId: 'k-1',
+        cycleId: 'c-1',
+        date: '2026-11-03',
+        startMinutes: 600,
+        endMinutes: 720,
+        serviceName: 'Childcare',
+        status: 'charge_failed',
+        quotedTotalCents: 5283,
+        familyTotalCents: 5283,
+        chargeAttempts: 3,
+        lastError: 'Your card was declined.',
+        chargeAt: new Date('2026-11-05T15:00:00.000Z'),
+        nextRetryAt: new Date('2026-11-13T03:00:00.000Z'),
+        noticesSent: ['unpaid_alert'],
+        updatedAt: new Date()
+      } as unknown as ExtraSession,
+      { id: 'extra-2', status: 'charged', noticesSent: [] } as unknown as ExtraSession
+    ]
+  });
+
+  it('lists the declined and in-flight ones, flagged once alerted', async () => {
+    const world = makeWorld();
+    const result = await Effect.runPromise(
+      listUnpaidExtraSessionsRouteProgram(new Headers()).pipe(
+        Effect.provide(Layer.mergeAll(world.as('admin-1', ADMIN), extras.layer))
+      )
+    );
+    expect(result.extraSessions).toEqual([
+      expect.objectContaining({
+        id: 'extra-1',
+        status: 'charge_failed',
+        totalCents: 5283,
+        attempts: 3,
+        lastError: 'Your card was declined.',
+        alerted: true
+      })
+    ]);
+  });
+
+  it('is for the payout queue (admins), not the accountant', async () => {
+    const world = makeWorld();
+    const exit = await Effect.runPromiseExit(
+      listUnpaidExtraSessionsRouteProgram(new Headers()).pipe(
+        Effect.provide(Layer.mergeAll(world.as('accountant-1', ACCOUNTANT), extras.layer))
+      )
     );
     expect(failure(exit)?._tag).toBe('ForbiddenError');
   });

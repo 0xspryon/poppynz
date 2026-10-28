@@ -394,6 +394,24 @@ describe('agreementValues', () => {
     expect(values['contract.endsAt']).toBe('la fin de la journée');
     expect(values['fees.familyFeePercent']).toMatch(/^5\s%$/);
   });
+
+  it('states the extra-session settings for the v2 consent clause (Tier 3 step 3)', () => {
+    expect(agreementValues(input)).toMatchObject({
+      'billing.extraSessionDelayMinutes': '60',
+      'billing.extraSessionLookbackDays': '14',
+      'billing.extraSessionResponseHours': '48'
+    });
+    expect(
+      agreementValues({
+        ...input,
+        extraSessions: { delayMinutes: 30, lookbackDays: 7, responseHours: 24 }
+      })
+    ).toMatchObject({
+      'billing.extraSessionDelayMinutes': '30',
+      'billing.extraSessionLookbackDays': '7',
+      'billing.extraSessionResponseHours': '24'
+    });
+  });
 });
 
 describe('GET /contracts/:id/agreement (the agreement to sign)', () => {

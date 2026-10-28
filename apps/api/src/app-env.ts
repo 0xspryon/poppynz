@@ -7,6 +7,7 @@ import type {
   CardDisputeRepo,
   SessionResolutionRepo,
   SessionMoneyRepo,
+  ExtraSessionRepo,
   ContractReplacementRepo,
   ContractBillingRepo,
   ContractRepo,
@@ -91,6 +92,7 @@ export type AppServices =
   | CardDisputeRepo
   | SessionResolutionRepo
   | SessionMoneyRepo
+  | ExtraSessionRepo
   | ContractReplacementRepo
   | CycleSettlement
   | NotificationHub

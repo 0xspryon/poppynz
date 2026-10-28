@@ -8,6 +8,7 @@ import {
   CardDisputeRepoDefault,
   SessionResolutionRepoDefault,
   SessionMoneyRepoDefault,
+  ExtraSessionRepoDefault,
   ContractBillingRepoDefault,
   ContractRepoDefault,
   ConversationRepoDefault,
@@ -96,6 +97,8 @@ const BaseLive = Layer.mergeAll(
   SessionResolutionRepoDefault,
   // Tier 3 step 2: session refunds, transfers, the manual payout queue.
   SessionMoneyRepoDefault,
+  // Tier 3 step 3: extra sessions.
+  ExtraSessionRepoDefault,
   NotificationHubLive,
   GooglePlacesLive,
   MailerLive,

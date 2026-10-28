@@ -122,7 +122,12 @@ export const safetyVerificationRoute = appDb.enum('safety_verification_route', [
 // What a charge was for. The subject table points at `payments`, never the
 // reverse, so a new purpose is a new value here plus a foreign key on its own
 // table — not a new payments table.
-export const paymentKind = appDb.enum('payment_kind', ['credibled_order', 'contract_cycle']);
+export const paymentKind = appDb.enum('payment_kind', [
+  'credibled_order',
+  'contract_cycle',
+  // Tier 3 step 3: one extra session's own charge (migration 0044).
+  'contract_extra_session'
+]);
 // `captured` is what the settle path writes once the provider confirms the
 // money (automatic capture). `authorised` remains for rows the pre-Stripe
 // mock wrote and for a later hold-then-capture flow (contract billing).
@@ -1438,6 +1443,13 @@ export const contractCycleChargeMode = appDb.enum('contract_cycle_charge_mode', 
   'immediate',
   'resume'
 ]);
+/** Where a dated session came from: the weekly pattern, or an extra
+ * session both sides agreed to (Tier 3 step 3, migration 0044). */
+export const contractSessionOrigin = appDb.enum('contract_session_origin', ['scheduled', 'extra']);
+/** How a session is charged: with its cycle (`cycle`); an extra session in
+ * its charge delay, not charged yet (`pending`); or on its own payment
+ * (`separate`). Cycle quotes charge only `cycle` sessions. */
+export type ContractSessionChargeRoute = 'cycle' | 'pending' | 'separate';
 export const contractSessionStatus = appDb.enum('contract_session_status', [
   'scheduled',
   'completed',
@@ -1640,6 +1652,14 @@ export const contractSession = appDb.table(
     // Tier 3 step 2: a session cancelled late BEFORE its cycle's capture is
     // `cancelled` and still charged this compensation (0 otherwise).
     compensationCents: integer('compensation_cents').notNull().default(0),
+    // Tier 3 step 3 (0044): an extra session is a dated session like any
+    // other once both sides agreed; `charge_route` says which payment takes
+    // its money.
+    origin: contractSessionOrigin('origin').notNull().default('scheduled'),
+    chargeRoute: text('charge_route')
+      .$type<ContractSessionChargeRoute>()
+      .notNull()
+      .default('cycle'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()
@@ -1647,6 +1667,10 @@ export const contractSession = appDb.table(
       .notNull()
   },
   (table) => [
+    check(
+      'contract_sessions_charge_route_check',
+      sql`${table.chargeRoute} in ('cycle', 'pending', 'separate') and (${table.origin} = 'extra' or ${table.chargeRoute} = 'cycle')`
+    ),
     uniqueIndex('contract_sessions_contract_date_slot_uidx').on(
       table.contractId,
       table.date,
@@ -2453,6 +2477,173 @@ export const sessionMoneyEffect = appDb.table('session_money_effects', {
     .$onUpdate(() => /* @__PURE__ */ new Date())
     .notNull()
 });
+
+// ---------------------------------------------------------------------------
+// Extra sessions (Tier 3 step 3, spec 2026-10-28 §1 step 3, §12 decisions 4–5;
+// migrations/0044_extra_sessions.sql). Every foreign key is restrict.
+
+export const extraSessionStatus = appDb.enum('extra_session_status', [
+  // Waiting for the other side (until respond_by; silence lapses it).
+  'proposed',
+  // Taken back by the proposer before an answer.
+  'withdrawn',
+  // Declined by the other side.
+  'declined',
+  // Unanswered by respond_by: silence is never acceptance.
+  'lapsed',
+  // Both agreed: the session exists; its charge waits until charge_at.
+  'agreed',
+  // Cancelled during the delay at no cost — or its session was cancelled
+  // before its own charge succeeded (nothing is charged).
+  'cancelled',
+  // Folded into its cycle's charge: from here a normal session.
+  'in_cycle',
+  // Its own charge: an attempt is with the provider.
+  'charging',
+  // Its own charge was declined (or refused): retried; never suspends the
+  // contract.
+  'charge_failed',
+  // Its own charge succeeded: the per-session split is frozen on it.
+  'charged'
+]);
+
+export type ExtraSessionSide = 'family' | 'helper';
+
+/** One extra (unscheduled) session proposed on a contract, and what became
+ * of it and its charge. */
+export const contractExtraSession = appDb.table(
+  'contract_extra_sessions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    proposedByUserId: text('proposed_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    proposedBySide: text('proposed_by_side').$type<ExtraSessionSide>().notNull(),
+    // The session as proposed: a date and wall-clock minutes in the contract
+    // zone (one day, like the contract's sessions), a service of the
+    // contract at its agreed rate.
+    date: date('date').notNull(),
+    startMinutes: integer('start_minutes').notNull(),
+    endMinutes: integer('end_minutes').notNull(),
+    startsAt: timestamp('starts_at').notNull(),
+    endsAt: timestamp('ends_at').notNull(),
+    elapsedMinutes: integer('elapsed_minutes').notNull(),
+    serviceId: text('service_id').notNull(),
+    serviceName: text('service_name').notNull(),
+    rateCents: integer('rate_cents').notNull(),
+    valueCents: integer('value_cents').notNull(),
+    // What the family was shown when it authorised the charge (care + fee +
+    // tax, priced like a cycle) — the "I authorise … $X" amount.
+    quotedTotalCents: integer('quoted_total_cents').notNull(),
+    note: text('note'),
+    status: extraSessionStatus('status').notNull().default('proposed'),
+    respondBy: timestamp('respond_by').notNull(),
+    respondedByUserId: text('responded_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    respondedAt: timestamp('responded_at'),
+    responseNote: text('response_note'),
+    // The family's explicit "I authorise Poppynz to charge my card $X":
+    // with its proposal, or when it confirms the helper's.
+    familyAuthorisedAt: timestamp('family_authorised_at'),
+    familyAuthorisedCents: integer('family_authorised_cents'),
+    agreedAt: timestamp('agreed_at'),
+    chargeAt: timestamp('charge_at'),
+    cancelledByUserId: text('cancelled_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    cancelledAt: timestamp('cancelled_at'),
+    // The dated session made when both sides agreed, and its cycle.
+    sessionId: uuid('session_id').references(() => contractSession.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id').references(() => contractCycle.id, { onDelete: 'restrict' }),
+    // Its own charge: the current attempt and the attempt counter (the
+    // idempotency key is `extra-<id>-<attempt>`).
+    paymentId: uuid('payment_id').references(() => payment.id, { onDelete: 'restrict' }),
+    chargeAttempts: integer('charge_attempts').notNull().default(0),
+    nextRetryAt: timestamp('next_retry_at'),
+    // The frozen quote of its own charge (tax lines of both sides), so the
+    // tax report and the split read exactly what was charged.
+    familyTotalCents: integer('family_total_cents'),
+    taxLines: jsonb('tax_lines')
+      .$type<Array<PaymentTaxLine>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    chargedAt: timestamp('charged_at'),
+    lastError: text('last_error'),
+    noticesSent: jsonb('notices_sent')
+      .$type<Array<string>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    index('contract_extra_sessions_contract_id_idx').on(table.contractId),
+    index('contract_extra_sessions_status_idx').on(table.status),
+    uniqueIndex('contract_extra_sessions_session_id_uidx')
+      .on(table.sessionId)
+      .where(sql`${table.sessionId} is not null`),
+    // One active proposal per slot (the overlap trigger refuses the rest).
+    uniqueIndex('contract_extra_sessions_proposal_slot_uidx')
+      .on(table.contractId, table.date, table.startMinutes)
+      .where(sql`${table.status} = 'proposed'`),
+    check(
+      'contract_extra_sessions_side_check',
+      sql`${table.proposedBySide} in ('family', 'helper')`
+    ),
+    check(
+      'contract_extra_sessions_times_check',
+      sql`${table.startMinutes} >= 0 and ${table.endMinutes} <= 1440 and ${table.endMinutes} > ${table.startMinutes} and ${table.valueCents} > 0 and ${table.quotedTotalCents} > 0`
+    ),
+    // Never a session or a charge without the family's authorisation.
+    check(
+      'contract_extra_sessions_authorised_check',
+      sql`${table.status} in ('proposed', 'withdrawn', 'declined', 'lapsed') or (${table.familyAuthorisedAt} is not null and ${table.agreedAt} is not null and ${table.chargeAt} is not null and ${table.sessionId} is not null)`
+    )
+  ]
+);
+
+/** Who moved an extra session: a party, an admin, or the worker. */
+export type ExtraSessionActorSide = 'family' | 'helper' | 'admin' | 'system';
+
+// Append-only audit of every extra-session change (proposed, withdrawn,
+// declined, lapsed, agreed, cancelled, folded, charged, declined charge…):
+// who, when, the row before and after. A trigger refuses UPDATE and DELETE.
+export const contractExtraSessionEvent = appDb.table(
+  'contract_extra_session_events',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    extraSessionId: uuid('extra_session_id')
+      .notNull()
+      .references(() => contractExtraSession.id, { onDelete: 'restrict' }),
+    actorUserId: text('actor_user_id').references(() => user.id, { onDelete: 'restrict' }),
+    actorSide: text('actor_side').$type<ExtraSessionActorSide>().notNull(),
+    action: text('action').notNull(),
+    fromStatus: extraSessionStatus('from_status'),
+    toStatus: extraSessionStatus('to_status').notNull(),
+    before: jsonb('before'),
+    after: jsonb('after').notNull(),
+    note: text('note'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    index('contract_extra_session_events_extra_session_id_idx').on(table.extraSessionId),
+    check(
+      'contract_extra_session_events_actor_side_check',
+      sql`${table.actorSide} in ('family', 'helper', 'admin', 'system')`
+    )
+  ]
+);
 
 /** Append-only audit of money actions (manual payouts, refund handling,
  * transfer retries): who, when, before and after. A trigger refuses UPDATE

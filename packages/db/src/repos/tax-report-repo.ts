@@ -3,7 +3,13 @@ import type { SqlError } from '@effect/sql/SqlError';
 import { and, eq, gte, lt, ne } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DrizzleLive } from '../effect-db';
-import { contractCycle, payment, sessionRefund, type PaymentTaxLine } from '../schema';
+import {
+  contractCycle,
+  contractExtraSession,
+  payment,
+  sessionRefund,
+  type PaymentTaxLine
+} from '../schema';
 
 /**
  * Where the "tax collected" report reads from: the tax lines FROZEN on what
@@ -24,7 +30,7 @@ import { contractCycle, payment, sessionRefund, type PaymentTaxLine } from '../s
  */
 
 export type TaxCollectedSource = {
-  source: 'payment' | 'contract_cycle' | 'session_refund';
+  source: 'payment' | 'contract_cycle' | 'contract_extra_session' | 'session_refund';
   id: string;
   capturedAt: Date;
   taxLines: ReadonlyArray<PaymentTaxLine>;
@@ -77,6 +83,9 @@ export const TaxReportRepoLive = Layer.effect(
                 and(
                   eq(payment.status, 'captured'),
                   ne(payment.kind, 'contract_cycle'),
+                  // Tier 3 step 3: an extra session's own charge reports from
+                  // its frozen quote (both sides' lines), like a cycle.
+                  ne(payment.kind, 'contract_extra_session'),
                   gte(payment.capturedAt, from),
                   lt(payment.capturedAt, to)
                 )
@@ -93,6 +102,20 @@ export const TaxReportRepoLive = Layer.effect(
                   eq(contractCycle.status, 'captured'),
                   gte(contractCycle.capturedAt, from),
                   lt(contractCycle.capturedAt, to)
+                )
+              ),
+            db
+              .select({
+                id: contractExtraSession.id,
+                capturedAt: contractExtraSession.chargedAt,
+                taxLines: contractExtraSession.taxLines
+              })
+              .from(contractExtraSession)
+              .where(
+                and(
+                  eq(contractExtraSession.status, 'charged'),
+                  gte(contractExtraSession.chargedAt, from),
+                  lt(contractExtraSession.chargedAt, to)
                 )
               ),
             db
@@ -114,7 +137,7 @@ export const TaxReportRepoLive = Layer.effect(
           ],
           { concurrency: 'unbounded' }
         ).pipe(
-          Effect.map(([payments, cycles, refunds]) => [
+          Effect.map(([payments, cycles, extras, refunds]) => [
             ...payments.map((row) => ({
               source: 'payment' as const,
               id: row.id,
@@ -123,6 +146,12 @@ export const TaxReportRepoLive = Layer.effect(
             })),
             ...cycles.map((row) => ({
               source: 'contract_cycle' as const,
+              id: row.id,
+              capturedAt: row.capturedAt!,
+              taxLines: row.taxLines
+            })),
+            ...extras.map((row) => ({
+              source: 'contract_extra_session' as const,
               id: row.id,
               capturedAt: row.capturedAt!,
               taxLines: row.taxLines

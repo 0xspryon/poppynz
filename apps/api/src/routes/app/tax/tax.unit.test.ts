@@ -537,6 +537,26 @@ describe('tax collected report', () => {
     ]);
   });
 
+  it('ends a range on the day DST ends at the next midnight, 25 hours later', async () => {
+    const { layer } = makeLayer({
+      sources: [
+        {
+          source: 'contract_cycle',
+          id: 'late-on-dst-day',
+          // 23:30 on 1 Nov 2026 in Toronto (EST since 02:00 that day).
+          capturedAt: new Date('2026-11-02T04:30:00.000Z'),
+          taxLines: [line({ baseCents: 313, taxCents: 41 })]
+        }
+      ]
+    });
+    const result = await Effect.runPromise(
+      taxCollectedReportRouteProgram(new Headers(), { from: '2026-11-01', to: '2026-11-01' }).pipe(
+        Effect.provide(layer)
+      )
+    );
+    expect(result.totalTaxCents).toBe(41);
+  });
+
   it('exports CSV', () => {
     const csv = taxCollectedCsv(aggregateTaxCollected(sources, 'month'));
     expect(csv.split('\n').slice(0, 3)).toEqual([
@@ -583,6 +603,84 @@ describe('tax collected report', () => {
     expect(rows).toContainEqual(['2026-11', 'ON', 'family_service_fee', 938, 122]);
     expect(rows).toContainEqual(['2026-12', 'ON', 'family_service_fee', -312, -40]);
     expect(rows).toContainEqual(['2026-12', 'MB', 'provider_commission', -937, -47]);
+  });
+
+  it('counts a refund marked handled in the month it was marked; other months keep their totals (Tier 3 step 5, §13.2–13.3)', async () => {
+    const hst = {
+      supplyType: 'family_service_fee',
+      jurisdiction: 'ON',
+      component: 'hst',
+      rateMillipercent: 13000,
+      label: 'HST (ON) 13%',
+      registrationNumber: null
+    };
+    const commission = {
+      ...hst,
+      supplyType: 'provider_commission',
+      jurisdiction: 'MB',
+      component: 'gst',
+      rateMillipercent: 5000,
+      label: 'GST (MB) 5%'
+    };
+    // A failed refund settled by e-Transfer and marked handled on 3 January
+    // (Toronto): the fee's tax goes back and the commission's tax is
+    // reversed — in January, never in the month of the charge.
+    const handled = sessionRefundTaxSource(
+      {
+        id: 'refund-handled',
+        refundedAt: new Date('2027-01-03T15:00:00.000Z'),
+        careTaxLines: [],
+        feeTaxLines: [{ ...hst, baseCents: 312, taxCents: 41 }],
+        commissionTaxLines: [{ ...commission, baseCents: 937, taxCents: 47 }]
+      },
+      'session_refund_handled'
+    );
+    const report = (list: typeof sources) =>
+      Effect.runPromise(
+        taxCollectedReportRouteProgram(new Headers(), {
+          from: '2026-11-01',
+          to: '2027-01-31'
+        }).pipe(Effect.provide(makeLayer({ sources: list }).layer))
+      );
+    const before = await report(sources);
+    const after = await report([...sources, handled]);
+    const byPeriod = (rows: typeof before.rows, period: string) =>
+      rows.filter((row) => row.period === period);
+    // Regression: the months the handled refund does not touch are unchanged.
+    expect(byPeriod(after.rows, '2026-11')).toEqual(byPeriod(before.rows, '2026-11'));
+    expect(byPeriod(after.rows, '2026-12')).toEqual(byPeriod(before.rows, '2026-12'));
+    expect(
+      byPeriod(after.rows, '2027-01').map((row) => [row.supplyType, row.baseCents, row.taxCents])
+    ).toEqual([
+      ['provider_commission', -937, -47],
+      ['family_service_fee', -312, -41]
+    ]);
+    expect(after.totalTaxCents).toBe(before.totalTaxCents - 88);
+  });
+
+  it('collects no commission tax on a session excluded before the hold or taken out of a reduced capture (§13.3)', () => {
+    // The cycle's lines are re-quoted at the capture without the session: its
+    // commission line never reaches the report, so there is nothing to reverse.
+    const commission = {
+      supplyType: 'provider_commission',
+      jurisdiction: 'MB',
+      component: 'gst',
+      rateMillipercent: 5000,
+      label: 'GST (MB) 5%',
+      registrationNumber: null
+    };
+    const reduced = {
+      source: 'contract_cycle' as const,
+      id: 'cycle-reduced',
+      capturedAt: new Date('2026-11-10T15:00:00.000Z'),
+      // Two sessions held, one cancelled before the capture: one session's
+      // commission left on the frozen quote.
+      taxLines: [{ ...commission, baseCents: 937, taxCents: 47 }]
+    };
+    const rows = aggregateTaxCollected([reduced], 'month');
+    expect(rows.map((row) => [row.supplyType, row.baseCents, row.taxCents])).toEqual([
+      ['provider_commission', 937, 47]
+    ]);
   });
 
   it('refuses an end before the start', async () => {

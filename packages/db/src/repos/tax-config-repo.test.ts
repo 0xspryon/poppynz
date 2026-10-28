@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'bun:test';
+import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import { beforeAll, describe, expect, it } from 'bun:test';
 import { Effect } from 'effect';
+import { DrizzleLive } from '../effect-db';
+import { taxJurisdiction } from '../schema';
+import { defaultTaxJurisdictions } from '../tax-defaults';
 import {
   dummyTaxRate,
   makeInMemoryTaxConfigRepo,
@@ -117,8 +121,23 @@ describe('makeInMemoryTaxConfigRepo', () => {
 // TAX_REPO_TEST_DATABASE_URL=postgres://… bun test. Each test writes under a
 // throwaway, never-registered program and soft-deletes it afterwards (the
 // audit trail is append-only by design), so point it at a dev database only.
+// The jurisdictions are reference data that seed 0004 inserts, not a
+// migration: a freshly migrated, unseeded database gets them here first
+// (left alone where they already exist).
 const liveUrl = process.env.TAX_REPO_TEST_DATABASE_URL;
 describe.skipIf(!liveUrl)('TaxConfigRepoLive (Postgres)', () => {
+  beforeAll(async () => {
+    process.env.DATABASE_URL = liveUrl;
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const db = yield* PgDrizzle.PgDrizzle;
+        yield* db
+          .insert(taxJurisdiction)
+          .values([...defaultTaxJurisdictions])
+          .onConflictDoNothing();
+      }).pipe(Effect.provide(DrizzleLive))
+    );
+  });
   const run = <A, E>(effect: (repo: typeof TaxConfigRepo.Service) => Effect.Effect<A, E>) => {
     process.env.DATABASE_URL = liveUrl;
     return Effect.runPromiseExit(

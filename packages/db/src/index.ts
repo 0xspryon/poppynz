@@ -35,6 +35,8 @@ export * from './repos/session-resolution-repo';
 export * from './repos/session-money-repo';
 export * from './repos/card-dispute-repo';
 export * from './repos/extra-session-repo';
+export * from './repos/accounting-repo';
+export * from './repos/reconciliation-repo';
 export * from './repos/user-directory-repo';
 export * from './repos/user-search-repo';
 export * from './repos/tc-document-repo';

@@ -1,13 +1,14 @@
 <script lang="ts">
-	/** The accountant area: the tax configuration and its reports. Open to
-	 * anyone holding the `tax` (or `taxReport`) permission — the accountant
-	 * and admins alike — never decided by role. */
+	/** The accountant area: the tax configuration and its reports, and the
+	 * books (reimbursements, money reports, reconciliation — Tier 3 step 5).
+	 * Open to anyone holding one of its permissions — the accountant and
+	 * admins alike — never decided by role; each link by its permission. */
 	import { browser } from '$app/environment';
 	import { goto } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { syncLocaleWithProfile } from '$lib/locale-sync';
 	import { fetchSession, getSession } from '$lib/api/profile';
-	import { getTaxAccess, type TaxAccess } from '$lib/api/tax';
+	import { getAccountantAccess, type AccountantAccess } from '$lib/api/accountant';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
@@ -20,7 +21,7 @@
 	}
 
 	let { children }: Props = $props();
-	let access = $state<TaxAccess | null>(null);
+	let access = $state<AccountantAccess | null>(null);
 	let drawerOpen = $state(false);
 
 	onMount(() => {
@@ -30,8 +31,15 @@
 				await goto(resolve('/auth/sign-in'));
 				return;
 			}
-			const result = await getTaxAccess();
-			if (result.ok && (result.data.canRead || result.data.canReport)) {
+			const result = await getAccountantAccess();
+			if (
+				result.ok &&
+				(result.data.taxRead ||
+					result.data.taxReport ||
+					result.data.reimbursementsRead ||
+					result.data.reconciliationRead ||
+					result.data.cardDisputeFinance)
+			) {
 				access = result.data;
 				void syncLocaleWithProfile();
 			} else {
@@ -46,8 +54,9 @@
 	const isAdmin = $derived(session?.role === 'admin');
 
 	const groupTax = m.nav_group_tax();
+	const groupBooks = m.nav_group_books();
 	const items = $derived<Array<SidebarItem>>([
-		...(access?.canRead
+		...(access?.taxRead
 			? [
 					{
 						href: resolve('/accountant/rates'),
@@ -75,7 +84,7 @@
 					}
 				]
 			: []),
-		...(access?.canReport
+		...(access?.taxReport
 			? [
 					{
 						href: resolve('/accountant/reports'),
@@ -85,16 +94,57 @@
 					}
 				]
 			: []),
+		// Tier 3 step 5: the books, each by its permission.
+		...(access?.reimbursementsRead
+			? [
+					{
+						href: resolve('/accountant/reimbursements'),
+						label: m.nav_reimbursements(),
+						icon: 'la-exchange-alt',
+						group: groupBooks
+					},
+					{
+						href: resolve('/accountant/money-reports'),
+						label: m.nav_money_reports(),
+						icon: 'la-chart-bar',
+						group: groupBooks
+					}
+				]
+			: []),
+		...(access?.reconciliationRead
+			? [
+					{
+						href: resolve('/accountant/reconciliation'),
+						label: m.nav_reconciliation(),
+						icon: 'la-check-double',
+						group: groupBooks
+					}
+				]
+			: []),
 		// Failed session refunds land with the accountant too (permission
 		// `refundQueue`, held by accountants and admins).
-		{ href: resolve('/accountant/refunds'), label: m.nav_admin_refunds(), icon: 'la-undo-alt' },
+		...(access?.refundQueue
+			? [
+					{
+						href: resolve('/accountant/refunds'),
+						label: m.nav_admin_refunds(),
+						icon: 'la-undo-alt',
+						group: groupBooks
+					}
+				]
+			: []),
 		// Card disputes and what Poppynz bears, read-only (permission
 		// `cardDispute: read, finance`).
-		{
-			href: resolve('/accountant/card-disputes'),
-			label: m.nav_admin_card_disputes(),
-			icon: 'la-exclamation-triangle'
-		},
+		...(access?.cardDisputeFinance
+			? [
+					{
+						href: resolve('/accountant/card-disputes'),
+						label: m.nav_admin_card_disputes(),
+						icon: 'la-exclamation-triangle',
+						group: groupBooks
+					}
+				]
+			: []),
 		...(isAdmin
 			? [{ href: resolve('/admin'), label: m.nav_admin_console(), icon: 'la-arrow-left' }]
 			: [])

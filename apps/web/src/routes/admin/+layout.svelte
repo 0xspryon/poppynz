@@ -4,7 +4,7 @@
 	import { resolve } from '$app/paths';
 	import { syncLocaleWithProfile } from '$lib/locale-sync';
 	import { fetchSession, getSession } from '$lib/api/profile';
-	import { getTaxAccess } from '$lib/api/tax';
+	import { getAccountantAccess } from '$lib/api/accountant';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
@@ -22,7 +22,7 @@
 	 * sign-in screen that suggests they are signed out. */
 	let notAuthorized = $state<'family' | 'service-provider' | 'accountant' | null>(null);
 	let drawerOpen = $state(false);
-	/** The accountant area is shown by permission (tax read), not by role. */
+	/** The accountant area (tax, books) is shown by permission, not by role. */
 	let taxAccess = $state(false);
 
 	onMount(() => {
@@ -30,8 +30,13 @@
 			if (session?.role === 'admin') {
 				authorized = true;
 				void syncLocaleWithProfile();
-				void getTaxAccess().then((result) => {
-					taxAccess = result.ok && (result.data.canRead || result.data.canReport);
+				void getAccountantAccess().then((result) => {
+					taxAccess =
+						result.ok &&
+						(result.data.taxRead ||
+							result.data.taxReport ||
+							result.data.reimbursementsRead ||
+							result.data.reconciliationRead);
 				});
 			} else if (
 				session?.role === 'family' ||
@@ -50,17 +55,37 @@
 	const initial = $derived(email.charAt(0).toUpperCase());
 
 	const baseItems: Array<SidebarItem> = [
-		{ href: resolve('/admin/approval-requests'), label: m.nav_admin_approval_queue(), icon: 'la-user-check' },
+		{
+			href: resolve('/admin/approval-requests'),
+			label: m.nav_admin_approval_queue(),
+			icon: 'la-user-check'
+		},
 		{
 			href: resolve('/admin/safety-verifications'),
 			label: m.nav_admin_safety_verifications(),
 			icon: 'la-shield-alt'
 		},
 		{ href: resolve('/admin/users'), label: m.nav_admin_users(), icon: 'la-users' },
-		{ href: resolve('/admin/user-searches'), label: m.nav_admin_user_searches(), icon: 'la-search' },
-		{ href: resolve('/admin/document-types'), label: m.nav_admin_document_types(), icon: 'la-file-alt' },
-		{ href: resolve('/admin/service-catalogue'), label: m.nav_admin_service_catalogue(), icon: 'la-heart' },
-		{ href: resolve('/admin/custom-services'), label: m.nav_admin_custom_services(), icon: 'la-clipboard-check' },
+		{
+			href: resolve('/admin/user-searches'),
+			label: m.nav_admin_user_searches(),
+			icon: 'la-search'
+		},
+		{
+			href: resolve('/admin/document-types'),
+			label: m.nav_admin_document_types(),
+			icon: 'la-file-alt'
+		},
+		{
+			href: resolve('/admin/service-catalogue'),
+			label: m.nav_admin_service_catalogue(),
+			icon: 'la-heart'
+		},
+		{
+			href: resolve('/admin/custom-services'),
+			label: m.nav_admin_custom_services(),
+			icon: 'la-clipboard-check'
+		},
 		{ href: resolve('/admin/tcs'), label: m.nav_admin_tcs(), icon: 'la-file-contract' },
 		{
 			href: resolve('/admin/session-disputes'),

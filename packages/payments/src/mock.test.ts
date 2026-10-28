@@ -476,3 +476,82 @@ describe('card disputes on the mock (Tier 3 step 4)', () => {
     ]);
   });
 });
+
+describe('reconciliation listings (Tier 3 step 5)', () => {
+  const txn = (reference: string, at: string, overrides: Record<string, unknown> = {}) => ({
+    reference,
+    type: 'charge',
+    reportingCategory: 'charge',
+    amountCents: 1000,
+    feeCents: 59,
+    netCents: 941,
+    currency: 'cad',
+    status: 'available',
+    createdAt: new Date(at),
+    availableOn: new Date(at),
+    description: null,
+    sourceReference: `ch_${reference}`,
+    sourceType: 'charge',
+    paymentReference: `pi_${reference}`,
+    transferReference: null,
+    feeDetails: [],
+    ...overrides
+  });
+
+  it('pages newest first within the created range', async () => {
+    const mock = makeMockPayments();
+    mock.setBalanceTransactions(null, [
+      txn('a', '2026-10-01T00:00:00Z'),
+      txn('b', '2026-10-02T00:00:00Z'),
+      txn('c', '2026-10-03T00:00:00Z'),
+      txn('d', '2026-11-03T00:00:00Z')
+    ]);
+    const range = {
+      createdFrom: new Date('2026-10-01T00:00:00Z'),
+      createdTo: new Date('2026-11-01T00:00:00Z'),
+      limit: 2
+    };
+    const first = await Effect.runPromise(mock.listBalanceTransactions(range));
+    expect(first.data.map((row) => row.reference)).toEqual(['c', 'b']);
+    expect(first.hasMore).toBe(true);
+    const second = await Effect.runPromise(
+      mock.listBalanceTransactions({ ...range, startingAfter: 'b' })
+    );
+    expect(second.data.map((row) => row.reference)).toEqual(['a']);
+    expect(second.hasMore).toBe(false);
+  });
+
+  it('refuses the payout filter on a manual payout, like Stripe', async () => {
+    const mock = makeMockPayments();
+    const payout = {
+      reference: 'po_1',
+      status: 'paid' as const,
+      amountCents: 100,
+      arrivalDate: null,
+      createdAt: new Date(),
+      failureReason: null
+    };
+    mock.setPayout('acct_1', { ...payout, automatic: false });
+    mock.setPayout('acct_1', { ...payout, reference: 'po_2', automatic: true });
+    mock.setPayoutTransactions('acct_1', 'po_2', [
+      txn('p', '2026-10-01T00:00:00Z', { type: 'payment', transferReference: 'tr_1' })
+    ]);
+    const manual = await Effect.runPromiseExit(
+      mock.listBalanceTransactions({ account: 'acct_1', payout: 'po_1', limit: 10 })
+    );
+    expect(manual._tag).toBe('Failure');
+    const automatic = await Effect.runPromise(
+      mock.listBalanceTransactions({ account: 'acct_1', payout: 'po_2', limit: 10 })
+    );
+    expect(automatic.data.map((row) => row.transferReference)).toEqual(['tr_1']);
+    const payouts = await Effect.runPromise(
+      mock.listPayouts({
+        account: 'acct_1',
+        createdFrom: new Date(0),
+        createdTo: new Date(Date.now() + 1000),
+        limit: 10
+      })
+    );
+    expect(payouts.data.map((row) => row.reference).sort()).toEqual(['po_1', 'po_2']);
+  });
+});

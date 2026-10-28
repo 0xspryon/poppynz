@@ -7,6 +7,7 @@ import {
   makeInMemoryBillingCustomerRepo,
   makeInMemoryPayoutAccountRepo,
   makeInMemorySessionMoneyRepo,
+  makeInMemoryReconciliationRepo,
   makeInMemoryCardDisputeRepo,
   makeContractBillingRepoTest,
   makePaymentRepoTest,
@@ -664,6 +665,7 @@ describe('session refunds and payouts (Tier 3 step 2)', () => {
       refundedAt: null,
       resolvedByUserId: null,
       resolvedNote: null,
+      handledAt: null,
       createdAt: new Date(),
       updatedAt: new Date()
     });
@@ -747,6 +749,7 @@ describe('session refunds and payouts (Tier 3 step 2)', () => {
       makeIdleContractBillingLayer(),
       money.layer,
       payouts.layer,
+      makeInMemoryReconciliationRepo().layer,
       makePaymentsTest({
         provider: 'stripe',
         getPayout: ({ reference }) =>
@@ -765,7 +768,9 @@ describe('session refunds and payouts (Tier 3 step 2)', () => {
         event({ type: 'payout.paid', objectId: 'po_1', paymentReference: null, account: 'acct_1' })
       ).pipe(Effect.provide(layer))
     );
-    expect(note).toBe('payout: paid: 1 transfer(s) arrived');
+    // Not listable as an automatic payout here: the timing match, labelled
+    // approximate (Tier 3 step 5, §13.4).
+    expect(note).toBe('payout: paid: 1 transfer(s) arrived (approximate)');
     expect(money.state.transfers[0]).toMatchObject({ status: 'paid' });
   });
 });

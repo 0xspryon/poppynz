@@ -1,6 +1,6 @@
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
 import type { SqlError } from '@effect/sql/SqlError';
-import { and, eq, gte, lt, ne } from 'drizzle-orm';
+import { and, eq, gte, isNotNull, lt, ne } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DrizzleLive } from '../effect-db';
 import {
@@ -27,10 +27,23 @@ import {
  * and the commission's that is no longer kept) and reduces the tax
  * collected IN THE REFUND'S PERIOD — a `session_refund` source dated when
  * the refund succeeded, with negative lines.
+ *
+ * Tier 3 step 5 (spec §13.2–13.3): a refund settled outside the provider
+ * ("marked handled") counts as refunded too — a `session_refund_handled`
+ * source dated when it was marked, with the same negative lines (the fee's
+ * tax and the commission's no longer kept). A session left out before its
+ * cycle's hold, or taken out of a reduced capture, needs nothing here: the
+ * cycle's frozen lines are re-quoted without it at the capture, so its
+ * commission tax was never collected.
  */
 
 export type TaxCollectedSource = {
-  source: 'payment' | 'contract_cycle' | 'contract_extra_session' | 'session_refund';
+  source:
+    | 'payment'
+    | 'contract_cycle'
+    | 'contract_extra_session'
+    | 'session_refund'
+    | 'session_refund_handled';
   id: string;
   capturedAt: Date;
   taxLines: ReadonlyArray<PaymentTaxLine>;
@@ -38,14 +51,17 @@ export type TaxCollectedSource = {
 
 /** A succeeded session refund as a report source: its returned lines,
  * negated, dated when the money went back. */
-export const sessionRefundTaxSource = (refund: {
-  id: string;
-  refundedAt: Date;
-  careTaxLines: ReadonlyArray<PaymentTaxLine>;
-  feeTaxLines: ReadonlyArray<PaymentTaxLine>;
-  commissionTaxLines: ReadonlyArray<PaymentTaxLine>;
-}): TaxCollectedSource => ({
-  source: 'session_refund',
+export const sessionRefundTaxSource = (
+  refund: {
+    id: string;
+    refundedAt: Date;
+    careTaxLines: ReadonlyArray<PaymentTaxLine>;
+    feeTaxLines: ReadonlyArray<PaymentTaxLine>;
+    commissionTaxLines: ReadonlyArray<PaymentTaxLine>;
+  },
+  source: 'session_refund' | 'session_refund_handled' = 'session_refund'
+): TaxCollectedSource => ({
+  source,
   id: refund.id,
   capturedAt: refund.refundedAt,
   taxLines: [...refund.careTaxLines, ...refund.feeTaxLines, ...refund.commissionTaxLines]
@@ -133,11 +149,28 @@ export const TaxReportRepoLive = Layer.effect(
                   gte(sessionRefund.refundedAt, from),
                   lt(sessionRefund.refundedAt, to)
                 )
+              ),
+            db
+              .select({
+                id: sessionRefund.id,
+                handledAt: sessionRefund.handledAt,
+                careTaxLines: sessionRefund.careTaxLines,
+                feeTaxLines: sessionRefund.feeTaxLines,
+                commissionTaxLines: sessionRefund.commissionTaxLines
+              })
+              .from(sessionRefund)
+              .where(
+                and(
+                  eq(sessionRefund.status, 'cancelled'),
+                  isNotNull(sessionRefund.handledAt),
+                  gte(sessionRefund.handledAt, from),
+                  lt(sessionRefund.handledAt, to)
+                )
               )
           ],
           { concurrency: 'unbounded' }
         ).pipe(
-          Effect.map(([payments, cycles, extras, refunds]) => [
+          Effect.map(([payments, cycles, extras, refunds, handled]) => [
             ...payments.map((row) => ({
               source: 'payment' as const,
               id: row.id,
@@ -156,7 +189,15 @@ export const TaxReportRepoLive = Layer.effect(
               capturedAt: row.capturedAt!,
               taxLines: row.taxLines
             })),
-            ...refunds.map((row) => sessionRefundTaxSource({ ...row, refundedAt: row.refundedAt! }))
+            ...refunds.map((row) =>
+              sessionRefundTaxSource({ ...row, refundedAt: row.refundedAt! })
+            ),
+            ...handled.map((row) =>
+              sessionRefundTaxSource(
+                { ...row, refundedAt: row.handledAt! },
+                'session_refund_handled'
+              )
+            )
           ])
         )
     };

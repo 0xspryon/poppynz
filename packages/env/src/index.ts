@@ -438,6 +438,34 @@ export const extraSessionConfig = Config.all({
   )
 });
 
+// Accountant reconciliation with the payment provider (Tier 3 step 5, spec
+// 2026-10-28 §16). Same posture: a malformed value is a ConfigError, never a
+// silent default — a reconciliation that silently skips a period is worse
+// than one that refuses to start until the setting is fixed.
+const wholeNumber = (name: string, fallback: number, min: number, max: number, unit: string) =>
+  Config.integer(name).pipe(
+    Config.withDefault(fallback),
+    Config.validate({
+      message: `${name} must be a whole number of ${unit} between ${min} and ${max}`,
+      validation: (value) => value >= min && value <= max
+    })
+  );
+
+export const reconciliationConfig = Config.all({
+  // The worker imports the provider's balance transactions this often (the
+  // billing tick checks the last run; it is not a cron of its own).
+  intervalHours: wholeHours('RECONCILIATION_INTERVAL_HOURS', 24, 1, 168),
+  // Each scheduled run re-imports this many days back (a transaction's
+  // status and a payout's contents settle days after it was created).
+  lookbackDays: wholeNumber('RECONCILIATION_LOOKBACK_DAYS', 35, 1, 120, 'days'),
+  // The longest period an on-demand run may cover.
+  maxRangeDays: wholeNumber('RECONCILIATION_MAX_RANGE_DAYS', 93, 1, 400, 'days'),
+  // Provider page size (Stripe allows at most 100) and the most pages one
+  // run reads before it stops and reports itself incomplete.
+  pageSize: wholeNumber('RECONCILIATION_PAGE_SIZE', 100, 1, 100, 'items'),
+  maxPages: wholeNumber('RECONCILIATION_MAX_PAGES', 200, 1, 10_000, 'pages')
+});
+
 // Helper payout accounts (Stripe Connect, piece 2b).
 // APP_WEB_ORIGIN is the ONE web origin Stripe's hosted onboarding returns to;
 // TRUSTED_ORIGINS is a list, so it can't serve as a single return address.

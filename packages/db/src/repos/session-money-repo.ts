@@ -225,11 +225,14 @@ export class SessionMoneyRepo extends Context.Tag('@repo/db/SessionMoneyRepo')<
       notice: string
     ) => Effect.Effect<HelperTransfer | null, SqlError>;
     /** Every `sent` transfer of a helper made at or before `before`, moved
-     * to `paid` (a bank payout was paid). Resolves how many moved. */
+     * to `paid` (a bank payout was paid) — the APPROXIMATE match by timing
+     * (spec §13.4), labelled so; the exact match is the reconciliation
+     * repo's. Resolves how many moved. */
     markHelperTransfersPaid: (
       helperUserId: string,
       before: Date,
-      paidAt: Date
+      paidAt: Date,
+      payoutReference?: string | null
     ) => Effect.Effect<number, SqlError>;
 
     /** Records a manual payout (pending approval) with its audit row.
@@ -611,10 +614,16 @@ export const SessionMoneyRepoLive = Layer.effect(
           )
           .returning()
           .pipe(Effect.map((rows) => rows[0] ?? null)),
-      markHelperTransfersPaid: (helperUserId, before, paidAt) =>
+      markHelperTransfersPaid: (helperUserId, before, paidAt, payoutReference = null) =>
         db
           .update(helperTransfer)
-          .set({ status: 'paid', paidAt, updatedAt: new Date() })
+          .set({
+            status: 'paid',
+            paidAt,
+            payoutReference,
+            payoutMatch: 'approximate',
+            updatedAt: new Date()
+          })
           .where(
             and(
               eq(helperTransfer.helperUserId, helperUserId),
@@ -848,6 +857,7 @@ export const makeInMemorySessionMoneyRepo = (
               refundedAt: null,
               resolvedByUserId: null,
               resolvedNote: null,
+              handledAt: null,
               ...input.refund,
               id: nextId('refund'),
               createdAt: now(),
@@ -973,6 +983,8 @@ export const makeInMemorySessionMoneyRepo = (
           fixedAt: null,
           sentAt: null,
           paidAt: null,
+          payoutReference: null,
+          payoutMatch: null,
           ...input,
           id: nextId('transfer'),
           createdAt: now(),
@@ -1059,7 +1071,7 @@ export const makeInMemorySessionMoneyRepo = (
           noticesSent: [...row.noticesSent, notice]
         });
       }),
-    markHelperTransfersPaid: (helperUserId, before, paidAt) =>
+    markHelperTransfersPaid: (helperUserId, before, paidAt, payoutReference = null) =>
       Effect.sync(() => {
         let moved = 0;
         for (const row of state.transfers) {
@@ -1071,7 +1083,9 @@ export const makeInMemorySessionMoneyRepo = (
           ) {
             patchRow<HelperTransfer>(state.transfers, row.id, () => true, {
               status: 'paid',
-              paidAt
+              paidAt,
+              payoutReference,
+              payoutMatch: 'approximate'
             });
             moved += 1;
           }

@@ -113,6 +113,52 @@ describe('applying a resolution by the cycle’s state (spec §7)', () => {
     expect(w.money.state.refunds).toHaveLength(0);
   });
 
+  it('§13.3 (Tier 3 step 5): a session left out before the hold or taken out of the capture never has its commission tax collected', async () => {
+    const commissionTax = (cycle: {
+      taxLines: ReadonlyArray<{ supplyType: string; taxCents: number }>;
+    }) =>
+      cycle.taxLines
+        .filter((line) => line.supplyType === 'provider_commission')
+        .reduce((total, line) => total + line.taxCents, 0);
+    // Both sessions charged: the baseline the tax report reads.
+    const both = world();
+    await both.step(BEFORE);
+    await both.step(at(CYCLE_1.holdAt, 5));
+    await both.step(AFTER_CAPTURE);
+    const baseline = commissionTax((await both.cycles())[0]!);
+    expect(baseline).toBeGreaterThan(0);
+    // One session taken out of the capture: the captured cycle's frozen
+    // lines (what the report reads) carry one session's commission tax.
+    const reduced = world();
+    await reduced.step(BEFORE);
+    await reduced.step(at(CYCLE_1.holdAt, 5));
+    reduced.resolve('2026-11-02', {
+      ...lateCancel,
+      recordedAt: new Date('2026-11-02T11:00:00.000Z')
+    });
+    await reduced.reconcile('2026-11-02', new Date('2026-11-02T11:00:00.000Z'));
+    await reduced.step(AFTER_CAPTURE);
+    const capturedReduced = commissionTax((await reduced.cycles())[0]!);
+    expect(Math.abs(2 * capturedReduced - baseline)).toBeLessThanOrEqual(1);
+    // One session left out before the hold: the same.
+    const excluded = world();
+    await excluded.step(BEFORE);
+    excluded.resolve('2026-11-04', {
+      kind: 'family_cancelled_early',
+      status: 'confirmed',
+      reportedBySide: 'family',
+      recordedAt: BEFORE
+    });
+    await excluded.reconcile('2026-11-04', BEFORE);
+    await excluded.step(at(CYCLE_1.holdAt, 5));
+    await excluded.step(AFTER_CAPTURE);
+    expect(
+      Math.abs(2 * commissionTax((await excluded.cycles())[0]!) - baseline)
+    ).toBeLessThanOrEqual(1);
+    // Nothing to reverse: no refund carries commission lines.
+    expect([...reduced.money.state.refunds, ...excluded.money.state.refunds]).toHaveLength(0);
+  });
+
   it('charged: a session refund on the cycle’s charge, with its frozen tax lines', async () => {
     const w = world();
     await w.step(BEFORE);

@@ -66,6 +66,7 @@ const makeWorld = () => {
     refundedAt: null,
     resolvedByUserId: null,
     resolvedNote: null,
+    handledAt: null,
     createdAt: new Date('2026-11-04T08:00:00.000Z'),
     updatedAt: new Date('2026-11-04T08:00:00.000Z')
   } satisfies SessionRefund;
@@ -89,6 +90,8 @@ const makeWorld = () => {
     fixedAt: new Date('2027-01-06T06:00:00.000Z'),
     sentAt: null,
     paidAt: null,
+    payoutReference: null,
+    payoutMatch: null,
     createdAt: new Date(),
     updatedAt: new Date()
   });
@@ -221,7 +224,9 @@ describe('the refund-failure list', () => {
     expect(exit._tag).toBe('Success');
     expect(world.money.state.refunds[0]).toMatchObject({
       status: 'cancelled',
-      resolvedNote: 'Paid by e-Transfer ET-9'
+      resolvedNote: 'Paid by e-Transfer ET-9',
+      // Tier 3 step 5: dated, so it counts as refunded for tax that month.
+      handledAt: NOW
     });
     expect(world.money.state.audit.map((row) => row.action)).toEqual(['handled']);
   });

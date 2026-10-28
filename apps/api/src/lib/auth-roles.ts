@@ -48,7 +48,17 @@ export const appAc = createAccessControl({
   payoutQueue: ['read', 'record', 'approve'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
+  // Tier 3 step 5: Poppynz's own books against the payment provider —
+  // importing its balance transactions (`run`), reading what matched and
+  // what didn't, and resolving an unmatched item with a note (audited).
+  // Admins and the accountant.
+  reconciliation: ['read', 'run', 'resolve'],
   referral: ['read', 'write'],
+  // Tier 3 step 5: the reimbursements and obligations ledger and its
+  // reports — reading it, adding notes, marking a settled item reconciled
+  // (audited). Moving money stays with the admin queues (`payoutQueue`,
+  // `refundQueue`). Admins and the accountant.
+  reimbursements: ['read', 'note', 'reconcile'],
   // Tier 3 step 2: failed session refunds — reading them, retrying one and
   // marking one settled another way. Admins and the accountant.
   refundQueue: ['read', 'write'],
@@ -134,7 +144,9 @@ export const adminRole = appAc.newRole({
   payoutQueue: ['read', 'record', 'approve'],
   profile: ['read', 'update'],
   providerSearch: ['read', 'reindex'],
+  reconciliation: ['read', 'run', 'resolve'],
   referral: ['read', 'write'],
+  reimbursements: ['read', 'note', 'reconcile'],
   refundQueue: ['read', 'write'],
   safetyVerification: ['read', 'write', 'review'],
   serviceCatalogue: ['read', 'write'],
@@ -149,9 +161,14 @@ export const adminRole = appAc.newRole({
 });
 
 /** Poppynz's accountant: the tax portal — the configuration (read and
- * correct, every change audited) and the tax-collected reports — and the
- * failed session refunds. */
+ * correct, every change audited) and the tax-collected reports — the
+ * failed session refunds, the reimbursements ledger and the
+ * reconciliation with the payment provider. */
 export const accountantRole = appAc.newRole({
+  // The reimbursements ledger, its reports and the reconciliation with the
+  // payment provider (Tier 3 step 5).
+  reconciliation: ['read', 'run', 'resolve'],
+  reimbursements: ['read', 'note', 'reconcile'],
   // Card disputes: the list and what Poppynz bears, read-only (step 4).
   cardDispute: ['read', 'finance'],
   // Failed session refunds land with the accountant too (Tier 3 step 2).

@@ -1,6 +1,7 @@
-import { CycleSettlementLive } from '@repo/billing';
+import { CardDisputeLedgerLive, CycleSettlementLive } from '@repo/billing';
 import {
   BillingCustomerRepoDefault,
+  ReconciliationRepoDefault,
   CardDisputeRepoDefault,
   ContractBillingRepoDefault,
   ContractRepoDefault,
@@ -35,6 +36,9 @@ export const ContractBillingBaseLive = Layer.mergeAll(
   // Tier 3 step 3: extra sessions of the same tick.
   ExtraSessionRepoDefault,
   TaxConfigRepoDefault,
+  // Tier 3 step 5: the scheduled reconciliation with the provider (card
+  // disputes through the step-4 adapter, added by withCycleSettlement).
+  ReconciliationRepoDefault,
   UserRepoDefault,
   UserProfileRepoDefault,
   // Same PAYMENTS_PROVIDER switch as the API (default `mock`).
@@ -45,4 +49,6 @@ export const ContractBillingBaseLive = Layer.mergeAll(
 
 /** Adds the cycle branch of the one settle path on top of `base`. */
 export const withCycleSettlement = <A, E, R>(base: Layer.Layer<A, E, R>) =>
-  CycleSettlementLive.pipe(Layer.provideMerge(base));
+  CycleSettlementLive.pipe(
+    Layer.provideMerge(CardDisputeLedgerLive.pipe(Layer.provideMerge(base)))
+  );

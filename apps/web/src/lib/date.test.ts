@@ -4,6 +4,7 @@ import {
 	formatCalendarDate,
 	formatDate,
 	formatDateTime,
+	formatDateTimeIn,
 	formatDateWithWeekday,
 	relativeDayLabel,
 	toDateInputValue
@@ -88,5 +89,14 @@ describe('dates in French (fr-CA)', () => {
 	it('keeps calendar dates free of time-zone shifts (UAT #28)', () => {
 		overwriteGetLocale(() => 'fr');
 		expect(formatCalendarDate('2030-01-15T00:00:00.000Z')).toBe('15 janv. 2030');
+	});
+});
+
+describe('formatDateTimeIn', () => {
+	it('shows an instant in the given zone, not the viewer’s', () => {
+		// Toronto's October ends at 03:59:59.999 UTC on November 1st (still EDT).
+		const text = formatDateTimeIn('2026-11-01T03:59:59.999Z', 'America/Toronto');
+		expect(text).toMatch(/Oct\.? 31, 2026|31 Oct\.? 2026/);
+		expect(text).toMatch(/11:59/);
 	});
 });

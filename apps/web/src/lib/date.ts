@@ -32,6 +32,21 @@ export function formatDateWithWeekday(value: string): string {
 	});
 }
 
+/** An instant in a given time zone, whatever the viewer's: "Oct 31, 2026,
+ * 11:59 p.m." in Toronto — the books' month ends are Toronto's. */
+export function formatDateTimeIn(value: string, timeZone: string): string {
+	const at = new Date(value);
+	return m.date_time_at({
+		date: at.toLocaleDateString(intlLocale(), {
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric',
+			timeZone
+		}),
+		time: at.toLocaleTimeString(intlLocale(), { hour: 'numeric', minute: '2-digit', timeZone })
+	});
+}
+
 /** "Aug 4, 2026, 9:48 a.m." / "4 août 2026, 9 h 48" */
 export function formatDateTime(value: string): string {
 	return m.date_time_at({ date: formatDate(value), time: formatTime(value) });

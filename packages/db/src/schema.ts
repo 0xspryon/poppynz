@@ -1913,10 +1913,7 @@ export const sessionResolutionKinds = [
   'day_off_agreed',
   'disputed'
 ] as const;
-export const sessionResolutionKind = appDb.enum(
-  'session_resolution_kind',
-  sessionResolutionKinds
-);
+export const sessionResolutionKind = appDb.enum('session_resolution_kind', sessionResolutionKinds);
 export const sessionResolutionStatus = appDb.enum('session_resolution_status', [
   'proposed',
   'confirmed',
@@ -2183,6 +2180,10 @@ export const sessionRefund = appDb.table(
       onDelete: 'restrict'
     }),
     resolvedNote: text('resolved_note'),
+    // Tier 3 step 5 (0046): when an admin or the accountant marked the
+    // refund settled outside the provider — it counts as refunded for tax
+    // in that month (spec §13.2).
+    handledAt: timestamp('handled_at'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()
@@ -2197,6 +2198,10 @@ export const sessionRefund = appDb.table(
     check(
       'session_refunds_total_check',
       sql`${table.totalCents} > 0 and ${table.totalCents} = ${table.careCents} + ${table.careTaxCents} + ${table.feeCents} + ${table.feeTaxCents}`
+    ),
+    check(
+      'session_refunds_handled_check',
+      sql`${table.handledAt} is null or (${table.status} = 'cancelled' and ${table.resolvedByUserId} is not null)`
     ),
     check(
       'session_refunds_amounts_check',
@@ -2277,6 +2282,9 @@ export const helperTransferStatus = appDb.enum('helper_transfer_status', [
   'manual_paid'
 ]);
 
+/** How a transfer's bank payout is known (Tier 3 step 5, spec §13.4). */
+export type HelperTransferPayoutMatch = 'exact' | 'approximate';
+
 /** One transfer of a cycle's session payables to the helper (spec §8): the
  * cycle's first (sequence 1) at its transfer time, then follow-ups for
  * sessions decided later. */
@@ -2314,6 +2322,11 @@ export const helperTransfer = appDb.table(
     fixedAt: timestamp('fixed_at'),
     sentAt: timestamp('sent_at'),
     paidAt: timestamp('paid_at'),
+    // Tier 3 step 5 (0046): the helper's bank payout it went out in, and
+    // how that is known — `exact` from the payout's own balance
+    // transactions, `approximate` from timing (sent before the payout).
+    payoutReference: text('payout_reference'),
+    payoutMatch: text('payout_match').$type<HelperTransferPayoutMatch>(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at')
       .defaultNow()
@@ -2327,6 +2340,10 @@ export const helperTransfer = appDb.table(
     uniqueIndex('helper_transfers_provider_reference_uidx')
       .on(table.providerReference)
       .where(sql`${table.providerReference} is not null`),
+    check(
+      'helper_transfers_payout_match_check',
+      sql`${table.payoutMatch} is null or ${table.payoutMatch} in ('exact', 'approximate')`
+    ),
     check(
       'helper_transfers_amount_check',
       sql`${table.amountCents} is null or (${table.amountCents} >= 0 and ${table.amountCents} = ${table.grossCents} - ${table.recoveredCents})`
@@ -2843,6 +2860,132 @@ export const cardDisputeEvidenceSubmission = appDb.table(
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (table) => [index('card_dispute_evidence_submissions_dispute_idx').on(table.disputeId)]
+);
+
+// ---------------------------------------------------------------------------
+// Reconciliation with the payment provider (Tier 3 step 5, spec 2026-10-28
+// §16; migrations/0046_accountant_reconciliation.sql).
+
+export type ReconciliationRunTrigger = 'schedule' | 'manual';
+export type ReconciliationRunStatus = 'running' | 'succeeded' | 'incomplete' | 'failed';
+/** `mismatch`: the reference is ours but the amount differs. */
+export type BalanceTransactionMatchStatus = 'matched' | 'unmatched' | 'mismatch';
+/** What a provider balance transaction was matched to. */
+export type BalanceTransactionMatchKind =
+  | 'payment'
+  | 'payment_refund'
+  | 'session_refund'
+  | 'helper_transfer'
+  | 'transfer_arrival'
+  | 'platform_payout'
+  | 'helper_payout'
+  | 'stripe_fee'
+  | 'card_dispute';
+
+/** One import of the provider's balance history over a period. */
+export const reconciliationRun = appDb.table(
+  'reconciliation_runs',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    provider: text('provider').notNull(),
+    trigger: text('trigger').$type<ReconciliationRunTrigger>().notNull(),
+    requestedByUserId: text('requested_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    periodFrom: timestamp('period_from').notNull(),
+    periodTo: timestamp('period_to').notNull(),
+    status: text('status').$type<ReconciliationRunStatus>().notNull().default('running'),
+    importedCount: integer('imported_count').notNull().default(0),
+    matchedCount: integer('matched_count').notNull().default(0),
+    unmatchedCount: integer('unmatched_count').notNull().default(0),
+    payoutsExactCount: integer('payouts_exact_count').notNull().default(0),
+    pages: integer('pages').notNull().default(0),
+    error: text('error'),
+    startedAt: timestamp('started_at').notNull(),
+    finishedAt: timestamp('finished_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    index('reconciliation_runs_started_at_idx').on(table.startedAt),
+    uniqueIndex('reconciliation_runs_one_running_uidx')
+      .on(table.provider)
+      .where(sql`${table.status} = 'running'`),
+    check('reconciliation_runs_trigger_check', sql`${table.trigger} in ('schedule', 'manual')`),
+    check(
+      'reconciliation_runs_status_check',
+      sql`${table.status} in ('running', 'succeeded', 'incomplete', 'failed')`
+    ),
+    check('reconciliation_runs_period_check', sql`${table.periodTo} > ${table.periodFrom}`)
+  ]
+);
+
+/** A balance transaction as the provider lists it (re-imported idempotently
+ * by reference), and what it matched on our side. */
+export const providerBalanceTransaction = appDb.table(
+  'provider_balance_transactions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    provider: text('provider').notNull(),
+    reference: text('reference').notNull(),
+    // A connected account's (`acct_…`); null for the platform's own.
+    account: text('account'),
+    type: text('type').notNull(),
+    reportingCategory: text('reporting_category').notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    feeCents: integer('fee_cents').notNull(),
+    netCents: integer('net_cents').notNull(),
+    currency: text('currency').notNull(),
+    status: text('status').notNull(),
+    providerCreatedAt: timestamp('provider_created_at').notNull(),
+    availableOn: timestamp('available_on').notNull(),
+    description: text('description'),
+    sourceReference: text('source_reference'),
+    sourceType: text('source_type'),
+    paymentReference: text('payment_reference'),
+    transferReference: text('transfer_reference'),
+    // The helper payout it was read through (a connected account's payout).
+    payoutReference: text('payout_reference'),
+    feeDetails: jsonb('fee_details')
+      .$type<Array<{ type: string; amountCents: number; description: string | null }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    matchStatus: text('match_status')
+      .$type<BalanceTransactionMatchStatus>()
+      .notNull()
+      .default('unmatched'),
+    matchKind: text('match_kind').$type<BalanceTransactionMatchKind>(),
+    matchedId: text('matched_id'),
+    matchNote: text('match_note'),
+    firstRunId: uuid('first_run_id')
+      .notNull()
+      .references(() => reconciliationRun.id, { onDelete: 'restrict' }),
+    lastRunId: uuid('last_run_id')
+      .notNull()
+      .references(() => reconciliationRun.id, { onDelete: 'restrict' }),
+    importedAt: timestamp('imported_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    uniqueIndex('provider_balance_transactions_reference_uidx').on(table.provider, table.reference),
+    index('provider_balance_transactions_created_idx').on(table.providerCreatedAt),
+    index('provider_balance_transactions_match_status_idx').on(table.matchStatus),
+    index('provider_balance_transactions_source_idx').on(table.sourceReference),
+    check(
+      'provider_balance_transactions_match_status_check',
+      sql`${table.matchStatus} in ('matched', 'unmatched', 'mismatch')`
+    ),
+    check(
+      'provider_balance_transactions_net_check',
+      sql`${table.netCents} = ${table.amountCents} - ${table.feeCents}`
+    )
+  ]
 );
 
 export const session = appDb.table(

@@ -1,4 +1,6 @@
 import type {
+  AccountingRepo,
+  ReconciliationRepo,
   ApprovalRepo,
   ApprovalRequestRepo,
   BillingCustomerRepo,
@@ -38,7 +40,7 @@ import type {
   UserSearchRepo,
   VouchRepo
 } from '@repo/db';
-import type { CycleSettlement } from '@repo/billing';
+import type { CardDisputeLedger, CycleSettlement } from '@repo/billing';
 import type { GooglePlaces } from '@repo/google';
 import type { Credibled } from '@repo/credibled';
 import type { NotificationHub } from '@repo/notify';
@@ -94,6 +96,10 @@ export type AppServices =
   | SessionMoneyRepo
   | ExtraSessionRepo
   | ContractReplacementRepo
+  // Tier 3 step 5: the accountant's ledger, reports and reconciliation.
+  | AccountingRepo
+  | ReconciliationRepo
+  | CardDisputeLedger
   | CycleSettlement
   | NotificationHub
   | Mailer

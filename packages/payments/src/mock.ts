@@ -11,6 +11,8 @@ import {
   type ProviderCardSetup,
   type CreateRefundInput,
   type CreateTransferInput,
+  type ProviderBalanceTransaction,
+  type ProviderPage,
   type ProviderPayout,
   type ProviderRefund,
   type ProviderRefundStatus,
@@ -39,6 +41,18 @@ export type MockPayments = Context.Tag.Service<Payments> & {
   settleRefund: (reference: string, status: ProviderRefundStatus, reason?: string) => void;
   /** Puts a connected account's payout on file (payout events). */
   setPayout: (account: string, payout: ProviderPayout) => void;
+  /** Tier 3 step 5: the balance transactions the provider lists for the
+   * platform (`null`) or a connected account. */
+  setBalanceTransactions: (
+    account: string | null,
+    transactions: ReadonlyArray<ProviderBalanceTransaction>
+  ) => void;
+  /** What an automatic payout paid out (its `payout=` listing). */
+  setPayoutTransactions: (
+    account: string,
+    payout: string,
+    transactions: ReadonlyArray<ProviderBalanceTransaction>
+  ) => void;
   /** Tier 3 step 4: the family's bank disputes an intent's charge (the full
    * amount unless given). An inquiry (`warning_needs_response`) takes no
    * money; a dispute withdraws it with a $15 fee, like Stripe in CAD. */
@@ -52,6 +66,22 @@ export type MockPayments = Context.Tag.Service<Payments> & {
   disputeEvidence: (reference: string) => ReadonlyArray<UpdateDisputeEvidenceInput>;
   disputeFiles: () => ReadonlyArray<{ reference: string; name: string; bytes: number }>;
 };
+
+/** Newest first, like the provider; `startingAfter` continues after that
+ * reference; `limit` per page. */
+const pageOf = <A>(
+  rows: ReadonlyArray<A>,
+  referenceOf: (row: A) => string,
+  startingAfter: string | null | undefined,
+  limit: number
+): ProviderPage<A> => {
+  const start = startingAfter ? rows.findIndex((row) => referenceOf(row) === startingAfter) + 1 : 0;
+  const data = rows.slice(start, start + limit);
+  return { data, hasMore: start + limit < rows.length };
+};
+
+const inRange = (at: Date, from: Date | undefined, to: Date | undefined) =>
+  (from === undefined || at >= from) && (to === undefined || at < to);
 
 /** The mock's dispute fee (Stripe charges CAD 15.00). */
 export const MOCK_DISPUTE_FEE_CENTS = 1500;
@@ -119,6 +149,13 @@ export const makeMockPayments = (
   const transfers = new Map<string, ProviderTransfer>();
   const transferKeys = new Map<string, string>();
   const payouts = new Map<string, ProviderPayout>();
+  const balanceTransactions = new Map<string, ReadonlyArray<ProviderBalanceTransaction>>();
+  const payoutTransactions = new Map<string, ReadonlyArray<ProviderBalanceTransaction>>();
+  const newestFirst = <A extends { createdAt: Date; reference: string }>(rows: ReadonlyArray<A>) =>
+    [...rows].sort(
+      (a, b) =>
+        b.createdAt.getTime() - a.createdAt.getTime() || b.reference.localeCompare(a.reference)
+    );
   const disputes = new Map<string, ProviderDispute>();
   const evidence = new Map<string, Array<UpdateDisputeEvidenceInput>>();
   const files: Array<{ reference: string; name: string; bytes: number }> = [];
@@ -475,6 +512,43 @@ export const makeMockPayments = (
       return payout ? Effect.succeed(payout) : unknown('getPayout', reference);
     },
 
+    listBalanceTransactions: (input) => {
+      const failure = down('listBalanceTransactions');
+      if (failure) return failure;
+      if (input.payout !== undefined) {
+        const account = input.account ?? '';
+        if (payouts.get(`${account}/${input.payout}`)?.automatic === false) {
+          // Stripe: "Balance transaction history can only be filtered on
+          // automatic transfers, not manual."
+          return Effect.fail(
+            new PaymentProviderError({
+              operation: 'listBalanceTransactions',
+              cause: 'mock: a manual payout cannot be filtered'
+            })
+          );
+        }
+        const rows = payoutTransactions.get(`${account}/${input.payout}`);
+        if (!rows) return unknown('listBalanceTransactions', input.payout);
+        return Effect.succeed(
+          pageOf(newestFirst(rows), (row) => row.reference, input.startingAfter, input.limit)
+        );
+      }
+      const rows = newestFirst(balanceTransactions.get(input.account ?? '') ?? []).filter((row) =>
+        inRange(row.createdAt, input.createdFrom, input.createdTo)
+      );
+      return Effect.succeed(pageOf(rows, (row) => row.reference, input.startingAfter, input.limit));
+    },
+
+    listPayouts: (input) => {
+      const failure = down('listPayouts');
+      if (failure) return failure;
+      const rows = newestFirst(
+        [...payouts.entries()]
+          .filter(([key]) => key.startsWith(`${input.account}/`))
+          .map(([, payout]) => payout)
+      ).filter((payout) => inRange(payout.createdAt, input.createdFrom, input.createdTo));
+      return Effect.succeed(pageOf(rows, (row) => row.reference, input.startingAfter, input.limit));
+    },
     getDispute: (reference) => {
       const dispute = disputes.get(reference);
       return dispute ? Effect.succeed(dispute) : unknown('getDispute', reference);
@@ -575,6 +649,12 @@ export const makeMockPayments = (
     },
     setPayout: (account, payout) => {
       payouts.set(`${account}/${payout.reference}`, payout);
+    },
+    setBalanceTransactions: (account, transactions) => {
+      balanceTransactions.set(account ?? '', transactions);
+    },
+    setPayoutTransactions: (account, payout, transactions) => {
+      payoutTransactions.set(`${account}/${payout}`, transactions);
     },
     openDispute: (paymentReference, opened = {}) => {
       const payment = byReference.get(paymentReference);

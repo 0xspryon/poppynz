@@ -113,10 +113,9 @@
 		const params = new URLSearchParams({ c: conversationId });
 		if (replacement) {
 			// Kept for when the helper accepts: the conversation offers the
-			// template then.
+			// template then (its card says so — the composer already toasted).
 			rememberReplacement(userId, replacement);
 			writeReplacementParams(params, replacement);
-			toast.info(m.replacement_toast_reach_out_kept({ name: firstName }));
 		}
 		void goto(withQuery(resolve('/family/messages'), params.toString()));
 	}

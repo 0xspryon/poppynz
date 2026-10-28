@@ -2390,7 +2390,6 @@
 	"replacement_toast_created": "We pre-filled a short contract for the cancelled dates at {name}'s rate. Review it, then sign and send.",
 	"replacement_toast_created_title": "Replacement contract started",
 	"replacement_toast_exists": "You already have a contract in progress with {name}. Finish or withdraw it first.",
-	"replacement_toast_reach_out_kept": "Message sent. When {name} accepts, start the replacement contract from your conversation.",
 	"replacement_toast_reused": "You already started this replacement. Here it is.",
 	"replacement_use_template": "Use this contract as a template",
 	"sessions_action_cancel": "Cancel session",

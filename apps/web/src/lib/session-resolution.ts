@@ -2,7 +2,6 @@
  * for each refusal — shared by the cycle page, the contract page and the
  * admin dispute queue. Every number in the copy comes from the API. */
 import type { SessionActionError } from '$lib/api/contracts';
-import type { ChipStatus } from '$lib/components/StatusChip.svelte';
 import { m } from '$lib/paraglide/messages';
 
 export type ResolutionKind =
@@ -47,12 +46,23 @@ export type ResolutionStatus =
 	| 'lapsed'
 	| 'reversed';
 
+/** The StatusChip statuses a resolution reads in (a subset of ChipStatus;
+ * plain tsc can't read a .svelte module's types). */
+type ResolutionChip =
+	| 'proposed'
+	| 'awaiting-you'
+	| 'active'
+	| 'changes-requested'
+	| 'complete'
+	| 'expired'
+	| 'declined';
+
 /** The status as words, and the chip it reads in. `awaitingMe`: a
  * proposal the viewer must answer. */
 export const resolutionStatusChip = (
 	status: ResolutionStatus,
 	awaitingMe = false
-): { label: string; status: ChipStatus } => {
+): { label: string; status: ResolutionChip } => {
 	switch (status) {
 		case 'proposed':
 			return awaitingMe

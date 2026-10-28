@@ -6,6 +6,7 @@ import {
   ExtraSessionRepo,
   PaymentRepo,
   SessionMoneyRepo,
+  SessionResolutionRepo,
   liveBillingStatuses,
   unpaidExtraSessionStatuses,
   type BillingLedgerInsert,
@@ -94,7 +95,12 @@ import { effectiveEnd } from './terms';
  * refunds (on its own payment) and recoveries apply unchanged.
  */
 
-export type ExtraSessionDeps = BillingDeps | ExtraSessionRepo | SessionMoneyRepo;
+export type ExtraSessionDeps =
+  | BillingDeps
+  | ExtraSessionRepo
+  | SessionMoneyRepo
+  // What a charged session's payable is read with (`cyclePayables`).
+  | SessionResolutionRepo;
 
 type ExtraError = SqlError | DBNotFoundError | PaymentProviderError;
 

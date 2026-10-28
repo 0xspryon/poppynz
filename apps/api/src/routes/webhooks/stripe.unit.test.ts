@@ -451,7 +451,6 @@ describe('processStripeEvent', () => {
     );
     expect(world.payment()?.status).toBe('captured');
   });
-
 });
 
 describe('card disputes (Tier 3 step 4)', () => {
@@ -505,7 +504,11 @@ describe('card disputes (Tier 3 step 4)', () => {
   it('a duplicate delivery is acknowledged and not applied again', async () => {
     const world = makeWorld({
       payment: paymentRow({ status: 'captured' }),
-      verified: event({ type: 'charge.dispute.created', objectId: 'du_1', paymentReference: 'pi_1' }),
+      verified: event({
+        type: 'charge.dispute.created',
+        objectId: 'du_1',
+        paymentReference: 'pi_1'
+      }),
       seen: 'processed',
       dispute: () => providerDispute()
     });

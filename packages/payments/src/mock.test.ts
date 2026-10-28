@@ -292,7 +292,12 @@ describe('mock partial refunds and transfers (Tier 3 step 2)', () => {
     const reference = await held(payments);
     const error = await Effect.runPromise(
       payments
-        .createRefund({ paymentReference: reference, amountCents: 1, idempotencyKey: 'r', metadata: {} })
+        .createRefund({
+          paymentReference: reference,
+          amountCents: 1,
+          idempotencyKey: 'r',
+          metadata: {}
+        })
         .pipe(Effect.flip)
     );
     expect(error.refusal).toBe('charge disputed');
@@ -413,7 +418,11 @@ describe('card disputes on the mock (Tier 3 step 4)', () => {
         submit: false
       })
     );
-    expect(staged).toMatchObject({ status: 'needs_response', hasEvidence: true, submissionCount: 0 });
+    expect(staged).toMatchObject({
+      status: 'needs_response',
+      hasEvidence: true,
+      submissionCount: 0
+    });
     const tooLong = await Effect.runPromise(
       payments
         .updateDisputeEvidence({

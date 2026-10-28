@@ -138,7 +138,8 @@ export const attributeDisputedAmount = (
 ): Array<{ sessionId: string; disputedCents: number }> => {
   const ordered = [...sessions].sort(
     (a, b) =>
-      a.startsAt.getTime() - b.startsAt.getTime() || (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0)
+      a.startsAt.getTime() - b.startsAt.getTime() ||
+      (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0)
   );
   const total = ordered.reduce((t, row) => t + row.familyTotalCents, 0);
   const shares = allocateLargestRemainder(
@@ -164,8 +165,7 @@ const disputeScope = (payment: Payment, amountCents: number) =>
     const cycleId = cycle?.id ?? charges[0]?.cycleId ?? null;
     const scope: CardDispute['scope'] =
       cycle !== null ? 'cycle' : charges.length > 0 ? 'extra_session' : 'payment';
-    const sessions =
-      contractId === null ? [] : yield* billingRepo.listSessions(contractId);
+    const sessions = contractId === null ? [] : yield* billingRepo.listSessions(contractId);
     const byId = new Map(sessions.map((row) => [row.id, row]));
     const attributable = charges.flatMap((charge) => {
       const session = byId.get(charge.sessionId);
@@ -211,28 +211,30 @@ export const disputeLedgerEntries = (
     cycleId: dispute.cycleId,
     paymentId: dispute.paymentId
   };
-  return provider.balanceTransactions.flatMap((transaction): Array<BillingLedgerInsert> => [
-    {
-      ...base,
-      entryKey: `card_dispute:${dispute.id}:${transaction.reference}:amount`,
-      kind: transaction.kind === 'withdrawal' ? 'dispute_withdrawn' : 'dispute_reinstated',
-      party: 'platform',
-      amountCents: transaction.amountCents,
-      label: dispute.providerReference
-    },
-    ...(transaction.feeCents !== 0
-      ? [
-          {
-            ...base,
-            entryKey: `card_dispute:${dispute.id}:${transaction.reference}:fee`,
-            kind: 'dispute_fee' as const,
-            party: 'platform' as const,
-            amountCents: transaction.feeCents,
-            label: dispute.providerReference
-          }
-        ]
-      : [])
-  ]);
+  return provider.balanceTransactions.flatMap(
+    (transaction): Array<BillingLedgerInsert> => [
+      {
+        ...base,
+        entryKey: `card_dispute:${dispute.id}:${transaction.reference}:amount`,
+        kind: transaction.kind === 'withdrawal' ? 'dispute_withdrawn' : 'dispute_reinstated',
+        party: 'platform',
+        amountCents: transaction.amountCents,
+        label: dispute.providerReference
+      },
+      ...(transaction.feeCents !== 0
+        ? [
+            {
+              ...base,
+              entryKey: `card_dispute:${dispute.id}:${transaction.reference}:fee`,
+              kind: 'dispute_fee' as const,
+              party: 'platform' as const,
+              amountCents: transaction.feeCents,
+              label: dispute.providerReference
+            }
+          ]
+        : [])
+    ]
+  );
 };
 
 const sumOf = (provider: ProviderDispute, kind: 'withdrawal' | 'reinstatement') =>
@@ -541,7 +543,11 @@ export const assembleEvidencePack = (disputeId: string) =>
       family: { userId: dispute.familyUserId, name: family.name, email: family.email },
       helper: helper && contract ? { userId: contract.providerUserId, name: helper.name } : null,
       contract: contract
-        ? { id: contract.id, timeZone: billing?.timeZone ?? null, startsOn: billing?.startsOn ?? null }
+        ? {
+            id: contract.id,
+            timeZone: billing?.timeZone ?? null,
+            startsOn: billing?.startsOn ?? null
+          }
         : null,
       payment: payment
         ? {
@@ -669,7 +675,9 @@ export const buildEvidence = (pack: EvidencePack, summary: string) => {
     product_description: [
       `In-home care booked through Poppynz${pack.helper ? ` with ${pack.helper.name}` : ''}.`,
       ...(pack.cycle
-        ? [`Charge for the cycle ${cycleDates(pack.cycle)} (charged ${fmtDate(pack.cycle.capturedAt)}).`]
+        ? [
+            `Charge for the cycle ${cycleDates(pack.cycle)} (charged ${fmtDate(pack.cycle.capturedAt)}).`
+          ]
         : []),
       ...sessionLines
     ].join('\n'),
@@ -915,8 +923,10 @@ export const defaultHelperForfeit = (
     ? 0
     : Math.min(
         row.helperShareCents,
-        Math.floor((row.helperShareCents * row.disputedCents * 2 + row.familyTotalCents) /
-          (2 * row.familyTotalCents))
+        Math.floor(
+          (row.helperShareCents * row.disputedCents * 2 + row.familyTotalCents) /
+            (2 * row.familyTotalCents)
+        )
       );
 
 /** Records the admin's decision for sessions of a lost dispute, each once:
@@ -1131,7 +1141,8 @@ export const suspendFamilyContracts = (
     const contracts = yield* ContractRepo;
     for (const contractId of suspended) {
       const contract = yield* contracts.findById(contractId);
-      if (contract) yield* sendCardDisputeNotice('review_suspended', ['family', 'helper'], { contract });
+      if (contract)
+        yield* sendCardDisputeNotice('review_suspended', ['family', 'helper'], { contract });
     }
     yield* alertAdmins(`Family contracts suspended for review (${suspended.length})`, [
       `Reason: ${input.reason.replaceAll('_', ' ')} — ${input.note}`,
@@ -1165,7 +1176,8 @@ export const resumeFamilyContracts = (
     const contracts = yield* ContractRepo;
     for (const contractId of resumed) {
       const contract = yield* contracts.findById(contractId);
-      if (contract) yield* sendCardDisputeNotice('review_resumed', ['family', 'helper'], { contract });
+      if (contract)
+        yield* sendCardDisputeNotice('review_resumed', ['family', 'helper'], { contract });
     }
     return resumed;
   });

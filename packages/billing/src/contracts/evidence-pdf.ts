@@ -35,8 +35,8 @@ const winAnsiExtras: Record<string, number> = {
   '•': 0x95,
   '–': 0x96,
   '—': 0x97,
-  'œ': 0x9c,
-  'Œ': 0x8c
+  œ: 0x9c,
+  Œ: 0x8c
 };
 
 const toWinAnsi = (text: string): Array<number> => {
@@ -104,7 +104,10 @@ export const layoutPages = (
   sections: ReadonlyArray<PdfSection>,
   maxPages = EVIDENCE_PDF_MAX_PAGES
 ): Array<Array<Line>> => {
-  const lines: Array<Line> = [{ text: title, bold: true }, { text: '', bold: false }];
+  const lines: Array<Line> = [
+    { text: title, bold: true },
+    { text: '', bold: false }
+  ];
   for (const section of sections) {
     lines.push({ text: section.heading, bold: true });
     for (const raw of section.lines) {

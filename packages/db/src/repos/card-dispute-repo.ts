@@ -23,7 +23,11 @@ import {
   contractSessionCharge,
   helperRecovery
 } from '../schema';
-import type { BillingLedgerEntry, BillingLedgerInsert, SessionCharge } from './contract-billing-repo';
+import type {
+  BillingLedgerEntry,
+  BillingLedgerInsert,
+  SessionCharge
+} from './contract-billing-repo';
 import type {
   BillingAuditEvent,
   BillingAuditInsert,
@@ -383,7 +387,10 @@ export const makeInMemoryCardDisputeRepo = (
 ) => {
   const now = options.clock ?? (() => new Date());
   const billing = options.billing ?? { charges: [], ledger: [] };
-  const ownMoney = { recoveries: [] as Array<HelperRecovery>, audit: [] as Array<BillingAuditEvent> };
+  const ownMoney = {
+    recoveries: [] as Array<HelperRecovery>,
+    audit: [] as Array<BillingAuditEvent>
+  };
   const moneyState = () => options.money?.() ?? ownMoney;
   const state = {
     disputes: [] as Array<CardDispute>,
@@ -510,8 +517,7 @@ export const makeInMemoryCardDisputeRepo = (
         if (input.recovery) {
           const money = moneyState();
           recovery =
-            money.recoveries.find((row) => row.recoveryKey === input.recovery!.recoveryKey) ??
-            null;
+            money.recoveries.find((row) => row.recoveryKey === input.recovery!.recoveryKey) ?? null;
           if (!recovery) {
             recovery = {
               resolutionId: null,

@@ -215,7 +215,11 @@ describe('one dispute, its evidence and decisions', () => {
     expect(Exit.isSuccess(exit)).toBe(true);
     if (Exit.isSuccess(exit)) {
       expect(exit.value.dispute.pack.sessions).toEqual([
-        expect.objectContaining({ sessionId: SESSION, disputedCents: 6602, defaultHelperForfeitCents: 5266 })
+        expect.objectContaining({
+          sessionId: SESSION,
+          disputedCents: 6602,
+          defaultHelperForfeitCents: 5266
+        })
       ]);
       expect(exit.value.dispute.suggestedSummary).toContain('Poppynz');
       expect(exit.value.dispute.evidenceFields.uncategorized_text).toBe(
@@ -284,13 +288,21 @@ describe('one dispute, its evidence and decisions', () => {
   it('refuses an empty summary, and evidence from anyone without `respond`', async () => {
     const world = makeWorld();
     const empty = await world.run(
-      submitEvidenceRouteProgram(context({ id: world.dispute.id }, { summary: ' ' }), new Headers(), NOW),
+      submitEvidenceRouteProgram(
+        context({ id: world.dispute.id }, { summary: ' ' }),
+        new Headers(),
+        NOW
+      ),
       'admin-1',
       ADMIN
     );
     expect(failure(empty)?._tag).toBe('RequestValidationError');
     const accountant = await world.run(
-      submitEvidenceRouteProgram(context({ id: world.dispute.id }, { summary: 'x' }), new Headers(), NOW),
+      submitEvidenceRouteProgram(
+        context({ id: world.dispute.id }, { summary: 'x' }),
+        new Headers(),
+        NOW
+      ),
       'acct-1',
       ACCOUNTANT
     );
@@ -309,7 +321,9 @@ describe('one dispute, its evidence and decisions', () => {
     expect(failure(await allocate(ACCOUNTANT, body))?._tag).toBe('ForbiddenError');
     expect(
       failure(
-        await allocate(ADMIN, { items: [{ sessionId: SESSION, allocation: 'helper_not_provided' }] })
+        await allocate(ADMIN, {
+          items: [{ sessionId: SESSION, allocation: 'helper_not_provided' }]
+        })
       )
     ).toMatchObject({ reason: 'reason_required' });
     const done = await allocate(ADMIN, body);

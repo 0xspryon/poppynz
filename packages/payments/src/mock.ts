@@ -499,7 +499,8 @@ export const makeMockPayments = (
         let total = 0;
         for (const [field, value] of Object.entries(input.text)) {
           const limit = disputeEvidenceTextLimits[field as keyof typeof disputeEvidenceTextLimits];
-          if (value.length > limit) return refuse(`Invalid string: must be at most ${limit} characters`);
+          if (value.length > limit)
+            return refuse(`Invalid string: must be at most ${limit} characters`);
           total += value.length;
         }
         if (total > DISPUTE_EVIDENCE_TOTAL_CHARS) {
@@ -587,8 +588,7 @@ export const makeMockPayments = (
         reason: opened.reason ?? 'fraudulent',
         paymentReference,
         chargeReference: payment?.chargeReference ?? null,
-        evidenceDueBy:
-          opened.dueBy ?? new Date(now().getTime() + 8 * 24 * 60 * 60 * 1000),
+        evidenceDueBy: opened.dueBy ?? new Date(now().getTime() + 8 * 24 * 60 * 60 * 1000),
         chargeRefundable: opened.inquiry === true,
         hasEvidence: false,
         submissionCount: 0,

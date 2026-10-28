@@ -80,8 +80,18 @@ const disputed = async (
 
 describe('attributing a disputed amount to sessions (§5 rule)', () => {
   const sessions = [
-    { sessionId: 'wed', familyTotalCents: 6602, startsAt: new Date('2026-11-04T20:30:00Z'), slot: 'a' },
-    { sessionId: 'mon', familyTotalCents: 6604, startsAt: new Date('2026-11-02T20:30:00Z'), slot: 'a' }
+    {
+      sessionId: 'wed',
+      familyTotalCents: 6602,
+      startsAt: new Date('2026-11-04T20:30:00Z'),
+      slot: 'a'
+    },
+    {
+      sessionId: 'mon',
+      familyTotalCents: 6604,
+      startsAt: new Date('2026-11-02T20:30:00Z'),
+      slot: 'a'
+    }
   ];
 
   it('the full charge: each session its own total', () => {
@@ -104,8 +114,18 @@ describe('attributing a disputed amount to sessions (§5 rule)', () => {
 
   it('a tie goes to the earlier session', () => {
     const even = [
-      { sessionId: 'b', familyTotalCents: 1000, startsAt: new Date('2026-11-04T00:00:00Z'), slot: 'a' },
-      { sessionId: 'a', familyTotalCents: 1000, startsAt: new Date('2026-11-02T00:00:00Z'), slot: 'a' }
+      {
+        sessionId: 'b',
+        familyTotalCents: 1000,
+        startsAt: new Date('2026-11-04T00:00:00Z'),
+        slot: 'a'
+      },
+      {
+        sessionId: 'a',
+        familyTotalCents: 1000,
+        startsAt: new Date('2026-11-02T00:00:00Z'),
+        slot: 'a'
+      }
     ];
     expect(attributeDisputedAmount(1001, even)).toEqual([
       { sessionId: 'a', disputedCents: 501 },
@@ -204,7 +224,11 @@ describe('dispute webhooks: one idempotent sync for every lifecycle event', () =
     });
     const provider = w.mock.openDispute('mock_pi_extra', { amountCents: 6602 });
     await w.sync(provider.reference, at(AFTER_CAPTURE, 60));
-    expect(w.dispute()).toMatchObject({ scope: 'extra_session', paymentId: extra.id, cycleId: wed.cycleId });
+    expect(w.dispute()).toMatchObject({
+      scope: 'extra_session',
+      paymentId: extra.id,
+      cycleId: wed.cycleId
+    });
     expect(w.cardDisputes.state.sessions.map((row) => [row.sessionId, row.disputedCents])).toEqual([
       [wed.id, 6602]
     ]);
@@ -324,7 +348,9 @@ describe('refunds on a disputed charge', () => {
     await w.sync(provider.reference, at(now, 30));
     await w.tick(at(now, 45));
     expect(w.money.state.refunds[0]).toMatchObject({ status: 'failed' });
-    expect(w.money.state.refunds[0]!.failureReason).toContain('card dispute on this charge was lost');
+    expect(w.money.state.refunds[0]!.failureReason).toContain(
+      'card dispute on this charge was lost'
+    );
     expect(w.mock.refunds()).toHaveLength(0);
     expect(w.alerts.some((s) => s.startsWith('A refund waits on a lost card dispute'))).toBe(true);
     // The family hears nothing about a "failed refund".
@@ -381,7 +407,14 @@ describe('helper pay on disputed sessions', () => {
     expect(cardDisputeHold([row({ status: 'lost', closed: true })], 's').held).toBe(true);
     expect(
       cardDisputeHold(
-        [row({ status: 'lost', closed: true, allocation: 'helper_not_provided', helperForfeitCents: 900 })],
+        [
+          row({
+            status: 'lost',
+            closed: true,
+            allocation: 'helper_not_provided',
+            helperForfeitCents: 900
+          })
+        ],
         's'
       )
     ).toEqual({ held: false, forfeitCents: 900 });
@@ -500,7 +533,9 @@ describe('a lost dispute: the admin’s allocation per session', () => {
       w: Awaited<ReturnType<typeof lost>>['w'],
       items: Parameters<typeof allocateLostCardDispute>[1]
     ) => {
-      const result = await w.either(allocateLostCardDispute(w.dispute().id, items, ADMIN, new Date()));
+      const result = await w.either(
+        allocateLostCardDispute(w.dispute().id, items, ADMIN, new Date())
+      );
       return Either.isLeft(result) ? (result.left as { reason: string }).reason : 'ok';
     };
     expect(
@@ -508,23 +543,28 @@ describe('a lost dispute: the admin’s allocation per session', () => {
     ).toBe('not_lost');
     const { w } = await lost();
     const { mon } = ids(w);
-    expect(await refusal(w, [{ sessionId: 'nope', allocation: 'poppynz_absorbs', reason: null }])).toBe(
-      'unknown_session'
-    );
-    expect(await refusal(w, [{ sessionId: mon, allocation: 'helper_not_provided', reason: ' ' }])).toBe(
-      'reason_required'
-    );
+    expect(
+      await refusal(w, [{ sessionId: 'nope', allocation: 'poppynz_absorbs', reason: null }])
+    ).toBe('unknown_session');
+    expect(
+      await refusal(w, [{ sessionId: mon, allocation: 'helper_not_provided', reason: ' ' }])
+    ).toBe('reason_required');
     expect(
       await refusal(w, [
-        { sessionId: mon, allocation: 'helper_not_provided', reason: 'x', helperForfeitCents: 99_999 }
+        {
+          sessionId: mon,
+          allocation: 'helper_not_provided',
+          reason: 'x',
+          helperForfeitCents: 99_999
+        }
       ])
     ).toBe('forfeit_too_high');
-    expect(await refusal(w, [{ sessionId: mon, allocation: 'poppynz_absorbs', reason: null }])).toBe(
-      'ok'
-    );
-    expect(await refusal(w, [{ sessionId: mon, allocation: 'poppynz_absorbs', reason: null }])).toBe(
-      'already_allocated'
-    );
+    expect(
+      await refusal(w, [{ sessionId: mon, allocation: 'poppynz_absorbs', reason: null }])
+    ).toBe('ok');
+    expect(
+      await refusal(w, [{ sessionId: mon, allocation: 'poppynz_absorbs', reason: null }])
+    ).toBe('already_allocated');
   });
 
   it('the default forfeit is the helper’s share of the disputed part (half up)', () => {
@@ -575,16 +615,24 @@ describe('the admin suspends and resumes the family’s contracts', () => {
     expect(w.billing()).toMatchObject({ status: 'suspended', suspendedReason: 'admin_review' });
     // Later cycles are suspended as they start, never held.
     await w.tick(new Date('2026-11-09T06:00:00.000Z'));
-    expect((await w.cycles()).slice(1).every((c) => !['authorised', 'captured'].includes(c.status))).toBe(
-      true
-    );
+    expect(
+      (await w.cycles()).slice(1).every((c) => !['authorised', 'captured'].includes(c.status))
+    ).toBe(true);
     const state = await w.provide(familyReviewState('family-1'));
     expect(state).toMatchObject({ suspended: true, contractIds: ['contract-1'] });
-    expect(state.history[0]).toMatchObject({ action: 'contracts_suspended', reason: 'suspected_fraud' });
+    expect(state.history[0]).toMatchObject({
+      action: 'contracts_suspended',
+      reason: 'suspected_fraud'
+    });
     // Nothing more to suspend.
     const again = await w.either(
       suspendFamilyContracts(
-        { familyUserId: 'family-1', reason: 'unreliable_payment_method', note: 'x', disputeId: null },
+        {
+          familyUserId: 'family-1',
+          reason: 'unreliable_payment_method',
+          note: 'x',
+          disputeId: null
+        },
         ADMIN,
         now
       )
@@ -599,7 +647,10 @@ describe('the admin suspends and resumes the family’s contracts', () => {
     );
     expect(resumed).toEqual(['contract-1']);
     expect(w.billing().suspendedReason).not.toBe('admin_review');
-    expect(w.money.state.audit.at(-1)).toMatchObject({ action: 'contracts_resumed', note: 'cleared with the bank' });
+    expect(w.money.state.audit.at(-1)).toMatchObject({
+      action: 'contracts_resumed',
+      note: 'cleared with the bank'
+    });
     expect(w.mailTo('family')).toContain('Contract with Sam T. resumed');
     expect(w.mailTo('helper')).toContain('Contract with Fam I. resumed');
     const nothing = await w.either(
@@ -635,7 +686,11 @@ describe('the evidence pack and its submission', () => {
   it('assembles the agreement, timetable, messages, charge records and refunds', async () => {
     const { w } = await disputed({}, options);
     const pack = await w.provide(assembleEvidencePack(w.dispute().id));
-    expect(pack.agreement[0]).toMatchObject({ side: 'family', sha256: 'a'.repeat(64), cancellationPolicyVersion: 3 });
+    expect(pack.agreement[0]).toMatchObject({
+      side: 'family',
+      sha256: 'a'.repeat(64),
+      cancellationPolicyVersion: 3
+    });
     expect(pack.sessions.map((row) => [row.date, row.disputedCents])).toEqual([
       ['2026-11-02', 6604],
       ['2026-11-04', 6602]
@@ -686,7 +741,11 @@ describe('the evidence pack and its submission', () => {
     const submitted = await w.provide(
       submitCardDisputeEvidence(w.dispute().id, 'Final summary', ADMIN, at(now, 5))
     );
-    expect(submitted).toMatchObject({ submittedByUserId: ADMIN, submittedAt: at(now, 5), providerStatus: 'under_review' });
+    expect(submitted).toMatchObject({
+      submittedByUserId: ADMIN,
+      submittedAt: at(now, 5),
+      providerStatus: 'under_review'
+    });
     expect(submitted.files.map((file) => file.field)).toEqual([
       'service_documentation',
       'customer_communication'
@@ -760,9 +819,18 @@ describe('the evidence reminder tick', () => {
     const { w } = await disputed({ dueBy: due });
     const tick = (now: Date) => w.provide(runCardDisputeTick(now));
     const reminders = () => w.alerts.filter((s) => s.startsWith('Card dispute evidence due'));
-    expect(await tick(new Date(due.getTime() - 73 * 3_600_000))).toEqual({ reminded: 0, failed: 0 });
-    expect(await tick(new Date(due.getTime() - 71 * 3_600_000))).toEqual({ reminded: 1, failed: 0 });
-    expect(await tick(new Date(due.getTime() - 60 * 3_600_000))).toEqual({ reminded: 0, failed: 0 });
+    expect(await tick(new Date(due.getTime() - 73 * 3_600_000))).toEqual({
+      reminded: 0,
+      failed: 0
+    });
+    expect(await tick(new Date(due.getTime() - 71 * 3_600_000))).toEqual({
+      reminded: 1,
+      failed: 0
+    });
+    expect(await tick(new Date(due.getTime() - 60 * 3_600_000))).toEqual({
+      reminded: 0,
+      failed: 0
+    });
     expect(reminders()).toEqual(['Card dispute evidence due in 71 h: $132.06 CAD (mock_du_1)']);
   });
 
@@ -810,10 +878,20 @@ describe('notice copy (EN/FR)', () => {
 
   it('the family is never told about a recovery, nor about the bank dispute', () => {
     const names = { family: 'Fam Ily', helper: 'Sam Taylor' };
-    expect(cardDisputeNoticeCopy('helper_recovery', 'family', { contract } as never, names, 'en')).toBeNull();
+    expect(
+      cardDisputeNoticeCopy('helper_recovery', 'family', { contract } as never, names, 'en')
+    ).toBeNull();
     for (const locale of ['en', 'fr'] as const) {
-      const copy = cardDisputeNoticeCopy('review_suspended', 'family', { contract } as never, names, locale)!;
-      expect([copy.subject, ...copy.paragraphs].join(' ')).not.toMatch(/dispute|contest|chargeback|banque|bank/i);
+      const copy = cardDisputeNoticeCopy(
+        'review_suspended',
+        'family',
+        { contract } as never,
+        names,
+        locale
+      )!;
+      expect([copy.subject, ...copy.paragraphs].join(' ')).not.toMatch(
+        /dispute|contest|chargeback|banque|bank/i
+      );
     }
   });
 });

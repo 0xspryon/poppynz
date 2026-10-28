@@ -197,7 +197,8 @@ export const listCardDisputesProgram = (
     });
     const names = new Map<string, string>();
     for (const row of due) {
-      if (!names.has(row.familyUserId)) names.set(row.familyUserId, yield* fullName(row.familyUserId));
+      if (!names.has(row.familyUserId))
+        names.set(row.familyUserId, yield* fullName(row.familyUserId));
     }
     const disputes = due.map((row) =>
       disputeSummary(row, names.get(row.familyUserId)!, access.finance)
@@ -219,7 +220,8 @@ export const cardDisputeFlagsProgram = () =>
   Effect.gen(function* () {
     const open = yield* (yield* CardDisputeRepo).list({ open: true });
     const families = new Map<string, number>();
-    for (const row of open) families.set(row.familyUserId, (families.get(row.familyUserId) ?? 0) + 1);
+    for (const row of open)
+      families.set(row.familyUserId, (families.get(row.familyUserId) ?? 0) + 1);
     const flags = [];
     for (const [userId, openDisputes] of families) {
       const state = yield* familyReviewState(userId);
@@ -395,8 +397,8 @@ export const saveSummaryRouteProgram = (
     const id = yield* idOf(c.req.param('id'));
     const input = yield* validateSummary(yield* parseJsonBody(c, summaryValidationError));
     const admin = yield* gate(headers, { cardDispute: ['review', 'respond'] });
-    const saved = yield* saveEvidenceSummary(id, input.summary, admin.user.id, now).pipe(
-      (errors) => mapFailure(errors)
+    const saved = yield* saveEvidenceSummary(id, input.summary, admin.user.id, now).pipe((errors) =>
+      mapFailure(errors)
     );
     return { dispute: { id: saved.id, evidenceSummaryAt: iso(saved.evidenceSummaryAt) } };
   });
@@ -498,13 +500,17 @@ type CardDisputeRouteError =
 
 const refusalToResponse = (c: HonoContext<HonoEnv>, error: CardDisputeError) => {
   const reason = error.reason;
-  const refused = (code: string, message: string, status: 404 | 409 | 422 | 502) =>
+  const refused = <C extends string>(code: C, message: string, status: 404 | 409 | 422 | 502) =>
     c.json({ error: { code, message, ...(error.detail ? { detail: error.detail } : {}) } }, status);
   switch (reason) {
     case 'not_found':
       return refused('CARD_DISPUTE_NOT_FOUND', 'Not found.', 404);
     case 'not_open':
-      return refused('CARD_DISPUTE_NOT_OPEN', 'This dispute is closed or its evidence was sent.', 409);
+      return refused(
+        'CARD_DISPUTE_NOT_OPEN',
+        'This dispute is closed or its evidence was sent.',
+        409
+      );
     case 'already_submitted':
       return refused('CARD_DISPUTE_EVIDENCE_SUBMITTED', 'Evidence was already submitted.', 409);
     case 'summary_required':

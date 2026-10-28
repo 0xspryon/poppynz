@@ -28,7 +28,8 @@ built in this order, each step its own branch, reviewed and browser-tested:
    payout queue.
 3. **Extra sessions**: either side adds an unscheduled session, the other confirms,
    charged after a 1-hour delay. UAT item 12.
-4. **Card disputes (chargebacks)**: records, evidence, transfer reversals.
+4. **Card disputes (chargebacks)**: records, evidence, and recovery from the
+   helper's next transfers where the policy says the helper bears it.
 5. **Accountant reimbursements and reconciliation**. UAT item 9.
 
 Contract versioning (UAT item 8) stays deferred; "start a new contract from this
@@ -257,7 +258,7 @@ mechanism from the cycle's state:
 | not yet held | session left out of the plan | no |
 | held, not charged | capture reduced for that session | no |
 | charged | partial Stripe refund on the cycle's charge | yes |
-| charged and helper paid | partial refund + session-level recovery from the helper (transfer reversal or deduction from the next transfer) | yes + recovery |
+| charged and helper paid | partial refund + session-level recovery from the helper, deducted from their next transfers until repaid | yes + recovery |
 
 The resolution, refund row and ledger entries are written in one transaction,
 guarded so a session cannot be resolved twice; a worker step calls Stripe; the
@@ -275,8 +276,8 @@ are blocked while a card dispute on that charge is open.
 The end-of-cycle transfer is the sum of session payables: completed → frozen
 share; late family cancellation → 25 % compensation; disputed → held back;
 helper cancellation → $0. Each transfer records the sessions it paid; a held
-session is paid (or not) when the admin decides; a later dispute reverses that
-session's amount only. Transfers use `source_transaction` (the cycle's charge).
+session is paid (or not) when the admin decides; a later dispute recovers that
+session's amount from the helper's next transfers. Transfers use `source_transaction` (the cycle's charge).
 Restricted accounts pause that helper's transfers; after 60 days the payable
 moves to the manual payout queue (subject to legal sign-off on e-Transfer, see
 the Interac research note).
@@ -326,10 +327,11 @@ recoveries per session.
 3. ~~Days off~~ — decided: need the other side's confirmation; family day off =
    family cancellation, helper day off = helper cancellation; both always
    emailed (§3a).
-4. **Past extra sessions:** how far back (e.g. 7 days) and who may start one.
+4. ~~Past extra sessions~~ — decided: up to 14 days back, no further (step 3).
 5. **Re-signing:** must existing contracts re-sign the agreement version that
    adds extra-session consent?
-6. **Manual payouts:** one admin, or two above a threshold?
+6. ~~Manual payouts~~ — decided: each needs approval by at least one admin (step 2).
 7. **Tax on refunds:** credit-note wording and period treatment (accountant).
-8. **Recovery from a helper** after a paid session is refunded: transfer
-   reversal or deduction from the next transfer?
+8. ~~Recovery from a helper~~ — decided: recovered from the helper's earnings
+   going forward (deducted from their next transfers until repaid), not by
+   reversing past transfers (step 2).

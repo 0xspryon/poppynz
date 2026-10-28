@@ -369,6 +369,23 @@ recoveries per session.
   `stripe listen --forward-connect-to` with `event.account` set (`connect
   payout.created / updated / paid`), signed with the same `whsec_…` locally.
 
+- **Off-session automatic-capture charges (extra sessions)**, confirmed
+  2026-10-28 with the repo's adapter: `pm_card_chargeCustomerFail`
+  (4000 0000 0000 0341) attaches to the customer and every off-session
+  charge on it is declined — a `StripeCardError` that carries the intent
+  (`requires_payment_method` with `last_payment_error`, a failed `ch_…` on
+  it), which the adapter reports as `failed`, "Your card was declined.".
+  `pm_card_chargeDeclined` (…0002) can't be saved at all (declined on
+  attach), so it is no test card for a saved-card decline. Replaying the
+  same idempotency key after a decline returns the **same** declined intent
+  (no second attempt); the same key with other parameters (another payment
+  row) is a `StripeIdempotencyError`. A declined intent can be cancelled
+  (`canceled`, its error cleared). A success comes back `succeeded` with
+  `amount_received` equal to the amount and `latest_charge` set, and its
+  replay returns the same intent. Search by `metadata['payment_id']` found
+  a new intent after 15 s in one case and missed another for about a
+  minute: never treat a young miss as "nothing exists".
+
 ## 12. Open decisions
 
 1. ~~Time off for dates beyond the window~~ — decided: no; act within the 14-day
@@ -455,8 +472,8 @@ Defaults taken while the user was away — each **default (2026-10-28)**:
    price now: a family whose price moved (a tax change) is refused with
    "the price changed" and confirms the new amount; a helper accepting a
    family proposal whose price moved is refused the same way. At charge
-   time a price above the authorisation is not charged: it waits for an
-   admin (`charge_held`, admin email).
+   time a price above the authorisation is not charged (nor folded, 16):
+   it waits for an admin (`charge_held`, admin email).
 3. **Billing must be running.** Proposals are refused while the contract's
    billing is awaiting the helper's payouts, suspended or ended
    (`billing_unavailable`), as well as outside active/ending contracts.
@@ -514,6 +531,27 @@ Defaults taken while the user was away — each **default (2026-10-28)**:
     `{{billing.extraSessionLookbackDays}}`,
     `{{billing.extraSessionResponseHours}}`. Existing contracts don't
     re-sign.
+
+Defaults added after the step-3 review — each **default (2026-10-28)**:
+
+16. **Folding respects the authorisation too.** An extra session whose
+    stand-alone price now exceeds what the family authorised is never folded
+    into its cycle (the cycle would charge the higher price): it takes the
+    own-charge path, which holds it for an admin (`charge_held`).
+17. **Nothing owed, nothing to wait for.** A charged extra session whose
+    helper pay is zero (refunded in full, e.g. the helper didn't come) is
+    marked paid out at once, instead of a follow-up transfer being made and
+    settled empty on every tick. A later decision that owes the helper again
+    is paid by the money step's own follow-ups, as for any session.
+18. **One attempt, one key.** Claiming a retry is a compare-and-set on the
+    status and the attempt count, so a retry that read the row before
+    another attempt ran (the card-replacement API call and its webhook both
+    retry) never reuses an attempt's idempotency key with other parameters.
+19. **Left as built:** the extra-sessions list keeps "Paid · $X charged" on
+    an extra session that was later refunded (the session row in the same
+    page shows the refund); the cycle summary's session count includes extra
+    sessions charged on their own payments while its amount doesn't; and
+    "Add an extra session" lives on each cycle's page only.
 
 Stripe behaviours relied on (all already confirmed in §11.1 or by the
 piece 3 work): an off-session PaymentIntent on the saved card with

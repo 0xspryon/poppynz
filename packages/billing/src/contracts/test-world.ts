@@ -17,6 +17,10 @@ import {
   makeInMemoryPayoutAccountRepo,
   makeInMemorySessionMoneyRepo,
   makeInMemorySessionResolutionRepo,
+  makeInMemoryCardDisputeRepo,
+  makeContractAgreementRepoTest,
+  dummyContractAgreementSignature,
+  type ConversationMessage,
   makeSeededTaxConfigRepo,
   makeUserProfileRepoTest,
   makeUserRepoTest,
@@ -114,6 +118,8 @@ export type WorldOptions = {
   ) => Context.Tag.Service<typeof PaymentRepo>;
   /** Session resolutions on file (Tier 3). */
   resolutions?: ReadonlyArray<SessionResolution>;
+  /** The contract's messages (Tier 3: dispute queues, evidence). */
+  messages?: ReadonlyArray<ConversationMessage>;
 };
 
 export const makeWorld = (options: WorldOptions = {}) => {
@@ -166,9 +172,19 @@ export const makeWorld = (options: WorldOptions = {}) => {
   const payments = { ...mock, ...overrides };
   const version = accepted(options.version);
   const resolutionRepo = makeInMemorySessionResolutionRepo({
-    resolutions: [...(options.resolutions ?? [])]
+    resolutions: [...(options.resolutions ?? [])],
+    ...(options.messages ? { messages: options.messages } : {})
+  });
+  // Tier 3 step 4: card disputes share the billing and money state (charges,
+  // ledger, recoveries, audit), as the database does.
+  const cardDisputeRepo = makeInMemoryCardDisputeRepo({
+    billing: billingRepo.state,
+    money: () => moneyRepo.state,
+    clock: () => clock
   });
   const moneyRepo = makeInMemorySessionMoneyRepo({
+    // Tier 3 step 4: card disputes hold pay.
+    cardDisputes: () => cardDisputeRepo.sessionCardDisputes(),
     billing: billingRepo.state,
     capturedOf: (paymentId) => paymentRepo.rows.get(paymentId)?.capturedCents ?? null,
     helpers: { 'contract-1': 'helper-1' },
@@ -183,6 +199,18 @@ export const makeWorld = (options: WorldOptions = {}) => {
     customers.layer,
     payouts.layer,
     makeSeededTaxConfigRepo().layer,
+    cardDisputeRepo.layer,
+    makeContractAgreementRepoTest({
+      listForContract: () =>
+        Effect.succeed([
+          dummyContractAgreementSignature({
+            contractVersionId: 'version-1',
+            content: 'Service agreement\nCancelling at least 24 hours before a session is free.',
+            contentSha256: 'a'.repeat(64),
+            cancellationPolicyVersion: 3
+          })
+        ])
+    }),
     Layer.succeed(Payments, payments),
     Layer.succeed(ContractRepo, {
       findById: () => Effect.sync(() => currentContract),
@@ -267,6 +295,7 @@ export const makeWorld = (options: WorldOptions = {}) => {
     payments: paymentRepo.rows,
     billingState: billingRepo.state,
     payouts,
+    cardDisputes: cardDisputeRepo,
     resolutions: resolutionRepo,
     money: moneyRepo,
     setClock: (now: Date) => {

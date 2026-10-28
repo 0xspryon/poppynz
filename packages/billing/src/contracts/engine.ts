@@ -11,6 +11,8 @@ import {
   makeInMemorySessionResolutionRepo,
   makeSeededTaxConfigRepo,
   makeUserRepoTest,
+  makeInMemoryCardDisputeRepo,
+  makeContractAgreementRepoTest,
   BillingCustomerRepo,
   ContractBillingRepo,
   ContractRepo,
@@ -440,7 +442,7 @@ const markNotice = (cycle: ContractCycle, notice: string) =>
 const suspendCycle = (
   ctx: BillingContext,
   cycle: ContractCycle,
-  reason: 'card' | 'helper_not_ready' | 'provider_unavailable',
+  reason: 'card' | 'helper_not_ready' | 'provider_unavailable' | 'admin_review',
   from: ReadonlyArray<ContractCycleStatus>,
   now: Date,
   lastError: string | null = null
@@ -460,6 +462,9 @@ const suspendCycle = (
       from: ['scheduled', 'active'],
       set: { status: 'suspended', suspendedReason: reason, suspendedAt: now }
     });
+    // Tier 3 step 4: an admin's suspension during a card dispute has its own
+    // notices (sent when the admin suspends); nothing more is said here.
+    if (reason === 'admin_review') return moved;
     const parties = reason === 'card' ? (['helper', 'family'] as const) : (['helper'] as const);
     yield* sendBillingNotice('suspended', parties, { contract: ctx.contract, cycle: moved });
     if (reason !== 'card') {
@@ -1603,13 +1608,15 @@ const resume = (
   billing: ContractBilling,
   ctx: BillingContext,
   now: Date,
-  trigger: 'card_replaced' | 'tick'
+  trigger: 'card_replaced' | 'tick' | 'admin'
 ) =>
   Effect.gen(function* () {
     if (billing.status !== 'suspended') return;
     const reason = billing.suspendedReason;
     // A card problem waits for the family to fix the card.
     if (trigger === 'tick' && reason === 'card') return;
+    // Tier 3 step 4: an admin's suspension is lifted by an admin only.
+    if (reason === 'admin_review' && trigger !== 'admin') return;
     const repo = yield* ContractBillingRepo;
     const cycles = yield* repo.listCycles(billing.contractId);
     // A resume charge is already under way (perhaps unanswered): it, not a
@@ -1674,6 +1681,30 @@ const resume = (
       return;
     }
     yield* attempt(ctx, current, 'resume', quote.amounts, ['suspended'], now, quote.charged);
+  });
+
+/** Tier 3 step 4: an admin resumes a contract they suspended during a card
+ * dispute — the same resume as a replaced card (the rest of the current
+ * cycle re-quoted and charged; a decline suspends it for the card again). */
+export const resumeAfterAdminReview = (contractId: string, now: Date) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    const billing = yield* repo.findBilling(contractId);
+    if (billing?.status !== 'suspended' || billing.suspendedReason !== 'admin_review') return false;
+    const ctx = yield* loadContext(billing);
+    if (ctx === null) return false;
+    yield* resume(billing, ctx, now, 'admin');
+    const after = yield* repo.findBilling(contractId);
+    if (after?.status === 'suspended' && after.suspendedReason === 'admin_review') {
+      // Couldn't resume right now (the helper isn't payment-ready, a quote
+      // failed): no longer the admin's hold — the tick resumes it as usual.
+      const ready = (yield* paymentReadiness(ctx.contract.providerUserId)) === 'ready';
+      yield* repo.advanceBilling(contractId, {
+        from: ['suspended'],
+        set: { suspendedReason: ready ? 'provider_unavailable' : 'helper_not_ready' }
+      });
+    }
+    return true;
   });
 
 /** What replacing the card would charge at once on each of the family's
@@ -2630,6 +2661,9 @@ export const makeIdleContractBillingLayer = () =>
     makeInMemoryBillingCustomerRepo().layer,
     makeSeededTaxConfigRepo().layer,
     makeInMemoryPayoutAccountRepo().layer,
+    // Tier 3 step 4: card disputes and the agreement (evidence packs).
+    makeInMemoryCardDisputeRepo().layer,
+    makeContractAgreementRepoTest(),
     makeInMemorySessionResolutionRepo().layer,
     makeInMemorySessionMoneyRepo().layer,
     makeUserRepoTest({

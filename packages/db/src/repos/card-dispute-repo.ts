@@ -374,15 +374,17 @@ export const makeInMemoryCardDisputeRepo = (
     /** The billing repo's state: frozen charges (sessions of a payment) and
      * the ledger (entries are appended there). */
     billing?: { charges: Array<SessionCharge>; ledger: Array<BillingLedgerEntry> };
-    /** The money repo's state: recoveries and the audit are appended there. */
-    money?: { recoveries: Array<HelperRecovery>; audit: Array<BillingAuditEvent> };
+    /** The money repo's state: recoveries and the audit are appended there
+     * (a function, so the two repos can be made in either order). */
+    money?: () => { recoveries: Array<HelperRecovery>; audit: Array<BillingAuditEvent> };
     extraAuthorisations?: ReadonlyArray<ExtraSessionAuthorisation>;
     clock?: () => Date;
   } = {}
 ) => {
   const now = options.clock ?? (() => new Date());
   const billing = options.billing ?? { charges: [], ledger: [] };
-  const money = options.money ?? { recoveries: [], audit: [] };
+  const ownMoney = { recoveries: [] as Array<HelperRecovery>, audit: [] as Array<BillingAuditEvent> };
+  const moneyState = () => options.money?.() ?? ownMoney;
   const state = {
     disputes: [] as Array<CardDispute>,
     sessions: [] as Array<CardDisputeSession>,
@@ -400,7 +402,7 @@ export const makeInMemoryCardDisputeRepo = (
   };
 
   const audit = (event: BillingAuditInsert, after: unknown) =>
-    money.audit.push({
+    moneyState().audit.push({
       note: null,
       before: null,
       actorUserId: null,
@@ -506,6 +508,7 @@ export const makeInMemoryCardDisputeRepo = (
         if (index < 0) return null;
         let recovery: HelperRecovery | null = null;
         if (input.recovery) {
+          const money = moneyState();
           recovery =
             money.recoveries.find((row) => row.recoveryKey === input.recovery!.recoveryKey) ??
             null;

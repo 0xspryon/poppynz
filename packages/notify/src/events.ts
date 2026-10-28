@@ -104,7 +104,12 @@ export type NotificationPayloads = {
       | 'refund_succeeded'
       | 'refund_failed'
       | 'transfer_sent'
-      | 'transfer_held';
+      | 'transfer_held'
+      // Tier 3 step 4: an admin paused or resumed the contract during a card
+      // dispute; a lost dispute is recovered from the helper.
+      | 'review_suspended'
+      | 'review_resumed'
+      | 'helper_recovery';
   };
   /** Something happened to one of the contract's sessions (Tier 3): a
    * cancellation, day off, report or dispute was recorded, answered,

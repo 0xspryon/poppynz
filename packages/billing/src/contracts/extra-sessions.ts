@@ -893,6 +893,7 @@ const startCharge = (
         extra.id,
         {
           from,
+          attempts: extra.chargeAttempts,
           set: { status: 'charge_failed', lastError: reason, nextRetryAt: null },
           route: 'separate'
         },
@@ -928,6 +929,8 @@ const startCharge = (
       extra.id,
       {
         from,
+        // A stale read (another attempt started since) never reuses a key.
+        attempts: extra.chargeAttempts,
         set: {
           status: 'charging',
           paymentId: payment.id,

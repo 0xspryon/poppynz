@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { dummySessionResolution, type ExtraSession } from '@repo/db';
-import { Effect, Either } from 'effect';
+import { dummySessionResolution, ExtraSessionRepo, type ExtraSession } from '@repo/db';
+import { Effect, Either, Layer } from 'effect';
 import { applyBps } from '../pricing';
 import { CycleSettlement } from '../settle';
 import {
@@ -736,6 +736,30 @@ describe('a declined card', () => {
     );
     expect(retried).toBe(1);
     expect(w.extra(extra.id).status).toBe('charged');
+  });
+
+  it('never reuses an attempt’s key when a retry read the row before another attempt ran', async () => {
+    const { w, extra, due } = await declinedWorld();
+    // A card replacement's retry (API) and its webhook's both read attempt 1;
+    // one runs attempt 2 (declined again) before the other claims the row.
+    const stale = w.extra(extra.id);
+    await w.run(w.provided(retryExtraSessionCharges('family-1', at(due, 30))));
+    expect(w.extra(extra.id)).toMatchObject({ status: 'charge_failed', chargeAttempts: 2 });
+    const staleRepo = Layer.succeed(ExtraSessionRepo, {
+      ...w.extras.service,
+      listByStatus: () => Effect.succeed([stale])
+    });
+    await w.run(
+      w.provided(
+        retryExtraSessionCharges('family-1', at(due, 31)).pipe(Effect.provide(staleRepo))
+      )
+    );
+    // The stale claim lost: attempt 2 is untouched, nothing went to the provider.
+    expect(w.extra(extra.id)).toMatchObject({
+      status: 'charge_failed',
+      chargeAttempts: 2,
+      lastError: 'Your card was declined.'
+    });
   });
 
   it(`raises an admin incident once it is unpaid for CONTRACT_EXTRA_SESSION_UNPAID_ALERT_DAYS (7)`, async () => {

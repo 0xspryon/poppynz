@@ -80,6 +80,10 @@ type Patch = Partial<Omit<ExtraSession, 'id' | 'createdAt' | 'updatedAt'>>;
 export type ExtraSessionAdvanceInput = {
   from: ReadonlyArray<ExtraSessionStatus>;
   set: Patch;
+  /** Only while `charge_attempts` is still this: a reader that missed a
+   * newer attempt (a tick racing a card replacement) never claims the row
+   * again under an attempt number — an idempotency key — already used. */
+  attempts?: number;
 };
 
 /** The database refused the extra session: it overlaps an open proposal or
@@ -212,13 +216,17 @@ export const ExtraSessionRepoLive = Layer.effect(
       Effect.gen(function* () {
         const before = yield* find(id);
         if (!before || !input.from.includes(before.status)) return null;
+        if (input.attempts !== undefined && before.chargeAttempts !== input.attempts) return null;
         const rows = yield* db
           .update(contractExtraSession)
           .set({ ...input.set, updatedAt: new Date() })
           .where(
             and(
               eq(contractExtraSession.id, id),
-              inArray(contractExtraSession.status, [...input.from])
+              inArray(contractExtraSession.status, [...input.from]),
+              input.attempts !== undefined
+                ? eq(contractExtraSession.chargeAttempts, input.attempts)
+                : undefined
             )
           )
           .returning();
@@ -438,6 +446,7 @@ export const makeInMemoryExtraSessionRepo = (
     const index = state.extras.findIndex((row) => row.id === id);
     const before = state.extras[index];
     if (!before || !input.from.includes(before.status)) return null;
+    if (input.attempts !== undefined && before.chargeAttempts !== input.attempts) return null;
     const after = { ...before, ...input.set, updatedAt: now() } as ExtraSession;
     if (
       openExtraSessionStatuses.includes(after.status) &&

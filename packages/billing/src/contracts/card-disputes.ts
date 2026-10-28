@@ -369,14 +369,35 @@ export const syncCardDispute = (reference: string, now: Date) =>
     yield* syncRefundFlag(payment.id);
 
     if ((yield* repo.appendNotice(updated.id, 'opened')) !== null) {
+      // An inquiry (`warning_*`) only asks for information: no money moved.
+      const inquiry = updated.status.startsWith('warning_');
+      const what =
+        updated.scope === 'payment' ? 'not a contract charge' : `contract ${updated.contractId}`;
       yield* alertAdmins(
-        `Card dispute opened: ${dollars(updated.amountCents)} (${updated.reason})`,
+        `Card dispute ${inquiry ? 'inquiry ' : ''}opened: ${dollars(updated.amountCents)} (${updated.reason})`,
         [
-          `The family's bank disputes ${dollars(updated.amountCents)} on payment ${payment.id} (${updated.scope === 'payment' ? 'not a contract charge' : `contract ${updated.contractId}`}). Stripe has taken it from Poppynz's balance${updated.feeCents > 0 ? ` with a ${dollars(updated.feeCents)} fee` : ''}.`,
+          inquiry
+            ? `The family's bank asks about ${dollars(updated.amountCents)} on payment ${payment.id} (${what}). This is an inquiry: no money has been taken yet, but an unanswered one can become a dispute.`
+            : `The family's bank disputes ${dollars(updated.amountCents)} on payment ${payment.id} (${what}). Stripe has taken it from Poppynz's balance${updated.feeCents > 0 ? ` with a ${dollars(updated.feeCents)} fee` : ''}.`,
           updated.evidenceDueBy
             ? `Evidence is due by ${updated.evidenceDueBy.toISOString()}. Review the evidence pack and submit it from Admin › Card disputes.`
             : 'Review it in Admin › Card disputes.',
           `${sessions.length} session(s) are on the disputed charge: their unpaid helper pay is held and refunds on the charge wait until it closes.`
+        ]
+      );
+    }
+    if (
+      row.status.startsWith('warning_') &&
+      !updated.status.startsWith('warning_') &&
+      (yield* repo.appendNotice(updated.id, 'escalated')) !== null
+    ) {
+      yield* alertAdmins(
+        `Card inquiry escalated to a dispute: ${dollars(updated.amountCents)} (${updated.providerReference})`,
+        [
+          `The family's bank turned its inquiry on payment ${payment.id} into a dispute (${updated.reason}).${updated.withdrawnCents > 0 ? ` Stripe has taken ${dollars(updated.withdrawnCents)} from Poppynz's balance${updated.feeCents > 0 ? ` with a ${dollars(updated.feeCents)} fee` : ''}.` : ''}`,
+          updated.evidenceDueBy
+            ? `Evidence is due by ${updated.evidenceDueBy.toISOString()}. Review and submit it in Admin › Card disputes.`
+            : 'Review it in Admin › Card disputes.'
         ]
       );
     }

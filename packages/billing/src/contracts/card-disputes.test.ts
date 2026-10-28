@@ -245,6 +245,26 @@ describe('dispute webhooks: one idempotent sync for every lifecycle event', () =
     expect(w.dispute()).toMatchObject({ status: 'warning_needs_response', withdrawnCents: 0 });
     expect(w.billingState.ledger.filter((e) => e.kind.startsWith('dispute_'))).toEqual([]);
     expect(w.payments.get(payment.id)!.lastError).toBe('card dispute opened');
+    // Said as an inquiry: Stripe took no money.
+    expect(w.alerts.filter((s) => s.startsWith('Card dispute inquiry opened'))).toHaveLength(1);
+  });
+
+  it('an inquiry the bank escalates to a dispute: the admins are told once', async () => {
+    let escalated: ProviderDispute | null = null;
+    const { w, provider, now } = await disputed(
+      { inquiry: true },
+      {
+        payments: (mock) => ({
+          getDispute: (reference) =>
+            escalated ? Effect.succeed(escalated) : mock.getDispute(reference)
+        })
+      }
+    );
+    escalated = { ...provider, status: 'needs_response' };
+    await w.sync(provider.reference, at(now, 60));
+    await w.sync(provider.reference, at(now, 61));
+    expect(w.dispute().status).toBe('needs_response');
+    expect(w.alerts.filter((s) => s.startsWith('Card inquiry escalated'))).toHaveLength(1);
   });
 
   it('won: the reinstatement is in the ledger, the flag is cleared, the admins told once', async () => {

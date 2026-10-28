@@ -386,6 +386,68 @@ recoveries per session.
   a new intent after 15 s in one case and missed another for about a
   minute: never treat a young miss as "nothing exists".
 
+- **Card disputes (step 4)**, confirmed 2026-10-28 with throwaway
+  scripts. `pm_card_createDispute` (4000 0000 0000 0259) opens a
+  `fraudulent` dispute seconds after the charge succeeds (also after the
+  capture of a manual-capture hold, none while only held); dispute ids are
+  `du_…` on this API version (the code accepts any id). It comes
+  `needs_response` with `is_charge_refundable: false` and one balance
+  transaction: `-amount` with a **CAD 15.00 dispute fee**
+  (`reporting_category: dispute`); `charge.dispute.created` and
+  `charge.dispute.funds_withdrawn` both arrive. `evidence_details.due_by`
+  was 8 days out. `pm_card_createDisputeInquiry` opens
+  `warning_needs_response`, refundable, with **no** balance transaction;
+  `pm_card_createDisputeProductNotReceived` opens `product_not_received`.
+  On a hold of 132.06 captured at 66.02, the test dispute (and its debit)
+  was the full 132.06 — the code attributes at most what the sessions were
+  charged.
+- **A refund on a disputed charge** is refused: `charge_disputed` "Charge
+  ch_… has been charged back; cannot issue a refund." (a refusal, so it
+  reaches the failure list). **Transfers with `source_transaction` = a
+  disputed charge** (open, won or lost) are still accepted.
+- **Evidence:** `disputes.update` **submits by default** — staging needs
+  `submit: false`. Limits: `uncategorized_text`, `product_description`,
+  `cancellation_policy_disclosure`, `refund_policy_disclosure`,
+  `cancellation_rebuttal`, `access_activity_log` … 20,000 characters each;
+  `customer_name`, `customer_email_address`, `service_date`,
+  `billing_address` 5,000; all together **150,000** ("Evidence is limited to
+  150000 total characters for this dispute."). Files for evidence must be
+  PDF, JPEG or PNG (`text/plain` refused); the generated text PDF (24 KB,
+  WinAnsi) was accepted as `service_documentation` and
+  `customer_communication`. After a submission the dispute is
+  `under_review` (`submission_count: 1`) and a second one is refused ("You've
+  reached the maximum number of evidence submissions"); a closed one
+  answers "This dispute is already closed".
+- **Outcome in test mode:** `uncategorized_text` equal to **exactly**
+  `winning_evidence` / `losing_evidence` closes it `won` / `lost` within a
+  minute (`charge.dispute.updated` → `under_review`, then for a win
+  `charge.dispute.funds_reinstated` and `charge.dispute.closed`; for a loss
+  `charge.dispute.closed` only). Text merely containing the word stays
+  `under_review`. A win adds a `+amount` balance transaction
+  (`dispute_reversal`) with **no fee returned**; the charge becomes
+  refundable again.
+- **Reviewed 2026-10-28 (step 4 review)**, re-run with throwaway scripts and
+  the stack: a hold of 132.06 captured at 66.02 on `pm_card_createDispute`
+  is again disputed for **13206**, debited `-13206` with a 1500 fee
+  (`charge.amount` 13206, `amount_captured` 6602). Stripe documents
+  `dispute.amount` as "usually the amount of the charge", which can differ
+  when only part is disputed; a cardholder can only dispute what was posted
+  to the card (the captured amount), so this is read as a test-card
+  artefact, not something a live dispute does — it can't be verified without
+  live mode. Either way the code records Stripe's actual debit in the ledger
+  and on the dispute row (what Poppynz bears), attributes to sessions at
+  most what they were charged, and caps what a helper bears at what they
+  were owed for the session (never more than they were or would be paid).
+  `disputes.retrieve(…, { expand: ['balance_transactions'] })` is accepted
+  (the array is returned in full either way). The whole flow ran end to
+  end through the webhook listener (created → funds_withdrawn → updated →
+  funds_reinstated → closed, and `warning_needs_response` for the inquiry
+  card): a won dispute's waiting refund went out on the next tick and its
+  held pay in a follow-up transfer; a lost one's refund went to the failure
+  list. `is_charge_refundable` is true on an inquiry and Stripe says a full
+  refund stops further withdrawals — default 2 still holds refunds while
+  an inquiry is open (an admin can refund from Stripe if they choose to).
+
 ## 12. Open decisions
 
 1. ~~Time off for dates beyond the window~~ — decided: no; act within the 14-day
@@ -557,47 +619,6 @@ Stripe behaviours relied on (all already confirmed in §11.1 or by the
 piece 3 work): an off-session PaymentIntent on the saved card with
 `capture_method: automatic`; the idempotency key (`extra-<id>-<attempt>`)
 replays the same answer within 24 h and refuses other parameters; search by
-- **Card disputes (step 4)**, confirmed 2026-10-28 with throwaway
-  scripts. `pm_card_createDispute` (4000 0000 0000 0259) opens a
-  `fraudulent` dispute seconds after the charge succeeds (also after the
-  capture of a manual-capture hold, none while only held); dispute ids are
-  `du_…` on this API version (the code accepts any id). It comes
-  `needs_response` with `is_charge_refundable: false` and one balance
-  transaction: `-amount` with a **CAD 15.00 dispute fee**
-  (`reporting_category: dispute`); `charge.dispute.created` and
-  `charge.dispute.funds_withdrawn` both arrive. `evidence_details.due_by`
-  was 8 days out. `pm_card_createDisputeInquiry` opens
-  `warning_needs_response`, refundable, with **no** balance transaction;
-  `pm_card_createDisputeProductNotReceived` opens `product_not_received`.
-  On a hold of 132.06 captured at 66.02, the test dispute (and its debit)
-  was the full 132.06 — the code attributes at most what the sessions were
-  charged.
-- **A refund on a disputed charge** is refused: `charge_disputed` "Charge
-  ch_… has been charged back; cannot issue a refund." (a refusal, so it
-  reaches the failure list). **Transfers with `source_transaction` = a
-  disputed charge** (open, won or lost) are still accepted.
-- **Evidence:** `disputes.update` **submits by default** — staging needs
-  `submit: false`. Limits: `uncategorized_text`, `product_description`,
-  `cancellation_policy_disclosure`, `refund_policy_disclosure`,
-  `cancellation_rebuttal`, `access_activity_log` … 20,000 characters each;
-  `customer_name`, `customer_email_address`, `service_date`,
-  `billing_address` 5,000; all together **150,000** ("Evidence is limited to
-  150000 total characters for this dispute."). Files for evidence must be
-  PDF, JPEG or PNG (`text/plain` refused); the generated text PDF (24 KB,
-  WinAnsi) was accepted as `service_documentation` and
-  `customer_communication`. After a submission the dispute is
-  `under_review` (`submission_count: 1`) and a second one is refused ("You've
-  reached the maximum number of evidence submissions"); a closed one
-  answers "This dispute is already closed".
-- **Outcome in test mode:** `uncategorized_text` equal to **exactly**
-  `winning_evidence` / `losing_evidence` closes it `won` / `lost` within a
-  minute (`charge.dispute.updated` → `under_review`, then for a win
-  `charge.dispute.funds_reinstated` and `charge.dispute.closed`; for a loss
-  `charge.dispute.closed` only). Text merely containing the word stays
-  `under_review`. A win adds a `+amount` balance transaction
-  (`dispute_reversal`) with **no fee returned**; the charge becomes
-  refundable again.
-
 `metadata.payment_id` is eventually consistent (an unanswered attempt is
 replayed, then looked up, never re-sent blind); partial refunds on that
 PaymentIntent up to its capture; `source_transaction` transfers capped at
@@ -708,9 +729,32 @@ Chosen by the implementer while the user was away; revisit if needed.
     for the authorisation tick in the evidence, so step 4 needed no change
     to step 3's code.
 
+Defaults taken in the step-4 review, default (2026-10-28):
+
+13. **What a helper bears is capped at what they are owed for the
+    session** (after refunds and cancellations): "did not provide" on a
+    session the family cancelled in time costs the helper nothing, and the
+    ledger and their email say the capped amount.
+14. **Won, lost and prevented are final**: a re-fetch that still reads the
+    dispute open (two events handled at once, the older read landing last)
+    is ignored. An inquiry's `warning_closed` is not treated as final.
+15. **Inquiries are alerted as inquiries** ("no money has been taken"),
+    and the admins are alerted once more if the bank escalates one into a
+    dispute. An inquiry's evidence submitted before escalation still counts
+    as the submission (Stripe's own count); re-answering an escalated
+    inquiry is left to the Stripe dashboard.
+16. **Admin › Users flags a family while an admin holds its contracts**,
+    also after the dispute closed, not only while a dispute is open.
+17. **The signed agreement is quoted once per distinct text** (both
+    parties sign the same text), verbatim — Markdown included — because
+    that is the text the SHA-256 covers.
+18. **The evidence's cancellation sentence quotes the current
+    `CONTRACT_CANCELLATION_NOTICE_HOURS`**; the agreement's own text (in the
+    PDF) remains the authority if the setting changed since it was signed.
+
 ### Trying it in test mode
 
-1. Run `stripe listen --forward-to localhost:3000/api/v1/webhooks/stripe`
+1. Run `stripe listen --forward-to localhost:3000/webhooks/stripe --forward-connect-to localhost:3000/webhooks/stripe`
    (the `whsec_…` in `STRIPE_WEBHOOK_SECRET`).
 2. As the family, save the card **4000 0000 0000 0259** (any future date,
    any CVC). Every charge on it is disputed a few seconds after it is

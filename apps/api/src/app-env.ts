@@ -6,6 +6,7 @@ import type {
   ContractAgreementRepo,
   SessionResolutionRepo,
   SessionMoneyRepo,
+  ExtraSessionRepo,
   ContractReplacementRepo,
   ContractBillingRepo,
   ContractRepo,
@@ -89,6 +90,7 @@ export type AppServices =
   | ContractAgreementRepo
   | SessionResolutionRepo
   | SessionMoneyRepo
+  | ExtraSessionRepo
   | ContractReplacementRepo
   | CycleSettlement
   | NotificationHub

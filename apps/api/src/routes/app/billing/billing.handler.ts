@@ -3,6 +3,7 @@ import {
   applyCardSetup,
   ensureBillingCustomer,
   previewCardResumes,
+  retryExtraSessionCharges,
   retryFamilyBilling,
   toCard
 } from '@repo/billing';
@@ -184,6 +185,12 @@ export const confirmCardSetupRouteProgram = (c: HonoContext<HonoEnv>, headers: H
         yield* retryFamilyBilling(userAndSession.user.id, new Date()).pipe(
           Effect.catchAllCause((cause) =>
             Effect.logError('[billing] retry after card replacement failed', cause)
+          )
+        );
+        // Tier 3 step 3: every declined extra-session charge, at once too.
+        yield* retryExtraSessionCharges(userAndSession.user.id, new Date()).pipe(
+          Effect.catchAllCause((cause) =>
+            Effect.logError('[billing] extra session retry after card replacement failed', cause)
           )
         );
         return { card: toCardSummary(result.card) };

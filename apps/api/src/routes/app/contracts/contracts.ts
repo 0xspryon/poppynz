@@ -22,6 +22,14 @@ import {
 import { getAgreementToSignHandler, getSignedAgreementHandler } from './agreement.handler';
 import { createReplacementHandler, replacementContextHandler } from './replacement.handler';
 import {
+  cancelExtraSessionHandler,
+  listExtraSessionsHandler,
+  proposeExtraSessionHandler,
+  quoteExtraSessionHandler,
+  respondToExtraSessionHandler,
+  withdrawExtraSessionHandler
+} from './extra-sessions.handler';
+import {
   listPendingSessionResponsesHandler,
   recordSessionActionHandler,
   respondToSessionHandler,
@@ -44,6 +52,13 @@ export const contractsRoute = new Hono<HonoEnv>()
   .post('/:id/sessions/:sessionId/respond', (c) => respondToSessionHandler(c))
   // Tier 3 step 2: what an action would do to the session's money.
   .post('/:id/sessions/:sessionId/preview', (c) => previewSessionActionHandler(c))
+  // Tier 3 step 3: extra sessions (proposal, answer, withdraw, free cancel).
+  .get('/:id/extra-sessions', (c) => listExtraSessionsHandler(c))
+  .post('/:id/extra-sessions/quote', (c) => quoteExtraSessionHandler(c))
+  .post('/:id/extra-sessions', (c) => proposeExtraSessionHandler(c))
+  .post('/:id/extra-sessions/:extraId/respond', (c) => respondToExtraSessionHandler(c))
+  .post('/:id/extra-sessions/:extraId/withdraw', (c) => withdrawExtraSessionHandler(c))
+  .post('/:id/extra-sessions/:extraId/cancel', (c) => cancelExtraSessionHandler(c))
   .post('/:id/billing/retry', (c) => retryContractPaymentHandler(c))
   .post('/:id/renew', (c) => renewContractHandler(c))
   // Tier 3 step 1b: replace sessions the helper cancelled with another helper.

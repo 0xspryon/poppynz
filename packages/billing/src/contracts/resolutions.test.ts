@@ -167,6 +167,17 @@ describe('checkSessionAction', () => {
     );
   });
 
+  it('leaves an extra session in its charge delay to the free extra-session cancel (step 3)', () => {
+    const pending = ctx({ session: { ...session(), chargeRoute: 'pending' } });
+    for (const action of ['cancel', 'propose_day_off', 'dispute'] as const) {
+      expect(checkSessionAction(action, pending)).toBe('session_unavailable');
+    }
+    // Once charged it is a normal session.
+    expect(
+      checkSessionAction('cancel', ctx({ session: { ...session(), chargeRoute: 'separate' } }))
+    ).toBeNull();
+  });
+
   it('refuses cancelling a session that has started, and a day off past the cutoff', () => {
     const started = ctx({ now: new Date('2026-11-03T20:30:00.000Z') });
     expect(checkSessionAction('cancel', started)).toBe('already_started');

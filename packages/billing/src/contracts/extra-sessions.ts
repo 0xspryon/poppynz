@@ -1525,21 +1525,20 @@ export const retryExtraSessionCharges = (
 ) =>
   Effect.gen(function* () {
     const repo = yield* ExtraSessionRepo;
-    const contracts = (yield* (yield* ContractBillingRepo).listLiveBillingForFamily(familyUserId))
-      .map((billing) => billing.contractId)
-      .filter((id) => options.contractId === undefined || id === options.contractId);
+    const contracts = yield* ContractRepo;
     let retried = 0;
-    for (const contractId of contracts) {
-      for (const extra of yield* repo.listForContract(contractId)) {
-        if (extra.status !== 'charge_failed') continue;
-        if (!chargeable(yield* sessionOf(extra))) continue;
-        retried += 1;
-        yield* startCharge(extra, ['charge_failed'], now).pipe(
-          Effect.catchAll((error) =>
-            Effect.logWarning(`[extra-sessions] retry of ${extra.id} failed`, error)
-          )
-        );
-      }
+    // Declined charges are few: each is matched to the family by its contract.
+    for (const extra of yield* repo.listByStatus(['charge_failed'])) {
+      if (options.contractId !== undefined && extra.contractId !== options.contractId) continue;
+      const contract = yield* contracts.findById(extra.contractId);
+      if (contract?.familyUserId !== familyUserId) continue;
+      if (!chargeable(yield* sessionOf(extra))) continue;
+      retried += 1;
+      yield* startCharge(extra, ['charge_failed'], now).pipe(
+        Effect.catchAll((error) =>
+          Effect.logWarning(`[extra-sessions] retry of ${extra.id} failed`, error)
+        )
+      );
     }
     return retried;
   });

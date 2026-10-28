@@ -481,7 +481,8 @@ export const makeInMemoryExtraSessionRepo = (
           lastError: null,
           noticesSent: [],
           ...input,
-          id: `extra-${++memoryId}`,
+          // A UUID, like the database's, so route validation accepts it.
+          id: `0198a3b0-0000-7000-8000-${String(++memoryId).padStart(12, '0')}`,
           createdAt: now(),
           updatedAt: now()
         } as ExtraSession;

@@ -3,6 +3,7 @@ import {
   applyCardSetup,
   handlePayoutEvent,
   mismatchReason,
+  retryExtraSessionCharges,
   retryFamilyBilling,
   settlePaymentByReference,
   settleSessionRefundByReference
@@ -142,6 +143,12 @@ export const processStripeEvent = (event: PaymentWebhookEvent) =>
           yield* retryFamilyBilling(result.userId, new Date()).pipe(
             Effect.catchAllCause((cause) =>
               Effect.logError('[stripe:webhook] contract billing retry failed', cause)
+            )
+          );
+          // Tier 3 step 3: and every declined extra-session charge.
+          yield* retryExtraSessionCharges(result.userId, new Date()).pipe(
+            Effect.catchAllCause((cause) =>
+              Effect.logError('[stripe:webhook] extra session retry failed', cause)
             )
           );
         }

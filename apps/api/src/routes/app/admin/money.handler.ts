@@ -13,6 +13,8 @@
  *   GET  /admin/money/refunds                      failed session refunds
  *   POST /admin/money/refunds/:id/retry            retry one
  *   POST /admin/money/refunds/:id/handled          settled another way
+ *   GET  /admin/money/extra-sessions               extra sessions whose own
+ *                                                  charge is unpaid (step 3)
  *
  * Gated by permissions only: `payoutQueue` (admins) and `refundQueue`
  * (admins and the accountant). Every action is audited.
@@ -26,7 +28,14 @@ import {
   retryTransfer,
   type MoneyAdminError
 } from '@repo/billing';
-import { ContractBillingRepo, SessionMoneyRepo, type HelperTransfer } from '@repo/db';
+import {
+  ContractBillingRepo,
+  ContractRepo,
+  ExtraSessionRepo,
+  SessionMoneyRepo,
+  unpaidExtraSessionStatuses,
+  type HelperTransfer
+} from '@repo/db';
 import { Cause, Data, Effect, Exit, Option, Schema } from 'effect';
 import type { HonoContext, HonoEnv } from '@/api/app-env';
 import {
@@ -196,6 +205,39 @@ export const listFailedRefundsProgram = () =>
     };
   }).pipe((errors) => mapFailure(errors));
 
+/** Tier 3 step 3: extra sessions whose own charge is still unpaid (being
+ * charged, or declined and retried) — with whether the unpaid incident was
+ * raised (`CONTRACT_EXTRA_SESSION_UNPAID_ALERT_DAYS` after it was due). */
+export const listUnpaidExtraSessionsProgram = () =>
+  Effect.gen(function* () {
+    const rows = yield* (yield* ExtraSessionRepo).listByStatus(unpaidExtraSessionStatuses);
+    return {
+      extraSessions: yield* Effect.forEach(rows, (row) =>
+        Effect.gen(function* () {
+          const contract = yield* (yield* ContractRepo).findById(row.contractId);
+          return {
+            id: row.id,
+            contractId: row.contractId,
+            cycleId: row.cycleId,
+            familyName: contract ? (yield* personName(contract.familyUserId)).name : null,
+            helperName: contract ? (yield* personName(contract.providerUserId)).name : null,
+            date: row.date,
+            startMinutes: row.startMinutes,
+            endMinutes: row.endMinutes,
+            serviceName: row.serviceName,
+            status: row.status,
+            totalCents: row.familyTotalCents ?? row.quotedTotalCents,
+            attempts: row.chargeAttempts,
+            lastError: row.lastError,
+            dueAt: row.chargeAt?.toISOString() ?? null,
+            nextRetryAt: row.nextRetryAt?.toISOString() ?? null,
+            alerted: row.noticesSent.includes('unpaid_alert')
+          };
+        })
+      )
+    };
+  }).pipe((errors) => mapFailure(errors));
+
 export const retryRefundProgram = (admin: UserAndSession, id: string, now: Date) =>
   retryRefund(id, admin.user.id, now).pipe(
     Effect.map((row) => ({ refund: { id: row.id, status: row.status } })),
@@ -260,6 +302,12 @@ export const retryTransferRouteProgram = (
     return yield* retryTransferProgram(admin, id, now);
   });
 
+export const listUnpaidExtraSessionsRouteProgram = (headers: Headers) =>
+  Effect.gen(function* () {
+    yield* gate(headers, { payoutQueue: ['read'] });
+    return yield* listUnpaidExtraSessionsProgram();
+  });
+
 export const listFailedRefundsRouteProgram = (headers: Headers) =>
   Effect.gen(function* () {
     yield* gate(headers, { refundQueue: ['read'] });
@@ -295,6 +343,7 @@ type AdminMoneyRouteError =
   | Effect.Effect.Error<ReturnType<typeof decideManualPayoutRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof retryTransferRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof listFailedRefundsRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof listUnpaidExtraSessionsRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof retryRefundRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof markRefundHandledRouteProgram>>;
 
@@ -406,6 +455,13 @@ const exitToResponse = <T>(c: HonoContext<HonoEnv>, exit: Exit.Exit<T, AdminMone
       );
     }
   });
+
+export async function listUnpaidExtraSessionsHandler(c: HonoContext<HonoEnv>) {
+  return exitToResponse(
+    c,
+    await c.get('runtime').runPromiseExit(listUnpaidExtraSessionsRouteProgram(c.req.raw.headers))
+  );
+}
 
 export async function listPayoutQueueHandler(c: HonoContext<HonoEnv>) {
   return exitToResponse(

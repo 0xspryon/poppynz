@@ -5,7 +5,9 @@ import {
   dummyContractBilling,
   dummySessionResolution,
   makeInMemoryContractBillingRepo,
-  makeInMemorySessionResolutionRepo
+  makeInMemoryExtraSessionRepo,
+  makeInMemorySessionResolutionRepo,
+  type ExtraSession
 } from '@repo/db';
 import { makeMockPayments, Payments } from '@repo/payments';
 import { Context, Effect, Layer } from 'effect';
@@ -29,10 +31,11 @@ describe('processContractBillingTick', () => {
       ran: 0,
       failed: 0,
       resolutions: { confirmed: 0, lapsed: 0, failed: 0 },
+      extraSessions: { lapsed: 0, folded: 0, charged: 0, declined: 0, failed: 0 },
       money: { reconciled: 0, refundsSent: 0, transfers: 0, failed: 0 }
     });
     expect(describeTick(summary)).toBe(
-      'contract billing: 0 ran, 0 failed of 0 live contracts; session resolutions: 0 confirmed, 0 lapsed, 0 failed; money: 0 sessions applied, 0 refunds sent, 0 transfers processed, 0 failed'
+      'contract billing: 0 ran, 0 failed of 0 live contracts; session resolutions: 0 confirmed, 0 lapsed, 0 failed; extra sessions: 0 lapsed, 0 folded, 0 charged, 0 declined, 0 failed; money: 0 sessions applied, 0 refunds sent, 0 transfers processed, 0 failed'
     );
   });
 
@@ -78,5 +81,33 @@ describe('processContractBillingTick', () => {
       ['report', 'confirmed'],
       ['day-off', 'lapsed']
     ]);
+  });
+
+  it('lapses an unanswered extra-session proposal as of the given instant (Tier 3 step 3)', async () => {
+    const extras = makeInMemoryExtraSessionRepo({
+      extras: [
+        {
+          id: 'extra-1',
+          contractId: 'contract-1',
+          status: 'proposed',
+          respondBy: new Date('2026-11-04T12:00:00.000Z'),
+          noticesSent: []
+        } as unknown as ExtraSession
+      ]
+    });
+    const layer = Layer.mergeAll(
+      makeIdleContractBillingLayer(),
+      Layer.succeed(Payments, makeMockPayments()),
+      extras.layer
+    );
+    const before = await Effect.runPromise(
+      processContractBillingTick(new Date('2026-11-04T11:59:00.000Z')).pipe(Effect.provide(layer))
+    );
+    expect(before.extraSessions.lapsed).toBe(0);
+    const asOf = await Effect.runPromise(
+      processContractBillingTick(new Date('2026-11-04T12:00:00.000Z')).pipe(Effect.provide(layer))
+    );
+    expect(asOf.extraSessions.lapsed).toBe(1);
+    expect(extras.state.extras[0]?.status).toBe('lapsed');
   });
 });

@@ -4,7 +4,8 @@ import {
   runSessionResolutionTick,
   type ContractBillingTickSummary,
   type MoneyTickSummary,
-  type ResolutionTickSummary
+  type ResolutionTickSummary,
+  runCardDisputeTick
 } from '@repo/billing';
 import { Effect } from 'effect';
 
@@ -25,6 +26,14 @@ import { Effect } from 'effect';
  */
 export const processContractBillingTick = (now: Date) =>
   Effect.gen(function* () {
+    // Tier 3 step 4: the admins are reminded before a card dispute's
+    // evidence is due (CONTRACT_DISPUTE_EVIDENCE_REMINDER_HOURS), once.
+    const disputes = yield* runCardDisputeTick(now);
+    if (disputes.reminded + disputes.failed > 0) {
+      yield* Effect.logInfo(
+        `[card-dispute] ${disputes.reminded} evidence reminder(s) sent, ${disputes.failed} failed`
+      );
+    }
     const billing = yield* runContractBillingTick(now);
     const resolutions = yield* runSessionResolutionTick(now);
     const money = yield* runSessionMoneyTick(now);

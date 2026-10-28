@@ -318,3 +318,27 @@ describe('locale helpers', () => {
     expect(toMailLocale(undefined)).toBe('en');
   });
 });
+
+describe('contractBillingNoticeMail secondary call to action', () => {
+  it('renders a second button with its intro under the first, in both parts', () => {
+    const mail = contractBillingNoticeMail({
+      name: 'Sam',
+      subject: 'Maria cancelled Tue, Nov 3',
+      paragraphs: ['Maria cancelled.'],
+      link: 'https://app.test/contracts/1',
+      linkLabel: 'View the session',
+      secondaryLink: {
+        href: 'https://app.test/family/find?service=childcare',
+        label: 'Find a replacement',
+        intro: 'Need someone else?'
+      }
+    });
+    expect(mail.html).toContain('Find a replacement');
+    expect(mail.html).toContain('https://app.test/family/find?service=childcare');
+    expect(mail.html.indexOf('View the session')).toBeLessThan(
+      mail.html.indexOf('Find a replacement')
+    );
+    expect(mail.text).toContain('Need someone else?');
+    expect(mail.text).toContain('https://app.test/family/find?service=childcare');
+  });
+});

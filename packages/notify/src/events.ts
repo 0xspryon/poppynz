@@ -100,6 +100,17 @@ export type NotificationPayloads = {
       | 'helper_not_ready'
       | 'charge_failed';
   };
+  /** Something happened to one of the contract's sessions (Tier 3): a
+   * cancellation, day off, report or dispute was recorded, answered,
+   * confirmed by silence, lapsed or decided by an admin. Thin on purpose: an
+   * open contract or cycle page refetches. */
+  'contract.session': {
+    contractId: string;
+    cycleId: string;
+    sessionId: string;
+    resolutionId: string;
+    event: 'recorded' | 'confirmed' | 'contested' | 'declined' | 'lapsed' | 'decided';
+  };
   /** Someone asked the viewer to vouch for them. */
   'vouch.requested': {
     vouchId: string;

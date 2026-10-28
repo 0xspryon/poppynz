@@ -42,6 +42,7 @@ import {
   helperPaidSoFar
 } from './money';
 import { alertAdmins, cycleDates } from './notices';
+import { sessionResolutionPolicy } from './resolutions';
 
 /**
  * Card disputes (chargebacks) — Tier 3 step 4, spec 2026-10-28 §15, umbrella
@@ -428,6 +429,7 @@ export const assembleEvidencePack = (disputeId: string) =>
     const dispute = yield* repo.findById(disputeId);
     if (dispute === null) return yield* refuse('not_found');
     const { evidenceMessageDays, evidenceMaxMessages } = yield* cardDisputePolicy;
+    const { cancellationNoticeHours } = yield* sessionResolutionPolicy;
     const payment = yield* (yield* PaymentRepo)
       .findById(dispute.paymentId)
       .pipe(Effect.catchTag('DBNotFoundError', () => Effect.succeed(null)));
@@ -554,6 +556,9 @@ export const assembleEvidencePack = (disputeId: string) =>
             : 'other';
     return {
       dispute,
+      /** The free-cancellation notice the policy applies (the evidence
+       * quotes it; CONTRACT_CANCELLATION_NOTICE_HOURS). */
+      cancellationNoticeHours,
       family: { userId: dispute.familyUserId, name: family.name, email: family.email },
       helper: helper && contract ? { userId: contract.providerUserId, name: helper.name } : null,
       contract: contract
@@ -702,7 +707,7 @@ export const buildEvidence = (pack: EvidencePack, summary: string) => {
       : {}),
     ...(signed
       ? {
-          cancellation_policy_disclosure: `The cancellation policy is part of the service agreement the family signed in the app on ${fmtDate(signed.signedAt)} (Terms of Service version ${signed.cancellationPolicyVersion ?? '—'}; agreement SHA-256 ${signed.sha256}). Cancelling at least 24 hours before a session is free; the full text is in the service documentation.`
+          cancellation_policy_disclosure: `The cancellation policy is part of the service agreement the family signed in the app on ${fmtDate(signed.signedAt)} (Terms of Service version ${signed.cancellationPolicyVersion ?? '—'}; agreement SHA-256 ${signed.sha256}). Cancelling at least ${pack.cancellationNoticeHours} hours before a session is free; the full text is in the service documentation.`
         }
       : {}),
     refund_policy_disclosure: refunds.join('\n'),

@@ -774,6 +774,12 @@ describe('the evidence pack and its submission', () => {
       service_date: '2026-11-02 to 2026-11-04'
     });
     expect(evidence.text.cancellation_policy_disclosure).toContain('a'.repeat(64));
+    // The notice period is the configured one, never a hard-coded figure.
+    expect(evidence.text.cancellation_policy_disclosure).toContain('at least 24 hours');
+    expect(
+      buildEvidence({ ...pack, cancellationNoticeHours: 48 }, 'Summary').text
+        .cancellation_policy_disclosure
+    ).toContain('at least 48 hours');
     expect(evidence.text.access_activity_log).toContain('Service agreement signed by the family');
     expect(evidence.communication[0]!.lines).toHaveLength(2);
     const huge = fitEvidenceText({

@@ -482,7 +482,14 @@ describe('resolution notices', () => {
     const family = world.mails.find((mail) => mail.email.startsWith('family-1'))!;
     expect(family.subject).toBe('Maria T. cancelled Tue, Nov 3');
     expect(family.secondaryLink?.label).toBe('Find a replacement');
-    expect(family.secondaryLink?.href).toContain('/family/find?service=Childcare');
+    // Step 1b: Find help in "Find a replacement" mode for this session.
+    const href = new URL(family.secondaryLink!.href);
+    expect(href.pathname).toBe('/family/find');
+    expect(Object.fromEntries(href.searchParams)).toEqual({
+      service: 'Childcare',
+      replace: 'contract-1',
+      sessions: session().id
+    });
     expect(family.secondaryLink?.intro).toContain('offering Childcare');
     expect(family.link).toContain('/family/contracts/contract-1/cycles/cycle-1');
     const helper = world.mails.find((mail) => mail.email.startsWith('helper-1'))!;

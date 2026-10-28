@@ -203,7 +203,7 @@ export class ContractPaymentProviderError extends Data.TaggedError(
 
 /** Postgres unique-constraint violation (SQLSTATE 23505), possibly nested a
  * few `cause` levels deep depending on the driver wrapping. */
-const isUniqueViolation = (error: SqlError): boolean => {
+export const isUniqueViolation = (error: SqlError): boolean => {
   let current: unknown = error.cause;
   for (let depth = 0; depth < 5 && current !== null && typeof current === 'object'; depth++) {
     if ((current as { code?: unknown }).code === '23505') return true;
@@ -212,7 +212,7 @@ const isUniqueViolation = (error: SqlError): boolean => {
   return false;
 };
 
-function mapContractRepoError<A, R>(
+export function mapContractRepoError<A, R>(
   effect: Effect.Effect<A, SqlError, R>
 ): Effect.Effect<A, ContractRepoError, R> {
   return effect.pipe(
@@ -302,7 +302,7 @@ const startsTooSoon = (
   firstSessionAt(version, startsOn, timeZone).getTime() - clock.now.getTime() <
   clock.minLeadMinutes * 60 * 1000;
 
-const displayName = (
+export const displayName = (
   profile: { firstName: string | null; lastName: string | null } | null,
   fallback: string
 ) => [profile?.firstName, profile?.lastName].filter(Boolean).join(' ') || fallback;
@@ -750,7 +750,7 @@ export const toThreadContractSummary = (
 // ---------------------------------------------------------------------------
 // Domain programs
 
-const loadParticipantContract = (contractId: string, viewerUserId: string) =>
+export const loadParticipantContract = (contractId: string, viewerUserId: string) =>
   Effect.gen(function* () {
     const contractRepo = yield* ContractRepo;
     const contract = yield* contractRepo
@@ -1723,7 +1723,7 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
 
 /** Contract statuses that are still being negotiated — at most one per
  * conversation (the `contracts_conversation_negotiating_uidx` index). */
-const negotiatingStatuses: ReadonlyArray<Contract['status']> = [
+export const negotiatingStatuses: ReadonlyArray<Contract['status']> = [
   'draft',
   'proposed',
   'changes_requested',
@@ -2019,7 +2019,8 @@ export const getContractCycleProgram = (
             actions: [],
             responses: [],
             cancelOutcome: null,
-            cutoffAt: null
+            cutoffAt: null,
+            canFindReplacement: false
           })
         })),
         sessionWindow: resolutions.sessionWindow,
@@ -2312,7 +2313,10 @@ export type ContractRouteError =
   | Effect.Effect.Error<ReturnType<typeof getContractCycleRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof contractLandingRouteProgram>>;
 
-const contractRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: ContractRouteError) => {
+export const contractRouteErrorToResponse = (
+  c: HonoContext<HonoEnv>,
+  error: ContractRouteError
+) => {
   switch (error._tag) {
     case 'UnauthorizedError':
     case 'ForbiddenError':

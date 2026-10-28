@@ -99,7 +99,9 @@ describe('POST /contracts/:id/sessions/:sessionId/actions — cancel', () => {
     expect(resolutionOf(await act(world, { action: 'cancel' })).kind).toBe('helper_cancelled');
     const family = world.mails.find((mail) => mail.email.startsWith('family-1'))!;
     expect(family.secondaryLink?.label).toBe('Find a replacement');
-    expect(family.secondaryLink?.href).toContain('/family/find?service=Childcare');
+    expect(family.secondaryLink?.href).toContain(
+      `/family/find?service=Childcare&replace=${CONTRACT_ID}&sessions=${SESSION_ID}`
+    );
   });
 
   it('falls back to the published Terms of Service without a signed policy', async () => {
@@ -508,8 +510,55 @@ describe('cycleSessionResolutions (the cycle page)', () => {
       actions: ['cancel', 'propose_day_off'],
       responses: [],
       cancelOutcome: 'family_cancelled_early',
-      cutoffAt: CUTOFF.toISOString()
+      cutoffAt: CUTOFF.toISOString(),
+      canFindReplacement: false
     });
+  });
+
+  it('offers the family (only) a replacement for a session the helper cancelled, until it starts', async () => {
+    const world = makeSessionWorld({
+      resolutions: [
+        dummySessionResolution({
+          sessionId: SESSION_ID,
+          contractId: CONTRACT_ID,
+          kind: 'helper_cancelled',
+          reportedByUserId: 'helper-1',
+          reportedBySide: 'helper',
+          status: 'confirmed'
+        })
+      ]
+    });
+    expect((await views(world, 'family-1', true)).perSession.get(SESSION_ID)).toMatchObject({
+      canFindReplacement: true
+    });
+    expect((await views(world, 'helper-1', true)).perSession.get(SESSION_ID)).toMatchObject({
+      canFindReplacement: false
+    });
+    expect((await views(world, 'family-1', true, DURING)).perSession.get(SESSION_ID)).toMatchObject(
+      { canFindReplacement: false }
+    );
+  });
+
+  it('offers the proposer to withdraw their pending day off; the other side only answers', async () => {
+    const world = makeSessionWorld({
+      resolutions: [
+        dummySessionResolution({
+          sessionId: SESSION_ID,
+          contractId: CONTRACT_ID,
+          kind: 'day_off_agreed',
+          reportedByUserId: 'family-1',
+          reportedBySide: 'family',
+          status: 'proposed',
+          recordedAt: BEFORE,
+          respondBy: CUTOFF
+        })
+      ]
+    });
+    const mine = (await views(world, 'family-1', true)).perSession.get(SESSION_ID);
+    expect(mine?.actions).toEqual(['withdraw_day_off']);
+    const theirs = (await views(world, 'helper-1', true)).perSession.get(SESSION_ID);
+    expect(theirs?.actions).toEqual([]);
+    expect(theirs?.responses).toEqual(['accept', 'decline']);
   });
 
   it('offers nothing without the permission, but still shows the resolution', async () => {

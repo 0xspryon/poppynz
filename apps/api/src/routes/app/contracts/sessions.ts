@@ -129,6 +129,20 @@ const partyOf = (contract: Contract, userId: string): PartySide | null =>
       ? 'helper'
       : null;
 
+/**
+ * The helper cancelled this session (spec §1, step 1b): their own
+ * cancellation, a day off they proposed that the family agreed to, or an
+ * admin's "helper cancelled" decision. Until it starts, the family may find
+ * a replacement for it.
+ */
+export const isHelperCancellation = (
+  resolution: Pick<SessionResolution, 'kind' | 'status' | 'reportedBySide' | 'decision'>
+) =>
+  (resolution.status === 'confirmed' &&
+    (resolution.kind === 'helper_cancelled' ||
+      (resolution.kind === 'day_off_agreed' && resolution.reportedBySide === 'helper'))) ||
+  (resolution.status === 'decided' && resolution.decision === 'helper_cancelled');
+
 /** One resolution as a party sees it. */
 export const resolutionView = (
   resolution: SessionResolution,
@@ -227,7 +241,14 @@ export const cycleSessionResolutions = (input: {
               session,
               input.zone,
               policy.cancellationNoticeHours
-            ).toISOString()
+            ).toISOString(),
+            // Step 1b: the family's "Find a replacement" on a session the
+            // helper cancelled, until it starts.
+            canFindReplacement:
+              side === 'family' &&
+              active !== null &&
+              isHelperCancellation(active) &&
+              session.startsAt.getTime() > input.now.getTime()
           }
         ] as const;
       })

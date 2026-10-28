@@ -63,6 +63,8 @@
 				return m.sessions_action_cancel();
 			case 'propose_day_off':
 				return m.sessions_action_day_off();
+			case 'withdraw_day_off':
+				return m.sessions_action_withdraw_day_off();
 			case 'report_no_show':
 				return m.sessions_action_no_show();
 			case 'report_reduced_hours':
@@ -130,6 +132,11 @@
 						: m.sessions_confirm_day_off_helper({ name, when })
 				};
 			}
+			case 'withdraw_day_off':
+				return {
+					title: m.sessions_confirm_withdraw_title(),
+					body: m.sessions_confirm_withdraw({ name })
+				};
 			case 'report_no_show':
 				return {
 					title: m.sessions_confirm_no_show_title(),
@@ -187,6 +194,8 @@
 				return m.sessions_toast_cancelled({ name });
 			case 'propose_day_off':
 				return m.sessions_toast_day_off({ name });
+			case 'withdraw_day_off':
+				return m.sessions_toast_withdrawn({ name });
 			case 'report_no_show':
 			case 'report_reduced_hours':
 				return m.sessions_toast_reported({ name });

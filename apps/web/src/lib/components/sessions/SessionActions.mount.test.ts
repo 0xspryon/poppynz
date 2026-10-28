@@ -10,6 +10,10 @@ const { recordSessionAction, respondToSession, toastSuccess, toastError } = vi.h
 }));
 
 vi.mock('$lib/api/contracts', () => ({ recordSessionAction, respondToSession }));
+// Tier 3 step 2: the dialog's money preview (tested in SessionMoneyPreview).
+vi.mock('$lib/api/session-money', () => ({
+	previewSessionMoney: vi.fn(async () => ({ ok: true, data: { preview: null } }))
+}));
 vi.mock('$lib/toast.svelte', () => ({
 	toast: { success: toastSuccess, error: toastError, info: vi.fn() }
 }));

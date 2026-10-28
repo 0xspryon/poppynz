@@ -15,6 +15,8 @@
 		type ContractCycleSession
 	} from '$lib/api/contracts';
 	import StatusChip from '$lib/components/StatusChip.svelte';
+	// Tier 3 step 2: the helper's transfers of the cycle.
+	import CycleTransfers from './CycleTransfers.svelte';
 	import SessionWindowNote from '$lib/components/sessions/SessionWindowNote.svelte';
 	import { retryPaymentWithToast } from '$lib/contract-retry';
 	import { cycleChip, sessionChip } from '$lib/contract-cycle-status';
@@ -332,6 +334,14 @@
 									<dd class="tabular-nums">+{formatMoney(line.taxCents)}</dd>
 								</div>
 							{/each}
+							<!-- Tier 3 step 2: late-cancellation compensation, charged before
+							     the capture (no fee or commission on it). -->
+							{#if cycle.amounts.compensationCents > 0}
+								<div class="flex justify-between gap-3" data-testid="cycle-compensation">
+									<dt class="text-base-content-muted">{m.money_compensation_line()}</dt>
+									<dd class="tabular-nums">{formatMoney(cycle.amounts.compensationCents)}</dd>
+								</div>
+							{/if}
 							{#if cycle.amounts.side === 'family'}
 								<div class="flex justify-between gap-3">
 									<dt class="text-base-content-muted">
@@ -395,6 +405,11 @@
 						</p>
 					{/if}
 				</section>
+
+				<!-- Tier 3 step 2: the helper's transfers of this cycle. -->
+				{#if !isFamily}
+					<CycleTransfers transfers={cycle.transfers ?? []} />
+				{/if}
 			</div>
 		</div>
 	{/if}

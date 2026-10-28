@@ -24,6 +24,9 @@
 	} from '$lib/session-resolution';
 	import { toast } from '$lib/toast.svelte';
 	import SessionResolutionSummary from './SessionResolutionSummary.svelte';
+	// Tier 3 step 2: the session's money, before and after an action.
+	import SessionMoneyPreview from './SessionMoneyPreview.svelte';
+	import SessionMoneyStatus from './SessionMoneyStatus.svelte';
 
 	interface Props {
 		session: ContractCycleSession;
@@ -241,6 +244,8 @@
 			elapsedMinutes={session.elapsedMinutes}
 		/>
 	{/if}
+	<!-- Tier 3 step 2: where the session's money stands (refund / transfer). -->
+	<SessionMoneyStatus money={session.money} viewerSide={cycle.viewerSide} />
 
 	{#if session.responses.length > 0}
 		<div class="flex flex-wrap gap-1.5">
@@ -287,6 +292,17 @@
 		onconfirm={() => void confirm()}
 		oncancel={() => (pending = null)}
 	>
+		<!-- Tier 3 step 2: what confirming does to the money. -->
+		{#if pending}
+			<SessionMoneyPreview
+				contractId={cycle.contractId}
+				sessionId={session.id}
+				{pending}
+				{minutesWorked}
+				viewerSide={cycle.viewerSide}
+				counterpartName={name}
+			/>
+		{/if}
 		<div class="flex flex-col gap-3">
 			{#if asksReason}
 				<label class="flex flex-col gap-1 text-[12.5px]">

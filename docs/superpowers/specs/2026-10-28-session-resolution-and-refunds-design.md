@@ -390,3 +390,25 @@ recoveries per session.
 8. ~~Recovery from a helper~~ — decided: recovered from the helper's earnings
    going forward (deducted from their next transfers until repaid), not by
    reversing past transfers (step 2).
+
+## 13. Defaults taken after the step-2 review (2026-10-28)
+
+Chosen by the coordinator while the user was away; revisit if needed.
+
+1. **Dispute raised after the helper was paid:** the session's pay is already
+   out, so the dispute holds an equal amount back from the helper's next
+   transfer until the admin decides. Decided against the helper → the held
+   amount becomes the recovery; decided for the helper → it is released. This
+   is the behaviour step 2 shipped and matches decision 8 (recovery from future
+   earnings) in effect.
+2. **Refund settled outside Stripe ("marked handled"):** counts as refunded for
+   tax — the refunded tax lines appear in the tax report in the month it was
+   marked handled, with the admin's note. Implemented in step 5 (accountant).
+3. **Commission tax on a cancelled session** is reversed when the session's
+   money is resolved (refund succeeded, or excluded/reduced before capture),
+   not only on a successful refund. Implemented in step 5 with (2).
+4. **Bank-payout matching** ("paid to the bank") stays approximate until
+   step 5's Stripe reconciliation matches payouts to balance transactions.
+5. **Preview vs capture:** a preview made before capture may differ by up to
+   one cent from the re-quoted capture (rounding); the confirmation copy says
+   "about" before capture.

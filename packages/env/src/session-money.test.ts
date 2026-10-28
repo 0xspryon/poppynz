@@ -12,7 +12,11 @@ const read = <A>(config: Effect.Effect<A, unknown>, env: Record<string, string>)
 describe('session money settings', () => {
   it('defaults to a 48 h transfer delay, 60 days to the manual queue, 8 refund attempts', () => {
     expect(read(sessionMoneyConfig, {})).toEqual(
-      Either.right({ transferDelayHours: 48, manualPayoutAfterDays: 60, refundAlertAfterAttempts: 8 })
+      Either.right({
+        transferDelayHours: 48,
+        manualPayoutAfterDays: 60,
+        refundAlertAfterAttempts: 8
+      })
     );
   });
 
@@ -24,7 +28,11 @@ describe('session money settings', () => {
         CONTRACT_REFUND_ALERT_AFTER_ATTEMPTS: '3'
       })
     ).toEqual(
-      Either.right({ transferDelayHours: 72, manualPayoutAfterDays: 30, refundAlertAfterAttempts: 3 })
+      Either.right({
+        transferDelayHours: 72,
+        manualPayoutAfterDays: 30,
+        refundAlertAfterAttempts: 3
+      })
     );
   });
 

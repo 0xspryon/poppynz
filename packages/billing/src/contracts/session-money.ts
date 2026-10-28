@@ -145,7 +145,13 @@ export const effectiveSessionOutcome = (
     case 'decided':
       return r.decision === null
         ? { kind: 'held' }
-        : outcomeOfKind(r.decision, r.decisionMinutesWorked ?? r.minutesWorked, input, policy, true);
+        : outcomeOfKind(
+            r.decision,
+            r.decisionMinutesWorked ?? r.minutesWorked,
+            input,
+            policy,
+            true
+          );
   }
 };
 
@@ -198,11 +204,19 @@ const divideLines = (lines: MoneyLines, weights: [number, number]) => {
     base: allocateLargestRemainder(line.baseCents, weights)
   }));
   const pick = (index: 0 | 1) =>
-    parts.map(({ line, tax, base }) => ({ ...line, taxCents: tax[index]!, baseCents: base[index]! }));
+    parts.map(({ line, tax, base }) => ({
+      ...line,
+      taxCents: tax[index]!,
+      baseCents: base[index]!
+    }));
   return { worked: pick(0), cancelled: pick(1) };
 };
 
-const nothing = (split: SessionChargeSplit, held: boolean, outcome: MoneyOutcomeKind): SessionMoney => ({
+const nothing = (
+  split: SessionChargeSplit,
+  held: boolean,
+  outcome: MoneyOutcomeKind
+): SessionMoney => ({
   outcome,
   held,
   heldCents: held ? { family: split.familyTotalCents, helper: split.helperShareCents } : null,
@@ -210,7 +224,11 @@ const nothing = (split: SessionChargeSplit, held: boolean, outcome: MoneyOutcome
   familyNetCents: held ? 0 : split.familyTotalCents,
   helperOwed: held
     ? { workedCents: 0, compensationCents: 0, totalCents: 0 }
-    : { workedCents: split.helperShareCents, compensationCents: 0, totalCents: split.helperShareCents },
+    : {
+        workedCents: split.helperShareCents,
+        compensationCents: 0,
+        totalCents: split.helperShareCents
+      },
   poppynzKeeps: held
     ? { feeCents: 0, feeTaxCents: 0, commissionCents: 0, commissionTaxCents: 0, totalCents: 0 }
     : {
@@ -265,7 +283,13 @@ export const resolveSessionMoney = (
             compensationCents: split.helperShareCents,
             totalCents: split.helperShareCents
           },
-      poppynzKeeps: { feeCents: 0, feeTaxCents: 0, commissionCents: 0, commissionTaxCents: 0, totalCents: 0 }
+      poppynzKeeps: {
+        feeCents: 0,
+        feeTaxCents: 0,
+        commissionCents: 0,
+        commissionTaxCents: 0,
+        totalCents: 0
+      }
     };
   }
 
@@ -292,9 +316,12 @@ export const resolveSessionMoney = (
   const commissionTax = linesOf(split.commissionTaxLines);
 
   const compensationCents =
-    outcome.kind === 'family_late' ? applyBps(cancelledCare, policyVersion.lateCancellationHelperBps) : 0;
+    outcome.kind === 'family_late'
+      ? applyBps(cancelledCare, policyVersion.lateCancellationHelperBps)
+      : 0;
   // The helper side, computed …
-  const workedCents = workedCare + sum(careTax.worked) - workedCommission - sum(commissionTax.worked);
+  const workedCents =
+    workedCare + sum(careTax.worked) - workedCommission - sum(commissionTax.worked);
   const helperTotal = workedCents + compensationCents;
   const keeps = {
     feeCents: workedFee,
@@ -302,7 +329,8 @@ export const resolveSessionMoney = (
     commissionCents: workedCommission,
     commissionTaxCents: sum(commissionTax.worked)
   };
-  const keepsTotal = keeps.feeCents + keeps.feeTaxCents + keeps.commissionCents + keeps.commissionTaxCents;
+  const keepsTotal =
+    keeps.feeCents + keeps.feeTaxCents + keeps.commissionCents + keeps.commissionTaxCents;
   // … and the family's derived from it.
   const familyNetCents = helperTotal + keepsTotal;
   const refundTotal = split.familyTotalCents - familyNetCents;

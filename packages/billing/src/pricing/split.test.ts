@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { allocateLargestRemainder, splitCycleCharge, type SplitInput, type SplitTaxLine } from './split';
+import {
+  allocateLargestRemainder,
+  splitCycleCharge,
+  type SplitInput,
+  type SplitTaxLine
+} from './split';
 import { quoteContractAmounts, type ProvinceCode } from './index';
 import { seededSnapshot } from './test-snapshot';
 
@@ -73,8 +78,18 @@ describe('splitCycleCharge — the §5 worked example', () => {
   it('splits two $62.50 sessions (ON family, MB helper) exactly as the spec table', () => {
     const split = splitCycleCharge(
       quoted([
-        { sessionId: 'wed', startsAt: new Date('2026-11-04T14:00:00Z'), slot: 'a@600', valueCents: 6250 },
-        { sessionId: 'mon', startsAt: new Date('2026-11-02T14:00:00Z'), slot: 'a@600', valueCents: 6250 }
+        {
+          sessionId: 'wed',
+          startsAt: new Date('2026-11-04T14:00:00Z'),
+          slot: 'a@600',
+          valueCents: 6250
+        },
+        {
+          sessionId: 'mon',
+          startsAt: new Date('2026-11-02T14:00:00Z'),
+          slot: 'a@600',
+          valueCents: 6250
+        }
       ])
     );
     const [mon, wed] = split.sessions;
@@ -99,7 +114,11 @@ describe('splitCycleCharge — the §5 worked example', () => {
       commissionTaxCents: 47,
       helperShareCents: 5266
     });
-    expect(mon!.familyFeeTaxLines[0]).toMatchObject({ label: 'HST (ON) 13%', taxCents: 41, baseCents: 313 });
+    expect(mon!.familyFeeTaxLines[0]).toMatchObject({
+      label: 'HST (ON) 13%',
+      taxCents: 41,
+      baseCents: 313
+    });
     expect(mon!.commissionTaxLines[0]).toMatchObject({ label: 'GST (MB) 5%', taxCents: 47 });
     expect(split.carry).toBeNull();
     expect(mon!.familyTotalCents + wed!.familyTotalCents).toBe(13206);
@@ -135,7 +154,9 @@ describe('splitCycleCharge — properties', () => {
       const count = 1 + Math.floor(random() * 6);
       const all = Array.from({ length: count }, (_, i) => ({
         sessionId: `s${i}`,
-        startsAt: new Date(Date.UTC(2026, 10, 2 + Math.floor(random() * 3), 8 + Math.floor(random() * 10))),
+        startsAt: new Date(
+          Date.UTC(2026, 10, 2 + Math.floor(random() * 3), 8 + Math.floor(random() * 10))
+        ),
         slot: `svc${Math.floor(random() * 3)}@${i}`,
         valueCents: 1 + Math.floor(random() * 40_000)
       }));
@@ -197,7 +218,14 @@ describe('splitCycleCharge — properties', () => {
   it('keeps a carried-in amount as its own line, never allocated to a session', () => {
     const split = splitCycleCharge(
       quoted(
-        [{ sessionId: 's', startsAt: new Date('2026-11-02T14:00:00Z'), slot: 'a@1', valueCents: 5000 }],
+        [
+          {
+            sessionId: 's',
+            startsAt: new Date('2026-11-02T14:00:00Z'),
+            slot: 'a@1',
+            valueCents: 5000
+          }
+        ],
         { carriedInCents: 40 }
       )
     );
@@ -208,7 +236,12 @@ describe('splitCycleCharge — properties', () => {
 
   it('charges a pre-capture late cancellation as compensation only (no fee, no commission)', () => {
     const sessions = [
-      { sessionId: 'kept', startsAt: new Date('2026-11-02T14:00:00Z'), slot: 'a@1', valueCents: 6250 },
+      {
+        sessionId: 'kept',
+        startsAt: new Date('2026-11-02T14:00:00Z'),
+        slot: 'a@1',
+        valueCents: 6250
+      },
       {
         sessionId: 'late',
         startsAt: new Date('2026-11-03T14:00:00Z'),

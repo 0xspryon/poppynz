@@ -31,6 +31,7 @@ export * from './repos/contract-repo';
 export * from './repos/contract-billing-repo';
 export * from './repos/contract-agreement-repo';
 export * from './repos/session-resolution-repo';
+export * from './repos/session-money-repo';
 export * from './repos/user-directory-repo';
 export * from './repos/user-search-repo';
 export * from './repos/tc-document-repo';

@@ -1,4 +1,5 @@
 import * as PgDrizzle from '@effect/sql-drizzle/Pg';
+import * as SqlClient from '@effect/sql/SqlClient';
 import type { SqlError } from '@effect/sql/SqlError';
 import {
   and,
@@ -21,7 +22,8 @@ import {
   contract,
   contractBilling,
   contractCycle,
-  contractSession
+  contractSession,
+  contractSessionCharge
 } from '../schema';
 
 /**
@@ -48,6 +50,9 @@ export type SessionRecordStatus = SessionRecord['status'];
 export type BillingLedgerEntry = InferSelectModel<typeof billingLedgerEntry>;
 export type BillingLedgerInsert = Omit<InferInsertModel<typeof billingLedgerEntry>, 'id'>;
 export type BillingIncident = InferSelectModel<typeof billingIncident>;
+/** The frozen per-session split (Tier 3 step 2). */
+export type SessionCharge = InferSelectModel<typeof contractSessionCharge>;
+export type SessionChargeInsert = Omit<InferInsertModel<typeof contractSessionCharge>, 'createdAt'>;
 
 type Patch<T> = Partial<Omit<T, 'createdAt' | 'updatedAt'>>;
 
@@ -135,6 +140,33 @@ export class ContractBillingRepo extends Context.Tag('@repo/db/ContractBillingRe
     ) => Effect.Effect<number, SqlError>;
     appendLedger: (entries: ReadonlyArray<BillingLedgerInsert>) => Effect.Effect<void, SqlError>;
     listLedger: (contractId: string) => Effect.Effect<Array<BillingLedgerEntry>, SqlError>;
+    /** Tier 3 step 2: moves the cycle to captured (compare-and-set) AND
+     * writes its frozen per-session split, in one transaction. The split is
+     * written only when the move wins; rows on file are kept. Null when the
+     * cycle had already moved. */
+    captureCycle: (
+      cycleId: string,
+      input: CycleAdvanceInput,
+      charges: ReadonlyArray<SessionChargeInsert>
+    ) => Effect.Effect<ContractCycle | null, SqlError>;
+    /** The split of an already captured cycle (a backfill): idempotent. */
+    insertSessionCharges: (
+      charges: ReadonlyArray<SessionChargeInsert>
+    ) => Effect.Effect<void, SqlError>;
+    listSessionCharges: (
+      contractId: string,
+      cycleId?: string
+    ) => Effect.Effect<Array<SessionCharge>, SqlError>;
+    /** One session's money state (Tier 3 step 2): compare-and-set on its
+     * status. Null when it had already moved. */
+    setSessionMoneyState: (
+      sessionId: string,
+      input: {
+        from: ReadonlyArray<SessionRecordStatus>;
+        status: SessionRecordStatus;
+        compensationCents: number;
+      }
+    ) => Effect.Effect<SessionRecord | null, SqlError>;
     /** Once per (cycle, kind); resolves true when this call recorded it. */
     recordIncident: (input: {
       contractId: string;
@@ -159,6 +191,7 @@ export const ContractBillingRepoLive = Layer.effect(
   ContractBillingRepo,
   Effect.gen(function* () {
     const db = yield* PgDrizzle.PgDrizzle;
+    const sqlClient = yield* SqlClient.SqlClient;
 
     const findBilling = (contractId: string) =>
       db
@@ -166,6 +199,25 @@ export const ContractBillingRepoLive = Layer.effect(
         .from(contractBilling)
         .where(eq(contractBilling.contractId, contractId))
         .limit(1)
+        .pipe(Effect.map((rows) => rows[0] ?? null));
+
+    const advanceCycleRow = (cycleId: string, input: CycleAdvanceInput) =>
+      db
+        .update(contractCycle)
+        .set({ ...input.set, updatedAt: new Date() })
+        .where(
+          and(
+            eq(contractCycle.id, cycleId),
+            inArray(contractCycle.status, [...input.from]),
+            input.paymentId === undefined
+              ? undefined
+              : input.paymentId === null
+                ? isNull(contractCycle.paymentId)
+                : eq(contractCycle.paymentId, input.paymentId),
+            input.attempts === undefined ? undefined : eq(contractCycle.attempts, input.attempts)
+          )
+        )
+        .returning()
         .pipe(Effect.map((rows) => rows[0] ?? null));
 
     return {
@@ -245,24 +297,7 @@ export const ContractBillingRepoLive = Layer.effect(
           .where(eq(contractCycle.paymentId, paymentId))
           .limit(1)
           .pipe(Effect.map((rows) => rows[0] ?? null)),
-      advanceCycle: (cycleId, input) =>
-        db
-          .update(contractCycle)
-          .set({ ...input.set, updatedAt: new Date() })
-          .where(
-            and(
-              eq(contractCycle.id, cycleId),
-              inArray(contractCycle.status, [...input.from]),
-              input.paymentId === undefined
-                ? undefined
-                : input.paymentId === null
-                  ? isNull(contractCycle.paymentId)
-                  : eq(contractCycle.paymentId, input.paymentId),
-              input.attempts === undefined ? undefined : eq(contractCycle.attempts, input.attempts)
-            )
-          )
-          .returning()
-          .pipe(Effect.map((rows) => rows[0] ?? null)),
+      advanceCycle: (cycleId, input) => advanceCycleRow(cycleId, input),
       appendCycleNotice: (cycleId, notice) =>
         db
           .update(contractCycle)
@@ -320,6 +355,50 @@ export const ContractBillingRepoLive = Layer.effect(
           .from(billingLedgerEntry)
           .where(eq(billingLedgerEntry.contractId, contractId))
           .orderBy(asc(billingLedgerEntry.createdAt)),
+      captureCycle: (cycleId, input, charges) =>
+        sqlClient.withTransaction(
+          Effect.gen(function* () {
+            const moved = yield* advanceCycleRow(cycleId, input);
+            if (moved && charges.length > 0) {
+              yield* db
+                .insert(contractSessionCharge)
+                .values([...charges])
+                .onConflictDoNothing({ target: contractSessionCharge.sessionId });
+            }
+            return moved;
+          })
+        ),
+      insertSessionCharges: (charges) =>
+        charges.length === 0
+          ? Effect.void
+          : db
+              .insert(contractSessionCharge)
+              .values([...charges])
+              .onConflictDoNothing({ target: contractSessionCharge.sessionId })
+              .pipe(Effect.asVoid),
+      listSessionCharges: (contractId, cycleId) =>
+        db
+          .select()
+          .from(contractSessionCharge)
+          .where(
+            and(
+              eq(contractSessionCharge.contractId, contractId),
+              cycleId ? eq(contractSessionCharge.cycleId, cycleId) : undefined
+            )
+          ),
+      setSessionMoneyState: (sessionId, input) =>
+        db
+          .update(contractSession)
+          .set({
+            status: input.status,
+            compensationCents: input.compensationCents,
+            updatedAt: new Date()
+          })
+          .where(
+            and(eq(contractSession.id, sessionId), inArray(contractSession.status, [...input.from]))
+          )
+          .returning()
+          .pipe(Effect.map((rows) => rows[0] ?? null)),
       recordIncident: (input) =>
         db
           .insert(billingIncident)
@@ -351,6 +430,7 @@ export const makeInMemoryContractBillingRepo = (
     sessions: [] as Array<SessionRecord>,
     ledger: [] as Array<BillingLedgerEntry>,
     incidents: [] as Array<BillingIncident>,
+    charges: [] as Array<SessionCharge>,
     families: { ...(initial.families ?? {}) }
   };
   const now = () => new Date();
@@ -456,6 +536,7 @@ export const makeInMemoryContractBillingRepo = (
             ...(row as SessionRecord),
             id: `session-${++memoryId}`,
             status: row.status ?? 'scheduled',
+            compensationCents: row.compensationCents ?? 0,
             createdAt: now(),
             updatedAt: now()
           });
@@ -494,6 +575,39 @@ export const makeInMemoryContractBillingRepo = (
       }),
     listLedger: (contractId) =>
       Effect.sync(() => state.ledger.filter((row) => row.contractId === contractId)),
+    captureCycle: (cycleId, input, charges) =>
+      Effect.flatMap(service.advanceCycle(cycleId, input), (moved) =>
+        moved === null
+          ? Effect.succeed(null)
+          : Effect.as(service.insertSessionCharges(charges), moved)
+      ),
+    insertSessionCharges: (charges) =>
+      Effect.sync(() => {
+        for (const charge of charges) {
+          if (state.charges.some((row) => row.sessionId === charge.sessionId)) continue;
+          state.charges.push({ ...charge, createdAt: now() } as SessionCharge);
+        }
+      }),
+    listSessionCharges: (contractId, cycleId) =>
+      Effect.sync(() =>
+        state.charges.filter(
+          (row) => row.contractId === contractId && (!cycleId || row.cycleId === cycleId)
+        )
+      ),
+    setSessionMoneyState: (sessionId, input) =>
+      Effect.sync(() => {
+        const index = state.sessions.findIndex((row) => row.id === sessionId);
+        const row = state.sessions[index];
+        if (!row || !input.from.includes(row.status)) return null;
+        const next = {
+          ...row,
+          status: input.status,
+          compensationCents: input.compensationCents,
+          updatedAt: now()
+        };
+        state.sessions[index] = next;
+        return next;
+      }),
     recordIncident: (input) =>
       Effect.sync(() => {
         if (
@@ -567,6 +681,8 @@ export const dummyContractCycle = (overrides: Partial<ContractCycle> = {}): Cont
   providerCommissionTaxCents: null,
   providerShareCents: null,
   taxLines: [],
+  compensationCents: 0,
+  chargedSessions: [],
   carriedOutCents: 0,
   heldCents: null,
   capturedCents: null,

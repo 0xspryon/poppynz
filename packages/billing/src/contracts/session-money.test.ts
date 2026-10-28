@@ -30,8 +30,18 @@ const workedExample = () => {
   if (!quote.ok) throw new Error('quote');
   return splitCycleCharge({
     sessions: [
-      { sessionId: 'mon', startsAt: new Date('2026-11-02T14:00:00Z'), slot: 'a@540', valueCents: 6250 },
-      { sessionId: 'wed', startsAt: new Date('2026-11-04T14:00:00Z'), slot: 'a@540', valueCents: 6250 }
+      {
+        sessionId: 'mon',
+        startsAt: new Date('2026-11-02T14:00:00Z'),
+        slot: 'a@540',
+        valueCents: 6250
+      },
+      {
+        sessionId: 'wed',
+        startsAt: new Date('2026-11-04T14:00:00Z'),
+        slot: 'a@540',
+        valueCents: 6250
+      }
     ],
     carriedInCents: 0,
     serviceTaxLines: quote.amounts.serviceTaxLines,
@@ -67,9 +77,9 @@ const money = (
 /** The cents always add up: what the family paid = refund + helper + Poppynz. */
 const balanced = (split: SessionChargeSplit, result: ReturnType<typeof money>) => {
   if (result.held) return;
-  expect(result.familyRefund.totalCents + result.helperOwed.totalCents + result.poppynzKeeps.totalCents).toBe(
-    split.familyTotalCents
-  );
+  expect(
+    result.familyRefund.totalCents + result.helperOwed.totalCents + result.poppynzKeeps.totalCents
+  ).toBe(split.familyTotalCents);
 };
 
 describe('resolveSessionMoney — policy v1 (spec §6)', () => {
@@ -90,19 +100,38 @@ describe('resolveSessionMoney — policy v1 (spec §6)', () => {
       recordedAt: new Date('2026-11-04T08:00:00.000Z')
     });
     expect(result.outcome).toBe('family_late');
-    expect(result.helperOwed).toMatchObject({ compensationCents: 1563, workedCents: 0, totalCents: 1563 });
-    expect(result.familyRefund).toMatchObject({ careCents: 6250 - 1563, feeCents: 312, totalCents: 5039 });
-    expect(result.familyRefund.feeTaxLines[0]).toMatchObject({ label: 'HST (ON) 13%', taxCents: 40 });
+    expect(result.helperOwed).toMatchObject({
+      compensationCents: 1563,
+      workedCents: 0,
+      totalCents: 1563
+    });
+    expect(result.familyRefund).toMatchObject({
+      careCents: 6250 - 1563,
+      feeCents: 312,
+      totalCents: 5039
+    });
+    expect(result.familyRefund.feeTaxLines[0]).toMatchObject({
+      label: 'HST (ON) 13%',
+      taxCents: 40
+    });
     // No commission on cancelled hours.
     expect(result.poppynzKeeps.totalCents).toBe(0);
-    expect(result.commissionReversal).toMatchObject({ commissionCents: 937, commissionTaxCents: 47 });
+    expect(result.commissionReversal).toMatchObject({
+      commissionCents: 937,
+      commissionTaxCents: 47
+    });
     expect(1563 + 5039).toBe(6602);
     balanced(wed, result);
   });
 
   it('rounds the compensation half up for the helper', () => {
     // 25 % of 62.50 = 15.625 → 15.63; of 62.49 = 15.6225 → 15.62.
-    const split = { ...wed, careCents: 6249, familyTotalCents: 6249 + 312 + 40, helperShareCents: 6249 - 937 - 47 };
+    const split = {
+      ...wed,
+      careCents: 6249,
+      familyTotalCents: 6249 + 312 + 40,
+      helperShareCents: 6249 - 937 - 47
+    };
     const result = money(split, {
       kind: 'family_no_show',
       status: 'confirmed',
@@ -193,7 +222,12 @@ describe('resolveSessionMoney — policy v1 (spec §6)', () => {
     // (312 × 2/5 = 124.8 → 125) and its tax (40 × 2/5 = 16).
     expect(result.familyRefund).toMatchObject({ careCents: 2500 - 625, feeCents: 125 });
     expect(result.familyRefund.feeTaxLines[0]!.taxCents).toBe(16);
-    expect(result.poppynzKeeps).toMatchObject({ feeCents: 187, feeTaxCents: 24, commissionCents: 562, commissionTaxCents: 28 });
+    expect(result.poppynzKeeps).toMatchObject({
+      feeCents: 187,
+      feeTaxCents: 24,
+      commissionCents: 562,
+      commissionTaxCents: 28
+    });
     balanced(wed, result);
   });
 
@@ -308,7 +342,11 @@ describe('resolveSessionMoney — policy v1 (spec §6)', () => {
     expect(late.familyRefund.totalCents).toBe(0);
     expect(late.helperOwed.totalCents).toBe(1563);
     // Decided as the helper's cancellation after all: the compensation goes back.
-    const helper = money(compensation, { kind: 'helper_cancelled', status: 'decided', decision: 'helper_cancelled' });
+    const helper = money(compensation, {
+      kind: 'helper_cancelled',
+      status: 'decided',
+      decision: 'helper_cancelled'
+    });
     expect(helper.familyRefund.totalCents).toBe(1563);
     expect(helper.helperOwed.totalCents).toBe(0);
   });
@@ -338,10 +376,14 @@ describe('effectiveSessionOutcome', () => {
       kind: 'family_late',
       minutesWorked: 0
     });
-    expect(outcome({ kind: 'family_reduced_hours', status: 'confirmed', minutesWorked: 999 })).toEqual({
+    expect(
+      outcome({ kind: 'family_reduced_hours', status: 'confirmed', minutesWorked: 999 })
+    ).toEqual({
       kind: 'family_late',
       minutesWorked: 300
     });
-    expect(outcome({ kind: 'helper_no_show', status: 'confirmed' })).toEqual({ kind: 'helper_cancelled' });
+    expect(outcome({ kind: 'helper_no_show', status: 'confirmed' })).toEqual({
+      kind: 'helper_cancelled'
+    });
   });
 });

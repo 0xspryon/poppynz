@@ -3,7 +3,7 @@ import type { SqlError } from '@effect/sql/SqlError';
 import { and, eq, gte, lt, ne } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import { DrizzleLive } from '../effect-db';
-import { contractCycle, payment, type PaymentTaxLine } from '../schema';
+import { contractCycle, payment, sessionRefund, type PaymentTaxLine } from '../schema';
 
 /**
  * Where the "tax collected" report reads from: the tax lines FROZEN on what
@@ -16,19 +16,41 @@ import { contractCycle, payment, type PaymentTaxLine } from '../schema';
  *     read here — nothing is counted twice.
  *
  * Refunded charges are left out: their tax was given back.
+ *
+ * Tier 3 step 2: a session refund returns its frozen tax lines (the fee's,
+ * and the commission's that is no longer kept) and reduces the tax
+ * collected IN THE REFUND'S PERIOD — a `session_refund` source dated when
+ * the refund succeeded, with negative lines.
  */
 
 export type TaxCollectedSource = {
-  source: 'payment' | 'contract_cycle';
+  source: 'payment' | 'contract_cycle' | 'session_refund';
   id: string;
   capturedAt: Date;
   taxLines: ReadonlyArray<PaymentTaxLine>;
 };
 
+/** A succeeded session refund as a report source: its returned lines,
+ * negated, dated when the money went back. */
+export const sessionRefundTaxSource = (refund: {
+  id: string;
+  refundedAt: Date;
+  careTaxLines: ReadonlyArray<PaymentTaxLine>;
+  feeTaxLines: ReadonlyArray<PaymentTaxLine>;
+  commissionTaxLines: ReadonlyArray<PaymentTaxLine>;
+}): TaxCollectedSource => ({
+  source: 'session_refund',
+  id: refund.id,
+  capturedAt: refund.refundedAt,
+  taxLines: [...refund.careTaxLines, ...refund.feeTaxLines, ...refund.commissionTaxLines]
+    .filter((line) => line.taxCents !== 0)
+    .map((line) => ({ ...line, baseCents: -line.baseCents, taxCents: -line.taxCents }))
+});
+
 export class TaxReportRepo extends Context.Tag('@repo/db/TaxReportRepo')<
   TaxReportRepo,
   {
-    /** Charges captured in `[from, to)`. */
+    /** Charges captured, and session refunds made, in `[from, to)`. */
     listCollected: (range: {
       from: Date;
       to: Date;
@@ -68,11 +90,27 @@ export const TaxReportRepoLive = Layer.effect(
                   gte(contractCycle.capturedAt, from),
                   lt(contractCycle.capturedAt, to)
                 )
+              ),
+            db
+              .select({
+                id: sessionRefund.id,
+                refundedAt: sessionRefund.refundedAt,
+                careTaxLines: sessionRefund.careTaxLines,
+                feeTaxLines: sessionRefund.feeTaxLines,
+                commissionTaxLines: sessionRefund.commissionTaxLines
+              })
+              .from(sessionRefund)
+              .where(
+                and(
+                  eq(sessionRefund.status, 'succeeded'),
+                  gte(sessionRefund.refundedAt, from),
+                  lt(sessionRefund.refundedAt, to)
+                )
               )
           ],
           { concurrency: 'unbounded' }
         ).pipe(
-          Effect.map(([payments, cycles]) => [
+          Effect.map(([payments, cycles, refunds]) => [
             ...payments.map((row) => ({
               source: 'payment' as const,
               id: row.id,
@@ -84,7 +122,8 @@ export const TaxReportRepoLive = Layer.effect(
               id: row.id,
               capturedAt: row.capturedAt!,
               taxLines: row.taxLines
-            }))
+            })),
+            ...refunds.map((row) => sessionRefundTaxSource({ ...row, refundedAt: row.refundedAt! }))
           ])
         )
     };

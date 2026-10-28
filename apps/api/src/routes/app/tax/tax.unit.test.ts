@@ -27,6 +27,7 @@ import {
   taxCollectedReportRouteProgram
 } from './tax.handler';
 import { aggregateTaxCollected, periodOf, taxCollectedCsv } from './tax-report';
+import { sessionRefundTaxSource } from '@repo/db';
 
 const NOW = new Date('2026-10-24T15:00:00.000Z'); // Sat 24 Oct 2026, Toronto
 
@@ -544,6 +545,37 @@ describe('tax collected report', () => {
       '2026-11,ON,HST,family_service_fee,13,9.38,1.22,2'
     ]);
     expect(periodOf(new Date('2026-12-01T03:00:00.000Z'), 'month')).toBe('2026-11');
+  });
+
+  it('subtracts a session refund’s returned tax in the refund’s period (Tier 3 step 2)', () => {
+    const hst = {
+      supplyType: 'family_service_fee',
+      jurisdiction: 'ON',
+      component: 'hst',
+      rateMillipercent: 13000,
+      label: 'HST (ON) 13%',
+      registrationNumber: null
+    };
+    const gst = { ...hst, supplyType: 'provider_commission', jurisdiction: 'MB', component: 'gst', rateMillipercent: 5000, label: 'GST (MB) 5%' };
+    const refund = sessionRefundTaxSource({
+      id: 'refund-1',
+      // Charged in November, refunded on 2 December (Toronto time).
+      refundedAt: new Date('2026-12-02T15:00:00.000Z'),
+      careTaxLines: [],
+      feeTaxLines: [{ ...hst, baseCents: 312, taxCents: 40 }],
+      commissionTaxLines: [{ ...gst, baseCents: 937, taxCents: 47 }]
+    });
+    const rows = aggregateTaxCollected([...sources, refund], 'month').map((row) => [
+      row.period,
+      row.jurisdiction,
+      row.supplyType,
+      row.baseCents,
+      row.taxCents
+    ]);
+    // November is untouched; December carries the negative lines.
+    expect(rows).toContainEqual(['2026-11', 'ON', 'family_service_fee', 938, 122]);
+    expect(rows).toContainEqual(['2026-12', 'ON', 'family_service_fee', -312, -40]);
+    expect(rows).toContainEqual(['2026-12', 'MB', 'provider_commission', -937, -47]);
   });
 
   it('refuses an end before the start', async () => {

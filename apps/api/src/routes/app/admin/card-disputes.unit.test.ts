@@ -1,6 +1,8 @@
 import { makeIdleContractBillingLayer } from '@repo/billing';
 import {
+  dummyContractBilling,
   makeInMemoryCardDisputeRepo,
+  makeInMemoryContractBillingRepo,
   makeInMemorySessionMoneyRepo,
   makeSessionRepoTest,
   makeUserRepoTest,
@@ -59,7 +61,10 @@ const ADMIN = [
 const ACCOUNTANT = ['cardDispute:read', 'cardDispute:finance', 'tax:read', 'refundQueue:read'];
 const FAMILY = ['billing:read', 'contract:read'];
 
-const makeWorld = (overrides: Partial<CardDispute> = {}) => {
+const makeWorld = (
+  overrides: Partial<CardDispute> = {},
+  options: { billing?: ReturnType<typeof makeInMemoryContractBillingRepo> } = {}
+) => {
   const money = makeInMemorySessionMoneyRepo();
   const disputes = makeInMemoryCardDisputeRepo({ money: () => money.state });
   const mock = makeMockPayments();
@@ -106,6 +111,7 @@ const makeWorld = (overrides: Partial<CardDispute> = {}) => {
       Layer.succeed(Payments, mock),
       money.layer,
       disputes.layer,
+      ...(options.billing ? [options.billing.layer] : []),
       makeAuthServiceTest({
         getSession: () => Effect.succeed({ user: { id: userId }, session: { id: 'session-1' } }),
         userHasPermission: (_headers, permissions) =>
@@ -201,6 +207,32 @@ describe('the card dispute list', () => {
     expect(Exit.isSuccess(exit) && exit.value).toEqual({
       families: [{ userId: 'family-1', openDisputes: 1, suspended: false }]
     });
+  });
+});
+
+describe('the family flags (Admin › Users)', () => {
+  it('keeps flagging a family an admin holds after its dispute closed', async () => {
+    const billing = makeInMemoryContractBillingRepo({
+      billing: [
+        dummyContractBilling({
+          contractId: CONTRACT,
+          status: 'suspended',
+          suspendedReason: 'admin_review'
+        })
+      ],
+      families: { [CONTRACT]: 'family-1' }
+    });
+    const world = makeWorld({ status: 'won', closedAt: NOW }, { billing });
+    const exit = await world.run(cardDisputeFlagsRouteProgram(new Headers()), 'admin-1', ADMIN);
+    expect(Exit.isSuccess(exit) && exit.value).toEqual({
+      families: [{ userId: 'family-1', openDisputes: 0, suspended: true }]
+    });
+  });
+
+  it('drops a family once its disputes are closed and nothing is held', async () => {
+    const world = makeWorld({ status: 'won', closedAt: NOW });
+    const exit = await world.run(cardDisputeFlagsRouteProgram(new Headers()), 'admin-1', ADMIN);
+    expect(Exit.isSuccess(exit) && exit.value).toEqual({ families: [] });
   });
 });
 

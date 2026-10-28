@@ -215,17 +215,22 @@ export const listCardDisputesProgram = (
   }).pipe((errors) => mapFailure(errors));
 
 /** Families to flag in the admin console: an open dispute, or contracts an
- * admin is holding. */
+ * admin is holding — also once the dispute closed (an admin suspends from a
+ * dispute, so every held family has one). */
 export const cardDisputeFlagsProgram = () =>
   Effect.gen(function* () {
-    const open = yield* (yield* CardDisputeRepo).list({ open: true });
+    const disputes = yield* (yield* CardDisputeRepo).list({});
     const families = new Map<string, number>();
-    for (const row of open)
-      families.set(row.familyUserId, (families.get(row.familyUserId) ?? 0) + 1);
+    for (const row of disputes) {
+      const open = row.closedAt === null ? 1 : 0;
+      families.set(row.familyUserId, (families.get(row.familyUserId) ?? 0) + open);
+    }
     const flags = [];
     for (const [userId, openDisputes] of families) {
       const state = yield* familyReviewState(userId);
-      flags.push({ userId, openDisputes, suspended: state.suspended });
+      if (openDisputes > 0 || state.suspended) {
+        flags.push({ userId, openDisputes, suspended: state.suspended });
+      }
     }
     return { families: flags };
   }).pipe((errors) => mapFailure(errors));

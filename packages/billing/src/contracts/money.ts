@@ -702,6 +702,12 @@ export const settleSessionRefundByReference = (reference: string, now: Date) =>
         ? yield* moneyRepo.findRefund(provider.metadata.refund_id)
         : null);
     if (!row) return 'unknown refund' as const;
+    // Found by its metadata but the row now tracks another provider refund
+    // (an admin retried it): this event is about the earlier attempt and
+    // must not move the current one (e.g. a late `failed`).
+    if (row.providerReference !== null && row.providerReference !== reference) {
+      return 'stale refund event' as const;
+    }
     const settled = yield* settleRefund(row, provider, now);
     return settled.status;
   });

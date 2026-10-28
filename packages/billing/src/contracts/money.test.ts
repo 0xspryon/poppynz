@@ -7,6 +7,7 @@ import {
   recordManualPayout,
   decideManualPayout,
   previewSessionMoney,
+  retryRefund,
   runSessionMoneyTick,
   settleSessionRefundByReference
 } from './money';
@@ -269,6 +270,42 @@ describe('idempotency', () => {
     });
     expect(w.alerts.some((subject) => subject.startsWith('A session refund failed'))).toBe(true);
     expect(w.mailTo('family')).toContain("Your refund of $50.39 didn't go through");
+  });
+
+  it('a late event about an attempt an admin already retried leaves the new attempt alone', async () => {
+    const w = world({ mock: { refundOutcome: () => 'failed' } });
+    await w.step(BEFORE);
+    await w.step(at(CYCLE_1.holdAt, 5));
+    await w.step(AFTER_CAPTURE);
+    const recordedAt = new Date('2026-11-04T08:00:00.000Z');
+    w.resolve('2026-11-04', { ...lateCancel, recordedAt });
+    await w.reconcile('2026-11-04', recordedAt);
+    const [first] = w.mock.refunds();
+    expect(w.money.state.refunds[0]!.status).toBe('failed');
+    // The retry succeeds under a new key …
+    w.mock.settleRefund(first!.reference, 'failed');
+    const retried = await w.run(
+      retryRefund(w.money.state.refunds[0]!.id, 'admin-1', at(recordedAt, 60)).pipe(
+        Effect.provide(w.layer)
+      )
+    );
+    expect(retried.providerReference).not.toBe(first!.reference);
+    w.mock.settleRefund(retried.providerReference!, 'succeeded');
+    await w.run(
+      settleSessionRefundByReference(retried.providerReference!, at(recordedAt, 61)).pipe(
+        Effect.provide(w.layer)
+      )
+    );
+    expect(w.money.state.refunds[0]!.status).toBe('succeeded');
+    // … and the first attempt's failure, delivered late, changes nothing.
+    expect(
+      await w.run(
+        settleSessionRefundByReference(first!.reference, at(recordedAt, 62)).pipe(
+          Effect.provide(w.layer)
+        )
+      )
+    ).toBe('stale refund event');
+    expect(w.money.state.refunds[0]!.status).toBe('succeeded');
   });
 
   it('a refund the provider refuses goes to the failure list instead of retrying forever', async () => {

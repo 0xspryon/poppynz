@@ -98,7 +98,13 @@
 			label: m.nav_admin_payouts(),
 			icon: 'la-hand-holding-usd'
 		},
-		{ href: resolve('/admin/refunds'), label: m.nav_admin_refunds(), icon: 'la-undo-alt' }
+		{ href: resolve('/admin/refunds'), label: m.nav_admin_refunds(), icon: 'la-undo-alt' },
+		// Tier 3 step 4: card disputes (chargebacks).
+		{
+			href: resolve('/admin/card-disputes'),
+			label: m.nav_admin_card_disputes(),
+			icon: 'la-exclamation-triangle'
+		}
 	];
 	const items = $derived<Array<SidebarItem>>(
 		taxAccess

@@ -1,6 +1,6 @@
 import { unpaidExtraSessionStatuses, type AccountingSources } from '@repo/db';
 import type { ProviderBalanceTransactionRow } from '@repo/db';
-import type { BorneCardDispute } from './card-dispute-adapter';
+import { isCardDisputeEntryKey, type BorneCardDispute } from './card-dispute-adapter';
 import { csv, dollars, monthEnd, monthOf } from './books';
 import type { AbsorbedCause } from './obligations';
 
@@ -239,6 +239,7 @@ export const absorbedByMonth = (
     rows.set(key, row);
   };
   for (const entry of sources.absorbed) {
+    if (isCardDisputeEntryKey(entry.entryKey)) continue;
     add(
       entry.createdAt,
       entry.kind === 'platform_absorbed'

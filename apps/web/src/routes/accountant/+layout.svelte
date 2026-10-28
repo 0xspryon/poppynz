@@ -37,7 +37,8 @@
 				(result.data.taxRead ||
 					result.data.taxReport ||
 					result.data.reimbursementsRead ||
-					result.data.reconciliationRead)
+					result.data.reconciliationRead ||
+					result.data.cardDisputeFinance)
 			) {
 				access = result.data;
 				void syncLocaleWithProfile();
@@ -128,6 +129,18 @@
 						href: resolve('/accountant/refunds'),
 						label: m.nav_admin_refunds(),
 						icon: 'la-undo-alt',
+						group: groupBooks
+					}
+				]
+			: []),
+		// Card disputes and what Poppynz bears, read-only (permission
+		// `cardDispute: read, finance`).
+		...(access?.cardDisputeFinance
+			? [
+					{
+						href: resolve('/accountant/card-disputes'),
+						label: m.nav_admin_card_disputes(),
+						icon: 'la-exclamation-triangle',
 						group: groupBooks
 					}
 				]

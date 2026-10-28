@@ -7,6 +7,7 @@ import {
   CheckOrderRepoDefault,
   ContractAgreementRepoDefault,
   ContractReplacementRepoDefault,
+  CardDisputeRepoDefault,
   SessionResolutionRepoDefault,
   SessionMoneyRepoDefault,
   ExtraSessionRepoDefault,
@@ -39,7 +40,7 @@ import {
   UserSearchRepoDefault,
   VouchRepoDefault
 } from '@repo/db';
-import { CardDisputeLedgerNone, CycleSettlementLive } from '@repo/billing';
+import { CardDisputeLedgerLive, CycleSettlementLive } from '@repo/billing';
 import { CredibledDefault } from '@repo/credibled';
 import { GooglePlacesLive } from '@repo/google';
 import { NotificationHubLive } from '@repo/notify';
@@ -93,16 +94,17 @@ const BaseLive = Layer.mergeAll(
   ContractBillingRepoDefault,
   ContractAgreementRepoDefault,
   ContractReplacementRepoDefault,
+  // Tier 3 step 4: card disputes (chargebacks).
+  CardDisputeRepoDefault,
   SessionResolutionRepoDefault,
   // Tier 3 step 2: session refunds, transfers, the manual payout queue.
   SessionMoneyRepoDefault,
   // Tier 3 step 3: extra sessions.
   ExtraSessionRepoDefault,
-  // Tier 3 step 5: the accountant's ledger and the reconciliation; card
-  // disputes plug in through the step-4 adapter.
+  // Tier 3 step 5: the accountant's ledger and the reconciliation (card
+  // disputes through the step-4 adapter, provided on top below).
   AccountingRepoDefault,
   ReconciliationRepoDefault,
-  CardDisputeLedgerNone,
   NotificationHubLive,
   GooglePlacesLive,
   MailerLive,
@@ -123,6 +125,8 @@ const BaseLive = Layer.mergeAll(
 
 // Contract-cycle payments settle through the one settle path with contract
 // billing's own dependencies (piece 3).
-export const AppLive = CycleSettlementLive.pipe(Layer.provideMerge(BaseLive));
+export const AppLive = CycleSettlementLive.pipe(
+  Layer.provideMerge(CardDisputeLedgerLive.pipe(Layer.provideMerge(BaseLive)))
+);
 
 export const makeAppRuntime = (): AppRuntime => ManagedRuntime.make(AppLive) as AppRuntime;

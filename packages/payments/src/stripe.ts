@@ -11,6 +11,7 @@ import {
   type ProviderPayment,
   type ProviderBalanceTransaction,
   type ProviderPaymentStatus,
+  type ProviderDispute,
   type ProviderPayout,
   type ProviderRefund,
   type ProviderTransfer,
@@ -46,6 +47,8 @@ export type StripeApi = {
   payouts: Pick<Stripe['payouts'], 'retrieve' | 'list'>;
   // Tier 3 step 5: reconciliation reads the balance history back.
   balanceTransactions: Pick<Stripe['balanceTransactions'], 'list'>;
+  disputes: Pick<Stripe['disputes'], 'retrieve' | 'update'>;
+  files: Pick<Stripe['files'], 'create'>;
   webhooks: Pick<Stripe['webhooks'], 'constructEventAsync'>;
 } & StripeConnectClient;
 
@@ -217,6 +220,31 @@ const createdRange = (from: Date | undefined, to: Date | undefined) =>
           ...(to ? { lt: Math.ceil(to.getTime() / 1000) } : {})
         }
       };
+/** A dispute (Tier 3 step 4). Its balance transactions are the debit when it
+ * opened (negative, with the CAD 15.00 dispute fee) and, when won, the money
+ * given back (positive, no fee returned) — verified in test mode. */
+export const normaliseDispute = (dispute: Stripe.Dispute): ProviderDispute => ({
+  reference: dispute.id,
+  status: dispute.status,
+  amountCents: dispute.amount,
+  currency: dispute.currency,
+  reason: dispute.reason,
+  paymentReference: idOf(dispute.payment_intent as string | { id: string } | null),
+  chargeReference: idOf(dispute.charge as string | { id: string } | null),
+  evidenceDueBy: dispute.evidence_details?.due_by
+    ? new Date(dispute.evidence_details.due_by * 1000)
+    : null,
+  chargeRefundable: dispute.is_charge_refundable,
+  hasEvidence: dispute.evidence_details?.has_evidence ?? false,
+  submissionCount: dispute.evidence_details?.submission_count ?? 0,
+  balanceTransactions: (dispute.balance_transactions ?? []).map((transaction) => ({
+    reference: transaction.id,
+    kind: transaction.amount < 0 ? ('withdrawal' as const) : ('reinstatement' as const),
+    amountCents: Math.abs(transaction.amount),
+    feeCents: transaction.fee
+  })),
+  createdAt: new Date(dispute.created * 1000)
+});
 
 /** A transfer Stripe refuses for a business reason (the account can't
  * receive it, the balance or the source charge is short, a parameter is
@@ -617,6 +645,43 @@ export const makeStripePayments = (options: {
       ).pipe(
         Effect.map((page) => ({ data: page.data.map(normalisePayout), hasMore: page.has_more }))
       ),
+    // Card disputes (Tier 3 step 4).
+    getDispute: (reference) =>
+      call('getDispute', () =>
+        client.disputes.retrieve(reference, { expand: ['balance_transactions'] })
+      ).pipe(Effect.map(normaliseDispute)),
+
+    updateDisputeEvidence: ({ reference, text, files, submit, metadata }) =>
+      Effect.tryPromise({
+        try: () =>
+          client.disputes.update(reference, {
+            evidence: { ...text, ...files },
+            // Stripe's default is to submit: staging must say so.
+            submit,
+            ...(metadata ? { metadata } : {}),
+            expand: ['balance_transactions']
+          }),
+        // Over a limit, or no longer open: an invalid request — a refusal
+        // for the admin, not an outage.
+        catch: (cause) =>
+          new PaymentProviderError({
+            operation: 'updateDispute',
+            cause,
+            ...(cause instanceof Stripe.errors.StripeInvalidRequestError
+              ? { refusal: (cause as Error).message }
+              : {})
+          })
+      }).pipe(Effect.map(normaliseDispute)),
+
+    uploadDisputeFile: ({ name, bytes }) =>
+      call('uploadDisputeFile', () =>
+        client.files.create({
+          purpose: 'dispute_evidence',
+          // Stripe accepts PDF, JPEG or PNG for dispute evidence (text/plain
+          // is refused — verified in test mode).
+          file: { data: Buffer.from(bytes), name, type: 'application/pdf' }
+        })
+      ).pipe(Effect.map((file) => ({ reference: file.id }))),
 
     // Helper payout accounts (Stripe Connect Express, piece 2b).
     ...makeStripeConnectOperations(client),

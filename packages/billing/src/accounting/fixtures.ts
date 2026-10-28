@@ -85,6 +85,7 @@ export const recoveryRow = (overrides: Partial<HelperRecovery> = {}): HelperReco
     contractId: ACCOUNTING_IDS.contract,
     sessionId: ACCOUNTING_IDS.session,
     resolutionId: null,
+    cardDisputeId: null,
     amountCents: 4212,
     recoveredCents: 0,
     status: 'outstanding',

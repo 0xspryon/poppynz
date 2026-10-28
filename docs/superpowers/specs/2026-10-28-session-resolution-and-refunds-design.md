@@ -409,6 +409,67 @@ recoveries per session.
   the automatic case is exercised with the adapter's request shape (`payout`
   + `expand` + `stripeAccount`) and the mock; the manual case falls back to
   the timing match, labelled approximate.
+- **Card disputes (step 4)**, confirmed 2026-10-28 with throwaway
+  scripts. `pm_card_createDispute` (4000 0000 0000 0259) opens a
+  `fraudulent` dispute seconds after the charge succeeds (also after the
+  capture of a manual-capture hold, none while only held); dispute ids are
+  `du_…` on this API version (the code accepts any id). It comes
+  `needs_response` with `is_charge_refundable: false` and one balance
+  transaction: `-amount` with a **CAD 15.00 dispute fee**
+  (`reporting_category: dispute`); `charge.dispute.created` and
+  `charge.dispute.funds_withdrawn` both arrive. `evidence_details.due_by`
+  was 8 days out. `pm_card_createDisputeInquiry` opens
+  `warning_needs_response`, refundable, with **no** balance transaction;
+  `pm_card_createDisputeProductNotReceived` opens `product_not_received`.
+  On a hold of 132.06 captured at 66.02, the test dispute (and its debit)
+  was the full 132.06 — the code attributes at most what the sessions were
+  charged.
+- **A refund on a disputed charge** is refused: `charge_disputed` "Charge
+  ch_… has been charged back; cannot issue a refund." (a refusal, so it
+  reaches the failure list). **Transfers with `source_transaction` = a
+  disputed charge** (open, won or lost) are still accepted.
+- **Evidence:** `disputes.update` **submits by default** — staging needs
+  `submit: false`. Limits: `uncategorized_text`, `product_description`,
+  `cancellation_policy_disclosure`, `refund_policy_disclosure`,
+  `cancellation_rebuttal`, `access_activity_log` … 20,000 characters each;
+  `customer_name`, `customer_email_address`, `service_date`,
+  `billing_address` 5,000; all together **150,000** ("Evidence is limited to
+  150000 total characters for this dispute."). Files for evidence must be
+  PDF, JPEG or PNG (`text/plain` refused); the generated text PDF (24 KB,
+  WinAnsi) was accepted as `service_documentation` and
+  `customer_communication`. After a submission the dispute is
+  `under_review` (`submission_count: 1`) and a second one is refused ("You've
+  reached the maximum number of evidence submissions"); a closed one
+  answers "This dispute is already closed".
+- **Outcome in test mode:** `uncategorized_text` equal to **exactly**
+  `winning_evidence` / `losing_evidence` closes it `won` / `lost` within a
+  minute (`charge.dispute.updated` → `under_review`, then for a win
+  `charge.dispute.funds_reinstated` and `charge.dispute.closed`; for a loss
+  `charge.dispute.closed` only). Text merely containing the word stays
+  `under_review`. A win adds a `+amount` balance transaction
+  (`dispute_reversal`) with **no fee returned**; the charge becomes
+  refundable again.
+- **Reviewed 2026-10-28 (step 4 review)**, re-run with throwaway scripts and
+  the stack: a hold of 132.06 captured at 66.02 on `pm_card_createDispute`
+  is again disputed for **13206**, debited `-13206` with a 1500 fee
+  (`charge.amount` 13206, `amount_captured` 6602). Stripe documents
+  `dispute.amount` as "usually the amount of the charge", which can differ
+  when only part is disputed; a cardholder can only dispute what was posted
+  to the card (the captured amount), so this is read as a test-card
+  artefact, not something a live dispute does — it can't be verified without
+  live mode. Either way the code records Stripe's actual debit in the ledger
+  and on the dispute row (what Poppynz bears), attributes to sessions at
+  most what they were charged, and caps what a helper bears at what they
+  were owed for the session (never more than they were or would be paid).
+  `disputes.retrieve(…, { expand: ['balance_transactions'] })` is accepted
+  (the array is returned in full either way). The whole flow ran end to
+  end through the webhook listener (created → funds_withdrawn → updated →
+  funds_reinstated → closed, and `warning_needs_response` for the inquiry
+  card): a won dispute's waiting refund went out on the next tick and its
+  held pay in a follow-up transfer; a lost one's refund went to the failure
+  list. `is_charge_refundable` is true on an inquiry and Stripe says a full
+  refund stops further withdrawals — default 2 still holds refunds while
+  an inquiry is open (an admin can refund from Stripe if they choose to).
 
 ## 12. Open decisions
 
@@ -590,9 +651,10 @@ balance.
 ## 16. Accountant reimbursements and reconciliation (step 5) — as built, with the defaults taken
 
 Built 2026-10-28 on `feature/accountant-reimbursements` (migration 0046,
-journal `when` 1788460000000). Step 4's card disputes plug in through one
-adapter (`CardDisputeLedger` in `@repo/billing/accounting`), `None` until
-step 4 is merged.
+journal `when` 1788460000000, idx 43 after step 4's 0045). Step 4's card
+disputes plug in through one adapter (`CardDisputeLedger`,
+`packages/billing/src/accounting/card-dispute-adapter.ts`), live since the
+merge of step 4: it reads `card_disputes` and `card_dispute_sessions`.
 
 - **Ledger** (`/accountant/reimbursements`): one list built on the fly from
   the rows that hold the money — family refunds (pending, paid, failed,
@@ -691,7 +753,164 @@ Defaults taken while the user was away — each **default (2026-10-28)**:
     arrivals and the payout itself are stored for the trail (matched as
     `transfer_arrival` / `helper_payout`). Transfers already marked paid by
     timing are upgraded to exact.
+14. **What Poppynz bears for a card dispute** (with §15 defaults 4 and 13):
+    its fee, whatever the outcome, dated when the dispute opened; once
+    lost, the net debit (withdrawn − reinstated) less what the helpers bear
+    (`helper_forfeit_cents`, already capped by step 4), dated when it
+    closed — borne in full, flagged "allocation pending", until an admin
+    allocates every session. An open dispute's withdrawn funds are not a
+    cost yet; a won one costs the fee; an inquiry costs nothing. The
+    amounts come from the dispute rows (which step 4 keeps in step with the
+    same balance transactions it writes as `dispute_withdrawn` /
+    `dispute_reinstated` / `dispute_fee`); an allocation's own
+    `platform_absorbed` entry (`card_dispute:…`) is therefore not counted
+    again. A dispute recovery from a helper shows as an ordinary recovery.
+    Dispute balance transactions reconcile to the dispute by its `du_…`.
+    The accountant's "Card disputes" link (step 4's page) sits under Books,
+    shown with `cardDispute: read, finance`.
 13. **Navigation.** New "Books" group in the accountant area
     (Reimbursements, Money reports, Reconciliation, Failed refunds), each
     shown by permission (`/accountant/access`); the existing tax "Reports"
     keep their name. Admins reach the area through the Accountant link.
+## 15. Card disputes (step 4) — as built, with the defaults taken
+
+Built 2026-10-28 (branch `feature/card-disputes`, migration 0045). Umbrella
+§9's founder rules hold throughout: Stripe debits Poppynz's balance, the
+issuer decides, Poppynz answers with evidence, never re-charges the family
+automatically and never reverses a past transfer.
+
+**Records.** `card_disputes` (one per Stripe dispute: payment, contract,
+cycle, scope `cycle | extra_session | payment`, Stripe's status verbatim,
+`evidence_due_by`, the debit / reinstatement / fees from its balance
+transactions, an internal `triage`: `needs_response → evidence_submitted →
+allocation_needed (lost) → resolved`), `card_dispute_sessions` (the
+sessions the charge paid, from the frozen `contract_session_charges`, each
+with its frozen family total and its attributed share), and the
+append-only `card_dispute_evidence_submissions`. `helper_recoveries` gains
+`card_dispute_id`; ledger kinds `dispute_withdrawn`, `dispute_reinstated`,
+`dispute_fee`; billing suspension reason `admin_review`.
+
+**Webhooks.** `charge.dispute.created / updated / closed / funds_withdrawn
+/ funds_reinstated` all go through the verified, de-duplicated webhook to
+one sync that re-fetches the dispute: created once (insert-if-absent),
+updated, ledger entries keyed by Stripe's balance transaction, the
+payment's refund flag kept in step (`card dispute opened` while open,
+`card dispute lost` once lost, cleared otherwise), admins alerted once on
+opening and once on closing. Any order, any number of times.
+
+**Effects.** Refunds on the charge wait while it is open (existing flag).
+Unpaid helper pay for the disputed sessions is held at the cycle's
+transfer (a `held` item, like a session dispute); everything else —
+other cycles, pay already sent — is untouched. Won (or an inquiry closed):
+the hold is released through a follow-up transfer. Lost: pay stays held
+until the admin decides each session.
+
+**Evidence.** Assembled from the records: the signed agreement snapshots
+(text, SHA-256, template and cancellation-policy versions), the sessions
+with their resolutions and audit, message excerpts, the charge and
+authorisation records (incl. an extra session's "I authorise this charge"
+tick), the refunds. The admin edits a summary (draft saved and audited),
+then submits once: the summary as `uncategorized_text`, generated text
+fields (within §11.1's limits) and two PDFs (service documentation;
+messages). What was sent, by whom and when is recorded. The admins are
+reminded `CONTRACT_DISPUTE_EVIDENCE_REMINDER_HOURS` (72) before the
+deadline by the worker tick, once, while nothing was submitted.
+
+**Admin and accountant.** Admin › Card disputes (list filtered by status
+and due date; detail with the pack, the evidence form, the per-session
+decision, suspend/resume). The family is flagged in Admin › Users and on
+the dispute page. The accountant reads the list and what Poppynz bears.
+Permission `cardDispute: read, review, respond, decide, finance` (admin:
+all; accountant: `read`, `finance`).
+
+### Defaults (2026-10-28)
+
+Chosen by the implementer while the user was away; revisit if needed.
+
+1. **Attribution of a partial amount** is proportional to each session's
+   frozen family total (§5 largest remainder, ties to the earlier
+   session); an amount above the sessions' total (a carry line, or Stripe's
+   test quirk above) is attributed up to that total.
+2. **Inquiries** (`warning_*`) block refunds like a dispute while open,
+   though Stripe would allow one; no money moves, so no ledger.
+3. **Every disputed session's unpaid pay is held**, also for a partial
+   dispute (all its sessions carry part of it).
+4. **A lost dispute keeps the pay held until allocated.** "Poppynz
+   absorbs" releases it; "the helper did not provide the service" makes the
+   helper bear, by default, their share of the session's disputed part
+   (helper share × disputed / family total, half up; the admin may lower or
+   raise it up to the helper's share). Not yet paid → it is not paid; paid
+   → a `helper_recoveries` row (from future transfers). A reason is
+   required, the helper is emailed (EN/FR) and the decision is audited and
+   final.
+5. **Refunds after a lost dispute** are not sent: a pending refund on that
+   charge goes to the refund-failure list ("the bank returned the money —
+   check before refunding") and the admins are alerted; the family is not
+   told of a "failed refund".
+6. **Admin suspension** applies to the family's live contracts
+   (`scheduled`, `active`, already `suspended`) as `admin_review`: future
+   cycles are suspended as they start, cycles already funded go ahead. Only
+   an admin resumes; neither the tick nor a new card lifts it. If a resume
+   can't go through at once (helper not payment-ready, a quote failure)
+   the hold is handed back to the normal reasons so the tick resumes it.
+   Contracts still awaiting the helper's payout readiness are not touched.
+7. **Who is emailed:** on suspension the family gets a neutral "under
+   review" notice (no mention of the dispute or the bank) and the helper a
+   "contract paused, don't work unfunded sessions" notice; both are told
+   on resume. The helper is told of a recovery. Nothing else goes to the
+   parties; admins get the alerts.
+8. **Evidence is written in English** (read by the issuer); the summary
+   suggestion is generated, the admin's text is what goes. Messages quoted:
+   from `CONTRACT_DISPUTE_EVIDENCE_MESSAGE_DAYS` (14) before the first
+   session to the dispute (or a day after the last session), at most
+   `CONTRACT_DISPUTE_EVIDENCE_MAX_MESSAGES` (60). PDFs are capped at 30
+   pages.
+9. **Disputes on other payments** (e.g. a background check) are recorded
+   and alerted with scope `payment` and no sessions; their amounts are not
+   in the contract ledger (it is per contract) but on the dispute row.
+10. **A dispute on an unknown payment** is not recorded; the admins are
+    alerted to check it in Stripe.
+11. **Early fraud warnings** (`radar.early_fraud_warning.*`) are not
+    disputes and are not handled here.
+12. **Step 3's table** `contract_extra_sessions` is read by name (guarded)
+    for the authorisation tick in the evidence, so step 4 needed no change
+    to step 3's code.
+
+Defaults taken in the step-4 review, default (2026-10-28):
+
+13. **What a helper bears is capped at what they are owed for the
+    session** (after refunds and cancellations): "did not provide" on a
+    session the family cancelled in time costs the helper nothing, and the
+    ledger and their email say the capped amount.
+14. **Won, lost and prevented are final**: a re-fetch that still reads the
+    dispute open (two events handled at once, the older read landing last)
+    is ignored. An inquiry's `warning_closed` is not treated as final.
+15. **Inquiries are alerted as inquiries** ("no money has been taken"),
+    and the admins are alerted once more if the bank escalates one into a
+    dispute. An inquiry's evidence submitted before escalation still counts
+    as the submission (Stripe's own count); re-answering an escalated
+    inquiry is left to the Stripe dashboard.
+16. **Admin › Users flags a family while an admin holds its contracts**,
+    also after the dispute closed, not only while a dispute is open.
+17. **The signed agreement is quoted once per distinct text** (both
+    parties sign the same text), verbatim — Markdown included — because
+    that is the text the SHA-256 covers.
+18. **The evidence's cancellation sentence quotes the current
+    `CONTRACT_CANCELLATION_NOTICE_HOURS`**; the agreement's own text (in the
+    PDF) remains the authority if the setting changed since it was signed.
+
+### Trying it in test mode
+
+1. Run `stripe listen --forward-to localhost:3000/webhooks/stripe --forward-connect-to localhost:3000/webhooks/stripe`
+   (the `whsec_…` in `STRIPE_WEBHOOK_SECRET`).
+2. As the family, save the card **4000 0000 0000 0259** (any future date,
+   any CVC). Every charge on it is disputed a few seconds after it is
+   taken: run the dev clock to the cycle's capture (`billing-tick.ts
+   --as-of …`), or let an extra session charge.
+   Per Stripe's test-card list (numbers not verified here; the `pm_card_…`
+   tokens were): **4000 0000 0000 1976** opens an inquiry,
+   **4000 0000 0000 2685** a "product not received" dispute.
+3. Admin › Card disputes shows it; open it, review the pack, type exactly
+   `winning_evidence` (or `losing_evidence`) as the summary and submit.
+   Within a minute it is won (held pay released by the next tick) or lost
+   (decide each session).

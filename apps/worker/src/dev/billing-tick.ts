@@ -35,7 +35,8 @@ import {
   runContractBillingTick,
   runExtraSessionTick,
   runSessionMoneyTick,
-  runSessionResolutionTick
+  runSessionResolutionTick,
+  runCardDisputeTick
 } from '@repo/billing';
 import { Effect, ManagedRuntime } from 'effect';
 import { ContractBillingBaseLive, withCycleSettlement } from '../billing-layer';
@@ -155,6 +156,11 @@ const main = Effect.gen(function* () {
     const money = yield* runSessionMoneyTick(asOf);
     console.log(
       `[dev-billing] money: ${money.reconciled} sessions applied, ${money.refundsSent} refunds sent, ${money.transfers} transfers processed, ${money.failed} failed`
+    );
+    // Tier 3 step 4: card dispute evidence reminders due by --as-of.
+    const disputes = yield* runCardDisputeTick(asOf);
+    console.log(
+      `[dev-billing] card disputes: ${disputes.reminded} evidence reminder(s), ${disputes.failed} failed`
     );
   }
   yield* show;

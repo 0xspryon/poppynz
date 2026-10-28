@@ -326,6 +326,33 @@ export const sessionResolutionConfig = Config.all({
   lateCancellationHelperBps: basisPoints('CONTRACT_LATE_CANCELLATION_HELPER_BPS', 2500)
 });
 
+// Card disputes (chargebacks, Tier 3 step 4, spec 2026-10-28 §15). Same
+// posture: a malformed value is a ConfigError, never a silent default — a
+// missed evidence deadline loses the dispute.
+export const cardDisputeConfig = Config.all({
+  // The admins are reminded this many hours before a dispute's evidence is
+  // due at the bank (Stripe's `evidence_due_by`) while none was submitted.
+  evidenceReminderHours: wholeHours('CONTRACT_DISPUTE_EVIDENCE_REMINDER_HOURS', 72, 1, 720),
+  // The evidence pack quotes the contract's messages from this many days
+  // before the first disputed session up to the dispute.
+  evidenceMessageDays: Config.integer('CONTRACT_DISPUTE_EVIDENCE_MESSAGE_DAYS').pipe(
+    Config.withDefault(14),
+    Config.validate({
+      message: 'CONTRACT_DISPUTE_EVIDENCE_MESSAGE_DAYS must be a whole number of days between 1 and 365',
+      validation: (value) => value >= 1 && value <= 365
+    })
+  ),
+  // At most this many messages (the latest) are quoted: the bank reads a
+  // summary, and Stripe caps the evidence's size.
+  evidenceMaxMessages: Config.integer('CONTRACT_DISPUTE_EVIDENCE_MAX_MESSAGES').pipe(
+    Config.withDefault(60),
+    Config.validate({
+      message: 'CONTRACT_DISPUTE_EVIDENCE_MAX_MESSAGES must be a whole number between 1 and 500',
+      validation: (value) => value >= 1 && value <= 500
+    })
+  )
+});
+
 // Session money and helper transfers (Tier 3 step 2, spec 2026-10-28 §7–§8).
 // Same posture: a malformed value is a ConfigError, never a silent default.
 export const sessionMoneyConfig = Config.all({

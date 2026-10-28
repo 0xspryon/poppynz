@@ -216,6 +216,7 @@ export const getAccountantAccessRouteProgram = (headers: Headers) =>
       taxRead: can({ tax: ['read'] }),
       taxReport: can({ taxReport: ['read'] }),
       refundQueue: can({ refundQueue: ['read'] }),
+      cardDisputeFinance: can({ cardDispute: ['read', 'finance'] }),
       reimbursementsRead: can({ reimbursements: ['read'] }),
       reimbursementsNote: can({ reimbursements: ['note'] }),
       reimbursementsReconcile: can({ reimbursements: ['reconcile'] }),

@@ -8,6 +8,7 @@ import {
   makeInMemoryPayoutAccountRepo,
   makeInMemorySessionMoneyRepo,
   makeInMemoryReconciliationRepo,
+  makeInMemoryCardDisputeRepo,
   makeContractBillingRepoTest,
   makePaymentRepoTest,
   makeStripeWebhookEventRepoTest,
@@ -22,6 +23,7 @@ import {
   PaymentProviderError,
   PaymentWebhookSignatureError,
   type PaymentWebhookEvent,
+  type ProviderDispute,
   type ProviderPayment
 } from '@repo/payments';
 import { makeSafetyVerificationQueueTest } from '@repo/queue';
@@ -95,6 +97,8 @@ const makeWorld = (
     payoutAccounts?: Array<PayoutAccount>;
     /** Stripe can't be reached when a payout account is re-fetched. */
     payoutProviderFails?: boolean;
+    /** Tier 3 step 4: the dispute Stripe answers on a re-fetch. */
+    dispute?: () => ProviderDispute;
   } = {}
 ) => {
   let payment = options.payment === undefined ? paymentRow() : options.payment;
@@ -118,6 +122,7 @@ const makeWorld = (
   ]);
   const billingRetries: Array<string> = [];
   const payouts = makeInMemoryPayoutAccountRepo(options.payoutAccounts ?? []);
+  const cardDisputes = makeInMemoryCardDisputeRepo();
 
   const layer = Layer.mergeAll(
     makeIdleContractBillingLayer(),
@@ -135,6 +140,10 @@ const makeWorld = (
           ? Effect.succeed(options.verified ?? event())
           : Effect.fail(new PaymentWebhookSignatureError({ reason: 'bad signature' })),
       getPayment: () => Effect.succeed(options.provider ?? fetched()),
+      getDispute: (reference) =>
+        options.dispute
+          ? Effect.succeed(options.dispute())
+          : Effect.fail(new PaymentProviderError({ operation: 'getDispute', cause: reference })),
       getCardSetup: (reference) =>
         Effect.succeed({
           reference,
@@ -194,6 +203,7 @@ const makeWorld = (
     }),
     billing.layer,
     payouts.layer,
+    cardDisputes.layer,
     makeSafetyVerificationQueueTest({
       enqueueOrder: ({ orderId }) =>
         Effect.sync(() => {
@@ -227,6 +237,7 @@ const makeWorld = (
     billing,
     billingRetries,
     payouts,
+    cardDisputes,
     payment: () => payment,
     order: () => order
   };
@@ -441,14 +452,102 @@ describe('processStripeEvent', () => {
     );
     expect(world.payment()?.status).toBe('captured');
   });
+});
 
-  it('flags a payment when its card dispute opens', async () => {
-    const world = makeWorld({ payment: paymentRow({ status: 'captured' }) });
-    await run(
-      world,
-      event({ type: 'charge.dispute.created', objectId: 'dp_1', paymentReference: 'pi_1' })
-    );
+describe('card disputes (Tier 3 step 4)', () => {
+  const run = (world: ReturnType<typeof makeWorld>, input: PaymentWebhookEvent) =>
+    Effect.runPromise(processStripeEvent(input).pipe(Effect.provide(world.layer)));
+  const providerDispute = (overrides: Partial<ProviderDispute> = {}): ProviderDispute => ({
+    reference: 'du_1',
+    status: 'needs_response',
+    amountCents: 7500,
+    currency: 'cad',
+    reason: 'fraudulent',
+    paymentReference: 'pi_1',
+    chargeReference: 'ch_1',
+    evidenceDueBy: new Date('2026-11-05T23:59:59.000Z'),
+    chargeRefundable: false,
+    hasEvidence: false,
+    submissionCount: 0,
+    balanceTransactions: [
+      { reference: 'txn_w', kind: 'withdrawal', amountCents: 7500, feeCents: 1500 }
+    ],
+    createdAt: new Date('2026-10-28T10:00:00.000Z'),
+    ...overrides
+  });
+
+  it.each([
+    'charge.dispute.created',
+    'charge.dispute.funds_withdrawn',
+    'charge.dispute.updated',
+    'charge.dispute.closed',
+    'charge.dispute.funds_reinstated'
+  ])('%s re-fetches the dispute and records it once', async (type) => {
+    const world = makeWorld({
+      payment: paymentRow({ status: 'captured' }),
+      dispute: () => providerDispute()
+    });
+    const first = await run(world, event({ type, objectId: 'du_1', paymentReference: 'pi_1' }));
+    const again = await run(world, event({ type, objectId: 'du_1', paymentReference: 'pi_1' }));
+    expect(first).toBe('card dispute: needs_response');
+    expect(again).toBe('card dispute: needs_response');
+    expect(world.cardDisputes.state.disputes).toHaveLength(1);
+    expect(world.cardDisputes.state.disputes[0]).toMatchObject({
+      providerReference: 'du_1',
+      paymentId: 'payment-1',
+      scope: 'payment',
+      withdrawnCents: 7500,
+      feeCents: 1500
+    });
     expect(world.payment()?.lastError).toBe('card dispute opened');
+  });
+
+  it('a duplicate delivery is acknowledged and not applied again', async () => {
+    const world = makeWorld({
+      payment: paymentRow({ status: 'captured' }),
+      verified: event({
+        type: 'charge.dispute.created',
+        objectId: 'du_1',
+        paymentReference: 'pi_1'
+      }),
+      seen: 'processed',
+      dispute: () => providerDispute()
+    });
+    const response = await world.post();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ received: true, duplicate: true });
+    expect(world.cardDisputes.state.disputes).toHaveLength(0);
+  });
+
+  it('closing it (won) clears the refund flag; a provider outage is retried (500)', async () => {
+    let current = providerDispute();
+    const world = makeWorld({
+      payment: paymentRow({ status: 'captured' }),
+      dispute: () => current
+    });
+    await run(world, event({ type: 'charge.dispute.created', objectId: 'du_1' }));
+    current = providerDispute({
+      status: 'won',
+      chargeRefundable: true,
+      balanceTransactions: [
+        ...current.balanceTransactions,
+        { reference: 'txn_r', kind: 'reinstatement', amountCents: 7500, feeCents: 0 }
+      ]
+    });
+    await run(world, event({ type: 'charge.dispute.closed', objectId: 'du_1' }));
+    expect(world.cardDisputes.state.disputes[0]).toMatchObject({
+      status: 'won',
+      triage: 'resolved',
+      reinstatedCents: 7500
+    });
+    expect(world.payment()?.lastError).toBeNull();
+    const down = makeWorld({
+      payment: paymentRow({ status: 'captured' }),
+      verified: event({ type: 'charge.dispute.updated', objectId: 'du_1' })
+    });
+    const response = await down.post();
+    expect(response.status).toBe(500);
+    expect(down.log.failed).toEqual(['evt_1']);
   });
 });
 

@@ -3,7 +3,7 @@ import {
   type AccountingSources,
   type BillingAuditEvent
 } from '@repo/db';
-import type { BorneCardDispute } from './card-dispute-adapter';
+import { isCardDisputeEntryKey, type BorneCardDispute } from './card-dispute-adapter';
 import { dateIn } from '@repo/calendar';
 import { csv, dollars } from './books';
 
@@ -312,6 +312,8 @@ export const buildObligations = (
   }
 
   for (const entry of sources.absorbed) {
+    // A dispute allocation's entry: counted through the adapter.
+    if (isCardDisputeEntryKey(entry.entryKey)) continue;
     items.push(
       item('absorbed', entry.id, {
         direction: 'cost',

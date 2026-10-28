@@ -209,6 +209,7 @@ describe('access to the accountant’s books', () => {
       taxRead: true,
       taxReport: true,
       refundQueue: true,
+      cardDisputeFinance: true,
       reimbursementsRead: true,
       reimbursementsNote: true,
       reimbursementsReconcile: true,

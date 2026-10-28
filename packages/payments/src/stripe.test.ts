@@ -48,6 +48,26 @@ const transferObject = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 });
 
+/** A dispute as Stripe answers it in test mode (2026-10-28): the debit with
+ * the CAD 15.00 fee; ids are `du_…` on this API version. */
+const disputeObject = (overrides: Record<string, unknown> = {}) => ({
+  id: 'du_1',
+  object: 'dispute',
+  amount: 13206,
+  currency: 'cad',
+  reason: 'fraudulent',
+  status: 'needs_response',
+  payment_intent: 'pi_123',
+  charge: 'ch_1',
+  is_charge_refundable: false,
+  created: 1_790_000_000,
+  evidence_details: { due_by: 1_790_700_000, has_evidence: false, submission_count: 0 },
+  balance_transactions: [
+    { id: 'txn_w', amount: -13206, fee: 1500, net: -14706, reporting_category: 'dispute' }
+  ],
+  ...overrides
+});
+
 const card = {
   id: 'pm_card',
   object: 'payment_method',
@@ -69,6 +89,8 @@ const fakeStripe = (
     refundRetrieve?: () => unknown;
     transferCreate?: () => unknown;
     balanceList?: () => unknown;
+    disputeRetrieve?: () => unknown;
+    disputeUpdate?: () => unknown;
   } = {}
 ) => {
   const calls: Array<Recorded> = [];
@@ -158,6 +180,11 @@ const fakeStripe = (
         } as never);
       }
     },
+    disputes: {
+      retrieve: record('disputes.retrieve', answers.disputeRetrieve ?? (() => disputeObject())),
+      update: record('disputes.update', answers.disputeUpdate ?? (() => disputeObject()))
+    },
+    files: { create: record('files.create', () => ({ id: 'file_1' })) },
     // The real verifier: signatures are what this suite is about.
     webhooks: Stripe.webhooks
   } as unknown as StripeApi;
@@ -931,6 +958,129 @@ describe('transfers and payouts (Tier 3 step 2)', () => {
   });
 });
 
+describe('card disputes (Tier 3 step 4)', () => {
+  it('re-fetches a dispute with its debit, fee and deadline', async () => {
+    const { client, calls } = fakeStripe();
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const dispute = await Effect.runPromise(payments.getDispute('du_1'));
+    expect(calls[0]).toEqual({
+      method: 'disputes.retrieve',
+      params: ['du_1', { expand: ['balance_transactions'] }]
+    });
+    expect(dispute).toEqual({
+      reference: 'du_1',
+      status: 'needs_response',
+      amountCents: 13206,
+      currency: 'cad',
+      reason: 'fraudulent',
+      paymentReference: 'pi_123',
+      chargeReference: 'ch_1',
+      evidenceDueBy: new Date(1_790_700_000 * 1000),
+      chargeRefundable: false,
+      hasEvidence: false,
+      submissionCount: 0,
+      balanceTransactions: [
+        { reference: 'txn_w', kind: 'withdrawal', amountCents: 13206, feeCents: 1500 }
+      ],
+      createdAt: new Date(1_790_000_000 * 1000)
+    });
+  });
+
+  it('reads a won dispute’s reinstatement (no fee given back)', async () => {
+    const { client } = fakeStripe({
+      disputeRetrieve: () =>
+        disputeObject({
+          status: 'won',
+          balance_transactions: [
+            { id: 'txn_w', amount: -6602, fee: 1500 },
+            { id: 'txn_r', amount: 6602, fee: 0 }
+          ]
+        })
+    });
+    const dispute = await Effect.runPromise(
+      makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET }).getDispute('du_1')
+    );
+    expect(dispute.balanceTransactions).toEqual([
+      { reference: 'txn_w', kind: 'withdrawal', amountCents: 6602, feeCents: 1500 },
+      { reference: 'txn_r', kind: 'reinstatement', amountCents: 6602, feeCents: 0 }
+    ]);
+  });
+
+  it('submits evidence explicitly (Stripe submits by default) with text and files', async () => {
+    const { client, calls } = fakeStripe();
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    await Effect.runPromise(
+      payments.updateDisputeEvidence({
+        reference: 'du_1',
+        text: { uncategorized_text: 'Summary', service_date: '2026-11-02' },
+        files: { service_documentation: 'file_1' },
+        submit: false,
+        metadata: { card_dispute_id: 'cd-1' }
+      })
+    );
+    expect(calls[0]).toEqual({
+      method: 'disputes.update',
+      params: [
+        'du_1',
+        {
+          evidence: {
+            uncategorized_text: 'Summary',
+            service_date: '2026-11-02',
+            service_documentation: 'file_1'
+          },
+          submit: false,
+          metadata: { card_dispute_id: 'cd-1' },
+          expand: ['balance_transactions']
+        }
+      ]
+    });
+  });
+
+  it('reports evidence Stripe refuses as a refusal, an outage as an outage', async () => {
+    const input = { reference: 'du_1', text: {}, files: {}, submit: true };
+    const refusing = fakeStripe({
+      disputeUpdate: () => {
+        throw new Stripe.errors.StripeInvalidRequestError({
+          message: 'Evidence is limited to 150000 total characters for this dispute.'
+        } as never);
+      }
+    });
+    const refused = await Effect.runPromise(
+      makeStripePayments({ client: refusing.client, webhookSecret: WEBHOOK_SECRET })
+        .updateDisputeEvidence(input)
+        .pipe(Effect.flip)
+    );
+    expect(refused.refusal).toContain('150000 total characters');
+    const down = fakeStripe({
+      disputeUpdate: () => {
+        throw new Stripe.errors.StripeConnectionError({ message: 'down' } as never);
+      }
+    });
+    const outage = await Effect.runPromise(
+      makeStripePayments({ client: down.client, webhookSecret: WEBHOOK_SECRET })
+        .updateDisputeEvidence(input)
+        .pipe(Effect.flip)
+    );
+    expect(outage.refusal).toBeUndefined();
+  });
+
+  it('uploads an evidence document as a PDF for dispute evidence', async () => {
+    const { client, calls } = fakeStripe();
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const file = await Effect.runPromise(
+      payments.uploadDisputeFile({ name: 'evidence.pdf', bytes: new Uint8Array([37, 80]) })
+    );
+    expect(file).toEqual({ reference: 'file_1' });
+    const params = calls[0]!.params[0] as {
+      purpose: string;
+      file: { name: string; type: string; data: Buffer };
+    };
+    expect(params.purpose).toBe('dispute_evidence');
+    expect(params.file.type).toBe('application/pdf');
+    expect(params.file.name).toBe('evidence.pdf');
+    expect([...params.file.data]).toEqual([37, 80]);
+  });
+});
 describe('balance transactions and payouts (Tier 3 step 5)', () => {
   // Shapes as the test API returned them on 2026-10-28 (data.source expanded).
   const charge = {

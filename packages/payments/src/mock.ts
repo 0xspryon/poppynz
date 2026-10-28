@@ -20,7 +20,11 @@ import {
   type TransferResult,
   type ChargeSavedCardInput,
   type ProviderPayment,
-  type StartPaymentInput
+  type StartPaymentInput,
+  type ProviderDispute,
+  type UpdateDisputeEvidenceInput,
+  disputeEvidenceTextLimits,
+  DISPUTE_EVIDENCE_TOTAL_CHARS
 } from './port';
 
 /** How long a provider remembers an idempotency key (Stripe: 24 h). */
@@ -49,6 +53,18 @@ export type MockPayments = Context.Tag.Service<Payments> & {
     payout: string,
     transactions: ReadonlyArray<ProviderBalanceTransaction>
   ) => void;
+  /** Tier 3 step 4: the family's bank disputes an intent's charge (the full
+   * amount unless given). An inquiry (`warning_needs_response`) takes no
+   * money; a dispute withdraws it with a $15 fee, like Stripe in CAD. */
+  openDispute: (
+    paymentReference: string,
+    options?: { amountCents?: number; reason?: string; inquiry?: boolean; dueBy?: Date }
+  ) => ProviderDispute;
+  /** The issuer decides: won reinstates the amount (the fee is kept). */
+  closeDispute: (reference: string, outcome: 'won' | 'lost' | 'warning_closed') => ProviderDispute;
+  /** What was staged or submitted on a dispute, and the files uploaded. */
+  disputeEvidence: (reference: string) => ReadonlyArray<UpdateDisputeEvidenceInput>;
+  disputeFiles: () => ReadonlyArray<{ reference: string; name: string; bytes: number }>;
 };
 
 /** Newest first, like the provider; `startingAfter` continues after that
@@ -66,6 +82,11 @@ const pageOf = <A>(
 
 const inRange = (at: Date, from: Date | undefined, to: Date | undefined) =>
   (from === undefined || at >= from) && (to === undefined || at < to);
+
+/** The mock's dispute fee (Stripe charges CAD 15.00). */
+export const MOCK_DISPUTE_FEE_CENTS = 1500;
+
+const closedDisputeStatuses = ['won', 'lost', 'warning_closed', 'prevented'];
 
 const sameCharge = (a: ChargeSavedCardInput, b: ChargeSavedCardInput) =>
   a.amountCents === b.amountCents &&
@@ -135,6 +156,9 @@ export const makeMockPayments = (
       (a, b) =>
         b.createdAt.getTime() - a.createdAt.getTime() || b.reference.localeCompare(a.reference)
     );
+  const disputes = new Map<string, ProviderDispute>();
+  const evidence = new Map<string, Array<UpdateDisputeEvidenceInput>>();
+  const files: Array<{ reference: string; name: string; bytes: number }> = [];
   const down = (operation: PaymentOperation) =>
     options.moneyDown?.() || options.providerDown
       ? Effect.fail(new PaymentProviderError({ operation, cause: 'mock provider down' }))
@@ -387,6 +411,19 @@ export const makeMockPayments = (
         }
         const payment = byReference.get(input.paymentReference);
         if (!payment) return unknown('createRefund', input.paymentReference);
+        // Like Stripe: a disputed (charged back) charge can't be refunded.
+        const disputed = [...disputes.values()].find(
+          (row) =>
+            row.paymentReference === input.paymentReference &&
+            !row.chargeRefundable &&
+            row.status !== 'won'
+        );
+        if (disputed) {
+          const reason = `charge_disputed: ${payment.chargeReference} has been charged back; cannot issue a refund.`;
+          return Effect.fail(
+            new PaymentProviderError({ operation: 'createRefund', cause: reason, refusal: reason })
+          );
+        }
         const refunded = [...partialRefunds.values()]
           .filter(
             (r) =>
@@ -512,6 +549,64 @@ export const makeMockPayments = (
       ).filter((payout) => inRange(payout.createdAt, input.createdFrom, input.createdTo));
       return Effect.succeed(pageOf(rows, (row) => row.reference, input.startingAfter, input.limit));
     },
+    getDispute: (reference) => {
+      const dispute = disputes.get(reference);
+      return dispute ? Effect.succeed(dispute) : unknown('getDispute', reference);
+    },
+
+    updateDisputeEvidence: (input) =>
+      Effect.suspend(() => {
+        const failure = down('updateDispute');
+        if (failure) return failure;
+        const dispute = disputes.get(input.reference);
+        if (!dispute) return unknown('updateDispute', input.reference);
+        const refuse = (reason: string) =>
+          Effect.fail(
+            new PaymentProviderError({ operation: 'updateDispute', cause: reason, refusal: reason })
+          );
+        if (
+          closedDisputeStatuses.includes(dispute.status) ||
+          dispute.status.endsWith('under_review')
+        ) {
+          return refuse(`This dispute is already ${dispute.status}; evidence can't be changed.`);
+        }
+        let total = 0;
+        for (const [field, value] of Object.entries(input.text)) {
+          const limit = disputeEvidenceTextLimits[field as keyof typeof disputeEvidenceTextLimits];
+          if (value.length > limit)
+            return refuse(`Invalid string: must be at most ${limit} characters`);
+          total += value.length;
+        }
+        if (total > DISPUTE_EVIDENCE_TOTAL_CHARS) {
+          return refuse(
+            `Evidence is limited to ${DISPUTE_EVIDENCE_TOTAL_CHARS} total characters for this dispute.`
+          );
+        }
+        evidence.set(input.reference, [...(evidence.get(input.reference) ?? []), input]);
+        const next: ProviderDispute = {
+          ...dispute,
+          hasEvidence: true,
+          ...(input.submit
+            ? {
+                status: dispute.status.startsWith('warning_')
+                  ? 'warning_under_review'
+                  : 'under_review',
+                submissionCount: dispute.submissionCount + 1
+              }
+            : {})
+        };
+        disputes.set(input.reference, next);
+        return Effect.succeed(next);
+      }),
+
+    uploadDisputeFile: ({ name, bytes }) =>
+      Effect.suspend(() => {
+        const failure = down('uploadDisputeFile');
+        if (failure) return failure;
+        const reference = `mock_file_${files.length + 1}`;
+        files.push({ reference, name, bytes: bytes.byteLength });
+        return Effect.succeed({ reference });
+      }),
 
     // Payout accounts: enabled straight away, so the whole helper flow runs
     // without Stripe. The "hosted onboarding" is the return page itself.
@@ -560,7 +655,62 @@ export const makeMockPayments = (
     },
     setPayoutTransactions: (account, payout, transactions) => {
       payoutTransactions.set(`${account}/${payout}`, transactions);
-    }
+    },
+    openDispute: (paymentReference, opened = {}) => {
+      const payment = byReference.get(paymentReference);
+      const amountCents = opened.amountCents ?? payment?.receivedCents ?? 0;
+      const reference = `mock_du_${disputes.size + 1}`;
+      const dispute: ProviderDispute = {
+        reference,
+        status: opened.inquiry ? 'warning_needs_response' : 'needs_response',
+        amountCents,
+        currency: 'cad',
+        reason: opened.reason ?? 'fraudulent',
+        paymentReference,
+        chargeReference: payment?.chargeReference ?? null,
+        evidenceDueBy: opened.dueBy ?? new Date(now().getTime() + 8 * 24 * 60 * 60 * 1000),
+        chargeRefundable: opened.inquiry === true,
+        hasEvidence: false,
+        submissionCount: 0,
+        balanceTransactions: opened.inquiry
+          ? []
+          : [
+              {
+                reference: `mock_txn_${reference}_w`,
+                kind: 'withdrawal',
+                amountCents,
+                feeCents: MOCK_DISPUTE_FEE_CENTS
+              }
+            ],
+        createdAt: now()
+      };
+      disputes.set(reference, dispute);
+      return dispute;
+    },
+    closeDispute: (reference, outcome) => {
+      const dispute = disputes.get(reference)!;
+      const next: ProviderDispute = {
+        ...dispute,
+        status: outcome,
+        chargeRefundable: outcome !== 'lost',
+        balanceTransactions:
+          outcome === 'won'
+            ? [
+                ...dispute.balanceTransactions,
+                {
+                  reference: `mock_txn_${reference}_r`,
+                  kind: 'reinstatement',
+                  amountCents: dispute.amountCents,
+                  feeCents: 0
+                }
+              ]
+            : dispute.balanceTransactions
+      };
+      disputes.set(reference, next);
+      return next;
+    },
+    disputeEvidence: (reference) => evidence.get(reference) ?? [],
+    disputeFiles: () => [...files]
   };
 };
 

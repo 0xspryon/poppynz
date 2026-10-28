@@ -1012,7 +1012,6 @@ export const allocateLostCardDispute = (
       // The helper didn't provide the service: what they bear, what was
       // already paid for the session (net of recoveries) and what they are
       // owed for it now decide what is withheld and what is recovered.
-      const forfeit = item.helperForfeitCents ?? defaultHelperForfeit(row);
       const cycle = (yield* billingRepo.listCycles(row.contractId)).find(
         (candidate) => candidate.id === row.cycleId
       );
@@ -1020,6 +1019,13 @@ export const allocateLostCardDispute = (
         (cycle ? yield* cyclePayables(cycle) : []).find(
           (payable) => payable.sessionId === row.sessionId
         )?.money.helperOwed.totalCents ?? row.helperShareCents;
+      // Never more than the helper is owed for the session: a session whose
+      // pay a refund or cancellation already reduced can't cost them its
+      // full share (the ledger and the helper's email say what they bear).
+      const forfeit = Math.max(
+        0,
+        Math.min(item.helperForfeitCents ?? defaultHelperForfeit(row), owed)
+      );
       const paid = (yield* helperPaidSoFar(row.sessionId)).paid;
       const recoverCents = Math.max(0, paid - Math.max(0, owed - forfeit));
       const helperUserId = contract?.providerUserId ?? null;

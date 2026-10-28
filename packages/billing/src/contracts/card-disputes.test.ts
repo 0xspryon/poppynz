@@ -567,6 +567,41 @@ describe('a lost dispute: the admin’s allocation per session', () => {
     ).toBe('already_allocated');
   });
 
+  it('the helper never bears more than they were owed for the session (a cancelled one: nothing)', async () => {
+    const { w, now } = await lost();
+    const { wed } = ids(w);
+    // The family cancelled Wednesday in time after the loss: the helper is
+    // owed nothing for it, so "did not provide" can't take their share.
+    w.resolutions.state.resolutions.push(
+      dummySessionResolution({
+        id: 'res-early',
+        contractId: 'contract-1',
+        sessionId: wed,
+        cycleId: w.sessionOn('2026-11-04').cycleId,
+        kind: 'family_cancelled_early',
+        status: 'confirmed',
+        reportedBySide: 'family',
+        recordedAt: new Date('2026-11-01T08:00:00.000Z')
+      })
+    );
+    await w.provide(reconcileSession('contract-1', wed, now));
+    await w.provide(
+      allocateLostCardDispute(
+        w.dispute().id,
+        [{ sessionId: wed, allocation: 'helper_not_provided', reason: 'did not come' }],
+        ADMIN,
+        now
+      )
+    );
+    expect(w.cardDisputes.state.sessions.find((row) => row.sessionId === wed)).toMatchObject({
+      allocation: 'helper_not_provided',
+      helperForfeitCents: 0,
+      recoveryId: null
+    });
+    expect(w.billingState.ledger.filter((e) => e.kind === 'helper_recovery')).toHaveLength(0);
+    expect(w.mails.find((mail) => mail.subject.startsWith('Payment for'))).toBeUndefined();
+  });
+
   it('the default forfeit is the helper’s share of the disputed part (half up)', () => {
     expect(
       defaultHelperForfeit({ helperShareCents: 5266, familyTotalCents: 6602, disputedCents: 6602 })

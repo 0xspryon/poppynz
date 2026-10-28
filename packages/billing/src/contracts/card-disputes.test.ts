@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { dummyConversationMessage, dummySessionResolution } from '@repo/db';
 import { Effect, Either } from 'effect';
+import type { ProviderDispute } from '@repo/payments';
 import {
   allocateLostCardDispute,
   assembleEvidencePack,
@@ -263,6 +264,27 @@ describe('dispute webhooks: one idempotent sync for every lifecycle event', () =
     ).toEqual([FAMILY_TOTAL]);
     expect(w.payments.get(payment.id)!.lastError).toBeNull();
     expect(w.alerts.filter((s) => s.startsWith('Card dispute won'))).toHaveLength(1);
+  });
+
+  it('a stale re-fetch (read before a newer one was applied) never reopens a closed dispute', async () => {
+    // Two events processed at once: one read the dispute while it was under
+    // review, the other after it closed — and the older read lands last.
+    let stale: ProviderDispute | null = null;
+    const { w, provider, payment, now } = await disputed(
+      {},
+      {
+        payments: (mock) => ({
+          getDispute: (reference) => (stale ? Effect.succeed(stale) : mock.getDispute(reference))
+        })
+      }
+    );
+    w.mock.closeDispute(provider.reference, 'won');
+    await w.sync(provider.reference, at(now, 60));
+    stale = provider;
+    await w.sync(provider.reference, at(now, 61));
+    expect(w.dispute()).toMatchObject({ status: 'won', triage: 'resolved' });
+    expect(w.dispute().closedAt).toEqual(at(now, 60));
+    expect(w.payments.get(payment.id)!.lastError).toBeNull();
   });
 
   it('lost: needs an allocation, and the payment is flagged as lost', async () => {

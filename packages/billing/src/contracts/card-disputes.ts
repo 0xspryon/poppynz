@@ -98,6 +98,10 @@ const dollars = (cents: number) => `$${(cents / 100).toFixed(2)} CAD`;
 
 export const isClosedDisputeStatus = (status: string) => closedCardDisputeStatuses.includes(status);
 
+/** Outcomes the provider never moves away from (an inquiry's
+ * `warning_closed` is left out: Stripe may still escalate it). */
+const finalDisputeStatuses = ['won', 'lost', 'prevented'];
+
 const evidenceSubmitted = (provider: Pick<ProviderDispute, 'status' | 'submissionCount'>) =>
   provider.submissionCount > 0 || provider.status.endsWith('under_review');
 
@@ -330,6 +334,16 @@ export const syncCardDispute = (reference: string, now: Date) =>
         sessions: scope.sessions
       });
       row = ensured.dispute;
+    }
+    // A won or lost dispute is final at the provider. Two events handled at
+    // once can re-fetch it in either order; an older read (still open) that
+    // lands after the closing one must not reopen the record, put the refund
+    // flag back or hold the pay again.
+    if (finalDisputeStatuses.includes(row.status) && !isClosedDisputeStatus(provider.status)) {
+      yield* Effect.logInfo(
+        `[card-dispute] ${row.id}: ignored a stale re-fetch (${provider.status}) of a ${row.status} dispute`
+      );
+      return row.status;
     }
     const closed = isClosedDisputeStatus(provider.status);
     const sessions = yield* repo.listSessions({ disputeIds: [row.id] });

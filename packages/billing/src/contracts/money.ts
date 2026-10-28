@@ -29,6 +29,7 @@ import {
   sessionMoneyPolicy,
   type BillingDeps
 } from './engine';
+import { cardDisputeHold, owedAfterCardDisputes } from './card-dispute-holds';
 import { sendMoneyNotice } from './money-notices';
 import { alertAdmins, cycleDates } from './notices';
 import { sessionResolutionPolicy } from './resolutions';
@@ -71,10 +72,16 @@ export type MoneyDeps = BillingDeps | SessionResolutionRepo | SessionMoneyRepo;
  * the next tick reconciles once they settle. */
 const inFlight: ReadonlyArray<ContractCycle['status']> = ['authorising', 'capturing'];
 
-/** A card dispute (chargeback) on the charge blocks refunds (spec §7). Step
- * 4 replaces this stub with dispute records; the webhook flags the payment. */
+/** A card dispute (chargeback) on the charge blocks refunds (spec §7). The
+ * dispute records (Tier 3 step 4) keep this flag on the payment: set while a
+ * dispute is open, cleared when it closes — or `card dispute lost`, when the
+ * bank already returned the money. */
+export const CARD_DISPUTE_OPEN_FLAG = 'card dispute opened';
+export const CARD_DISPUTE_LOST_FLAG = 'card dispute lost';
 export const cardDisputeOpen = (payment: Pick<Payment, 'lastError'> | null) =>
-  payment?.lastError === 'card dispute opened';
+  payment?.lastError === CARD_DISPUTE_OPEN_FLAG;
+export const cardDisputeLost = (payment: Pick<Payment, 'lastError'> | null) =>
+  payment?.lastError === CARD_DISPUTE_LOST_FLAG;
 
 /** The settings the policy function reads, and the agreement's version. */
 export const moneyPolicyFor = (resolution: Pick<SessionResolution, 'policyVersion'> | null) =>
@@ -151,7 +158,7 @@ const lineDelta = (
   });
 
 /** What has been sent to the helper for a session, net of recoveries. */
-const helperPaidSoFar = (sessionId: string) =>
+export const helperPaidSoFar = (sessionId: string) =>
   Effect.gen(function* () {
     const repo = yield* SessionMoneyRepo;
     const items = yield* repo.listTransferItems({ sessionIds: [sessionId] });
@@ -608,6 +615,25 @@ export const sendRefund = (refund: SessionRefund, now: Date) =>
       });
       return refund;
     }
+    if (cardDisputeLost(payment)) {
+      // Tier 3 step 4: the family's bank already returned the disputed money;
+      // refunding as well could pay it twice. An admin decides (failure list).
+      const held = yield* moneyRepo.advanceRefund(refund.id, {
+        from: ['pending'],
+        set: {
+          status: 'failed',
+          failureReason:
+            'a card dispute on this charge was lost (the bank returned the money) — check before refunding'
+        }
+      });
+      if (held) {
+        yield* alertAdmins(`A refund waits on a lost card dispute (contract ${held.contractId})`, [
+          `Refund ${held.id} of ${dollars(held.totalCents)} was not sent: the family's bank already returned the disputed charge.`,
+          'It is in the refund-failure list: mark it handled if the chargeback covered it, or retry it.'
+        ]);
+      }
+      return held ?? refund;
+    }
     const attempted =
       (yield* moneyRepo.advanceRefund(refund.id, {
         from: ['pending'],
@@ -795,6 +821,11 @@ export const cyclePayables = (cycle: ContractCycle) =>
       (yield* billingRepo.listSessions(cycle.contractId, cycle.id)).map((s) => [s.id, s])
     );
     const resolutions = yield* (yield* SessionResolutionRepo).listForContract(cycle.contractId);
+    // Tier 3 step 4: card disputes hold unpaid pay, and a lost one allocated
+    // to the helper takes its forfeit off what they are owed.
+    const cardDisputes = yield* (yield* SessionMoneyRepo).listSessionCardDisputes(
+      charges.map((charge) => charge.sessionId)
+    );
     const payables: Array<SessionPayable> = [];
     for (const charge of charges) {
       const session = sessions.get(charge.sessionId);
@@ -807,11 +838,16 @@ export const cyclePayables = (cycle: ContractCycle) =>
         policy
       );
       const sent = yield* helperPaidSoFar(session.id);
+      const card = cardDisputeHold(cardDisputes, session.id);
+      const payable = money.held
+        ? 0
+        : Math.max(0, owedAfterCardDisputes(money.helperOwed.totalCents, card) - sent.paid);
+      const cardHeld = !money.held && card.held && payable > 0;
       payables.push({
         sessionId: session.id,
-        held: money.held,
-        payableCents: money.held ? 0 : Math.max(0, money.helperOwed.totalCents - sent.paid),
-        money
+        held: money.held || cardHeld,
+        payableCents: cardHeld ? 0 : payable,
+        money: cardHeld ? { ...money, heldCents: { family: 0, helper: payable } } : money
       });
     }
     return payables;

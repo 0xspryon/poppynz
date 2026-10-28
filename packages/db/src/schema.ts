@@ -1419,7 +1419,11 @@ export const contractBillingStatus = appDb.enum('contract_billing_status', [
 export const contractBillingSuspension = appDb.enum('contract_billing_suspension', [
   'card',
   'helper_not_ready',
-  'provider_unavailable'
+  'provider_unavailable',
+  // Tier 3 step 4: an admin suspended the family's contracts during a card
+  // dispute (unreliable payment method or suspected fraud); only an admin
+  // resumes them.
+  'admin_review'
 ]);
 export const contractCycleStatus = appDb.enum('contract_cycle_status', [
   'scheduled',
@@ -1477,7 +1481,12 @@ export const billingLedgerKind = appDb.enum('billing_ledger_kind', [
   'transfer_reversal',
   'helper_recovery',
   'manual_payout',
-  'platform_absorbed'
+  'platform_absorbed',
+  // Tier 3 step 4: a card dispute's debit and its return (from Stripe's
+  // balance transactions), and its fee — all borne by Poppynz.
+  'dispute_withdrawn',
+  'dispute_reinstated',
+  'dispute_fee'
 ]);
 export const billingLedgerParty = appDb.enum('billing_ledger_party', [
   'family',
@@ -2224,6 +2233,10 @@ export const helperRecovery = appDb.table(
     resolutionId: uuid('resolution_id').references(() => sessionResolution.id, {
       onDelete: 'restrict'
     }),
+    // Tier 3 step 4: a lost card dispute an admin allocated to the helper.
+    cardDisputeId: uuid('card_dispute_id').references(() => cardDispute.id, {
+      onDelete: 'restrict'
+    }),
     amountCents: integer('amount_cents').notNull(),
     recoveredCents: integer('recovered_cents').notNull().default(0),
     status: helperRecoveryStatus('status').notNull().default('outstanding'),
@@ -2651,6 +2664,185 @@ export const billingAuditEvent = appDb.table(
     createdAt: timestamp('created_at').defaultNow().notNull()
   },
   (table) => [index('billing_audit_events_entity_idx').on(table.entity, table.entityId)]
+);
+
+// ---------------------------------------------------------------------------
+// Card disputes (chargebacks, Tier 3 step 4 — spec 2026-10-28 §15, umbrella
+// §9; migration 0045). One row per provider dispute, kept in step with the
+// provider by re-fetching on every `charge.dispute.*` webhook; the sessions
+// its charge paid for (from the frozen `contract_session_charges`) with the
+// disputed amount attributed across them; and every evidence submission.
+
+/** Where a dispute is in Poppynz's own handling (the provider's lifecycle
+ * is `status`). */
+export const cardDisputeTriage = appDb.enum('card_dispute_triage', [
+  // Open: evidence to assemble, review and submit.
+  'needs_response',
+  // Evidence went to the bank; waiting for the issuer.
+  'evidence_submitted',
+  // Lost: an admin allocates each disputed session (Poppynz absorbs, or
+  // the helper didn't provide the service → recovery).
+  'allocation_needed',
+  // Closed and nothing left to do.
+  'resolved'
+]);
+
+export const cardDispute = appDb.table(
+  'card_disputes',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    provider: text('provider').notNull(),
+    // The provider's dispute (`du_…` / `dp_…` on Stripe).
+    providerReference: text('provider_reference').notNull(),
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payment.id, { onDelete: 'restrict' }),
+    paymentReference: text('payment_reference'),
+    chargeReference: text('charge_reference'),
+    // Who paid (the family whose bank disputes the charge).
+    familyUserId: text('family_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    contractId: uuid('contract_id').references(() => contract.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id').references(() => contractCycle.id, { onDelete: 'restrict' }),
+    // `cycle`: a cycle's charge; `extra_session`: an extra session charged
+    // on its own payment; `payment`: anything else (no sessions).
+    scope: text('scope').$type<'cycle' | 'extra_session' | 'payment'>().notNull(),
+    amountCents: integer('amount_cents').notNull(),
+    currency: text('currency').notNull(),
+    reason: text('reason').notNull(),
+    // The provider's lifecycle, as it reports it (`warning_needs_response`,
+    // `needs_response`, `under_review`, `won`, `lost`, …).
+    status: text('status').notNull(),
+    evidenceDueBy: timestamp('evidence_due_by'),
+    chargeRefundable: boolean('charge_refundable').notNull().default(false),
+    hasEvidence: boolean('has_evidence').notNull().default(false),
+    evidenceSubmissionCount: integer('evidence_submission_count').notNull().default(0),
+    // From the provider's balance transactions: what it took from Poppynz's
+    // balance, what it gave back, and its fees (net).
+    withdrawnCents: integer('withdrawn_cents').notNull().default(0),
+    reinstatedCents: integer('reinstated_cents').notNull().default(0),
+    feeCents: integer('fee_cents').notNull().default(0),
+    triage: cardDisputeTriage('triage').notNull().default('needs_response'),
+    // The admin's evidence summary (a draft until submitted).
+    evidenceSummary: text('evidence_summary'),
+    evidenceSummaryByUserId: text('evidence_summary_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    evidenceSummaryAt: timestamp('evidence_summary_at'),
+    closedAt: timestamp('closed_at'),
+    providerCreatedAt: timestamp('provider_created_at').notNull(),
+    syncedAt: timestamp('synced_at').notNull(),
+    // Notices already sent (admin alerts, reminders), so a rerun never
+    // repeats one.
+    noticesSent: jsonb('notices_sent')
+      .$type<Array<string>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at')
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull()
+  },
+  (table) => [
+    uniqueIndex('card_disputes_provider_reference_uidx').on(
+      table.provider,
+      table.providerReference
+    ),
+    index('card_disputes_payment_id_idx').on(table.paymentId),
+    index('card_disputes_family_user_id_idx').on(table.familyUserId),
+    index('card_disputes_triage_idx').on(table.triage),
+    check(
+      'card_disputes_scope_check',
+      sql`${table.scope} in ('cycle', 'extra_session', 'payment')`
+    ),
+    check(
+      'card_disputes_amounts_check',
+      sql`${table.amountCents} >= 0 and ${table.withdrawnCents} >= 0 and ${table.reinstatedCents} >= 0`
+    )
+  ]
+);
+
+/** A session the disputed charge paid for: its frozen family total, the
+ * share of the disputed amount attributed to it (largest remainder, as the
+ * split), and — once a lost dispute is allocated — who bears it. */
+export const cardDisputeSession = appDb.table(
+  'card_dispute_sessions',
+  {
+    disputeId: uuid('dispute_id')
+      .notNull()
+      .references(() => cardDispute.id, { onDelete: 'restrict' }),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => contractSession.id, { onDelete: 'restrict' }),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    cycleId: uuid('cycle_id')
+      .notNull()
+      .references(() => contractCycle.id, { onDelete: 'restrict' }),
+    familyTotalCents: integer('family_total_cents').notNull(),
+    helperShareCents: integer('helper_share_cents').notNull(),
+    disputedCents: integer('disputed_cents').notNull(),
+    // Null until a lost dispute is allocated.
+    allocation: text('allocation').$type<'poppynz_absorbs' | 'helper_not_provided'>(),
+    allocationReason: text('allocation_reason'),
+    // The helper pay the helper bears for this session (0 when absorbed):
+    // not paid if still held, recovered from future transfers if paid.
+    helperForfeitCents: integer('helper_forfeit_cents').notNull().default(0),
+    recoveryId: uuid('recovery_id').references(() => helperRecovery.id, {
+      onDelete: 'restrict'
+    }),
+    allocatedByUserId: text('allocated_by_user_id').references(() => user.id, {
+      onDelete: 'restrict'
+    }),
+    allocatedAt: timestamp('allocated_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.disputeId, table.sessionId] }),
+    index('card_dispute_sessions_session_id_idx').on(table.sessionId),
+    check(
+      'card_dispute_sessions_amounts_check',
+      sql`${table.disputedCents} >= 0 and ${table.disputedCents} <= ${table.familyTotalCents} and ${table.helperForfeitCents} >= 0 and ${table.helperForfeitCents} <= ${table.helperShareCents}`
+    ),
+    check(
+      'card_dispute_sessions_allocation_check',
+      sql`(${table.allocation} is null and ${table.helperForfeitCents} = 0)
+        or (${table.allocation} = 'poppynz_absorbs' and ${table.helperForfeitCents} = 0 and ${table.allocatedByUserId} is not null)
+        or (${table.allocation} = 'helper_not_provided' and ${table.allocationReason} is not null and ${table.allocatedByUserId} is not null)`
+    )
+  ]
+);
+
+/** What was sent to the provider as evidence, by whom and when (the text
+ * fields as sent, the files uploaded). Append-only (trigger, 0045). */
+export const cardDisputeEvidenceSubmission = appDb.table(
+  'card_dispute_evidence_submissions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    disputeId: uuid('dispute_id')
+      .notNull()
+      .references(() => cardDispute.id, { onDelete: 'restrict' }),
+    submittedByUserId: text('submitted_by_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    submittedAt: timestamp('submitted_at').notNull(),
+    summary: text('summary').notNull(),
+    fields: jsonb('fields').$type<Record<string, string>>().notNull(),
+    files: jsonb('files')
+      .$type<Array<{ field: string; reference: string; name: string; bytes: number }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    providerStatus: text('provider_status').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [index('card_dispute_evidence_submissions_dispute_idx').on(table.disputeId)]
 );
 
 export const session = appDb.table(

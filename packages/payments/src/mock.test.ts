@@ -292,7 +292,12 @@ describe('mock partial refunds and transfers (Tier 3 step 2)', () => {
     const reference = await held(payments);
     const error = await Effect.runPromise(
       payments
-        .createRefund({ paymentReference: reference, amountCents: 1, idempotencyKey: 'r', metadata: {} })
+        .createRefund({
+          paymentReference: reference,
+          amountCents: 1,
+          idempotencyKey: 'r',
+          metadata: {}
+        })
         .pipe(Effect.flip)
     );
     expect(error.refusal).toBe('charge disputed');
@@ -349,5 +354,125 @@ describe('mock partial refunds and transfers (Tier 3 step 2)', () => {
       })
     );
     expect(exit._tag).toBe('Failure');
+  });
+});
+
+describe('card disputes on the mock (Tier 3 step 4)', () => {
+  const charged = async () => {
+    const payments = makeMockPayments();
+    const payment = await Effect.runPromise(
+      payments.chargeSavedCard({
+        amountCents: 13206,
+        currency: 'CAD',
+        customer: 'mock_cus_1',
+        card: 'mock_pm_ok',
+        capture: 'automatic',
+        idempotencyKey: 'charge-1',
+        metadata: { payment_id: 'payment-1' }
+      })
+    );
+    return { payments, payment };
+  };
+
+  it('opens a dispute that withdraws the charge with the fee and blocks refunds', async () => {
+    const { payments, payment } = await charged();
+    const dispute = payments.openDispute(payment.reference);
+    expect(dispute).toMatchObject({
+      status: 'needs_response',
+      amountCents: 13206,
+      paymentReference: payment.reference,
+      chargeRefundable: false,
+      balanceTransactions: [{ kind: 'withdrawal', amountCents: 13206, feeCents: 1500 }]
+    });
+    const refused = await Effect.runPromise(
+      payments
+        .createRefund({
+          paymentReference: payment.reference,
+          amountCents: 100,
+          idempotencyKey: 'r-1',
+          metadata: {}
+        })
+        .pipe(Effect.flip)
+    );
+    expect(refused.refusal).toContain('charge_disputed');
+  });
+
+  it('an inquiry takes no money and leaves the charge refundable', async () => {
+    const { payments, payment } = await charged();
+    const inquiry = payments.openDispute(payment.reference, { inquiry: true });
+    expect(inquiry).toMatchObject({
+      status: 'warning_needs_response',
+      chargeRefundable: true,
+      balanceTransactions: []
+    });
+  });
+
+  it('stages and submits evidence within the limits; refuses more, or after submitting', async () => {
+    const { payments, payment } = await charged();
+    const { reference } = payments.openDispute(payment.reference);
+    const staged = await Effect.runPromise(
+      payments.updateDisputeEvidence({
+        reference,
+        text: { uncategorized_text: 'draft' },
+        files: {},
+        submit: false
+      })
+    );
+    expect(staged).toMatchObject({
+      status: 'needs_response',
+      hasEvidence: true,
+      submissionCount: 0
+    });
+    const tooLong = await Effect.runPromise(
+      payments
+        .updateDisputeEvidence({
+          reference,
+          text: { service_date: 'x'.repeat(5001) },
+          files: {},
+          submit: true
+        })
+        .pipe(Effect.flip)
+    );
+    expect(tooLong.refusal).toContain('at most 5000');
+    const submitted = await Effect.runPromise(
+      payments.updateDisputeEvidence({
+        reference,
+        text: { uncategorized_text: 'final' },
+        files: { service_documentation: 'mock_file_1' },
+        submit: true
+      })
+    );
+    expect(submitted).toMatchObject({ status: 'under_review', submissionCount: 1 });
+    const again = await Effect.runPromise(
+      payments
+        .updateDisputeEvidence({ reference, text: {}, files: {}, submit: true })
+        .pipe(Effect.flip)
+    );
+    expect(again.refusal).toContain('under_review');
+    expect(payments.disputeEvidence(reference)).toHaveLength(2);
+  });
+
+  it('a won dispute gives the amount back (not the fee); a lost one keeps it', async () => {
+    const { payments, payment } = await charged();
+    const won = payments.openDispute(payment.reference);
+    expect(payments.closeDispute(won.reference, 'won').balanceTransactions).toEqual([
+      expect.objectContaining({ kind: 'withdrawal', amountCents: 13206, feeCents: 1500 }),
+      expect.objectContaining({ kind: 'reinstatement', amountCents: 13206, feeCents: 0 })
+    ]);
+    const lost = payments.openDispute(payment.reference, { amountCents: 5000 });
+    const closed = payments.closeDispute(lost.reference, 'lost');
+    expect(closed).toMatchObject({ status: 'lost', chargeRefundable: false });
+    expect(closed.balanceTransactions).toHaveLength(1);
+  });
+
+  it('uploads evidence files', async () => {
+    const payments = makeMockPayments();
+    const file = await Effect.runPromise(
+      payments.uploadDisputeFile({ name: 'evidence.pdf', bytes: new Uint8Array(10) })
+    );
+    expect(file.reference).toBe('mock_file_1');
+    expect(payments.disputeFiles()).toEqual([
+      { reference: 'mock_file_1', name: 'evidence.pdf', bytes: 10 }
+    ]);
   });
 });

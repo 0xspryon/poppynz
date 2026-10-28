@@ -19,6 +19,8 @@ import { DrizzleLive } from '../effect-db';
 import {
   billingAuditEvent,
   billingLedgerEntry,
+  cardDispute,
+  cardDisputeSession,
   contract,
   contractCycle,
   contractSessionCharge,
@@ -261,8 +263,26 @@ export class SessionMoneyRepo extends Context.Tag('@repo/db/SessionMoneyRepo')<
       entity: string,
       entityId: string
     ) => Effect.Effect<Array<BillingAuditEvent>, SqlError>;
+
+    /** Tier 3 step 4: the card disputes these sessions are part of — what
+     * holds a session's pay (an open dispute, or a lost one not allocated
+     * yet) and what the helper bears once it is allocated. */
+    listSessionCardDisputes: (
+      sessionIds: ReadonlyArray<string>
+    ) => Effect.Effect<Array<SessionCardDispute>, SqlError>;
   }
 >() {}
+
+/** One session's part in one card dispute (Tier 3 step 4). */
+export type SessionCardDispute = {
+  sessionId: string;
+  disputeId: string;
+  /** The provider's lifecycle (`needs_response`, `won`, `lost`, …). */
+  status: string;
+  closed: boolean;
+  allocation: 'poppynz_absorbs' | 'helper_not_provided' | null;
+  helperForfeitCents: number;
+};
 
 /** SQLSTATE 23514 raised by the refund-limit trigger, however deeply the
  * driver nested it. */
@@ -680,7 +700,32 @@ export const SessionMoneyRepoLive = Layer.effect(
           .where(
             and(eq(billingAuditEvent.entity, entity), eq(billingAuditEvent.entityId, entityId))
           )
-          .orderBy(asc(billingAuditEvent.createdAt))
+          .orderBy(asc(billingAuditEvent.createdAt)),
+
+      listSessionCardDisputes: (sessionIds) =>
+        sessionIds.length === 0
+          ? Effect.succeed([])
+          : db
+              .select({
+                sessionId: cardDisputeSession.sessionId,
+                disputeId: cardDisputeSession.disputeId,
+                status: cardDispute.status,
+                closedAt: cardDispute.closedAt,
+                allocation: cardDisputeSession.allocation,
+                helperForfeitCents: cardDisputeSession.helperForfeitCents
+              })
+              .from(cardDisputeSession)
+              .innerJoin(cardDispute, eq(cardDispute.id, cardDisputeSession.disputeId))
+              .where(inArray(cardDisputeSession.sessionId, [...sessionIds]))
+              .pipe(
+                Effect.map((rows) =>
+                  rows.map(({ closedAt, allocation, ...row }) => ({
+                    ...row,
+                    allocation: allocation ?? null,
+                    closed: closedAt !== null
+                  }))
+                )
+              )
     };
   })
 );
@@ -708,6 +753,9 @@ export const makeInMemorySessionMoneyRepo = (
     /** contractId → the helper's user id (transfers due). */
     helpers?: Record<string, string>;
     clock?: () => Date;
+    /** Tier 3 step 4: the card disputes' sessions (the in-memory card
+     * dispute repo's view). */
+    cardDisputes?: () => ReadonlyArray<SessionCardDispute>;
   } = {}
 ) => {
   const now = options.clock ?? (() => new Date());
@@ -816,6 +864,7 @@ export const makeInMemorySessionMoneyRepo = (
           if (!recovery) {
             recovery = {
               resolutionId: null,
+              cardDisputeId: null,
               recoveredCents: 0,
               status: 'outstanding',
               ...input.recovery,
@@ -1121,6 +1170,11 @@ export const makeInMemorySessionMoneyRepo = (
     listAudit: (entity, entityId) =>
       Effect.sync(() =>
         state.audit.filter((row) => row.entity === entity && row.entityId === entityId)
+      ),
+
+    listSessionCardDisputes: (sessionIds) =>
+      Effect.sync(() =>
+        (options.cardDisputes?.() ?? []).filter((row) => sessionIds.includes(row.sessionId))
       )
   };
   return { layer: Layer.succeed(SessionMoneyRepo, service), state, service };

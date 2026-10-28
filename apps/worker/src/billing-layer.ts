@@ -1,6 +1,7 @@
 import { CycleSettlementLive } from '@repo/billing';
 import {
   BillingCustomerRepoDefault,
+  CardDisputeRepoDefault,
   ContractBillingRepoDefault,
   ContractRepoDefault,
   ExtraSessionRepoDefault,
@@ -25,6 +26,8 @@ export const ContractBillingBaseLive = Layer.mergeAll(
   PaymentRepoDefault,
   BillingCustomerRepoDefault,
   PayoutAccountRepoDefault,
+  // Tier 3 step 4: card dispute evidence reminders of the same tick.
+  CardDisputeRepoDefault,
   // Tier 3: the session-resolution step of the same tick.
   SessionResolutionRepoDefault,
   // Tier 3 step 2: session refunds and transfers of the same tick.

@@ -5,6 +5,7 @@ import {
   CheckOrderRepoDefault,
   ContractAgreementRepoDefault,
   ContractReplacementRepoDefault,
+  CardDisputeRepoDefault,
   SessionResolutionRepoDefault,
   SessionMoneyRepoDefault,
   ExtraSessionRepoDefault,
@@ -91,6 +92,8 @@ const BaseLive = Layer.mergeAll(
   ContractBillingRepoDefault,
   ContractAgreementRepoDefault,
   ContractReplacementRepoDefault,
+  // Tier 3 step 4: card disputes (chargebacks).
+  CardDisputeRepoDefault,
   SessionResolutionRepoDefault,
   // Tier 3 step 2: session refunds, transfers, the manual payout queue.
   SessionMoneyRepoDefault,

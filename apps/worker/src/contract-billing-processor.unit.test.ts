@@ -4,11 +4,13 @@ import {
   dummyContract,
   dummyContractBilling,
   dummySessionResolution,
+  makeInMemoryCardDisputeRepo,
   makeInMemoryContractBillingRepo,
   makeInMemoryExtraSessionRepo,
   makeInMemorySessionResolutionRepo,
   type ExtraSession
 } from '@repo/db';
+import { makeMailerTest } from '@repo/mail';
 import { makeMockPayments, Payments } from '@repo/payments';
 import { Context, Effect, Layer } from 'effect';
 import { describe, expect, it } from 'vitest';
@@ -109,5 +111,46 @@ describe('processContractBillingTick', () => {
     );
     expect(asOf.extraSessions.lapsed).toBe(1);
     expect(extras.state.extras[0]?.status).toBe('lapsed');
+  });
+});
+
+describe('card dispute evidence reminders (Tier 3 step 4)', () => {
+  it('reminds the admins once, 72 h before the evidence is due', async () => {
+    const disputes = makeInMemoryCardDisputeRepo();
+    Effect.runSync(
+      disputes.service.ensure({
+        dispute: {
+          provider: 'mock',
+          providerReference: 'mock_du_1',
+          paymentId: 'payment-1',
+          familyUserId: 'family-1',
+          scope: 'payment',
+          amountCents: 13206,
+          currency: 'cad',
+          reason: 'fraudulent',
+          status: 'needs_response',
+          evidenceDueBy: new Date('2026-11-10T23:59:59.000Z'),
+          providerCreatedAt: new Date('2026-11-02T00:00:00.000Z'),
+          syncedAt: new Date('2026-11-02T00:00:00.000Z')
+        },
+        sessions: []
+      })
+    );
+    const alerts: Array<string> = [];
+    const layer = Layer.mergeAll(
+      makeIdleContractBillingLayer(),
+      Layer.succeed(Payments, makeMockPayments()),
+      disputes.layer,
+      makeMailerTest({
+        sendAdminBillingAlert: (mail) => Effect.sync(() => void alerts.push(mail.subject))
+      })
+    );
+    const tick = (at: string) =>
+      Effect.runPromise(processContractBillingTick(new Date(at)).pipe(Effect.provide(layer)));
+    await tick('2026-11-07T12:00:00.000Z');
+    expect(alerts).toEqual([]);
+    await tick('2026-11-08T00:00:00.000Z');
+    await tick('2026-11-08T00:15:00.000Z');
+    expect(alerts).toEqual(['Card dispute evidence due in 72 h: $132.06 CAD (mock_du_1)']);
   });
 });

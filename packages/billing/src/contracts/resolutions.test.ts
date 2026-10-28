@@ -190,7 +190,7 @@ describe('checkSessionAction', () => {
     expect(checkSessionAction('propose_day_off', ctx({ active }))).toBe('already_resolved');
   });
 
-  it("disputes only the other side's proposed or confirmed resolution", () => {
+  it("disputes only the other side's confirmed resolution", () => {
     const theirs = dummySessionResolution({ status: 'confirmed', reportedBySide: 'helper' });
     expect(checkSessionAction('dispute', ctx({ active: theirs }))).toBeNull();
     expect(checkSessionAction('dispute', ctx({ active: theirs, side: 'helper' }))).toBe(
@@ -201,6 +201,29 @@ describe('checkSessionAction', () => {
     );
     // "It wasn't provided" needs the session to have started.
     expect(checkSessionAction('dispute', ctx())).toBe('not_started');
+  });
+
+  it('leaves a proposal to the answer buttons: no dispute while it is proposed', () => {
+    // A proposed report is contested (and a day off declined) by answering;
+    // a dispute would duplicate that, or skip the silence rule once the
+    // response window has closed.
+    const proposed = dummySessionResolution({ status: 'proposed', reportedBySide: 'helper' });
+    expect(checkSessionAction('dispute', ctx({ active: proposed }))).toBe('not_disputable');
+    const dayOff = { ...proposed, kind: 'day_off_agreed' as const };
+    expect(checkSessionAction('dispute', ctx({ active: dayOff }))).toBe('not_disputable');
+  });
+
+  it('refuses disputing what the viewer accepted', () => {
+    const accepted = dummySessionResolution({
+      status: 'confirmed',
+      reportedBySide: 'helper',
+      response: 'accepted',
+      respondedByUserId: 'family-1'
+    });
+    expect(checkSessionAction('dispute', ctx({ active: accepted }))).toBe('not_disputable');
+    // Confirmed by silence (no answer) stays disputable within the window.
+    const silent = { ...accepted, response: null, respondedByUserId: null };
+    expect(checkSessionAction('dispute', ctx({ active: silent }))).toBeNull();
   });
 });
 

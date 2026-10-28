@@ -191,9 +191,13 @@ export const checkSessionAction = (
       if (now > reportWindowEnd(ctx)) return 'report_window_closed';
       if (active) {
         if (active.reportedBySide === side) return 'wrong_side';
-        return active.status === 'proposed' || active.status === 'confirmed'
-          ? null
-          : 'not_disputable';
+        // Only what took effect without the viewer's agreement: the other
+        // side's own cancellation, or a report confirmed by silence. A
+        // proposal is answered (contest / decline) instead — disputing it
+        // would duplicate that, or skip the silence rule once its response
+        // window closed — and what the viewer accepted stays accepted.
+        if (active.status !== 'confirmed') return 'not_disputable';
+        return active.response === 'accepted' ? 'not_disputable' : null;
       }
       // "It wasn't provided": only once the session was due to start.
       return started ? null : 'not_started';

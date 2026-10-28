@@ -347,6 +347,23 @@ describe('disputes', () => {
     expect(world.alerts).toHaveLength(1);
   });
 
+  it('refuses disputing a proposal (it is answered instead) and what you accepted', async () => {
+    const proposed = {
+      ...helperCancelled,
+      kind: 'family_no_show' as const,
+      status: 'proposed' as const
+    };
+    const world = makeSessionWorld({ resolutions: [proposed] });
+    expect(failureOf(await act(world, { action: 'dispute' }, DURING))?.reason).toBe(
+      'not_disputable'
+    );
+    const accepted = { ...proposed, status: 'confirmed' as const, response: 'accepted' as const };
+    const later = makeSessionWorld({ resolutions: [accepted] });
+    expect(failureOf(await act(later, { action: 'dispute' }, DURING))?.reason).toBe(
+      'not_disputable'
+    );
+  });
+
   it('refuses disputing your own resolution (wrong party)', async () => {
     const world = makeSessionWorld({ viewer: HELPER, resolutions: [helperCancelled] });
     expect(failureOf(await act(world, { action: 'dispute' }, DURING))?.reason).toBe('wrong_side');

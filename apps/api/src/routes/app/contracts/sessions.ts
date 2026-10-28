@@ -323,7 +323,7 @@ export const recordSessionActionProgram = (
         .advance(
           ctx.active.id,
           {
-            from: ['proposed', 'confirmed'],
+            from: ['confirmed'],
             set: {
               status: 'contested',
               response: 'contested',

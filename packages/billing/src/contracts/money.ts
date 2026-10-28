@@ -29,6 +29,8 @@ import {
   sessionMoneyPolicy,
   type BillingDeps
 } from './engine';
+import { reconciliationConfig } from '@repo/env';
+import { matchPayoutExactly } from '../accounting/reconciliation';
 import { sendMoneyNotice } from './money-notices';
 import { alertAdmins, cycleDates } from './notices';
 import { sessionResolutionPolicy } from './resolutions';
@@ -1353,7 +1355,12 @@ export const markRefundHandled = (id: string, actorUserId: string, note: string,
       from: ['failed'],
       // Tier 3 step 5: dated, so the tax report counts it as refunded in the
       // month it was marked (spec §13.2).
-      set: { status: 'cancelled', resolvedByUserId: actorUserId, resolvedNote: note, handledAt: now }
+      set: {
+        status: 'cancelled',
+        resolvedByUserId: actorUserId,
+        resolvedNote: note,
+        handledAt: now
+      }
     });
     if (!moved) return yield* refuseAdmin('not_failed');
     yield* repo.appendAudit({
@@ -1369,19 +1376,26 @@ export const markRefundHandled = (id: string, actorUserId: string, note: string,
   });
 
 /** A connected account's payout event: re-fetched; a paid payout marks the
- * helper's transfers sent before it as arrived; a failed one alerts. */
+ * helper's transfers it paid out as arrived — EXACTLY from the payout's own
+ * balance transactions when it is an automatic payout (Tier 3 step 5,
+ * §13.4), else (a manual payout, or the listing failed) APPROXIMATELY: the
+ * transfers sent before it, labelled so. A failed one alerts. */
 export const handlePayoutEvent = (account: string, reference: string) =>
   Effect.gen(function* () {
     const payout = yield* (yield* Payments).getPayout({ account, reference });
     const owner = yield* (yield* PayoutAccountRepo).findByReference(account);
     if (!owner) return 'unknown account' as const;
     if (payout.status === 'paid') {
+      const { maxPages, pageSize } = yield* reconciliationConfig;
+      const exact = yield* matchPayoutExactly(account, payout, maxPages, pageSize);
+      if (exact) return `paid: ${exact.moved} transfer(s) arrived (exact)` as const;
       const moved = yield* (yield* SessionMoneyRepo).markHelperTransfersPaid(
         owner.userId,
         payout.createdAt,
-        payout.arrivalDate ?? payout.createdAt
+        payout.arrivalDate ?? payout.createdAt,
+        payout.reference
       );
-      return `paid: ${moved} transfer(s) arrived` as const;
+      return `paid: ${moved} transfer(s) arrived (approximate)` as const;
     }
     if (payout.status === 'failed') {
       yield* alertAdmins(`A helper's bank payout failed (${account})`, [

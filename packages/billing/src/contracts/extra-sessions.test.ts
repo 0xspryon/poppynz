@@ -787,9 +787,7 @@ describe('a declined card', () => {
       listByStatus: () => Effect.succeed([stale])
     });
     await w.run(
-      w.provided(
-        retryExtraSessionCharges('family-1', at(due, 31)).pipe(Effect.provide(staleRepo))
-      )
+      w.provided(retryExtraSessionCharges('family-1', at(due, 31)).pipe(Effect.provide(staleRepo)))
     );
     // The stale claim lost: attempt 2 is untouched, nothing went to the provider.
     expect(w.extra(extra.id)).toMatchObject({

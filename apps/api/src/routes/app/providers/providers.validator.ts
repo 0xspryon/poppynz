@@ -9,6 +9,8 @@ export type ProviderSearchQueryInput = {
   radiusKm?: number;
   minHourlyRateCents?: number;
   maxHourlyRateCents?: number;
+  /** Leave one helper out (Find a replacement: the helper who cancelled). */
+  excludeUserId?: string;
   page: number;
   perPage: number;
   sort: ProviderSearchSort;
@@ -102,10 +104,18 @@ export const validateProviderSearchQuery = (query: Record<string, string | undef
       );
     }
 
+    const excludeUserId = query.excludeUserId?.trim() || undefined;
+    if (excludeUserId !== undefined && excludeUserId.length > 200) {
+      return yield* Effect.fail(
+        new ProviderSearchRequestValidationError({ message: 'excludeUserId is too long.' })
+      );
+    }
+
     return {
       q: query.q,
       city: query.city,
       service: query.service,
+      excludeUserId,
       radiusKm,
       minHourlyRateCents,
       maxHourlyRateCents,

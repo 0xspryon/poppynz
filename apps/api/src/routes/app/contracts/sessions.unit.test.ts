@@ -474,6 +474,8 @@ describe('cycleSessionResolutions (the cycle page)', () => {
       await views(world, 'family-1', true, new Date('2026-11-03T00:00:00Z'))
     ).perSession.get(SESSION_ID);
     expect(view?.resolution?.status).toBe('lapsed');
+    // A lapsed day off counts as nothing: the session goes ahead.
+    expect(view?.resolution?.countsAs).toBeNull();
     // The session is free again: it can still be cancelled (late now).
     expect(view?.actions).toEqual(['cancel']);
     expect(view?.cancelOutcome).toBe('family_cancelled_late');

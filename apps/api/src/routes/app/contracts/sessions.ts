@@ -154,9 +154,12 @@ export const resolutionView = (
   decision: resolution.decision,
   decisionReason: resolution.decisionReason,
   decidedAt: resolution.decidedAt?.toISOString() ?? null,
-  /** A day off counts as the proposer's cancellation (spec §3a). */
+  /** A day off counts as the proposer's cancellation (spec §3a) — while it
+   * is proposed or agreed; a lapsed or declined one counts as nothing. */
   countsAs:
-    resolution.kind === 'day_off_agreed'
+    resolution.kind === 'day_off_agreed' &&
+    resolution.status !== 'lapsed' &&
+    resolution.status !== 'reversed'
       ? dayOffClassification(resolution, session, zone, policy)
       : null,
   policyVersion: resolution.policyVersion

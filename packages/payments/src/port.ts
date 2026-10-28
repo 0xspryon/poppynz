@@ -191,6 +191,83 @@ export type ProviderPayout = {
   readonly arrivalDate: Date | null;
   readonly createdAt: Date;
   readonly failureReason: string | null;
+  /** Made by the account's payout schedule (true) or on request (false).
+   * Only an automatic payout can list the balance transactions it paid out
+   * (Stripe refuses the filter on a manual one); unknown when absent. */
+  readonly automatic?: boolean;
+};
+
+// ---------------------------------------------------------------------------
+// Reconciliation (Tier 3 step 5): the provider's own ledger, read back.
+
+/** One movement of a balance (the platform's, or a connected account's), as
+ * the provider records it — what the accountant reconciles against. */
+export type ProviderBalanceTransaction = {
+  /** `txn_…`. */
+  readonly reference: string;
+  /** The provider's type: `charge`, `refund`, `refund_failure`, `transfer`,
+   * `payout`, `adjustment` (disputes), `stripe_fee`, `payment` (a transfer
+   * arriving on a connected account), … */
+  readonly type: string;
+  /** The provider's reporting category (`charge`, `refund`, `dispute`,
+   * `dispute_reversal`, `transfer`, `payout`, `fee`, …). */
+  readonly reportingCategory: string;
+  /** Gross, in cents (negative for money out). */
+  readonly amountCents: number;
+  /** The provider's fees on it (positive). */
+  readonly feeCents: number;
+  /** `amount − fee`. */
+  readonly netCents: number;
+  readonly currency: string;
+  /** `pending` until the funds are available, then `available`. */
+  readonly status: string;
+  readonly createdAt: Date;
+  readonly availableOn: Date;
+  readonly description: string | null;
+  /** The object that moved the money (`ch_…`, `re_…`, `tr_…`, `po_…`,
+   * `du_…`/`dp_…`, `py_…`), null for a fee of its own. */
+  readonly sourceReference: string | null;
+  /** That object's kind (`charge`, `refund`, `transfer`, `payout`,
+   * `dispute`, …), null when there is none. */
+  readonly sourceType: string | null;
+  /** The PaymentIntent behind a charge, refund or dispute source. */
+  readonly paymentReference: string | null;
+  /** On a connected account: the platform transfer (`tr_…`) a `payment`
+   * came from (its charge's `source_transfer`). */
+  readonly transferReference: string | null;
+  readonly feeDetails: ReadonlyArray<{
+    readonly type: string;
+    readonly amountCents: number;
+    readonly description: string | null;
+  }>;
+};
+
+/** One page of a provider list, oldest-to-newest order not guaranteed:
+ * `hasMore` says another page follows after the last item. */
+export type ProviderPage<A> = {
+  readonly data: ReadonlyArray<A>;
+  readonly hasMore: boolean;
+};
+
+export type ListBalanceTransactionsInput = {
+  /** A connected account (`acct_…`); null or absent for the platform. */
+  readonly account?: string | null;
+  /** Created in `[createdFrom, createdTo)`. */
+  readonly createdFrom?: Date;
+  readonly createdTo?: Date;
+  /** Only what this (automatic) payout paid out. */
+  readonly payout?: string;
+  /** The last reference of the previous page. */
+  readonly startingAfter?: string | null;
+  readonly limit: number;
+};
+
+export type ListPayoutsInput = {
+  readonly account: string;
+  readonly createdFrom: Date;
+  readonly createdTo: Date;
+  readonly startingAfter?: string | null;
+  readonly limit: number;
 };
 
 export type CardSetup = {
@@ -266,7 +343,9 @@ export type PaymentOperation =
   | 'getRefund'
   | 'createTransfer'
   | 'getTransfer'
-  | 'getPayout';
+  | 'getPayout'
+  | 'listBalanceTransactions'
+  | 'listPayouts';
 
 export class PaymentDeclinedError extends Data.TaggedError('PaymentDeclinedError')<{
   reason: string;
@@ -390,6 +469,16 @@ export class Payments extends Context.Tag('@repo/payments/Payments')<
       account: string;
       reference: string;
     }) => Effect.Effect<ProviderPayout, PaymentProviderError>;
+    /** Tier 3 step 5: one page of balance transactions (the platform's or a
+     * connected account's), each with its source resolved to the objects we
+     * store (the PaymentIntent, the platform transfer). */
+    listBalanceTransactions: (
+      input: ListBalanceTransactionsInput
+    ) => Effect.Effect<ProviderPage<ProviderBalanceTransaction>, PaymentProviderError>;
+    /** Tier 3 step 5: one page of a connected account's payouts. */
+    listPayouts: (
+      input: ListPayoutsInput
+    ) => Effect.Effect<ProviderPage<ProviderPayout>, PaymentProviderError>;
     /** Creates the helper's connected account. Same user → same account
      * (idempotency key `payout-account:<userId>`). */
     createPayoutAccount: (input: {

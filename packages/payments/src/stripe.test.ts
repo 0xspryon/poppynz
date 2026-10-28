@@ -68,6 +68,7 @@ const fakeStripe = (
     refundCreate?: () => unknown;
     refundRetrieve?: () => unknown;
     transferCreate?: () => unknown;
+    balanceList?: () => unknown;
   } = {}
 ) => {
   const calls: Array<Recorded> = [];
@@ -117,7 +118,33 @@ const fakeStripe = (
       create: record('transfers.create', answers.transferCreate ?? (() => transferObject())),
       retrieve: record('transfers.retrieve', () => transferObject())
     },
+    balanceTransactions: {
+      list: (first: unknown, second: unknown) => {
+        calls.push({ method: 'balanceTransactions.list', params: [first, second] });
+        return Promise.resolve(
+          (answers.balanceList ?? (() => ({ data: [], has_more: false })))() as never
+        );
+      }
+    },
     payouts: {
+      list: (first: unknown, second: unknown) => {
+        calls.push({ method: 'payouts.list', params: [first, second] });
+        return Promise.resolve({
+          data: [
+            {
+              id: 'po_9',
+              status: 'paid',
+              amount: 4212,
+              arrival_date: 1_793_300_000,
+              created: 1_793_250_000,
+              failure_message: null,
+              failure_code: null,
+              automatic: true
+            }
+          ],
+          has_more: false
+        } as never);
+      },
       retrieve: (first: unknown, second: unknown, third: unknown) => {
         calls.push({ method: 'payouts.retrieve', params: [first, [second, third]] });
         return Promise.resolve({
@@ -901,5 +928,137 @@ describe('transfers and payouts (Tier 3 step 2)', () => {
     });
     const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
     expect((await Effect.runPromise(payments.getPayment('pi_123'))).chargeReference).toBe('ch_9');
+  });
+});
+
+describe('balance transactions and payouts (Tier 3 step 5)', () => {
+  // Shapes as the test API returned them on 2026-10-28 (data.source expanded).
+  const charge = {
+    id: 'txn_ch',
+    object: 'balance_transaction',
+    type: 'charge',
+    reporting_category: 'charge',
+    amount: 6602,
+    fee: 274,
+    net: 6328,
+    currency: 'cad',
+    status: 'pending',
+    created: 1_793_201_842,
+    available_on: 1_793_750_400,
+    description: null,
+    fee_details: [
+      {
+        amount: 274,
+        application: null,
+        currency: 'cad',
+        description: 'Stripe processing fees',
+        type: 'stripe_fee'
+      }
+    ],
+    source: { id: 'ch_1', object: 'charge', payment_intent: 'pi_1', source_transfer: null }
+  };
+  const arrival = {
+    ...charge,
+    id: 'txn_py',
+    type: 'payment',
+    fee: 0,
+    net: 100,
+    amount: 100,
+    fee_details: [],
+    source: { id: 'py_1', object: 'charge', source_transfer: 'tr_1' }
+  };
+  const fee = {
+    ...charge,
+    id: 'txn_fee',
+    type: 'stripe_fee',
+    reporting_category: 'fee',
+    source: null
+  };
+
+  it('lists a page with the source expanded and resolves its references', async () => {
+    const { client, calls } = fakeStripe({
+      balanceList: () => ({ data: [charge, fee], has_more: true })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const page = await Effect.runPromise(
+      payments.listBalanceTransactions({
+        createdFrom: new Date('2026-10-01T00:00:00.000Z'),
+        createdTo: new Date('2026-11-01T00:00:00.000Z'),
+        startingAfter: 'txn_prev',
+        limit: 100
+      })
+    );
+    expect(page.hasMore).toBe(true);
+    expect(page.data[0]).toMatchObject({
+      reference: 'txn_ch',
+      type: 'charge',
+      amountCents: 6602,
+      feeCents: 274,
+      netCents: 6328,
+      sourceReference: 'ch_1',
+      sourceType: 'charge',
+      paymentReference: 'pi_1',
+      transferReference: null,
+      feeDetails: [{ type: 'stripe_fee', amountCents: 274, description: 'Stripe processing fees' }]
+    });
+    expect(page.data[1]).toMatchObject({ sourceReference: null, sourceType: null });
+    expect(calls[0]).toEqual({
+      method: 'balanceTransactions.list',
+      params: [
+        {
+          limit: 100,
+          expand: ['data.source'],
+          created: { gte: 1_790_812_800, lt: 1_793_491_200 },
+          starting_after: 'txn_prev'
+        },
+        undefined
+      ]
+    });
+  });
+
+  it('lists what an automatic payout paid out on the connected account', async () => {
+    const { client, calls } = fakeStripe({
+      balanceList: () => ({ data: [arrival], has_more: false })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const page = await Effect.runPromise(
+      payments.listBalanceTransactions({ account: 'acct_1', payout: 'po_9', limit: 50 })
+    );
+    expect(page.data[0]).toMatchObject({ type: 'payment', transferReference: 'tr_1' });
+    expect(calls[0]).toEqual({
+      method: 'balanceTransactions.list',
+      params: [{ limit: 50, expand: ['data.source'], payout: 'po_9' }, { stripeAccount: 'acct_1' }]
+    });
+  });
+
+  it('fails (for the caller to fall back) when Stripe refuses the payout filter', async () => {
+    const { client } = fakeStripe({
+      balanceList: () => {
+        throw new Stripe.errors.StripeInvalidRequestError({
+          message:
+            'Balance transaction history can only be filtered on automatic transfers, not manual.'
+        } as never);
+      }
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const exit = await Effect.runPromiseExit(
+      payments.listBalanceTransactions({ account: 'acct_1', payout: 'po_manual', limit: 10 })
+    );
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it("lists a connected account's payouts, flagging automatic ones", async () => {
+    const { client, calls } = fakeStripe();
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const page = await Effect.runPromise(
+      payments.listPayouts({
+        account: 'acct_1',
+        createdFrom: new Date('2026-10-01T00:00:00.000Z'),
+        createdTo: new Date('2026-11-01T00:00:00.000Z'),
+        limit: 100
+      })
+    );
+    expect(page.data[0]).toMatchObject({ reference: 'po_9', status: 'paid', automatic: true });
+    expect(calls[0]?.params[1]).toEqual({ stripeAccount: 'acct_1' });
   });
 });

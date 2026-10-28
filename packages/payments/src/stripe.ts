@@ -9,6 +9,7 @@ import {
   type PaymentOperation,
   type Payments,
   type ProviderPayment,
+  type ProviderBalanceTransaction,
   type ProviderPaymentStatus,
   type ProviderPayout,
   type ProviderRefund,
@@ -42,7 +43,9 @@ export type StripeApi = {
   paymentMethods: Pick<Stripe['paymentMethods'], 'detach'>;
   refunds: Pick<Stripe['refunds'], 'create' | 'retrieve'>;
   transfers: Pick<Stripe['transfers'], 'create' | 'retrieve'>;
-  payouts: Pick<Stripe['payouts'], 'retrieve'>;
+  payouts: Pick<Stripe['payouts'], 'retrieve' | 'list'>;
+  // Tier 3 step 5: reconciliation reads the balance history back.
+  balanceTransactions: Pick<Stripe['balanceTransactions'], 'list'>;
   webhooks: Pick<Stripe['webhooks'], 'constructEventAsync'>;
 } & StripeConnectClient;
 
@@ -153,8 +156,67 @@ export const normalisePayout = (payout: Stripe.Payout): ProviderPayout => ({
   amountCents: payout.amount,
   arrivalDate: payout.arrival_date ? new Date(payout.arrival_date * 1000) : null,
   createdAt: new Date(payout.created * 1000),
-  failureReason: payout.failure_message ?? payout.failure_code ?? null
+  failureReason: payout.failure_message ?? payout.failure_code ?? null,
+  automatic: payout.automatic
 });
+
+const stringField = (object: Record<string, unknown> | null, key: string): string | null => {
+  const value = object?.[key];
+  if (typeof value === 'string') return value;
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    typeof (value as { id?: unknown }).id === 'string'
+  ) {
+    return (value as { id: string }).id;
+  }
+  return null;
+};
+
+/** A balance transaction with `data.source` expanded (verified in test
+ * mode, 2026-10-28): a charge, refund or dispute source carries its
+ * `payment_intent`; on a connected account a transfer arrives as a
+ * `payment` whose source is a `py_…` charge with `source_transfer: tr_…`;
+ * a `stripe_fee` has no source. */
+export const normaliseBalanceTransaction = (
+  transaction: Stripe.BalanceTransaction
+): ProviderBalanceTransaction => {
+  const raw = transaction.source as unknown;
+  const source = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+  return {
+    reference: transaction.id,
+    type: transaction.type,
+    reportingCategory: transaction.reporting_category,
+    amountCents: transaction.amount,
+    feeCents: transaction.fee,
+    netCents: transaction.net,
+    currency: transaction.currency,
+    status: transaction.status,
+    createdAt: new Date(transaction.created * 1000),
+    availableOn: new Date(transaction.available_on * 1000),
+    description: transaction.description ?? null,
+    sourceReference: typeof raw === 'string' ? raw : stringField(source, 'id'),
+    sourceType: typeof source?.object === 'string' ? source.object : null,
+    paymentReference: stringField(source, 'payment_intent'),
+    transferReference: stringField(source, 'source_transfer'),
+    feeDetails: (transaction.fee_details ?? []).map((detail) => ({
+      type: detail.type,
+      amountCents: detail.amount,
+      description: detail.description ?? null
+    }))
+  };
+};
+
+/** `[from, to)` in Stripe's whole seconds. */
+const createdRange = (from: Date | undefined, to: Date | undefined) =>
+  from === undefined && to === undefined
+    ? {}
+    : {
+        created: {
+          ...(from ? { gte: Math.floor(from.getTime() / 1000) } : {}),
+          ...(to ? { lt: Math.ceil(to.getTime() / 1000) } : {})
+        }
+      };
 
 /** A transfer Stripe refuses for a business reason (the account can't
  * receive it, the balance or the source charge is short, a parameter is
@@ -519,6 +581,42 @@ export const makeStripePayments = (options: {
       call('getPayout', () =>
         client.payouts.retrieve(reference, {}, { stripeAccount: account })
       ).pipe(Effect.map(normalisePayout)),
+
+    // Tier 3 step 5: the balance history, one page at a time (the caller
+    // pages with `startingAfter`). On a connected account the call carries
+    // its `Stripe-Account` header; `payout=` works for automatic payouts
+    // only (Stripe refuses it on a manual one — the caller falls back).
+    listBalanceTransactions: ({ account, createdFrom, createdTo, payout, startingAfter, limit }) =>
+      call('listBalanceTransactions', () =>
+        client.balanceTransactions.list(
+          {
+            limit,
+            expand: ['data.source'],
+            ...(payout ? { payout } : createdRange(createdFrom, createdTo)),
+            ...(startingAfter ? { starting_after: startingAfter } : {})
+          },
+          account ? { stripeAccount: account } : undefined
+        )
+      ).pipe(
+        Effect.map((page) => ({
+          data: page.data.map(normaliseBalanceTransaction),
+          hasMore: page.has_more
+        }))
+      ),
+
+    listPayouts: ({ account, createdFrom, createdTo, startingAfter, limit }) =>
+      call('listPayouts', () =>
+        client.payouts.list(
+          {
+            limit,
+            ...createdRange(createdFrom, createdTo),
+            ...(startingAfter ? { starting_after: startingAfter } : {})
+          },
+          { stripeAccount: account }
+        )
+      ).pipe(
+        Effect.map((page) => ({ data: page.data.map(normalisePayout), hasMore: page.has_more }))
+      ),
 
     // Helper payout accounts (Stripe Connect Express, piece 2b).
     ...makeStripeConnectOperations(client),

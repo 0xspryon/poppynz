@@ -1351,7 +1351,9 @@ export const markRefundHandled = (id: string, actorUserId: string, note: string,
     if (refund.status !== 'failed') return yield* refuseAdmin('not_failed');
     const moved = yield* repo.advanceRefund(id, {
       from: ['failed'],
-      set: { status: 'cancelled', resolvedByUserId: actorUserId, resolvedNote: note }
+      // Tier 3 step 5: dated, so the tax report counts it as refunded in the
+      // month it was marked (spec §13.2).
+      set: { status: 'cancelled', resolvedByUserId: actorUserId, resolvedNote: note, handledAt: now }
     });
     if (!moved) return yield* refuseAdmin('not_failed');
     yield* repo.appendAudit({

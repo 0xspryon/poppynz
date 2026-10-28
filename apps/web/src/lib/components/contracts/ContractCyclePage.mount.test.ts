@@ -98,12 +98,13 @@ describe('ContractCyclePage (UAT round 2 #11a)', () => {
 		expect(text()).toContain('Times in Central Time');
 		// Tier 3: the window explainer, with the numbers from the API.
 		expect(
-			document.querySelector('[data-testid="session-window-note"]')?.textContent?.replace(/\s+/g, ' ')
+			document
+				.querySelector('[data-testid="session-window-note"]')
+				?.textContent?.replace(/\s+/g, ' ')
 		).toContain('Sessions appear 14 days ahead.');
 		expect(document.querySelectorAll('[data-testid="cycle-session"]')).toHaveLength(1);
-		expect(
-			document.querySelector('[data-testid="cycle-session-actions"]')?.textContent?.trim()
-		).toBe('');
+		// No actions snippet, no actions row.
+		expect(document.querySelector('[data-testid="cycle-session-actions"]')).toBeNull();
 		expect(document.querySelector('[data-testid="retry-payment"]')).toBeNull();
 		unmount(app);
 	});

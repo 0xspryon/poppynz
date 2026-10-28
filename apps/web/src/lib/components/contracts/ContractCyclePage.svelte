@@ -239,16 +239,12 @@
 									<th scope="col">{m.contracts_cycle_col_time()}</th>
 									<th scope="col" class="text-right">{m.contracts_cycle_col_hours()}</th>
 									<th scope="col">{m.contracts_cycle_col_status()}</th>
-									<!-- Tier 3: per-session actions, kept apart from the facts. -->
-									<th scope="col" class="border-l border-base-300">
-										<span class="sr-only">{m.contracts_cycle_col_actions()}</span>
-									</th>
 								</tr>
 							</thead>
 							<tbody>
 								{#each cycle.sessions as session (session.id)}
 									{@const status = sessionChip(session.status)}
-									<tr data-testid="cycle-session">
+									<tr data-testid="cycle-session" class={sessionActions ? 'border-b-0' : ''}>
 										<td class="whitespace-nowrap">{formatDateWithWeekday(session.date)}</td>
 										<td class="max-w-[12rem] truncate" title={session.serviceName ?? undefined}>
 											{session.serviceName ?? '—'}
@@ -258,12 +254,21 @@
 											{m.contracts_hours_short({ hours: hours(session.elapsedMinutes) })}
 										</td>
 										<td><StatusChip status={status.status} label={status.label} /></td>
-										<td class="border-l border-base-300" data-testid="cycle-session-actions">
-											{@render sessionActions?.(session, cycle, () =>
-												void refresh(contractId, cycleId)
-											)}
-										</td>
 									</tr>
+									<!-- Tier 3: the session's resolution and actions, on their own
+									     full-width row under its facts, so they stay readable and in
+									     view on a phone instead of in a squeezed, scrolled-off column. -->
+									{#if sessionActions}
+										<tr>
+											<td colspan="5" class="pt-0" data-testid="cycle-session-actions">
+												{@render sessionActions(
+													session,
+													cycle,
+													() => void refresh(contractId, cycleId)
+												)}
+											</td>
+										</tr>
+									{/if}
 								{/each}
 							</tbody>
 						</table>

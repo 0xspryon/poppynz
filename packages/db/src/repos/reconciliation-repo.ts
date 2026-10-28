@@ -186,6 +186,26 @@ const transferColumns = {
   payoutMatch: helperTransfer.payoutMatch
 };
 
+/** Rows per insert: 28 columns each stays far below Postgres's 65,535
+ * bind parameters (a run may read up to RECONCILIATION_MAX_PAGES pages). */
+export const UPSERT_BATCH_SIZE = 500;
+
+/** One row per (provider, reference) — the last one read wins, since a
+ * single `ON CONFLICT DO UPDATE` may not touch a row twice — in batches. */
+export const upsertBatches = <A extends { provider: string; reference: string }>(
+  rows: ReadonlyArray<A>,
+  size = UPSERT_BATCH_SIZE
+): Array<Array<A>> => {
+  const unique = [
+    ...new Map(rows.map((row) => [`${row.provider}|${row.reference}`, row])).values()
+  ];
+  const batches: Array<Array<A>> = [];
+  for (let start = 0; start < unique.length; start += size) {
+    batches.push(unique.slice(start, start + size));
+  }
+  return batches;
+};
+
 export const ReconciliationRepoLive = Layer.effect(
   ReconciliationRepo,
   Effect.gen(function* () {
@@ -254,11 +274,12 @@ export const ReconciliationRepoLive = Layer.effect(
           .limit(limit),
 
       upsertTransactions: (runId, rows) =>
-        rows.length === 0
-          ? Effect.succeed(0)
-          : db
+        Effect.forEach(
+          upsertBatches(rows),
+          (batch) =>
+            db
               .insert(providerBalanceTransaction)
-              .values(rows.map((row) => ({ ...row, firstRunId: runId, lastRunId: runId })))
+              .values(batch.map((row) => ({ ...row, firstRunId: runId, lastRunId: runId })))
               .onConflictDoUpdate({
                 target: [providerBalanceTransaction.provider, providerBalanceTransaction.reference],
                 set: {
@@ -282,6 +303,8 @@ export const ReconciliationRepoLive = Layer.effect(
               })
               .returning({ id: providerBalanceTransaction.id })
               .pipe(Effect.map((result) => result.length)),
+          { concurrency: 1 }
+        ).pipe(Effect.map((counts) => counts.reduce((total, count) => total + count, 0))),
 
       listTransactions: ({ provider, from, to }) =>
         db

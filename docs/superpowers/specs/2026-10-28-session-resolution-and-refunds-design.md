@@ -13,7 +13,7 @@ Related: [umbrella billing design](2026-09-24-stripe-contract-billing-design.md)
 Tier 3 of the UAT round-2 feedback is phases 4 and 5 of the umbrella plan. It is
 built in this order, each step its own branch, reviewed and browser-tested:
 
-1. **Session events and actions** (no money): time off, cancellations, reports,
+1. **Session events and actions** (no money): days off, cancellations, reports,
    disputes, the other side's response, the admin dispute queue. UAT item 11b.
 2. **Money effects + helper transfers**: the frozen per-session split, the
    cancellation-policy function, session-linked refunds, session-based transfers,
@@ -38,33 +38,34 @@ one" covers it.
   cycle's hold is simply left out of the plan; one resolved after the hold but
   before the charge reduces the capture.
 
-## 3. Sessions that don't exist yet (time off) — proposal
+## 3. Sessions beyond the 14-day window ✅
 
-Sessions are materialised on a **rolling 14-day window** (contract billing §5),
-and cycles are planned from them. A date three weeks out therefore has no
-session row yet.
+Decided 2026-10-28: **no separate time-off ranges.** Sessions are materialised
+on the existing **rolling 14-day window** (contract billing §5) and every action
+(cancel, day off, report, dispute) acts on a session that exists. A date further
+out has no session yet, so nothing can be recorded for it until it appears.
 
-**Proposed:** a `contract_time_off` record holds a *date range* (with optional
-start/end times on the first and last day), who asked, the reason (`holiday`,
-`illness`, `family_event`, `other` + free text), when it was recorded (this
-instant is what the 24-hour notice rule measures), and whether the other side has
-agreed. Then:
+Why this is acceptable: cancelling at least 24 hours before a session costs the
+family nothing and pays the helper nothing (§6), so waiting until a date enters
+the window never changes the money. A session resolved before its cycle's hold
+is simply left out of the plan — no per-session money breakdown exists until a
+cycle is charged (§5.3).
 
-- Sessions already materialised inside the range are resolved at once.
-- The materialiser, when it later creates a session inside a range, creates it
-  already resolved ("time off — holiday") instead of `scheduled`.
-- No per-session money breakdown is created ahead of time — there is no money to
-  break down. A session resolved before its cycle's hold is excluded from the
-  plan; the cycle is quoted, held and charged without it.
-- The contract page and cycle page show *projected* sessions (weekly pattern +
-  time-off ranges) for dates beyond the window, so families and helpers see their
-  upcoming days off without rows existing for them.
+What the UI must explain (EN and FR), wherever sessions are listed — the cycle
+page, the contract's billing panel and the session actions:
 
-**Why not create far-future session rows on demand?** It also works (the
-`(contract, date, slot)` unique key makes it idempotent), but a range record is
-one row instead of many, survives later changes (cancel the holiday, extend it)
-as one edit, and costs nothing for dates that never come (a contract ended
-early). See Open decision 1.
+- Sessions appear **14 days ahead**. The number comes from
+  `SESSION_WINDOW_DAYS` in `@repo/billing` (the constant the worker uses),
+  returned by the API with the sessions — the web never hard-codes "14".
+- To take a day off or a holiday further out, come back when those dates appear;
+  cancelling **at least 24 hours** before a session is free for the family.
+- The weekly schedule on the contract still shows the agreed pattern for every
+  week; only individual sessions (the ones you can act on) are limited to the
+  window.
+
+A long-holiday planner (date ranges recorded ahead and applied as sessions are
+created) can be added later without changing anything above; it was considered
+and deferred.
 
 ## 4. Data model (steps 1–2)
 
@@ -76,11 +77,10 @@ index on `session_id` where `status <> 'reversed'`).
 | column | notes |
 |---|---|
 | `id`, `contract_id`, `session_id`, `cycle_id` | |
-| `kind` | `family_cancelled_early`, `family_cancelled_late`, `family_no_show`, `family_reduced_hours`, `helper_cancelled`, `helper_no_show`, `time_off_agreed`, `disputed` |
+| `kind` | `family_cancelled_early`, `family_cancelled_late`, `family_no_show`, `family_reduced_hours`, `helper_cancelled`, `helper_no_show`, `day_off_agreed`, `disputed` |
 | `reported_by_user_id`, `reported_by_side` | `family` / `helper` / `admin` |
 | `recorded_at` | the instant the 24-hour rule measures (founder §7: a phone call doesn't count until recorded) |
 | `reason`, `note` | reason code + free text |
-| `time_off_id` | when created from a time-off range |
 | `minutes_worked` | for early dismissal / reduced hours |
 | `status` | `proposed` → `confirmed` / `contested` → `decided` (admin) ; or `reversed` |
 | `responded_by_user_id`, `responded_at`, `response_note` | the other side's answer |
@@ -90,9 +90,7 @@ index on `session_id` where `status <> 'reversed'`).
 Session status keeps its short enum; details live here so new outcomes don't
 change the enum.
 
-### 4.2 `contract_time_off` (step 1) — see §3.
-
-### 4.3 `contract_session_charges` (step 2)
+### 4.2 `contract_session_charges` (step 2)
 
 The frozen per-session split, written in the same transaction as the cycle's
 capture (see §5). One row per charged session: `session_id`, `cycle_id`,
@@ -100,7 +98,7 @@ capture (see §5). One row per charged session: `session_id`, `cycle_id`,
 per jurisdiction/component), `family_total_cents`, `commission_cents`,
 `commission_tax_lines`, `helper_share_cents`.
 
-### 4.4 `session_refunds` (step 2)
+### 4.3 `session_refunds` (step 2)
 
 One row per refund; always one session. `id` (also the Stripe idempotency key),
 `session_id`, `resolution_id`, `cycle_id`, `payment_id`, `care_cents`,
@@ -109,7 +107,7 @@ One row per refund; always one session. `id` (also the Stripe idempotency key),
 `failure_reason`, timestamps. Constraints: refunds for a session ≤ its
 `family_total_cents`; refunds on a payment ≤ the payment's captured amount.
 
-### 4.5 Ledger kinds (step 2)
+### 4.4 Ledger kinds (step 2)
 
 `session_refund_care`, `session_refund_fee`, `session_refund_fee_tax`,
 `cancellation_compensation`, `commission_reversal`, `commission_tax_reversal`,
@@ -203,7 +201,7 @@ up. Rules (founder-approved policy v1):
 
 | Resolution | Helper | Family | Poppynz |
 |---|---|---|---|
-| Family cancels ≥ 24 h before start (incl. time off recorded in time) | $0 | full session total (care + fee + fee tax) | $0 on this session |
+| Family cancels ≥ 24 h before start (incl. a day off recorded in time) | $0 | full session total (care + fee + fee tax) | $0 on this session |
 | Family cancels < 24 h, no-show, early dismissal, reduced hours | worked time paid normally + 25 % of the cancelled care value (rounded half-up, untaxed by default) | cancelled care − compensation + the session's whole fee and fee tax | no commission on cancelled hours |
 | Helper cancels / no-show | $0 for unworked time | full unworked care + fee + fee tax | $0 |
 | Agreed day off before the cutoff | $0 | full session total | $0 |
@@ -262,8 +260,9 @@ recoveries per session.
 - **Cycle page:** the actions column offers, per session and per role, the
   actions allowed at that moment (cancel, report no-show, report reduced hours,
   dispute, respond). Each row shows its outcome and refund status.
-- **Contract page:** "Time off" — add a date range with a reason; upcoming days
-  off are listed and shown on the projected schedule.
+- **Explaining the window:** wherever sessions are listed, a short note says
+  sessions appear 14 days ahead and that cancelling at least 24 hours before a
+  session is free for the family (§3).
 - **Before confirming** any action both the outcome and the money are shown
   ("Cancelling now: Hana receives $15.63, you get $50.39 back").
 - **Billing history:** refunds under their cycle's charge, labelled with the
@@ -279,21 +278,21 @@ recoveries per session.
   zone, DST nights.
 - Apply step at each cycle state; idempotency (double click, duplicate webhook,
   worker retry); limits (no refund above a session's share or the charge).
-- Time off: ranges over existing and not-yet-materialised sessions; editing and
-  cancelling a range; the materialiser creating sessions inside a range.
+- Actions are refused (typed error) for dates outside the window; the window
+  note renders with the configured length in EN and FR.
 - Mock payments provider: partial refunds and refund failures.
 - Dev billing clock: `--as-of` covers transfers, response windows and the
   extra-session delay.
 
 ## 12. Open decisions
 
-1. **Time off:** date-range records applied by the materialiser (proposed, §3) or
-   session rows created on demand for each date?
+1. ~~Time off for dates beyond the window~~ — decided: no; act within the 14-day
+   window, explained in the UI (§3).
 2. **Response window** for one-sided reports (e.g. 48 h) and whether silence
    counts as acceptance.
-3. **Who may record time off** for whom: is a family's holiday a family
-   cancellation (helper $0 if ≥ 24 h) and a helper's holiday a helper
-   cancellation? Does an *agreed* day off need the other side's confirmation?
+3. **Days off:** is a family's day off a family cancellation (helper $0 if ≥ 24 h)
+   and a helper's day off a helper cancellation? Does an *agreed* day off need
+   the other side's confirmation?
 4. **Past extra sessions:** how far back (e.g. 7 days) and who may start one.
 5. **Re-signing:** must existing contracts re-sign the agreement version that
    adds extra-session consent?

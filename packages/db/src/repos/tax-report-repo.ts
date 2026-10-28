@@ -67,7 +67,11 @@ export const TaxReportRepoLive = Layer.effect(
         Effect.all(
           [
             db
-              .select({ id: payment.id, capturedAt: payment.capturedAt, taxLines: payment.taxLines })
+              .select({
+                id: payment.id,
+                capturedAt: payment.capturedAt,
+                taxLines: payment.taxLines
+              })
               .from(payment)
               .where(
                 and(
@@ -136,9 +140,7 @@ export const TaxReportRepoDefault = TaxReportRepoLive.pipe(Layer.provide(Drizzle
 export const makeInMemoryTaxReportRepo = (sources: ReadonlyArray<TaxCollectedSource> = []) =>
   Layer.succeed(TaxReportRepo, {
     listCollected: ({ from, to }) =>
-      Effect.sync(() =>
-        sources.filter((row) => row.capturedAt >= from && row.capturedAt < to)
-      )
+      Effect.sync(() => sources.filter((row) => row.capturedAt >= from && row.capturedAt < to))
   });
 
 export const makeTaxReportRepoTest = (

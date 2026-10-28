@@ -556,7 +556,14 @@ describe('tax collected report', () => {
       label: 'HST (ON) 13%',
       registrationNumber: null
     };
-    const gst = { ...hst, supplyType: 'provider_commission', jurisdiction: 'MB', component: 'gst', rateMillipercent: 5000, label: 'GST (MB) 5%' };
+    const gst = {
+      ...hst,
+      supplyType: 'provider_commission',
+      jurisdiction: 'MB',
+      component: 'gst',
+      rateMillipercent: 5000,
+      label: 'GST (MB) 5%'
+    };
     const refund = sessionRefundTaxSource({
       id: 'refund-1',
       // Charged in November, refunded on 2 December (Toronto time).

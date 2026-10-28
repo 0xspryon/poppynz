@@ -7,6 +7,7 @@ import {
   makeInMemoryContractBillingRepo,
   makeInMemoryPaymentRepo,
   makeInMemoryPayoutAccountRepo,
+  makeInMemorySessionMoneyRepo,
   makeInMemorySessionResolutionRepo,
   makeSeededTaxConfigRepo,
   makeUserRepoTest,
@@ -2592,6 +2593,7 @@ export const makeIdleContractBillingLayer = () =>
     makeSeededTaxConfigRepo().layer,
     makeInMemoryPayoutAccountRepo().layer,
     makeInMemorySessionResolutionRepo().layer,
+    makeInMemorySessionMoneyRepo().layer,
     makeUserRepoTest({
       findById: (id) => Effect.fail(new DBNotFoundErrorClass({ entity: 'user', value: id })),
       findByEmail: (email) =>

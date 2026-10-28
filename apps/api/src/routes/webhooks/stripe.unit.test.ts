@@ -6,6 +6,7 @@ import {
   makeCheckOrderRepoTest,
   makeInMemoryBillingCustomerRepo,
   makeInMemoryPayoutAccountRepo,
+  makeInMemorySessionMoneyRepo,
   makeContractBillingRepoTest,
   makePaymentRepoTest,
   makeStripeWebhookEventRepoTest,
@@ -63,6 +64,7 @@ const fetched = (overrides: Partial<ProviderPayment> = {}): ProviderPayment => (
   capturableCents: 0,
   receivedCents: 0,
   captureBefore: null,
+  chargeReference: null,
   paymentMethod: null,
   ...overrides
 });
@@ -533,5 +535,138 @@ describe('account.updated (piece 2b)', () => {
     expect(response.status).toBe(500);
     expect(world.log.failed).toEqual(['evt_acct_1']);
     expect(world.log.processed).toEqual([]);
+  });
+});
+
+describe('session refunds and payouts (Tier 3 step 2)', () => {
+  const pendingRefund = (money: ReturnType<typeof makeInMemorySessionMoneyRepo>) => {
+    money.state.refunds.push({
+      id: 'refund-1',
+      refundKey: 'res-1:family_late:0',
+      sessionId: 'session-1',
+      resolutionId: 'res-1',
+      cycleId: 'cycle-1',
+      contractId: 'contract-1',
+      paymentId: 'payment-1',
+      careCents: 4687,
+      careTaxLines: [],
+      careTaxCents: 0,
+      feeCents: 312,
+      feeTaxLines: [],
+      feeTaxCents: 40,
+      totalCents: 5039,
+      commissionCents: 937,
+      commissionTaxLines: [],
+      status: 'pending',
+      attempts: 1,
+      providerReference: 're_1',
+      failureReason: null,
+      noticesSent: [],
+      refundedAt: null,
+      resolvedByUserId: null,
+      resolvedNote: null,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+  };
+  const layerWith = (
+    money: ReturnType<typeof makeInMemorySessionMoneyRepo>,
+    status: 'succeeded' | 'failed'
+  ) =>
+    Layer.mergeAll(
+      makeIdleContractBillingLayer(),
+      money.layer,
+      makePaymentsTest({
+        provider: 'stripe',
+        getRefund: (reference) =>
+          Effect.succeed({
+            reference,
+            status,
+            amountCents: 5039,
+            paymentReference: 'pi_1',
+            metadata: { refund_id: 'refund-1' },
+            failureReason: status === 'failed' ? 'expired_or_canceled_card' : null,
+            createdAt: new Date('2026-11-04T09:00:00.000Z')
+          })
+      })
+    );
+
+  it('settles a session refund from its refund event, once however often it is delivered', async () => {
+    const money = makeInMemorySessionMoneyRepo();
+    pendingRefund(money);
+    const layer = layerWith(money, 'succeeded');
+    for (const type of ['refund.updated', 'charge.refund.updated']) {
+      const note = await Effect.runPromise(
+        processStripeEvent(event({ type, objectId: 're_1', paymentReference: 'pi_1' })).pipe(
+          Effect.provide(layer)
+        )
+      );
+      expect(note).toBe('session refund: succeeded');
+    }
+    expect(money.state.refunds[0]).toMatchObject({
+      status: 'succeeded',
+      refundedAt: new Date('2026-11-04T09:00:00.000Z')
+    });
+  });
+
+  it('records a failed refund for the admins', async () => {
+    const money = makeInMemorySessionMoneyRepo();
+    pendingRefund(money);
+    await Effect.runPromise(
+      processStripeEvent(
+        event({ type: 'refund.failed', objectId: 're_1', paymentReference: 'pi_1' })
+      ).pipe(Effect.provide(layerWith(money, 'failed')))
+    );
+    expect(money.state.refunds[0]).toMatchObject({
+      status: 'failed',
+      failureReason: 'expired_or_canceled_card'
+    });
+  });
+
+  it('marks a helper’s sent transfers arrived when their payout is paid', async () => {
+    const money = makeInMemorySessionMoneyRepo();
+    const transfer = await Effect.runPromise(
+      money.service.ensureTransfer({
+        cycleId: 'cycle-1',
+        contractId: 'contract-1',
+        helperUserId: 'helper-1',
+        sequence: 1,
+        status: 'due',
+        dueAt: new Date('2026-11-07T05:00:00.000Z')
+      })
+    );
+    await Effect.runPromise(
+      money.service.advanceTransfer(transfer.id, {
+        from: ['due'],
+        set: { status: 'sent', sentAt: new Date('2026-11-07T05:01:00.000Z') }
+      })
+    );
+    const payouts = makeInMemoryPayoutAccountRepo([
+      dummyPayoutAccount({ userId: 'helper-1', provider: 'stripe', accountReference: 'acct_1' })
+    ]);
+    const layer = Layer.mergeAll(
+      makeIdleContractBillingLayer(),
+      money.layer,
+      payouts.layer,
+      makePaymentsTest({
+        provider: 'stripe',
+        getPayout: ({ reference }) =>
+          Effect.succeed({
+            reference,
+            status: 'paid',
+            amountCents: 10531,
+            arrivalDate: new Date('2026-11-09T00:00:00.000Z'),
+            createdAt: new Date('2026-11-08T00:00:00.000Z'),
+            failureReason: null
+          })
+      })
+    );
+    const note = await Effect.runPromise(
+      processStripeEvent(
+        event({ type: 'payout.paid', objectId: 'po_1', paymentReference: null, account: 'acct_1' })
+      ).pipe(Effect.provide(layer))
+    );
+    expect(note).toBe('payout: paid: 1 transfer(s) arrived');
+    expect(money.state.transfers[0]).toMatchObject({ status: 'paid' });
   });
 });

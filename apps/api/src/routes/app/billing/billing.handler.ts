@@ -18,6 +18,7 @@ import {
 } from '@/api/lib/effect-auth';
 import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schema-validator';
 import { billingJsonError, validateBillingCardConfirmInput } from './billing.validator';
+import { refundsByPayment } from './refunds';
 
 export class BillingRepoError extends Data.TaggedError('BillingRepoError')<{ cause: SqlError }> {}
 export class BillingProviderError extends Data.TaggedError('BillingProviderError')<{}> {}
@@ -97,6 +98,10 @@ export const getBillingRouteProgram = (headers: Headers) =>
       ],
       { concurrency: 'unbounded' }
     );
+    // Tier 3 step 2: session refunds under their cycle's charge.
+    const refunds = yield* refundsByPayment(
+      history.filter((row) => row.kind === 'contract_cycle').map((row) => row.id)
+    ).pipe((errors) => mapRepoError(errors));
 
     return {
       card: toCardResponse(toCard(customer, payments.provider)),
@@ -110,7 +115,8 @@ export const getBillingRouteProgram = (headers: Headers) =>
         // Frozen at quote time, labelled by type and province.
         taxLines: row.taxLines.map((line) => ({ label: line.label, taxCents: line.taxCents })),
         status: historyStatus(row),
-        receiptUrl: row.receiptUrl
+        receiptUrl: row.receiptUrl,
+        refunds: refunds.get(row.id) ?? []
       })),
       provider: payments.provider,
       resumeCharges

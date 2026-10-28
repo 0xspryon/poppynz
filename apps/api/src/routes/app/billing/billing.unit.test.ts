@@ -159,7 +159,8 @@ describe('GET /billing', () => {
           currency: 'CAD',
           taxLines: [],
           status: 'paid',
-          receiptUrl: 'https://pay.stripe.com/receipts/r1'
+          receiptUrl: 'https://pay.stripe.com/receipts/r1',
+          refunds: []
         },
         {
           id: 'payment-0',
@@ -169,7 +170,8 @@ describe('GET /billing', () => {
           currency: 'CAD',
           taxLines: [],
           status: 'failed',
-          receiptUrl: null
+          receiptUrl: null,
+          refunds: []
         }
       ],
       provider: 'mock',

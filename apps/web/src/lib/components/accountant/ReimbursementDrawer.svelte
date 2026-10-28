@@ -87,6 +87,10 @@
 	}
 
 	const item = $derived(detail?.item ?? null);
+
+	/** "Text: note" with the language's own spacing ("Texte : note"). */
+	const withNote = (text: string, note: string | null) =>
+		note ? m.books_with_note({ text, note }) : text;
 </script>
 
 <svelte:window onkeydown={(event) => event.key === 'Escape' && onclose()} />
@@ -184,10 +188,13 @@
 
 				{#if item.reconciled}
 					<p class="rounded-lg bg-success/10 px-3 py-2 text-success">
-						{m.books_detail_reconciled_by({
-							by: item.reconciled.by ?? '—',
-							when: formatDateTime(item.reconciled.at)
-						})}{#if item.reconciled.note}: {item.reconciled.note}{/if}
+						{withNote(
+							m.books_detail_reconciled_by({
+								by: item.reconciled.by ?? '—',
+								when: formatDateTime(item.reconciled.at)
+							}),
+							item.reconciled.note
+						)}
 					</p>
 				{/if}
 
@@ -268,9 +275,12 @@
 							{#each detail.trail.events as row (row.id)}
 								<li class="text-xs">
 									<span class="text-base-content-muted">{formatDateTime(row.at)}</span>
-									· {row.by
-										? m.books_event_by({ action: eventActionLabel(row.action), by: row.by })
-										: eventActionLabel(row.action)}{#if row.note}: {row.note}{/if}
+									· {withNote(
+										row.by
+											? m.books_event_by({ action: eventActionLabel(row.action), by: row.by })
+											: eventActionLabel(row.action),
+										row.note
+									)}
 								</li>
 							{/each}
 						</ol>

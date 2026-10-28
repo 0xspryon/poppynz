@@ -3242,6 +3242,7 @@
 	"books_payout_exact": "Paid to the bank: payout {payout} (exact)",
 	"books_payout_approximate": "Paid to the bank: payout {payout} (approximate, by timing)",
 	"books_event_by": "{action} by {by}",
+	"books_with_note": "{text}: {note}",
 	"books_event_note": "Note",
 	"books_event_reconciled": "Reconciled",
 	"books_event_unreconciled": "Reconciliation undone",

@@ -386,6 +386,30 @@ recoveries per session.
   a new intent after 15 s in one case and missed another for about a
   minute: never treat a young miss as "nothing exists".
 
+- **Balance transactions (reconciliation, step 5)**, confirmed 2026-10-28
+  with throwaway scripts and the repo's adapter. `balance_transactions.list`
+  with `expand: ['data.source']` resolves each source: a `charge` (`ch_…`)
+  and a `refund` (`re_…`) carry `payment_intent`; a dispute adjustment
+  (`type: adjustment`, `reporting_category: dispute` or
+  `dispute_reversal`) has a **`du_…`** source (this API version) with its
+  `payment_intent`, `fee` 1500 and description "Chargeback withdrawal for
+  ch_…"; a `refund_failure` points at the failed `re_…`; a `transfer` at
+  its `tr_…`; a `stripe_fee` has **no source**. Charges carry their
+  processing fee in `fee` / `fee_details` (`stripe_fee`). `created[gte|lt]`
+  plus `starting_after` pages without gaps or repeats (15 transactions read
+  4 at a time: 4 pages, 15 unique). On a connected account (`Stripe-Account`
+  header) a platform transfer arrives as a **`payment`** whose source is a
+  `py_…` charge with **`source_transfer: tr_…`** — the join from a helper's
+  payout back to our transfers. `payouts.list` on the connected account
+  returns `automatic`. **The `payout=` filter works for automatic payouts
+  only**: on a manual payout Stripe answers `StripeInvalidRequestError`
+  "Balance transaction history can only be filtered on automatic
+  transfers, not manual." No automatic payout existed yet in the test
+  account (connected accounts on a 7-day daily schedule, funded today), so
+  the automatic case is exercised with the adapter's request shape (`payout`
+  + `expand` + `stripeAccount`) and the mock; the manual case falls back to
+  the timing match, labelled approximate.
+
 ## 12. Open decisions
 
 1. ~~Time off for dates beyond the window~~ — decided: no; act within the 14-day
@@ -562,3 +586,112 @@ replayed, then looked up, never re-sent blind); partial refunds on that
 PaymentIntent up to its capture; `source_transaction` transfers capped at
 the charge minus refunds minus earlier transfers, else from the platform
 balance.
+
+## 16. Accountant reimbursements and reconciliation (step 5) — as built, with the defaults taken
+
+Built 2026-10-28 on `feature/accountant-reimbursements` (migration 0046,
+journal `when` 1788460000000). Step 4's card disputes plug in through one
+adapter (`CardDisputeLedger` in `@repo/billing/accounting`), `None` until
+step 4 is merged.
+
+- **Ledger** (`/accountant/reimbursements`): one list built on the fly from
+  the rows that hold the money — family refunds (pending, paid, failed,
+  handled; one-off refunds too), Poppynz-funded helper pay
+  (`capture_failed` incidents), absorbed amounts (`carry_absorbed`,
+  `platform_absorbed`, disputes via the adapter), manual payouts, helper
+  recoveries, unpaid extra sessions, held helper pay — each with its
+  session, cycle, contract, payment and Stripe object, filters, totals by
+  direction, CSV and a detail drawer (the row's audit, the session's
+  resolutions, ledger entries and transfer items, notes).
+- **Reports** (`/accountant/money-reports`): liabilities at month end,
+  refunds issued with the tax returned, absorbed costs by cause, Stripe
+  fees — on screen and CSV.
+- **Tax** (§13.2–13.3): a refund marked handled is dated
+  (`session_refunds.handled_at`, backfilled from its audit event) and the
+  tax report subtracts its lines in that month.
+- **Reconciliation** (`/accountant/reconciliation`): the worker imports the
+  platform's balance transactions after the billing tick once the last
+  scheduled run is `RECONCILIATION_INTERVAL_HOURS` old, over
+  `RECONCILIATION_LOOKBACK_DAYS`; admins and the accountant can import a
+  period on demand. Stored once per reference in
+  `provider_balance_transactions` (re-imports update), matched by
+  reference; unmatched items on either side are listed and resolved with a
+  note. Helper payouts are matched exactly from an automatic payout's own
+  balance transactions (`helper_transfers.payout_match = 'exact'`), the
+  timing match staying as the labelled fallback (`approximate`).
+- **Permissions**: `reimbursements` (read, note, reconcile) and
+  `reconciliation` (read, run, resolve), for the accountant and admins.
+
+Settings: `RECONCILIATION_INTERVAL_HOURS` (24, 1–168),
+`RECONCILIATION_LOOKBACK_DAYS` (35, 1–120), `RECONCILIATION_MAX_RANGE_DAYS`
+(93, 1–400, on-demand runs), `RECONCILIATION_PAGE_SIZE` (100, 1–100),
+`RECONCILIATION_MAX_PAGES` (200; a run that hits it is `incomplete`).
+
+Defaults taken while the user was away — each **default (2026-10-28)**:
+
+1. **Computed, not stored.** The ledger is rebuilt from the money tables on
+   every read (no obligations table that could drift); it is filtered in
+   memory, which is fine at today's volumes and is the first thing to move
+   into SQL if it grows.
+2. **Lifecycle per type.** Each item keeps its row's own status (refund:
+   pending/paid/failed/handled; manual payout: recorded/approved/rejected;
+   recovery: outstanding/repaid/waived; incident: outstanding/recovered;
+   absorbed; unpaid; held). "Reconciled" is the accountant's mark laid over
+   a **settled** item only (paid, handled, recovered, absorbed, approved,
+   repaid, waived); it can be taken back. Unsettled items are refused.
+3. **Notes and marks live in the money audit** (`billing_audit_events`,
+   entity `obligation`, actions `note`/`reconciled`/`unreconciled`;
+   resolutions of reconciliation items: entity `reconciliation_item`,
+   `resolved`/`reopened`) — append-only, so the latest event is the state
+   and every change is its own audit row. A reconciled mark stores the item
+   as it stood. Refused while impersonating (they name their author).
+4. **Directions.** Refunds, manual payouts and held pay are owed by
+   Poppynz; recoveries and unpaid extra sessions are owed to Poppynz;
+   absorbed amounts and Poppynz-funded helper pay are Poppynz's costs (the
+   latter until the family's money is recovered).
+5. **Commission tax (§13.3).** A session left out before the hold, or taken
+   out of a reduced capture, is re-quoted out of the cycle's frozen lines
+   at the capture, so its commission tax is never collected and nothing is
+   reversed (tested). After the charge, the reversal rides on the refund —
+   counted when it succeeds or is marked handled; a failed or pending
+   refund reverses nothing yet. The money logic itself is unchanged
+   (`reconcileSession` still ignores handled refunds when computing what is
+   still owed back — its refund key prevents a second refund for the same
+   outcome).
+6. **Liabilities history.** Month-end figures are rebuilt from timestamps;
+   refunds in flight and unpaid extra sessions are exact, held pay and
+   repaid recoveries keep no change history, so past months mark those
+   lines approximate. The month in progress is "as of now".
+7. **Refunds report** dates a session refund when it succeeded (or was
+   marked handled) and a one-off refund when it was made — the tax
+   report's dating. "Tax returned" is the care and fee tax given back;
+   commission tax reversed is shown separately.
+8. **Absorbed causes**: carry under 50¢ written off, absorbed on resume,
+   over-refund after a re-decision, lost card dispute and its fee (adapter),
+   system failure (the helper share of a `capture_failed` cycle), and
+   waived recoveries (what was not recovered).
+9. **Stripe fees** come only from imported platform transactions
+   (processing fees on charges, dispute fees, fee transactions); a month
+   without imported data is reported as a gap, and the mock provider says
+   no fees are recorded.
+10. **Matching** is by reference only (PaymentIntent, refund, transfer),
+    with the amount compared: a known reference with another amount is
+    `mismatch`. Platform payouts and fee transactions are matched by type
+    (Poppynz's own bank, Stripe's fees). Disputes match through the
+    adapter; without it they stay unmatched for the accountant. Our side's
+    unmatched list compares the period's payments, refunds and transfers
+    with the transactions imported over the period ±3 days.
+11. **One run at a time**, enforced by a unique index; a run still
+    `running` after 6 h is marked failed (abandoned) before the next one
+    starts. A provider error fails the run (recorded) without failing the
+    billing job. On-demand runs end at "now" at the latest.
+12. **Exact payout matching** runs both in the payout webhook (`payout.paid`)
+    and in each reconciliation run (payouts of the helpers paid in the
+    period, created up to 14 days after it); the connected account's
+    arrivals and the payout itself are stored for the trail (matched as
+    `transfer_arrival` / `helper_payout`). Transfers already marked paid by
+    timing are upgraded to exact.
+13. **Navigation.** New "Books" group in the accountant area
+    (Reimbursements, Money reports, Reconciliation, Failed refunds), each
+    shown by permission (`/accountant/access`); the existing tax "Reports"
+    keep their name. Admins reach the area through the Accountant link.

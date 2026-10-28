@@ -1871,6 +1871,44 @@ export const ensureCycleSplit = (cycle: ContractCycle) =>
     return yield* repo.listSessionCharges(cycle.contractId, cycle.id);
   });
 
+/**
+ * The per-session split a cycle WOULD freeze if it were charged now (Tier 3
+ * step 2 previews): the frozen one once captured; before that the split of
+ * its current quote (or, unquoted, of a quote made now). Never written.
+ */
+export const provisionalCycleSplit = (cycle: ContractCycle) =>
+  Effect.gen(function* () {
+    const repo = yield* ContractBillingRepo;
+    if (cycle.status === 'captured') {
+      const frozen = yield* ensureCycleSplit(cycle);
+      return { charged: true as const, charges: frozen };
+    }
+    const billing = yield* repo.findBilling(cycle.contractId);
+    const sessions = yield* repo.listSessions(cycle.contractId, cycle.id);
+    if (!billing) return { charged: false as const, charges: [] };
+    const quote = yield* quoteFor(
+      billing,
+      cycle,
+      billedSessions(sessions),
+      compensatedSessions(sessions)
+    );
+    if (!quote.ok) return { charged: false as const, charges: [] };
+    const quoted = { ...cycle, ...quoteColumns(quote.amounts, quote.charged) };
+    const split = cycleSplitCharges(
+      quoted,
+      {
+        id: cycle.paymentId ?? 'provisional',
+        capturedCents: quote.amounts.familyTotalCents,
+        totalCents: quote.amounts.familyTotalCents
+      },
+      sessions
+    );
+    return {
+      charged: false as const,
+      charges: split.ok ? split.charges.map((row) => ({ ...row, createdAt: new Date(0) })) : []
+    };
+  });
+
 const recordSplitMismatch = (cycle: ContractCycle, reason: string) =>
   Effect.gen(function* () {
     const recorded = yield* (yield* ContractBillingRepo).recordIncident({

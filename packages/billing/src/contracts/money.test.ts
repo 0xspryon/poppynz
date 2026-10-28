@@ -6,6 +6,7 @@ import {
   reconcileSession,
   recordManualPayout,
   decideManualPayout,
+  previewSessionMoney,
   runSessionMoneyTick,
   settleSessionRefundByReference
 } from './money';
@@ -444,5 +445,41 @@ describe('session-based transfers (spec §8)', () => {
       failureReason: 'Insufficient funds'
     });
     expect(w.alerts.some((s) => s.startsWith('A transfer to a helper was refused'))).toBe(true);
+  });
+});
+
+describe('previewSessionMoney (the confirm dialog)', () => {
+  it('states the money before and after the charge, from the same split', async () => {
+    const w = world();
+    await w.step(BEFORE);
+    const preview = () =>
+      w.run(
+        previewSessionMoney('contract-1', w.sessionOn('2026-11-04').id, {
+          kind: 'family_cancelled_late',
+          status: 'confirmed',
+          reportedBySide: 'family',
+          recordedAt: new Date('2026-11-04T08:00:00.000Z'),
+          minutesWorked: null,
+          decision: null,
+          decisionMinutesWorked: null
+        }).pipe(Effect.provide(w.layer))
+      );
+    expect(await preview()).toEqual({
+      outcome: 'family_late',
+      charged: false,
+      familyBackCents: 5039,
+      familyPaysCents: 1563,
+      helperReceivesCents: 1563,
+      held: false
+    });
+    await w.step(at(CYCLE_1.holdAt, 5));
+    await w.step(AFTER_CAPTURE);
+    expect(await preview()).toMatchObject({
+      charged: true,
+      familyBackCents: 5039,
+      helperReceivesCents: 1563
+    });
+    // A preview writes nothing.
+    expect(w.money.state.refunds).toHaveLength(0);
   });
 });

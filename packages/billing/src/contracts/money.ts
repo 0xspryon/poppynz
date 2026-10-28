@@ -22,7 +22,12 @@ import { Payments, type ProviderRefund } from '@repo/payments';
 import { Data, Effect, Either } from 'effect';
 import { applyBps, type SessionChargeSplit, type SplitTaxLine } from '../pricing';
 import { paymentReadiness } from '../payouts';
-import { ensureCycleSplit, sessionMoneyPolicy, type BillingDeps } from './engine';
+import {
+  ensureCycleSplit,
+  provisionalCycleSplit,
+  sessionMoneyPolicy,
+  type BillingDeps
+} from './engine';
 import { sendMoneyNotice } from './money-notices';
 import { alertAdmins, cycleDates } from './notices';
 import { sessionResolutionPolicy } from './resolutions';
@@ -1296,4 +1301,117 @@ export const handlePayoutEvent = (account: string, reference: string) =>
       return 'failed' as const;
     }
     return payout.status;
+  });
+
+// ---------------------------------------------------------------------------
+// Previews and views
+
+export type MoneyPreview = {
+  outcome: MoneyOutcome['kind'];
+  /** Whether the cycle's money has been taken (a refund) or not yet (a
+   * smaller charge). */
+  charged: boolean;
+  /** What goes back to the family (or, before the charge, is not taken). */
+  familyBackCents: number;
+  /** What the family still pays for the session. */
+  familyPaysCents: number;
+  /** What the helper receives for the session. */
+  helperReceivesCents: number;
+  held: boolean;
+};
+
+/** "Cancelling now: Hana receives $15.63, you get $50.39 back" — what a
+ * resolution would do to the session's money, computed by the policy
+ * function from the frozen (or provisional) split. Null when the session
+ * isn't charged (or can't be priced). */
+export const previewSessionMoney = (
+  contractId: string,
+  sessionId: string,
+  hypothetical: NonNullable<Parameters<typeof resolveSessionMoney>[1]['resolution']>
+) =>
+  Effect.gen(function* () {
+    const billingRepo = yield* ContractBillingRepo;
+    const billing = yield* billingRepo.findBilling(contractId);
+    const session = (yield* billingRepo.listSessions(contractId)).find((s) => s.id === sessionId);
+    if (!billing || !session) return null;
+    const cycle = (yield* billingRepo.listCycles(contractId)).find((c) => c.id === session.cycleId);
+    if (!cycle) return null;
+    const split = yield* provisionalCycleSplit(cycle);
+    const charge = split.charges.find((row) => row.sessionId === sessionId);
+    if (!charge) return null;
+    const policy = yield* moneyPolicyFor({ policyVersion: null });
+    const money = resolveSessionMoney(
+      toSplit(charge),
+      { resolution: hypothetical, session, zone: billing.timeZone },
+      policy
+    );
+    return {
+      outcome: money.outcome,
+      charged: split.charged,
+      familyBackCents: money.familyRefund.totalCents,
+      familyPaysCents: money.held ? charge.familyTotalCents : money.familyNetCents,
+      helperReceivesCents: money.held ? 0 : money.helperOwed.totalCents,
+      held: money.held
+    } satisfies MoneyPreview;
+  });
+
+export type SessionMoneyView = {
+  /** How the resolution was applied (excluded, reduced_capture, refund,
+   * refund_recovery, held, none), or null with none. */
+  mechanism: string | null;
+  refunds: Array<{
+    id: string;
+    status: SessionRefund['status'];
+    totalCents: number;
+    refundedAt: string | null;
+  }>;
+  /** The helper's transfer of this session (latest), or null before. */
+  transfer: {
+    status: HelperTransfer['status'];
+    amountCents: number;
+    held: boolean;
+  } | null;
+};
+
+/** Each session's money state for the cycle page (refund and transfer
+ * status per row). */
+export const cycleSessionMoney = (contractId: string, sessionIds: ReadonlyArray<string>) =>
+  Effect.gen(function* () {
+    const repo = yield* SessionMoneyRepo;
+    const effects = new Map(
+      (yield* repo.listEffects(contractId)).map((row) => [row.sessionId, row])
+    );
+    const refunds = yield* repo.listRefunds({ contractId });
+    const items = yield* repo.listTransferItems({ sessionIds });
+    const transfers = new Map(
+      (yield* repo.listTransfers({ contractId })).map((row) => [row.id, row])
+    );
+    return new Map(
+      sessionIds.map((sessionId) => {
+        const latest = items.filter((item) => item.sessionId === sessionId).at(-1);
+        const transfer = latest ? transfers.get(latest.transferId) : undefined;
+        return [
+          sessionId,
+          {
+            mechanism: effects.get(sessionId)?.mechanism ?? null,
+            refunds: refunds
+              .filter((row) => row.sessionId === sessionId)
+              .map((row) => ({
+                id: row.id,
+                status: row.status,
+                totalCents: row.totalCents,
+                refundedAt: row.refundedAt?.toISOString() ?? null
+              })),
+            transfer:
+              latest && transfer
+                ? {
+                    status: transfer.status,
+                    amountCents: latest.amountCents,
+                    held: latest.kind === 'held'
+                  }
+                : null
+          } satisfies SessionMoneyView
+        ] as const;
+      })
+    );
   });

@@ -648,6 +648,32 @@ describe('idempotency', () => {
     expect(w.paymentsOf(extra)[0]!.chargeKey).toBe(`extra-${extra.id}-1`);
   });
 
+  it('adopts a charge whose answer was lost when its webhook arrives first', async () => {
+    let lose = false;
+    const w = world({ mock: { loseResponses: () => lose } });
+    await captured(w);
+    const NOV_5 = new Date('2026-11-05T14:00:00.000Z');
+    await w.tick(NOV_5);
+    const extra = await w.agreed('helper', TUESDAY, NOV_5);
+    lose = true;
+    await w.extraTick(at(NOV_5, 65));
+    lose = false;
+    const [payment] = w.paymentsOf(extra);
+    expect(payment!.providerReference).toBeNull();
+    // The webhook names our row in its metadata: the settle path adopts it.
+    const fetched = await w.run(w.mock.getPayment(`mock_pi_extra-${extra.id}-1`));
+    const adopted = await w.run(
+      w.provided(
+        Effect.flatMap(CycleSettlement, (settlement) =>
+          settlement.adopt(payment!, fetched, at(NOV_5, 66))
+        ).pipe(Effect.provide(CycleSettlementLive))
+      )
+    );
+    expect(adopted.outcome).toBe('captured');
+    expect(w.extra(extra.id).status).toBe('charged');
+    expect(w.paymentsOf(extra)).toHaveLength(1);
+  });
+
   it('refuses a double confirmation', async () => {
     const w = world();
     await w.tick(OCT_25);

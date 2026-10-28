@@ -686,8 +686,18 @@ export const answerExtraSession = (
     if (!agreed) return yield* refuse('response_window_closed');
     yield* noticeFor('agreed', agreed.extra, actor.userId);
     // No delay configured: the charge step runs at once.
+    // Best-effort: the agreement stands whatever the charge step meets (the
+    // tick picks it up otherwise).
     if (policy.chargeDelayMinutes === 0) {
-      return (yield* processDueExtraSession(agreed.extra, now)) ?? agreed.extra;
+      return (
+        (yield* processDueExtraSession(agreed.extra, now).pipe(
+          Effect.catchAll((error) =>
+            Effect.logWarning(`[extra-sessions] charge of ${agreed.extra.id} deferred`, error).pipe(
+              Effect.as(null)
+            )
+          )
+        )) ?? agreed.extra
+      );
     }
     return agreed.extra;
   });
@@ -870,7 +880,6 @@ const startCharge = (
         )
       : undefined;
     if (!contract || !billing || !accepted) return extra;
-    const { retryHours } = yield* extraSessionPolicy;
     const price = yield* priceExtraSession(billing, accepted, extra);
     const authorised = extra.familyAuthorisedCents ?? extra.quotedTotalCents;
     if (price === null || price.amounts.familyTotalCents > authorised) {
@@ -939,7 +948,6 @@ const startCharge = (
       });
       return null;
     }
-    void retryHours;
     return yield* chargeAndSettle(claimed, payment, now);
   });
 

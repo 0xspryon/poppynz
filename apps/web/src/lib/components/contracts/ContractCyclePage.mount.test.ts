@@ -30,7 +30,12 @@ const session = {
 	elapsedMinutes: 120,
 	status: 'completed',
 	startsAt: '2026-11-03T21:30:00.000Z',
-	endsAt: '2026-11-03T23:30:00.000Z'
+	endsAt: '2026-11-03T23:30:00.000Z',
+	resolution: null,
+	actions: [],
+	responses: [],
+	cancelOutcome: null,
+	cutoffAt: '2026-11-02T21:30:00.000Z'
 };
 
 const cycle = (overrides: Record<string, unknown> = {}) => ({
@@ -64,6 +69,12 @@ const cycle = (overrides: Record<string, unknown> = {}) => ({
 	estimatedServiceCents: 5200,
 	carriedInCents: 0,
 	sessions: [session],
+	sessionWindow: {
+		windowDays: 14,
+		cancellationNoticeHours: 24,
+		reportResponseHours: 48,
+		reportWindowHours: 48
+	},
 	canRetryPayment: false,
 	...overrides
 });
@@ -85,6 +96,10 @@ describe('ContractCyclePage (UAT round 2 #11a)', () => {
 		expect(text()).toContain('GST (MB) 5% on the fee +$1.50');
 		expect(text()).toContain('Childcare');
 		expect(text()).toContain('Times in Central Time');
+		// Tier 3: the window explainer, with the numbers from the API.
+		expect(
+			document.querySelector('[data-testid="session-window-note"]')?.textContent?.replace(/\s+/g, ' ')
+		).toContain('Sessions appear 14 days ahead.');
 		expect(document.querySelectorAll('[data-testid="cycle-session"]')).toHaveLength(1);
 		expect(
 			document.querySelector('[data-testid="cycle-session-actions"]')?.textContent?.trim()

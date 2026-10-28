@@ -27,6 +27,7 @@
 	import { getProvider } from '$lib/api/providers';
 	import { todayIn } from '@repo/calendar';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
+	import PendingSessionResponses from '$lib/components/sessions/PendingSessionResponses.svelte';
 	import PayoutsReminder from '$lib/components/payouts/PayoutsReminder.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import ContractTermsEditor, {
@@ -927,6 +928,12 @@
 				{/if}
 
 				{#if contract.billing}
+					<!-- Tier 3: the other side's reports and days off awaiting an answer. -->
+					<PendingSessionResponses
+						{contractId}
+						counterpartName={contract.counterpart.name}
+						{cycleHref}
+					/>
 					<ContractBillingPanel
 						billing={contract.billing}
 						viewerSide={contract.viewerSide}

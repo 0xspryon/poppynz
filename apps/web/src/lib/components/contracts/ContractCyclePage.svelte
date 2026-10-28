@@ -2,10 +2,11 @@
 	/** One billing cycle of a contract (UAT round 2 #11a), for its family and
 	 * helper: dates and status, when the hold, the charge (and, for the helper,
 	 * the transfer) happen in the viewer's own time zone, the viewer's amounts,
-	 * and the timetable of the cycle's sessions in the contract zone. Read-only
-	 * for now: each session row keeps a separate actions slot that Tier 3
-	 * fills (cancellations, disputes, extra sessions) — it renders nothing
-	 * until a `sessionActions` snippet is passed. */
+	 * and the timetable of the cycle's sessions in the contract zone, with the
+	 * session-window explainer (Tier 3). Each session row keeps a separate
+	 * actions slot, filled by the routes with the session's resolution and
+	 * the viewer's actions (cancellations, days off, reports, disputes) — it
+	 * renders nothing until a `sessionActions` snippet is passed. */
 	import { resolve } from '$app/paths';
 	import { page } from '$app/state';
 	import {
@@ -14,6 +15,7 @@
 		type ContractCycleSession
 	} from '$lib/api/contracts';
 	import StatusChip from '$lib/components/StatusChip.svelte';
+	import SessionWindowNote from '$lib/components/sessions/SessionWindowNote.svelte';
 	import { retryPaymentWithToast } from '$lib/contract-retry';
 	import { cycleChip, sessionChip } from '$lib/contract-cycle-status';
 	import { formatSessionRange } from '$lib/contract-sessions';
@@ -27,8 +29,9 @@
 
 	interface Props {
 		role: 'family' | 'service-provider';
-		/** Per-session actions (Tier 3). Nothing is rendered without it. */
-		sessionActions?: Snippet<[ContractCycleSession, ContractCycleDetail]>;
+		/** Per-session actions (Tier 3). Nothing is rendered without it. The
+		 * third argument refetches the cycle after a change. */
+		sessionActions?: Snippet<[ContractCycleSession, ContractCycleDetail, () => void]>;
 	}
 
 	let { role, sessionActions }: Props = $props();
@@ -77,12 +80,20 @@
 		void refresh(id, forCycleId);
 	});
 
-	onMount(() =>
-		// Billing moved on (hold, charge, suspension, resume): refetch.
-		notifications.on('contract.billing', (event) => {
+	onMount(() => {
+		// Billing moved on (hold, charge, suspension, resume), or one of the
+		// sessions did (Tier 3: recorded, answered, lapsed, decided): refetch.
+		const offBilling = notifications.on('contract.billing', (event) => {
 			if (event.payload.contractId === contractId) void refresh(contractId, cycleId);
-		})
-	);
+		});
+		const offSession = notifications.on('contract.session', (event) => {
+			if (event.payload.contractId === contractId) void refresh(contractId, cycleId);
+		});
+		return () => {
+			offBilling();
+			offSession();
+		};
+	});
 
 	async function handleRetry() {
 		if (retrying) return;
@@ -210,6 +221,12 @@
 						{m.contracts_cycle_sessions_zone({ zone: cycle.timeZoneLabel })}
 					</p>
 				</div>
+				<div class="mb-3">
+					<SessionWindowNote
+						windowDays={cycle.sessionWindow.windowDays}
+						cancellationNoticeHours={cycle.sessionWindow.cancellationNoticeHours}
+					/>
+				</div>
 				{#if cycle.sessions.length === 0}
 					<p class="text-[12.5px] text-base-content-muted">{m.contracts_cycle_no_sessions()}</p>
 				{:else}
@@ -242,7 +259,9 @@
 										</td>
 										<td><StatusChip status={status.status} label={status.label} /></td>
 										<td class="border-l border-base-300" data-testid="cycle-session-actions">
-											{@render sessionActions?.(session, cycle)}
+											{@render sessionActions?.(session, cycle, () =>
+												void refresh(contractId, cycleId)
+											)}
 										</td>
 									</tr>
 								{/each}

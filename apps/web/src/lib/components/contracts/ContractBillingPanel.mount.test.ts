@@ -65,6 +65,16 @@ describe('ContractBillingPanel', () => {
 		unmount(app);
 	});
 
+	it('explains the session window with the numbers from the API (Tier 3)', () => {
+		const app = render({ sessionWindow: { windowDays: 10, cancellationNoticeHours: 36 } });
+		const note = document
+			.querySelector('[data-testid="session-window-note"]')
+			?.textContent?.replace(/\s+/g, ' ');
+		expect(note).toContain('Sessions appear 10 days ahead.');
+		expect(note).toContain('Cancelling at least 36 hours before a session is free for the family.');
+		unmount(app);
+	});
+
 	it('says how long before a cycle the hold is placed, from the setting (UAT round 2 #10)', () => {
 		const app = render({ status: 'scheduled', holdLeadHours: 24 });
 		expect(text()).toContain('held on your card 1 day before it starts');

@@ -61,7 +61,12 @@
 		{ href: resolve('/admin/document-types'), label: m.nav_admin_document_types(), icon: 'la-file-alt' },
 		{ href: resolve('/admin/service-catalogue'), label: m.nav_admin_service_catalogue(), icon: 'la-heart' },
 		{ href: resolve('/admin/custom-services'), label: m.nav_admin_custom_services(), icon: 'la-clipboard-check' },
-		{ href: resolve('/admin/tcs'), label: m.nav_admin_tcs(), icon: 'la-file-contract' }
+		{ href: resolve('/admin/tcs'), label: m.nav_admin_tcs(), icon: 'la-file-contract' },
+		{
+			href: resolve('/admin/session-disputes'),
+			label: m.nav_admin_session_disputes(),
+			icon: 'la-balance-scale'
+		}
 	];
 	const items = $derived<Array<SidebarItem>>(
 		taxAccess

@@ -8,6 +8,7 @@
 	import type { ResolvedPathname } from '$app/types';
 	import type { ContractBilling, ContractBillingCycle } from '$lib/api/contracts';
 	import StatusChip from '$lib/components/StatusChip.svelte';
+	import SessionWindowNote from '$lib/components/sessions/SessionWindowNote.svelte';
 	import { cycleChip as chipFor } from '$lib/contract-cycle-status';
 	import { formatDateTime, formatDateWithWeekday } from '$lib/date';
 	import { formatLeadHours } from '$lib/lead-time';
@@ -172,6 +173,15 @@
 					{m.contracts_billing_retry()}
 				{/if}
 			</button>
+		</div>
+	{/if}
+
+	{#if billing.sessionWindow}
+		<div class="mb-3">
+			<SessionWindowNote
+				windowDays={billing.sessionWindow.windowDays}
+				cancellationNoticeHours={billing.sessionWindow.cancellationNoticeHours}
+			/>
 		</div>
 	{/if}
 

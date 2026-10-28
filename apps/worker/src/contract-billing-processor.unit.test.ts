@@ -28,10 +28,11 @@ describe('processContractBillingTick', () => {
       contracts: 0,
       ran: 0,
       failed: 0,
-      resolutions: { confirmed: 0, lapsed: 0, failed: 0 }
+      resolutions: { confirmed: 0, lapsed: 0, failed: 0 },
+      money: { reconciled: 0, refundsSent: 0, transfers: 0, failed: 0 }
     });
     expect(describeTick(summary)).toBe(
-      'contract billing: 0 ran, 0 failed of 0 live contracts; session resolutions: 0 confirmed, 0 lapsed, 0 failed'
+      'contract billing: 0 ran, 0 failed of 0 live contracts; session resolutions: 0 confirmed, 0 lapsed, 0 failed; money: 0 sessions applied, 0 refunds sent, 0 transfers processed, 0 failed'
     );
   });
 

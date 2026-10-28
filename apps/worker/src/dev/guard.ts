@@ -46,7 +46,11 @@ export const requireDevClock = (env: Record<string, string | undefined> = proces
 };
 
 /** Local Postgres hosts the dev tools may write to (host or compose). */
-export const LOCAL_DATABASE_HOSTS: ReadonlySet<string> = new Set(['localhost', '127.0.0.1', 'postgres']);
+export const LOCAL_DATABASE_HOSTS: ReadonlySet<string> = new Set([
+  'localhost',
+  '127.0.0.1',
+  'postgres'
+]);
 
 /** DATABASE_URL must point at a local Postgres: a dev clock against a shared
  * or remote database would bill real contracts on a fake clock. */

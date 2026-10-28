@@ -3,7 +3,9 @@
  * contract go hold → capture, or decline → grace → suspension → resume,
  * without waiting days. Exactly the worker's tick, with `now` replaced —
  * including its session-resolution step (silence confirms a report once its
- * response window closes; an unconfirmed day off lapses at its cutoff).
+ * response window closes; an unconfirmed day off lapses at its cutoff) and
+ * its money step (resolutions applied, session refunds sent, and — with
+ * --as-of at or after a cycle's transfer time — helper transfers made).
  *
  *   docker compose exec worker sh -c 'cd /usr/src/app && ENVIRONMENT=dev \
  *     BILLING_DEV_CLOCK=enabled bun apps/worker/src/dev/billing-tick.ts \
@@ -20,8 +22,12 @@
  * test-mode calls made at the real time; payout readiness is Stripe's real
  * state. Must run in UTC, like the containers (see ./guard.ts).
  */
-import { ContractBillingRepo, SessionResolutionRepo } from '@repo/db';
-import { runContractBillingTick, runSessionResolutionTick } from '@repo/billing';
+import { ContractBillingRepo, SessionMoneyRepo, SessionResolutionRepo } from '@repo/db';
+import {
+  runContractBillingTick,
+  runSessionMoneyTick,
+  runSessionResolutionTick
+} from '@repo/billing';
 import { Effect, ManagedRuntime } from 'effect';
 import { ContractBillingBaseLive, withCycleSettlement } from '../billing-layer';
 import { requireDevClock, requireLocalDatabase } from './guard';
@@ -66,15 +72,38 @@ const show = Effect.gen(function* () {
       );
     }
     const cycles = yield* repo.listCycles(billing.contractId);
+    const money = yield* SessionMoneyRepo;
+    const refunds = yield* money.listRefunds({ contractId: billing.contractId });
+    const transfers = yield* money.listTransfers({ contractId: billing.contractId });
+    const dollars = (cents: number | null) =>
+      cents === null ? '—' : `$${(cents / 100).toFixed(2)}`;
     for (const cycle of cycles.slice(0, 8)) {
       const amount =
         cycle.familyTotalCents === null ? '' : ` $${(cycle.familyTotalCents / 100).toFixed(2)}`;
       console.log(
         `  #${cycle.index + 1} ${cycle.startsOn}…${cycle.endsOn} ${cycle.status.padEnd(14)}${amount}` +
           `  hold ${cycle.holdAt.toISOString()}  capture ${cycle.captureAt.toISOString()}` +
-          `  start ${cycle.startsAt.toISOString()}` +
+          `  start ${cycle.startsAt.toISOString()}  transfer ${cycle.transferAt.toISOString()}` +
           (cycle.lastError ? `  — ${cycle.lastError}` : '')
       );
+      for (const refund of refunds.filter((row) => row.cycleId === cycle.id)) {
+        console.log(
+          `      refund ${refund.id} session ${refund.sessionId}: ${dollars(refund.totalCents)} ${refund.status}` +
+            (refund.providerReference ? ` (${refund.providerReference})` : '') +
+            (refund.failureReason ? ` — ${refund.failureReason}` : '')
+        );
+      }
+      for (const transfer of transfers.filter((row) => row.cycleId === cycle.id)) {
+        console.log(
+          `      transfer #${transfer.sequence} ${transfer.status}: ${dollars(transfer.amountCents)}` +
+            (transfer.recoveredCents
+              ? ` (after ${dollars(transfer.recoveredCents)} recovered)`
+              : '') +
+            ` due ${transfer.dueAt.toISOString()}` +
+            (transfer.providerReference ? ` (${transfer.providerReference})` : '') +
+            (transfer.failureReason ? ` — ${transfer.failureReason}` : '')
+        );
+      }
     }
   }
 });
@@ -93,6 +122,12 @@ const main = Effect.gen(function* () {
     const resolutions = yield* runSessionResolutionTick(asOf);
     console.log(
       `[dev-billing] session resolutions: ${resolutions.confirmed} confirmed, ${resolutions.lapsed} lapsed, ${resolutions.failed} failed`
+    );
+    // The money step: resolutions applied, refunds sent, transfers due by
+    // --as-of made (paused, or queued for a manual payout).
+    const money = yield* runSessionMoneyTick(asOf);
+    console.log(
+      `[dev-billing] money: ${money.reconciled} sessions applied, ${money.refundsSent} refunds sent, ${money.transfers} transfers processed, ${money.failed} failed`
     );
   }
   yield* show;

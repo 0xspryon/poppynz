@@ -9,6 +9,7 @@ import { NotificationHubLive } from '@repo/notify';
 import { PaymentsLive } from '@repo/payments';
 import { ContractBillingBaseLive, withCycleSettlement } from './billing-layer';
 import { describeTick, processContractBillingTick } from './contract-billing-processor';
+import { processReconciliationTick } from './reconciliation-processor';
 import { FamilySearchIndexDefault, ProviderSearchIndexDefault } from '@repo/typesense';
 import {
   ApprovalRepoDefault,
@@ -198,6 +199,9 @@ const contractBillingWorker = new Worker(
     }
     const summary = await runtime.runPromise(processContractBillingTick(new Date()));
     console.log(describeTick(summary));
+    // Tier 3 step 5: the daily reconciliation with the provider (it checks
+    // RECONCILIATION_INTERVAL_HOURS itself and never fails this job).
+    console.log(await runtime.runPromise(processReconciliationTick(new Date())));
   },
   // One tick at a time: ticks are idempotent, but there is nothing to gain
   // from two racing over the same contracts.

@@ -1,6 +1,7 @@
-import { CycleSettlementLive } from '@repo/billing';
+import { CardDisputeLedgerNone, CycleSettlementLive } from '@repo/billing';
 import {
   BillingCustomerRepoDefault,
+  ReconciliationRepoDefault,
   ContractBillingRepoDefault,
   ContractRepoDefault,
   ExtraSessionRepoDefault,
@@ -32,6 +33,10 @@ export const ContractBillingBaseLive = Layer.mergeAll(
   // Tier 3 step 3: extra sessions of the same tick.
   ExtraSessionRepoDefault,
   TaxConfigRepoDefault,
+  // Tier 3 step 5: the scheduled reconciliation with the provider (card
+  // disputes plug in through the step-4 adapter).
+  ReconciliationRepoDefault,
+  CardDisputeLedgerNone,
   UserRepoDefault,
   UserProfileRepoDefault,
   // Same PAYMENTS_PROVIDER switch as the API (default `mock`).

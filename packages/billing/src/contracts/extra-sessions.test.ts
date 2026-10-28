@@ -776,6 +776,33 @@ describe('a declined card', () => {
     ).toEqual([sessionId]);
   });
 
+  it('stops looking for its pay once nothing is owed for it (no endless follow-ups)', async () => {
+    const { w, extra } = await declinedWorld();
+    await w.tick(TRANSFER_1);
+    const sessionId = w.extra(extra.id).sessionId!;
+    // The helper didn't come: the family gets it all back, the helper nothing.
+    w.resolutions.state.resolutions.push(
+      dummySessionResolution({
+        id: 'res-extra-no-show',
+        contractId: 'contract-1',
+        sessionId,
+        cycleId: w.extra(extra.id).cycleId!,
+        kind: 'helper_no_show',
+        status: 'confirmed',
+        reportedBySide: 'family'
+      })
+    );
+    w.setCard('mock_pm_new');
+    await w.run(w.provided(retryExtraSessionCharges('family-1', at(TRANSFER_1, 60))));
+    expect(w.extra(extra.id).status).toBe('charged');
+    for (let minutes = 75; minutes <= 75 + 6 * 15; minutes += 15) {
+      await w.tick(at(TRANSFER_1, minutes));
+    }
+    const transfers = w.money.state.transfers.filter((row) => row.cycleId === w.cycle(0).id);
+    expect(transfers.length).toBeLessThanOrEqual(2);
+    expect(w.extra(extra.id).noticesSent).toContain('paid_out');
+  });
+
   it('is abandoned when its session no longer takes place', async () => {
     const { w, extra, due } = await declinedWorld();
     const session = w.sessionOf(extra);

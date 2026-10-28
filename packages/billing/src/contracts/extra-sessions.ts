@@ -50,7 +50,7 @@ import {
   type CycleSettleOutcome
 } from './engine';
 import { sendExtraSessionNotice, type ExtraSessionEvent } from './extra-session-notices';
-import { ensureFollowUpTransfer } from './money';
+import { cyclePayables, ensureFollowUpTransfer } from './money';
 import { alertAdmins, cycleDates, personName } from './notices';
 import { sessionResolutionPolicy, windowLastDate, type PartySide } from './resolutions';
 import { effectiveEnd } from './terms';
@@ -1417,7 +1417,17 @@ const ensurePaidOut = (extra: ExtraSession, now: Date) =>
     const cycle = (yield* (yield* ContractBillingRepo).listCycles(extra.contractId)).find(
       (row) => row.id === extra.cycleId
     );
-    if (cycle) yield* ensureFollowUpTransfer(cycle, now);
+    if (!cycle) return;
+    // Nothing owed for it now (refunded in full, or already recovered): no
+    // follow-up to wait for — else one empty follow-up would be made and
+    // settled on every tick. A later decision that owes the helper again
+    // is paid by the money step's own follow-ups.
+    const payable = (yield* cyclePayables(cycle)).find((row) => row.sessionId === extra.sessionId);
+    if (!payable || (!payable.held && payable.payableCents === 0)) {
+      yield* (yield* ExtraSessionRepo).appendNotice(extra.id, 'paid_out');
+      return;
+    }
+    yield* ensureFollowUpTransfer(cycle, now);
   });
 
 export type ExtraSessionTickSummary = {

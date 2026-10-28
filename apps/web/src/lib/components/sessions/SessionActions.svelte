@@ -42,7 +42,8 @@
 	let busy = $state(false);
 	let reason = $state<SessionReasonCode | ''>('');
 	let note = $state('');
-	let minutesWorked = $state('');
+	// A number input binds a number, or null once cleared; '' before typing.
+	let minutesWorked = $state<number | string | null>('');
 
 	const isFamily = $derived(cycle.viewerSide === 'family');
 	const name = $derived(cycle.counterpartName);
@@ -198,7 +199,11 @@
 		if (pending === null || busy) return;
 		const done = pending;
 		if (asksMinutes) {
-			const minutes = Number(minutesWorked);
+			// Number('') and Number(null) are 0: an empty field is not "0 worked".
+			const minutes =
+				minutesWorked === null || String(minutesWorked).trim() === ''
+					? Number.NaN
+					: Number(minutesWorked);
 			if (!Number.isInteger(minutes) || minutes < 0 || minutes >= session.elapsedMinutes) {
 				toast.error(m.sessions_error_invalid_minutes());
 				return;

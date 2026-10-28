@@ -213,4 +213,16 @@ describe('SessionActions (Tier 3)', () => {
 		);
 		unmount(app);
 	});
+
+	it('does not read an empty minutes field as 0 minutes worked', async () => {
+		const app = render({ actions: ['report_reduced_hours'] }, { viewerSide: 'provider' });
+		click('[data-testid="session-action-report_reduced_hours"]');
+		confirmButton()?.click();
+		await settle();
+		expect(recordSessionAction).not.toHaveBeenCalled();
+		expect(toastError).toHaveBeenCalledWith(
+			'Enter the minutes worked, fewer than the session lasts.'
+		);
+		unmount(app);
+	});
 });

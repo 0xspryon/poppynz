@@ -58,7 +58,8 @@ export const isSettledPayment = (record: Pick<Payment, 'status'> | null): boolea
 /** What each kind of charge is called in the payer's history. */
 export const paymentKindDescriptions: Record<PaymentKind, string> = {
   credibled_order: 'Background check',
-  contract_cycle: 'Contract care'
+  contract_cycle: 'Contract care',
+  contract_extra_session: 'Extra session'
 };
 
 export class PaymentRepo extends Context.Tag('@repo/db/PaymentRepo')<

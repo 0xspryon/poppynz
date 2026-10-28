@@ -15,7 +15,13 @@
  */
 import { createHash } from 'node:crypto';
 import type { SqlError } from '@effect/sql/SqlError';
-import { CYCLE_DAYS, END_NOTICE_DAYS, contractBillingPolicy, loadTaxSnapshot } from '@repo/billing';
+import {
+  CYCLE_DAYS,
+  END_NOTICE_DAYS,
+  contractBillingPolicy,
+  extraSessionPolicy,
+  loadTaxSnapshot
+} from '@repo/billing';
 import {
   applyBps,
   computeSupplyTax,
@@ -127,6 +133,10 @@ export type AgreementValuesInput = {
   providerCommissionBps: number;
   retryHours: number;
   holdLeadHours: number;
+  /** Tier 3 step 3: the extra-session settings the agreement states
+   * (CONTRACT_EXTRA_SESSION_CHARGE_DELAY_MINUTES, …_LOOKBACK_DAYS and
+   * CONTRACT_REPORT_RESPONSE_HOURS); their defaults when not given. */
+  extraSessions?: { delayMinutes: number; lookbackDays: number; responseHours: number };
   cancellationPolicy: { title: string; version: number; publishedAt: Date | null } | null;
 };
 
@@ -226,6 +236,9 @@ export const agreementValues = (input: AgreementValuesInput): TemplateValues => 
     'billing.cycleDays': String(CYCLE_DAYS),
     'billing.holdLeadHours': String(input.holdLeadHours),
     'billing.retryHours': String(input.retryHours),
+    'billing.extraSessionDelayMinutes': String(input.extraSessions?.delayMinutes ?? 60),
+    'billing.extraSessionLookbackDays': String(input.extraSessions?.lookbackDays ?? 14),
+    'billing.extraSessionResponseHours': String(input.extraSessions?.responseHours ?? 48),
     'notice.days': String(END_NOTICE_DAYS),
     'cancellation.policyTitle': input.cancellationPolicy?.title ?? unset,
     'cancellation.policyVersion': input.cancellationPolicy
@@ -380,6 +393,7 @@ export const renderContractAgreement = (input: {
       loadParty(input.contract.providerUserId)
     ]);
     const policy = yield* contractBillingPolicy;
+    const extra = yield* extraSessionPolicy;
     const snapshot = yield* loadTaxSnapshot.pipe((errors) => mapAgreementRepoError(errors));
     const pricing = agreementPricing(
       snapshot,
@@ -409,6 +423,11 @@ export const renderContractAgreement = (input: {
         providerCommissionBps: policy.providerCommissionBps,
         retryHours: policy.retryHours,
         holdLeadHours: holdLeadHoursOf(policy),
+        extraSessions: {
+          delayMinutes: extra.chargeDelayMinutes,
+          lookbackDays: extra.lookbackDays,
+          responseHours: extra.responseHours
+        },
         cancellationPolicy: cancellation
           ? {
               title: cancellation.document.title,

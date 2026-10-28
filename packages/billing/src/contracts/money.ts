@@ -23,6 +23,7 @@ import { Data, Effect, Either } from 'effect';
 import { applyBps, type SessionChargeSplit, type SplitTaxLine } from '../pricing';
 import { paymentReadiness } from '../payouts';
 import {
+  chargedWithCycle,
   ensureCycleSplit,
   provisionalCycleSplit,
   sessionMoneyPolicy,
@@ -203,7 +204,16 @@ export const reconcileSession = (
     if (!session) return 'no_billing' as const;
     const cycle = (yield* billingRepo.listCycles(contractId)).find((c) => c.id === session.cycleId);
     if (!cycle) return 'no_billing' as const;
-    if (inFlight.includes(cycle.status) || cycle.status === 'capture_failed') {
+    // Tier 3 step 3: an extra session charged on its own payment carries its
+    // own frozen split — its money is taken whatever its cycle's state.
+    const ownCharge =
+      (yield* billingRepo.listSessionCharges(contractId, cycle.id)).find(
+        (row) => row.sessionId === sessionId && row.paymentId !== cycle.paymentId
+      ) ?? null;
+    if (
+      ownCharge === null &&
+      (inFlight.includes(cycle.status) || cycle.status === 'capture_failed')
+    ) {
       return 'deferred' as const;
     }
     const resolution = currentResolution(
@@ -219,12 +229,12 @@ export const reconcileSession = (
     if (resolution === null && previous === null) return 'none' as const;
 
     // 1. The session's status (and, before the capture, its compensation).
-    const captured = cycle.status === 'captured';
+    const captured = cycle.status === 'captured' || ownCharge !== null;
     const cancelled =
       outcome.kind === 'family_early' ||
       outcome.kind === 'helper_cancelled' ||
       (outcome.kind === 'family_late' && outcome.minutesWorked === 0);
-    const funded = ['captured', 'empty', 'carried'].includes(cycle.status);
+    const funded = ownCharge !== null || ['captured', 'empty', 'carried'].includes(cycle.status);
     const desiredStatus: SessionRecord['status'] =
       outcome.kind === 'held'
         ? 'disputed'
@@ -235,8 +245,13 @@ export const reconcileSession = (
               ? 'completed'
               : 'scheduled'
             : session.status;
+    // An extra session not charged with its cycle and not charged yet is
+    // simply not charged (its own charge is abandoned): no compensation.
     const compensationCents =
-      !captured && outcome.kind === 'family_late' && outcome.minutesWorked === 0
+      !captured &&
+      chargedWithCycle(session) &&
+      outcome.kind === 'family_late' &&
+      outcome.minutesWorked === 0
         ? applyBps(session.valueCents, policy.lateCancellationHelperBps)
         : captured
           ? session.compensationCents
@@ -274,7 +289,7 @@ export const reconcileSession = (
           ? 'none'
           : outcome.kind === 'held'
             ? 'held'
-            : cycle.status === 'authorised'
+            : cycle.status === 'authorised' && chargedWithCycle(session)
               ? 'reduced_capture'
               : 'excluded';
       if (previous?.signature !== signature || previous.mechanism !== mechanism) {
@@ -294,7 +309,7 @@ export const reconcileSession = (
     }
 
     // 3. Charged: the frozen split decides.
-    const charges = yield* ensureCycleSplit(cycle);
+    const charges = ownCharge ? [ownCharge] : yield* ensureCycleSplit(cycle);
     const charge = charges.find((row) => row.sessionId === sessionId);
     if (!charge) {
       // Not in the charge (left out before the capture): nothing to refund.
@@ -744,7 +759,7 @@ const dollars = (cents: number) => `$${(cents / 100).toFixed(2)} CAD`;
 
 /** A follow-up transfer for a cycle whose first transfer went out, unless
  * one is already waiting. */
-const ensureFollowUpTransfer = (cycle: ContractCycle, now: Date) =>
+export const ensureFollowUpTransfer = (cycle: ContractCycle, now: Date) =>
   Effect.gen(function* () {
     const repo = yield* SessionMoneyRepo;
     const transfers = yield* repo.listTransfers({ cycleId: cycle.id });
@@ -890,7 +905,23 @@ export const PLATFORM_BALANCE_SOURCE = 'platform_balance';
  */
 const sourceOf = (transfer: HelperTransfer, cycle: ContractCycle) =>
   Effect.gen(function* () {
-    const payment = yield* findPaymentRow(cycle.paymentId);
+    // Tier 3 step 3: a transfer paying only extra sessions charged on one
+    // payment of their own (a follow-up after the cycle's transfer) is
+    // sourced from that charge; otherwise from the cycle's.
+    const items = (yield* (yield* SessionMoneyRepo).listTransferItems({
+      transferIds: [transfer.id]
+    })).filter((item) => item.kind === 'session');
+    const charges = yield* (yield* ContractBillingRepo).listSessionCharges(
+      cycle.contractId,
+      cycle.id
+    );
+    const sources = new Set(
+      items.map(
+        (item) => charges.find((row) => row.sessionId === item.sessionId)?.paymentId ?? null
+      )
+    );
+    const only = sources.size === 1 ? [...sources][0]! : null;
+    const payment = yield* findPaymentRow(only ?? cycle.paymentId);
     if (!payment?.providerReference) return PLATFORM_BALANCE_SOURCE;
     const fetched = yield* (yield* Payments)
       .getPayment(payment.providerReference)
@@ -1396,6 +1427,7 @@ export const previewSessionMoney = (
     const split = yield* provisionalCycleSplit(cycle);
     const charge = split.charges.find((row) => row.sessionId === sessionId);
     if (!charge) return null;
+    const taken = split.charged || split.ownCharged.includes(sessionId);
     const policy = yield* moneyPolicyFor({ policyVersion: null });
     const money = resolveSessionMoney(
       toSplit(charge),
@@ -1404,7 +1436,7 @@ export const previewSessionMoney = (
     );
     return {
       outcome: money.outcome,
-      charged: split.charged,
+      charged: taken,
       familyBackCents: money.familyRefund.totalCents,
       familyPaysCents: money.held ? charge.familyTotalCents : money.familyNetCents,
       helperReceivesCents: money.held ? 0 : money.helperOwed.totalCents,

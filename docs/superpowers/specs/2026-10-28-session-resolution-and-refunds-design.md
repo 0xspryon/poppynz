@@ -369,6 +369,23 @@ recoveries per session.
   `stripe listen --forward-connect-to` with `event.account` set (`connect
   payout.created / updated / paid`), signed with the same `whsec_…` locally.
 
+- **Off-session automatic-capture charges (extra sessions)**, confirmed
+  2026-10-28 with the repo's adapter: `pm_card_chargeCustomerFail`
+  (4000 0000 0000 0341) attaches to the customer and every off-session
+  charge on it is declined — a `StripeCardError` that carries the intent
+  (`requires_payment_method` with `last_payment_error`, a failed `ch_…` on
+  it), which the adapter reports as `failed`, "Your card was declined.".
+  `pm_card_chargeDeclined` (…0002) can't be saved at all (declined on
+  attach), so it is no test card for a saved-card decline. Replaying the
+  same idempotency key after a decline returns the **same** declined intent
+  (no second attempt); the same key with other parameters (another payment
+  row) is a `StripeIdempotencyError`. A declined intent can be cancelled
+  (`canceled`, its error cleared). A success comes back `succeeded` with
+  `amount_received` equal to the amount and `latest_charge` set, and its
+  replay returns the same intent. Search by `metadata['payment_id']` found
+  a new intent after 15 s in one case and missed another for about a
+  minute: never treat a young miss as "nothing exists".
+
 ## 12. Open decisions
 
 1. ~~Time off for dates beyond the window~~ — decided: no; act within the 14-day
@@ -412,3 +429,136 @@ Chosen by the coordinator while the user was away; revisit if needed.
 5. **Preview vs capture:** a preview made before capture may differ by up to
    one cent from the re-quoted capture (rounding); the confirmation copy says
    "about" before capture.
+
+## 14. Extra sessions (step 3) — as built, with the defaults taken
+
+Built 2026-10-28 on `feature/extra-sessions` (migration 0044, seed 0008).
+Either side proposes an extra session on a running contract; the other side
+confirms explicitly — the family always with "I authorise Poppynz to charge
+my card $X" — and silence lapses it. Once agreed it is a dated session
+(`contract_sessions.origin = 'extra'`), charged after
+`CONTRACT_EXTRA_SESSION_CHARGE_DELAY_MINUTES` (60) during which either side
+cancels it for free; then folded into its cycle's charge or charged on its
+own payment (`payments.kind = 'contract_extra_session'`). From then on it is
+a normal session (cancellations, reports, disputes, refunds on its own
+payment, recoveries).
+
+Settings: `CONTRACT_EXTRA_SESSION_LOOKBACK_DAYS` (14),
+`CONTRACT_EXTRA_SESSION_CHARGE_DELAY_MINUTES` (60),
+`CONTRACT_EXTRA_SESSION_UNPAID_ALERT_DAYS` (7),
+`CONTRACT_EXTRA_SESSION_MAX_CHARGE_ATTEMPTS` (15),
+`CONTRACT_EXTRA_SESSION_MIN_MINUTES` (15); proposals lapse after
+`CONTRACT_REPORT_RESPONSE_HOURS` (48); declined charges retry every
+`CONTRACT_BILLING_RETRY_HOURS` (12).
+
+The charge, by the cycle's state when the delay ends:
+
+| Cycle | Charge |
+|---|---|
+| scheduled, grace (not held yet) | folded into the cycle's charge (`charge_route = cycle`) |
+| authorised, re-quote ≤ the hold | folded: the capture is re-quoted |
+| authorised, re-quote > the hold | its own off-session charge |
+| captured, empty ("Nothing to bill"), carried, suspended, cancelled, capture_failed | its own off-session charge |
+| authorising, capturing | waits for the next tick |
+
+Defaults taken while the user was away — each **default (2026-10-28)**:
+
+1. **Folded amount.** The family authorises the extra session priced on its
+   own; folded into a cycle the cycle is re-quoted, so the cycle-level
+   rounding may move the total by up to a cent per component (the notice
+   says "about", like §13.5). Its own charge is always exactly the
+   authorised amount.
+2. **Never more than authorised.** The authorised amount must equal the
+   price now: a family whose price moved (a tax change) is refused with
+   "the price changed" and confirms the new amount; a helper accepting a
+   family proposal whose price moved is refused the same way. At charge
+   time a price above the authorisation is not charged (nor folded, 16):
+   it waits for an admin (`charge_held`, admin email).
+3. **Billing must be running.** Proposals are refused while the contract's
+   billing is awaiting the helper's payouts, suspended or ended
+   (`billing_unavailable`), as well as outside active/ending contracts.
+4. **Answering re-checks** the contract, its billing, the service and
+   overlaps, but not the lookback or the window: those bound when a
+   proposal is made, and an answer within the response window stands.
+5. **Overlap.** No overlap with any session of the contract that isn't
+   cancelled, nor with an open proposal; touching (one ends as the other
+   starts) is fine. Scheduled sessions may still overlap each other. The
+   database enforces it (0044 trigger) and one open proposal per slot.
+6. **Times.** One day in the contract zone (an end at midnight is allowed),
+   at least `CONTRACT_EXTRA_SESSION_MIN_MINUTES` (15) long, at the
+   contract's agreed rate for the service. The lookback counts calendar
+   days in the contract zone (today − 14 inclusive), floored at the
+   contract's start; the window ends at what is materialised (and the
+   contract's end, before its end time on the last day).
+7. **During the delay** the ordinary session actions (cancel, day off,
+   reports, disputes) are not offered on the extra session: its free cancel
+   replaces them, so cancelling in the delay is never a late cancellation.
+8. **Not charged yet, not charged at all.** An extra session whose session
+   is cancelled (a resolution, the contract's end) before its own charge
+   succeeded is not charged — no late-cancellation compensation on it
+   (family-favourable). A charge in flight is never abandoned; once
+   charged, the normal policy applies (refunds on its own payment).
+9. **Declines.** The family is emailed on the first decline and when
+   automatic retries stop (not on every retry); retries every 12 h up to
+   15 attempts (about 7 days), and at once on a new card past the cap. The
+   contract's "Retry payment" button is unchanged. Never suspends the
+   contract; an extra session charged on its own is never suspended with its
+   cycle.
+10. **Unpaid alert.** Once, `CONTRACT_EXTRA_SESSION_UNPAID_ALERT_DAYS` after
+    it was due: a billing incident (`extra_session_unpaid:<id>`) and an admin
+    email; listed under "Unpaid extra sessions" on the admin Payouts page.
+11. **Helper pay** comes from the frozen charge row, written only when its
+    charge succeeds: the cycle's first transfer when it is still to come
+    (also for a cycle never captured), else a follow-up. A transfer whose
+    sessions were all charged on one extra payment is sourced from that
+    charge when it fits; otherwise the cycle's charge when it fits; else the
+    platform balance (§11.1).
+12. **Tax report.** An extra charge reports its own frozen lines (both
+    sides), dated when charged; its payment row isn't counted again.
+13. **Notices.** Both parties are emailed in their own language for every
+    event (proposed, withdrawn, declined, lapsed, agreed, cancelled, folded,
+    charged, charge failed), with a realtime `contract.extra_session` event.
+14. **Permissions.** A new `extraSession` (read, write) for families and
+    helpers; the party check is at the route. Admins read the unpaid list
+    with `payoutQueue:read`.
+15. **Agreement v2** (decision 5). Seed 0008 adds section 5 "Extra
+    sessions" (the family authorises charges for extra sessions it confirms
+    or proposes, at the contract's rates; the delay; silence lapses) and is
+    published only when the live agreement is exactly one English v1 whose
+    text is one seed 0007 ever published (no later version, translation or
+    draft); anything else is logged and skipped. New placeholders:
+    `{{billing.extraSessionDelayMinutes}}`,
+    `{{billing.extraSessionLookbackDays}}`,
+    `{{billing.extraSessionResponseHours}}`. Existing contracts don't
+    re-sign.
+
+Defaults added after the step-3 review — each **default (2026-10-28)**:
+
+16. **Folding respects the authorisation too.** An extra session whose
+    stand-alone price now exceeds what the family authorised is never folded
+    into its cycle (the cycle would charge the higher price): it takes the
+    own-charge path, which holds it for an admin (`charge_held`).
+17. **Nothing owed, nothing to wait for.** A charged extra session whose
+    helper pay is zero (refunded in full, e.g. the helper didn't come) is
+    marked paid out at once, instead of a follow-up transfer being made and
+    settled empty on every tick. A later decision that owes the helper again
+    is paid by the money step's own follow-ups, as for any session.
+18. **One attempt, one key.** Claiming a retry is a compare-and-set on the
+    status and the attempt count, so a retry that read the row before
+    another attempt ran (the card-replacement API call and its webhook both
+    retry) never reuses an attempt's idempotency key with other parameters.
+19. **Left as built:** the extra-sessions list keeps "Paid · $X charged" on
+    an extra session that was later refunded (the session row in the same
+    page shows the refund); the cycle summary's session count includes extra
+    sessions charged on their own payments while its amount doesn't; and
+    "Add an extra session" lives on each cycle's page only.
+
+Stripe behaviours relied on (all already confirmed in §11.1 or by the
+piece 3 work): an off-session PaymentIntent on the saved card with
+`capture_method: automatic`; the idempotency key (`extra-<id>-<attempt>`)
+replays the same answer within 24 h and refuses other parameters; search by
+`metadata.payment_id` is eventually consistent (an unanswered attempt is
+replayed, then looked up, never re-sent blind); partial refunds on that
+PaymentIntent up to its capture; `source_transaction` transfers capped at
+the charge minus refunds minus earlier transfers, else from the platform
+balance.

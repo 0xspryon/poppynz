@@ -112,7 +112,10 @@ const HOUR_MS = 60 * 60 * 1000;
 export type SessionFacts = Pick<
   SessionRecord,
   'date' | 'startMinutes' | 'startsAt' | 'endsAt' | 'elapsedMinutes' | 'status'
->;
+> &
+  // Tier 3 step 3: an extra session in its charge delay is cancelled (for
+  // free) as an extra session, not through these actions.
+  Partial<Pick<SessionRecord, 'chargeRoute'>>;
 
 /**
  * The cancellation cutoff: the same wall-clock time `hours` earlier in the
@@ -171,7 +174,11 @@ export const checkSessionAction = (
   ctx: ActionContext
 ): SessionActionRefusal | null => {
   const { session, now, active, side } = ctx;
-  if (session.status === 'suspended' || session.status === 'cancelled') {
+  if (
+    session.status === 'suspended' ||
+    session.status === 'cancelled' ||
+    session.chargeRoute === 'pending'
+  ) {
     return 'session_unavailable';
   }
   if (session.date > windowLastDate(ctx.zone, now, ctx.policy.windowDays)) {

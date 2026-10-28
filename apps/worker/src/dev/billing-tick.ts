@@ -4,8 +4,11 @@
  * without waiting days. Exactly the worker's tick, with `now` replaced —
  * including its session-resolution step (silence confirms a report once its
  * response window closes; an unconfirmed day off lapses at its cutoff) and
- * its money step (resolutions applied, session refunds sent, and — with
- * --as-of at or after a cycle's transfer time — helper transfers made).
+ * its extra-session step (unanswered proposals lapse; agreed extra sessions
+ * past their charge delay are folded into their cycle or charged on their
+ * own; declined charges retried; long-unpaid ones alerted) and its money
+ * step (resolutions applied, session refunds sent, and — with --as-of at or
+ * after a cycle's transfer time — helper transfers made).
  *
  *   docker compose exec worker sh -c 'cd /usr/src/app && ENVIRONMENT=dev \
  *     BILLING_DEV_CLOCK=enabled bun apps/worker/src/dev/billing-tick.ts \
@@ -22,9 +25,15 @@
  * test-mode calls made at the real time; payout readiness is Stripe's real
  * state. Must run in UTC, like the containers (see ./guard.ts).
  */
-import { ContractBillingRepo, SessionMoneyRepo, SessionResolutionRepo } from '@repo/db';
+import {
+  ContractBillingRepo,
+  ExtraSessionRepo,
+  SessionMoneyRepo,
+  SessionResolutionRepo
+} from '@repo/db';
 import {
   runContractBillingTick,
+  runExtraSessionTick,
   runSessionMoneyTick,
   runSessionResolutionTick
 } from '@repo/billing';
@@ -69,6 +78,19 @@ const show = Effect.gen(function* () {
       console.log(
         `  session ${row.sessionId}: ${row.kind} ${row.status}` +
           (row.respondBy ? ` · answer by ${row.respondBy.toISOString()}` : '')
+      );
+    }
+    // Tier 3 step 3: extra sessions still in motion.
+    for (const extra of yield* (yield* ExtraSessionRepo).listForContract(billing.contractId)) {
+      if (!['proposed', 'agreed', 'charging', 'charge_failed'].includes(extra.status)) continue;
+      console.log(
+        `  extra ${extra.id} ${extra.date} ${extra.startMinutes}–${extra.endMinutes}: ${extra.status}` +
+          (extra.status === 'proposed' ? ` · answer by ${extra.respondBy.toISOString()}` : '') +
+          (extra.chargeAt && extra.status === 'agreed'
+            ? ` · charged at ${extra.chargeAt.toISOString()}`
+            : '') +
+          (extra.nextRetryAt ? ` · retry at ${extra.nextRetryAt.toISOString()}` : '') +
+          (extra.lastError ? ` — ${extra.lastError}` : '')
       );
     }
     const cycles = yield* repo.listCycles(billing.contractId);
@@ -122,6 +144,11 @@ const main = Effect.gen(function* () {
     const resolutions = yield* runSessionResolutionTick(asOf);
     console.log(
       `[dev-billing] session resolutions: ${resolutions.confirmed} confirmed, ${resolutions.lapsed} lapsed, ${resolutions.failed} failed`
+    );
+    // The extra-session step: lapses, the delayed charge, retries, alerts.
+    const extras = yield* runExtraSessionTick(asOf);
+    console.log(
+      `[dev-billing] extra sessions: ${extras.lapsed} lapsed, ${extras.folded} folded, ${extras.charged} charged, ${extras.declined} declined, ${extras.failed} failed`
     );
     // The money step: resolutions applied, refunds sent, transfers due by
     // --as-of made (paused, or queued for a manual payout).

@@ -8,6 +8,11 @@ const { getContractCycle, retryContractPayment } = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/api/contracts', () => ({ getContractCycle, retryContractPayment }));
+// Tier 3 step 3: the extra sessions (tested in their own suites).
+vi.mock('$lib/api/extra-sessions', () => ({
+	listExtraSessions: vi.fn(async () => ({ ok: false, error: { code: 'UNEXPECTED' } })),
+	listUnpaidExtraSessions: vi.fn(async () => ({ ok: true, data: { extraSessions: [] } }))
+}));
 vi.mock('$app/state', () => ({ page: { params: { id: 'contract-1', cycleId: 'cycle-1' } } }));
 
 import ContractCyclePage from './ContractCyclePage.svelte';
@@ -158,6 +163,24 @@ describe('ContractCyclePage (UAT round 2 #11a)', () => {
 		await settle();
 		expect(retryContractPayment).toHaveBeenCalledWith('contract-1');
 		expect(getContractCycle).toHaveBeenCalledTimes(2);
+		unmount(app);
+	});
+
+	it('marks an extra session in the timetable (Tier 3 step 3)', async () => {
+		getContractCycle.mockResolvedValue({
+			ok: true,
+			data: {
+				cycle: cycle({
+					sessions: [session, { ...session, id: 'session-extra', origin: 'extra' }]
+				})
+			}
+		});
+		const app = mount(ContractCyclePage, { target: document.body, props: { role: 'family' } });
+		await settle();
+		expect(document.querySelectorAll('[data-testid="cycle-session-extra"]')).toHaveLength(1);
+		expect(document.querySelector('[data-testid="cycle-session-extra"]')?.textContent?.trim()).toBe(
+			'Extra'
+		);
 		unmount(app);
 	});
 

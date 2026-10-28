@@ -18,6 +18,8 @@
 	// Tier 3 step 2: the helper's transfers of the cycle.
 	import CycleTransfers from './CycleTransfers.svelte';
 	import SessionWindowNote from '$lib/components/sessions/SessionWindowNote.svelte';
+	// Tier 3 step 3: the cycle's extra sessions and "Add an extra session".
+	import ExtraSessions from '$lib/components/extra-sessions/ExtraSessions.svelte';
 	import { retryPaymentWithToast } from '$lib/contract-retry';
 	import { cycleChip, sessionChip } from '$lib/contract-cycle-status';
 	import { formatSessionRange } from '$lib/contract-sessions';
@@ -91,9 +93,13 @@
 		const offSession = notifications.on('contract.session', (event) => {
 			if (event.payload.contractId === contractId) void refresh(contractId, cycleId);
 		});
+		const offExtra = notifications.on('contract.extra_session', (event) => {
+			if (event.payload.contractId === contractId) void refresh(contractId, cycleId);
+		});
 		return () => {
 			offBilling();
 			offSession();
+			offExtra();
 		};
 	});
 
@@ -250,6 +256,12 @@
 										<td class="whitespace-nowrap">{formatDateWithWeekday(session.date)}</td>
 										<td class="max-w-[12rem] truncate" title={session.serviceName ?? undefined}>
 											{session.serviceName ?? '—'}
+											{#if session.origin === 'extra'}
+												<span
+													class="ml-1 badge badge-outline badge-xs badge-primary"
+													data-testid="cycle-session-extra">{m.extra_sessions_badge()}</span
+												>
+											{/if}
 										</td>
 										<td class="whitespace-nowrap tabular-nums">{timeRange(session)}</td>
 										<td class="text-right tabular-nums">
@@ -276,6 +288,14 @@
 						</table>
 					</div>
 				{/if}
+				<ExtraSessions
+					{contractId}
+					cycleId={cycle.id}
+					cycleStatus={cycle.status}
+					cycleStartsOn={cycle.startsOn}
+					counterpartName={cycle.counterpartName}
+					onchanged={() => void refresh(contractId, cycleId)}
+				/>
 			</section>
 
 			<div class="flex flex-col gap-4">

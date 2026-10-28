@@ -5,6 +5,7 @@ import {
   DBNotFoundError,
   dummyBillingCustomer,
   makeInMemoryBillingCustomerRepo,
+  makeInMemorySessionMoneyRepo,
   makeContractBillingRepoTest,
   makePaymentRepoTest,
   makeSessionRepoTest,
@@ -176,6 +177,56 @@ describe('GET /billing', () => {
       ],
       provider: 'mock',
       resumeCharges: []
+    });
+  });
+
+  it("lists an extra session's own payment with the refunds made on it (Tier 3 step 3)", async () => {
+    const money = makeInMemorySessionMoneyRepo();
+    money.state.refunds.push({
+      id: 'refund-extra',
+      refundKey: 'k',
+      sessionId: 'session-extra',
+      resolutionId: 'res-1',
+      cycleId: 'cycle-1',
+      contractId: 'contract-1',
+      paymentId: 'payment-extra',
+      careCents: 5000,
+      careTaxLines: [],
+      careTaxCents: 0,
+      feeCents: 250,
+      feeTaxLines: [],
+      feeTaxCents: 33,
+      totalCents: 5283,
+      commissionCents: 0,
+      commissionTaxLines: [],
+      status: 'succeeded',
+      attempts: 1,
+      providerReference: 're_1',
+      failureReason: null,
+      noticesSent: [],
+      refundedAt: new Date('2026-11-06T10:00:00.000Z'),
+      resolvedByUserId: null,
+      resolvedNote: null,
+      createdAt: new Date('2026-11-06T10:00:00.000Z'),
+      updatedAt: new Date('2026-11-06T10:00:00.000Z')
+    });
+    const { layer } = makeLayer({
+      history: [
+        historyRow({
+          id: 'payment-extra',
+          kind: 'contract_extra_session',
+          description: 'Extra session with Sam T. · Tue, Nov 3',
+          totalCents: 5283
+        })
+      ]
+    });
+    const result = await Effect.runPromise(
+      getBillingRouteProgram(new Headers()).pipe(Effect.provide(Layer.merge(layer, money.layer)))
+    );
+    expect(result.payments[0]).toMatchObject({
+      description: 'Extra session with Sam T. · Tue, Nov 3',
+      status: 'paid',
+      refunds: [expect.objectContaining({ id: 'refund-extra', totalCents: 5283 })]
     });
   });
 

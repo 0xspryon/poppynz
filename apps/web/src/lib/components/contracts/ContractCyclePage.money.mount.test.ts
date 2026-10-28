@@ -9,6 +9,11 @@ const { getContractCycle, retryContractPayment } = vi.hoisted(() => ({
 }));
 
 vi.mock('$lib/api/contracts', () => ({ getContractCycle, retryContractPayment }));
+// Tier 3 step 3: the extra sessions (tested in their own suites).
+vi.mock('$lib/api/extra-sessions', () => ({
+	listExtraSessions: vi.fn(async () => ({ ok: false, error: { code: 'UNEXPECTED' } })),
+	listUnpaidExtraSessions: vi.fn(async () => ({ ok: true, data: { extraSessions: [] } }))
+}));
 vi.mock('$app/state', () => ({ page: { params: { id: 'contract-1', cycleId: 'cycle-1' } } }));
 
 import ContractCyclePage from './ContractCyclePage.svelte';

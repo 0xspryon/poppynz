@@ -20,6 +20,11 @@ export const appAc = createAccessControl({
   // and ownership of their own contracts is enforced at the route.
   contract: ['read', 'write', 'review'],
   conversation: ['read', 'write'],
+  // Tier 3 step 3: a party's own extra sessions — proposing one, answering
+  // the other side's (the family with its authorisation of the charge),
+  // withdrawing or cancelling. Being the contract's family or helper is
+  // enforced at the route.
+  extraSession: ['read', 'write'],
   familySearch: ['read', 'reindex'],
   // `review` is the admin-only capability over someone else's documents
   // (e.g. correcting an expiry date). Applicants keep `write`, which only
@@ -72,6 +77,7 @@ export const familyRole = appAc.newRole({
   billing: ['read', 'write'],
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
+  extraSession: ['read', 'write'],
   providerSearch: ['read'],
   approvalRequest: ['write'],
   kycDocument: ['write'],
@@ -90,6 +96,7 @@ export const spRole = appAc.newRole({
   profile: ['read', 'update'],
   contract: ['read', 'write'],
   conversation: ['read', 'write'],
+  extraSession: ['read', 'write'],
   // familySearch is additionally gated on a live approval at the route level —
   // the permission alone doesn't make an unapproved provider a searcher.
   familySearch: ['read'],

@@ -97,6 +97,65 @@ describe('SessionActions (Tier 3)', () => {
 		unmount(app);
 	});
 
+	it('links the family to Find help in replacement mode for a session the helper cancelled', () => {
+		const app = render({ actions: [], canFindReplacement: true });
+		flushSync();
+		const link = document.querySelector<HTMLAnchorElement>(
+			'[data-testid="session-find-replacement"]'
+		);
+		expect(link?.textContent?.trim()).toBe('Find a replacement');
+		const href = new URL(link!.getAttribute('href')!, 'https://app.test');
+		expect(href.pathname).toBe('/family/find');
+		expect(Object.fromEntries(href.searchParams)).toEqual({
+			service: 'Childcare',
+			replace: 'contract-1',
+			sessions: 'session-1'
+		});
+		unmount(app);
+	});
+
+	it('lets the proposer withdraw a pending day-off request', async () => {
+		recordSessionAction.mockResolvedValue({ ok: true, data: { resolution: {} } });
+		const app = render({
+			actions: ['withdraw_day_off'],
+			resolution: {
+				id: 'r-1',
+				kind: 'day_off_agreed',
+				status: 'proposed',
+				reportedBySide: 'family',
+				reportedByMe: true,
+				recordedAt: '2026-10-30T12:00:00.000Z',
+				reason: null,
+				note: null,
+				minutesWorked: null,
+				respondBy: '2026-11-02T20:30:00.000Z',
+				response: null,
+				respondedByMe: null,
+				respondedAt: null,
+				responseNote: null,
+				decision: null,
+				decisionReason: null,
+				decidedAt: null,
+				countsAs: 'family_cancelled_early',
+				policyVersion: 5
+			}
+		});
+		click('[data-testid="session-action-withdraw_day_off"]');
+		expect(text()).toContain('Withdraw your day-off request?');
+		expect(text()).toContain('The session goes ahead as agreed. Maria Tester is told by email.');
+		confirmButton()?.click();
+		await settle();
+		expect(recordSessionAction).toHaveBeenCalledWith('contract-1', 'session-1', {
+			action: 'withdraw_day_off',
+			reason: null,
+			note: null,
+			minutesWorked: null
+		});
+		expect(toastSuccess).toHaveBeenCalledWith('Request withdrawn. Maria Tester has been told.');
+		expect(changed).toBe(1);
+		unmount(app);
+	});
+
 	it('states the outcome before cancelling, then records it and toasts', async () => {
 		recordSessionAction.mockResolvedValue({ ok: true, data: { resolution: {} } });
 		const app = render();

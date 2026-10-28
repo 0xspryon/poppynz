@@ -25,7 +25,13 @@
 	let { resolution, counterpartName, elapsedMinutes }: Props = $props();
 
 	const awaitingMe = $derived(resolution.status === 'proposed' && !resolution.reportedByMe);
-	const chip = $derived(resolutionStatusChip(resolution.status, awaitingMe));
+	const chip = $derived(
+		resolutionStatusChip(
+			resolution.status,
+			awaitingMe,
+			resolution.status === 'reversed' && resolution.response === null
+		)
+	);
 	const hours = (minutes: number) => formatNumber(minutes / 60, { maximumFractionDigits: 2 });
 	const when = $derived(formatDateTime(resolution.recordedAt));
 </script>

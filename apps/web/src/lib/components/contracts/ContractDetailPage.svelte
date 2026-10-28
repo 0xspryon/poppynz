@@ -28,6 +28,7 @@
 	import { todayIn } from '@repo/calendar';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import PendingSessionResponses from '$lib/components/sessions/PendingSessionResponses.svelte';
+	import ReplaceableSessions from '$lib/components/replacement/ReplaceableSessions.svelte';
 	import PayoutsReminder from '$lib/components/payouts/PayoutsReminder.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import ContractTermsEditor, {
@@ -869,6 +870,24 @@
 
 		<div class="flex flex-col gap-4 lg:grid lg:grid-cols-[1fr_300px] lg:items-start">
 			<div class="flex min-w-0 flex-col gap-4">
+				{#if contract.replaces}
+					<!-- Tier 3 step 1b: started from a helper's cancellation. -->
+					<div
+						class="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-lg border border-base-600 bg-base-300 px-4 py-3"
+						data-testid="contract-replaces"
+					>
+						<i class="las la-user-friends shrink-0 text-neutral" aria-hidden="true"></i>
+						<p class="min-w-0 flex-1 text-[12.5px] leading-relaxed text-neutral">
+							{m.replacement_detail_note({ count: contract.replaces.sessionCount })}
+						</p>
+						<a
+							class="text-[12px] font-semibold text-primary"
+							href={resolve('/family/contracts/[id]', { id: contract.replaces.contractId })}
+						>
+							{m.replacement_detail_link()}
+						</a>
+					</div>
+				{/if}
 				{#if showEditor}
 					{#if editorServicesError}
 						<p class="rounded-lg bg-base-300 px-4 py-3 text-[12.5px] text-neutral" role="alert">
@@ -934,6 +953,10 @@
 						counterpartName={contract.counterpart.name}
 						{cycleHref}
 					/>
+					{#if contract.viewerSide === 'family'}
+						<!-- Tier 3 step 1b: sessions the helper cancelled. -->
+						<ReplaceableSessions {contractId} />
+					{/if}
 					<ContractBillingPanel
 						billing={contract.billing}
 						viewerSide={contract.viewerSide}

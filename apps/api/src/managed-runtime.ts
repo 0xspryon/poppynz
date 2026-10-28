@@ -4,6 +4,7 @@ import {
   BillingCustomerRepoDefault,
   CheckOrderRepoDefault,
   ContractAgreementRepoDefault,
+  ContractReplacementRepoDefault,
   SessionResolutionRepoDefault,
   SessionMoneyRepoDefault,
   ContractBillingRepoDefault,
@@ -88,6 +89,7 @@ const BaseLive = Layer.mergeAll(
   ContractRepoDefault,
   ContractBillingRepoDefault,
   ContractAgreementRepoDefault,
+  ContractReplacementRepoDefault,
   SessionResolutionRepoDefault,
   // Tier 3 step 2: session refunds, transfers, the manual payout queue.
   SessionMoneyRepoDefault,

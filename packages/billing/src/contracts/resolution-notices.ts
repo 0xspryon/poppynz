@@ -16,8 +16,8 @@ import { alertAdmins, personName, type NoticeParty } from './notices';
  * contested, declined, lapsed and decided event emails BOTH parties, each in
  * their own language, plus a realtime `contract.session` event; a contest
  * also alerts the admins. A helper's cancellation tells the family how to
- * find a replacement (copy only for now: the link opens Find help filtered
- * by the session's service; the templated replacement flow is step 1b).
+ * find a replacement: the link opens Find help in "Find a replacement" mode
+ * for the session (step 1b — the templated replacement draft).
  * Best-effort, like billing notices: a failed send is logged and never
  * undoes the change that caused it. No money is mentioned — step 1 doesn't
  * change any amount.
@@ -28,6 +28,7 @@ export type ResolutionEvent =
   | 'confirmed'
   | 'contested'
   | 'declined'
+  | 'withdrawn'
   | 'lapsed'
   | 'decided';
 
@@ -260,6 +261,20 @@ const copy: Record<
               : `${who} declined the day off on ${stop(v.session)} The session goes ahead as agreed.`
           ]
         };
+      case 'withdrawn':
+        return mine
+          ? {
+              subject: `You withdrew your day-off request for ${v.day}`,
+              paragraphs: [
+                `You withdrew your request for a day off on ${stop(v.session)} The session goes ahead as agreed.`
+              ]
+            }
+          : {
+              subject: `${who} withdrew the day-off request for ${v.day}`,
+              paragraphs: [
+                `${who} withdrew their request for a day off on ${stop(v.session)} The session goes ahead as agreed.`
+              ]
+            };
       case 'lapsed':
         return {
           subject: `Day-off request lapsed for ${v.day}`,
@@ -405,6 +420,20 @@ const copy: Record<
               : `${who} a refusé le congé pour la séance (${v.session}). La séance a lieu comme convenu.`
           ]
         };
+      case 'withdrawn':
+        return mine
+          ? {
+              subject: `Vous avez retiré votre demande de congé (${v.day})`,
+              paragraphs: [
+                `Vous avez retiré votre demande de congé pour la séance (${v.session}). La séance a lieu comme convenu.`
+              ]
+            }
+          : {
+              subject: `${who} a retiré sa demande de congé (${v.day})`,
+              paragraphs: [
+                `${who} a retiré sa demande de congé pour la séance (${v.session}). La séance a lieu comme convenu.`
+              ]
+            };
       case 'lapsed':
         return {
           subject: `Demande de congé expirée (${v.day})`,
@@ -428,6 +457,7 @@ const copy: Record<
 const actorOf = (event: ResolutionEvent, r: SessionResolution): string | null => {
   switch (event) {
     case 'recorded':
+    case 'withdrawn':
       return r.reportedByUserId;
     case 'confirmed':
     case 'declined':
@@ -485,6 +515,25 @@ export const resolutionCopyFor = (
   return copy[locale](event, r, mine, values);
 };
 
+/**
+ * The helper-cancellation email's "Find a replacement" (step 1b): Find help
+ * filtered by the session's service, in replacement mode for this contract
+ * and session — the helper who cancelled is left out and choosing another
+ * helper starts a short draft from this contract.
+ */
+export const replacementSearchUrl = (
+  appWebOrigin: string,
+  contractId: string,
+  session: Pick<SessionRecord, 'id' | 'serviceName'>
+) => {
+  const params = new URLSearchParams({
+    service: session.serviceName,
+    replace: contractId,
+    sessions: session.id
+  });
+  return `${appWebOrigin}/family/find?${params.toString()}`;
+};
+
 /** Emails both parties (each in their language) and nudges open pages. */
 export const sendResolutionNotice = (event: ResolutionEvent, ctx: ResolutionNoticeContext) =>
   Effect.gen(function* () {
@@ -530,7 +579,7 @@ export const sendResolutionNotice = (event: ResolutionEvent, ctx: ResolutionNoti
             ? {
                 intro: text.replacement.intro,
                 label: text.replacement.label,
-                href: `${appWebOrigin}/family/find?service=${encodeURIComponent(session.serviceName)}`
+                href: replacementSearchUrl(appWebOrigin, contract.id, session)
               }
             : null,
           locale: me.locale

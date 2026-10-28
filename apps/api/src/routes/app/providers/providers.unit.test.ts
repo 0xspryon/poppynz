@@ -418,6 +418,31 @@ describe('provider search route program', () => {
     expect(reconciledUserIds.sort()).toEqual(['provider-2', 'provider-3']);
   });
 
+  it('leaves the excluded helper out without scheduling a reconcile (Find a replacement)', async () => {
+    const reconciledUserIds: Array<string> = [];
+    const result = await Effect.runPromise(
+      searchProvidersRouteProgram(new Headers(), {
+        service: 'Childcare',
+        excludeUserId: 'provider-1'
+      }).pipe(
+        Effect.provide(
+          makeLayer({
+            documents: [
+              providerDocument(),
+              providerDocument({ id: 'provider-2', userId: 'provider-2' })
+            ],
+            candidates: [candidate(), candidate('provider-2')],
+            reconciledUserIds
+          })
+        )
+      )
+    );
+
+    expect(result.providers.map((provider) => provider.userId)).toEqual(['provider-2']);
+    expect(result.pagination.total).toBe(1);
+    expect(reconciledUserIds).toEqual([]);
+  });
+
   it('backfills the page from later index pages when candidates are stale', async () => {
     const reconciledUserIds: Array<string> = [];
     // perPage=2 -> the handler fetches candidate pages of 4. Page one is

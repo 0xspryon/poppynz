@@ -7,6 +7,7 @@ import {
   dummyPayoutAccount,
   makeApprovalRepoTest,
   makeContractRepoTest,
+  makeContractReplacementRepoTest,
   makeConversationRepoTest,
   makeInMemoryBillingCustomerRepo,
   makeInMemoryContractBillingRepo,
@@ -2247,6 +2248,39 @@ describe('GET /contracts/:id', () => {
         )
       )
     );
+
+  it('tells the family (only) which contract a replacement replaces (Tier 3 step 1b)', async () => {
+    const link = makeContractReplacementRepoTest({
+      findForContract: () =>
+        Effect.succeed({ replacesContractId: 'original-1', sessionIds: ['s-1', 's-2'] })
+    });
+    const forViewer = (viewer: User) =>
+      Effect.runPromise(
+        getContractRouteProgram(makeContext({ params: { id: CONTRACT_ID } }), new Headers()).pipe(
+          Effect.provide(
+            Layer.merge(
+              makeLayer({
+                viewer,
+                contractWithContext: withContext(
+                  baseContract({ status: 'proposed' }),
+                  [proposedVersion()],
+                  viewer.id
+                ),
+                conversationById: activeConversation()
+              }),
+              link
+            )
+          )
+        )
+      );
+    expect((await forViewer(familyUser())).contract.replaces).toEqual({
+      contractId: 'original-1',
+      sessionCount: 2
+    });
+    expect((await forViewer(providerUser())).contract.replaces).toBeNull();
+    // Without a link (the default) it is null.
+    expect((await detailFor(familyUser())).contract.replaces).toBeNull();
+  });
 
   it('shows the family the weekly price with the 5% fee and its tax added', async () => {
     const { contract } = await detailFor(familyUser());

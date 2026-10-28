@@ -87,6 +87,7 @@ export const sessionActionSchema = Schema.Struct({
   action: Schema.Literal(
     'cancel',
     'propose_day_off',
+    'withdraw_day_off',
     'report_no_show',
     'report_reduced_hours',
     'dispute'
@@ -128,6 +129,20 @@ const partyOf = (contract: Contract, userId: string): PartySide | null =>
     : contract.providerUserId === userId
       ? 'helper'
       : null;
+
+/**
+ * The helper cancelled this session (spec §1, step 1b): their own
+ * cancellation, a day off they proposed that the family agreed to, or an
+ * admin's "helper cancelled" decision. Until it starts, the family may find
+ * a replacement for it.
+ */
+export const isHelperCancellation = (
+  resolution: Pick<SessionResolution, 'kind' | 'status' | 'reportedBySide' | 'decision'>
+) =>
+  (resolution.status === 'confirmed' &&
+    (resolution.kind === 'helper_cancelled' ||
+      (resolution.kind === 'day_off_agreed' && resolution.reportedBySide === 'helper'))) ||
+  (resolution.status === 'decided' && resolution.decision === 'helper_cancelled');
 
 /** One resolution as a party sees it. */
 export const resolutionView = (
@@ -227,7 +242,14 @@ export const cycleSessionResolutions = (input: {
               session,
               input.zone,
               policy.cancellationNoticeHours
-            ).toISOString()
+            ).toISOString(),
+            // Step 1b: the family's "Find a replacement" on a session the
+            // helper cancelled, until it starts.
+            canFindReplacement:
+              side === 'family' &&
+              active !== null &&
+              isHelperCancellation(active) &&
+              session.startsAt.getTime() > input.now.getTime()
           }
         ] as const;
       })
@@ -344,6 +366,23 @@ export const recordSessionActionProgram = (
       // Tier 3 step 2: the session's money follows at once (best-effort;
       // the tick applies it otherwise).
       yield* reconcileSession(contractId, ctx.session.id, now);
+      return { resolution: resolutionView(moved, viewer.id, ctx.session, ctx.zone, ctx.policy) };
+    }
+
+    if (input.action === 'withdraw_day_off') {
+      // The proposer takes their day-off request back before it is
+      // answered: the session goes ahead, and the other side may act on it
+      // again (cancel, propose their own day off).
+      const moved = yield* repo
+        .advance(
+          ctx.active!.id,
+          { from: ['proposed'], set: { status: 'reversed' } },
+          { actorUserId: viewer.id, actorSide: ctx.side, action: 'withdrawn', note }
+        )
+        .pipe((errors) => mapSessionRepoError(errors));
+      // Answered, or lapsed by the worker, a moment ago.
+      if (!moved) return yield* refuse('response_window_closed');
+      yield* noticeFor(moved, 'withdrawn');
       return { resolution: resolutionView(moved, viewer.id, ctx.session, ctx.zone, ctx.policy) };
     }
 

@@ -58,10 +58,12 @@ type ResolutionChip =
 	| 'declined';
 
 /** The status as words, and the chip it reads in. `awaitingMe`: a
- * proposal the viewer must answer. */
+ * proposal the viewer must answer; `withdrawn`: a reversed day-off request
+ * its proposer took back (nobody answered it). */
 export const resolutionStatusChip = (
 	status: ResolutionStatus,
-	awaitingMe = false
+	awaitingMe = false,
+	withdrawn = false
 ): { label: string; status: ResolutionChip } => {
 	switch (status) {
 		case 'proposed':
@@ -77,7 +79,9 @@ export const resolutionStatusChip = (
 		case 'lapsed':
 			return { label: m.sessions_status_lapsed(), status: 'expired' };
 		case 'reversed':
-			return { label: m.sessions_status_declined(), status: 'declined' };
+			return withdrawn
+				? { label: m.sessions_status_withdrawn(), status: 'expired' }
+				: { label: m.sessions_status_declined(), status: 'declined' };
 	}
 };
 
@@ -155,6 +159,8 @@ export const sessionActionErrorMessage = (error: SessionActionError): string => 
 			return m.sessions_error_invalid_response();
 		case 'SESSION_INVALID_MINUTES':
 			return m.sessions_error_invalid_minutes();
+		case 'SESSION_NOTHING_TO_WITHDRAW':
+			return m.sessions_error_nothing_to_withdraw();
 		case 'SESSION_NOT_FOUND':
 			return m.sessions_error_not_found();
 		case 'FORBIDDEN':

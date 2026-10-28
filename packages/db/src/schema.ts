@@ -2326,6 +2326,38 @@ export const helperTransferItem = appDb.table(
   ]
 );
 
+// Tier 3, step 1b (migration 0042): a replacement contract started from a
+// helper's cancellation, one row per cancelled session it covers. Written
+// with the replacement's draft and never changed; later steps (money, admin
+// views) read which sessions a replacement stands in for.
+export const contractReplacement = appDb.table(
+  'contract_replacements',
+  {
+    /** The replacement contract (with another helper). */
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    /** The contract whose helper cancelled. */
+    replacesContractId: uuid('replaces_contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    /** A cancelled session of `replacesContractId` this contract covers. */
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => contractSession.id, { onDelete: 'restrict' }),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    primaryKey({ columns: [table.contractId, table.sessionId] }),
+    index('contract_replacements_replaces_contract_id_idx').on(table.replacesContractId),
+    index('contract_replacements_session_id_idx').on(table.sessionId),
+    check(
+      'contract_replacements_not_self_check',
+      sql`${table.contractId} <> ${table.replacesContractId}`
+    )
+  ]
+);
+
 export const manualPayoutStatus = appDb.enum('manual_payout_status', [
   'pending_approval',
   'approved',

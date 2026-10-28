@@ -15,6 +15,7 @@
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import { formatDateTime } from '$lib/date';
 	import { m } from '$lib/paraglide/messages';
+	import { findReplacementHref } from '$lib/replacement';
 	import {
 		noticeHoursText,
 		resolutionKindLabel,
@@ -66,6 +67,8 @@
 				return m.sessions_action_cancel();
 			case 'propose_day_off':
 				return m.sessions_action_day_off();
+			case 'withdraw_day_off':
+				return m.sessions_action_withdraw_day_off();
 			case 'report_no_show':
 				return m.sessions_action_no_show();
 			case 'report_reduced_hours':
@@ -133,6 +136,11 @@
 						: m.sessions_confirm_day_off_helper({ name, when })
 				};
 			}
+			case 'withdraw_day_off':
+				return {
+					title: m.sessions_confirm_withdraw_title(),
+					body: m.sessions_confirm_withdraw({ name })
+				};
 			case 'report_no_show':
 				return {
 					title: m.sessions_confirm_no_show_title(),
@@ -190,6 +198,8 @@
 				return m.sessions_toast_cancelled({ name });
 			case 'propose_day_off':
 				return m.sessions_toast_day_off({ name });
+			case 'withdraw_day_off':
+				return m.sessions_toast_withdrawn({ name });
 			case 'report_no_show':
 			case 'report_reduced_hours':
 				return m.sessions_toast_reported({ name });
@@ -262,8 +272,22 @@
 		</div>
 	{/if}
 
-	{#if session.actions.length > 0}
+	{#if session.actions.length > 0 || session.canFindReplacement}
 		<div class="flex flex-wrap gap-1.5">
+			{#if session.canFindReplacement}
+				<!-- Tier 3 step 1b: the helper cancelled — find someone else. -->
+				<a
+					href={findReplacementHref(session.serviceName, {
+						contractId: cycle.contractId,
+						sessionIds: [session.id]
+					})}
+					class="btn btn-xs btn-secondary"
+					data-testid="session-find-replacement"
+				>
+					<i class="las la-search" aria-hidden="true"></i>
+					{m.replacement_find_action()}
+				</a>
+			{/if}
 			{#each session.actions as action (action)}
 				<button
 					type="button"

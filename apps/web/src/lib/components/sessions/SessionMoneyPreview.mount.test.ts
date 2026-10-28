@@ -77,7 +77,10 @@ describe('SessionMoneyPreview', () => {
 		const shown = text();
 		unmount(app);
 
-		expect(shown).toBe('Maria receives $15.63; you won’t be charged $50.39 for this session.');
+		// Before the capture the amounts may still move by a cent (spec §13.5).
+		expect(shown).toBe(
+			'Maria receives about $15.63; you won’t be charged about $50.39 for this session.'
+		);
 	});
 
 	it('tells the helper what they receive and what the family gets back', async () => {

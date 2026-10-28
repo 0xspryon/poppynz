@@ -28,6 +28,8 @@
 	import { todayIn } from '@repo/calendar';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
 	import PendingSessionResponses from '$lib/components/sessions/PendingSessionResponses.svelte';
+	// Tier 3 step 3: extra-session proposals awaiting the viewer's answer.
+	import PendingExtraSessions from '$lib/components/extra-sessions/PendingExtraSessions.svelte';
 	import ReplaceableSessions from '$lib/components/replacement/ReplaceableSessions.svelte';
 	import PayoutsReminder from '$lib/components/payouts/PayoutsReminder.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
@@ -953,6 +955,11 @@
 						counterpartName={contract.counterpart.name}
 						{cycleHref}
 					/>
+					<PendingExtraSessions
+						{contractId}
+						counterpartName={contract.counterpart.name}
+						{cycleHref}
+					/>
 					{#if contract.viewerSide === 'family'}
 						<!-- Tier 3 step 1b: sessions the helper cancelled. -->
 						<ReplaceableSessions {contractId} />
@@ -1214,7 +1221,12 @@
 />
 
 {#if declineOpen}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label={m.contracts_decline_dialog_aria()}>
+	<div
+		class="modal modal-open"
+		role="dialog"
+		aria-modal="true"
+		aria-label={m.contracts_decline_dialog_aria()}
+	>
 		<div class="modal-box max-w-md border border-card-border">
 			<h3 class="font-display text-xl font-bold text-base-content">
 				{m.contracts_decline_dialog_title()}
@@ -1261,7 +1273,12 @@
 {/if}
 
 {#if endOpen}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label={m.contracts_end_dialog_aria()}>
+	<div
+		class="modal modal-open"
+		role="dialog"
+		aria-modal="true"
+		aria-label={m.contracts_end_dialog_aria()}
+	>
 		<div class="modal-box max-w-md border border-card-border">
 			<h3 class="font-display text-xl font-bold text-base-content">
 				{m.contracts_end_dialog_title()}

@@ -24,6 +24,11 @@ vi.mock('$lib/api/admin-money', () => ({
 	decideManualPayout,
 	retryTransfer
 }));
+// Tier 3 step 3: the extra sessions (tested in their own suites).
+vi.mock('$lib/api/extra-sessions', () => ({
+	listExtraSessions: vi.fn(async () => ({ ok: false, error: { code: 'UNEXPECTED' } })),
+	listUnpaidExtraSessions: vi.fn(async () => ({ ok: true, data: { extraSessions: [] } }))
+}));
 vi.mock('$lib/toast.svelte', () => ({
 	toast: { success: toastSuccess, error: toastError, info: vi.fn() }
 }));

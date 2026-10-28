@@ -11,7 +11,8 @@ import { m } from '$lib/paraglide/messages';
 export type MoneyChip = 'approved' | 'complete' | 'rejected' | 'empty' | 'in-progress' | 'proposed';
 
 /** "Maria receives $15.63, you get $50.39 back" — the outcome stated before
- * confirming, from the viewer's side. Null when there is nothing to say. */
+ * confirming, from the viewer's side ("about" before the cycle is charged).
+ * Null when there is nothing to say. */
 export const previewSentence = (
 	preview: SessionMoneyPreview | null,
 	viewerSide: 'family' | 'provider',
@@ -19,8 +20,12 @@ export const previewSentence = (
 ): string | null => {
 	if (preview === null || preview.outcome === 'none') return null;
 	if (preview.held) return m.money_preview_held();
-	const helper = formatMoney(preview.helperReceivesCents);
-	const back = formatMoney(preview.familyBackCents);
+	// Before the capture the amounts may still move by a cent when the cycle
+	// is re-quoted (spec §13.5): they read "about $X" / "environ X $".
+	const money = (cents: number) =>
+		preview.charged ? formatMoney(cents) : m.money_about({ amount: formatMoney(cents) });
+	const helper = money(preview.helperReceivesCents);
+	const back = money(preview.familyBackCents);
 	if (viewerSide === 'family') {
 		if (preview.familyBackCents === 0) return m.money_preview_family_nothing_back({ name, helper });
 		return preview.charged

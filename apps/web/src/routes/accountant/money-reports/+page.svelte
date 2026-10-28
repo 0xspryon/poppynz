@@ -10,7 +10,7 @@
 		reportLabel,
 		type ReportKind
 	} from '$lib/api/accountant';
-	import { formatDateTime } from '$lib/date';
+	import { formatDateTimeIn } from '$lib/date';
 	import { formatMoney } from '$lib/money';
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
@@ -114,7 +114,8 @@
 						{#each result.rows as row (row.month)}
 							<tr>
 								<td>{row.month}{row.approximate ? ' *' : ''}</td>
-								<td class="hidden md:table-cell">{formatDateTime(row.asOf)}</td>
+								<td class="hidden md:table-cell">{formatDateTimeIn(row.asOf, 'America/Toronto')}</td
+								>
 								<td class="text-right tabular-nums">{line(row.heldHelperPay)}</td>
 								<td class="text-right tabular-nums">{line(row.outstandingRecoveries)}</td>
 								<td class="text-right tabular-nums">{line(row.refundsInFlight)}</td>

@@ -714,11 +714,15 @@ export const buildEvidence = (pack: EvidencePack, summary: string) => {
     uncategorized_text: summary,
     product_description: [
       `In-home care booked through Poppynz${pack.helper ? ` with ${pack.helper.name}` : ''}.`,
-      ...(pack.cycle
+      ...(pack.dispute.scope === 'extra_session'
         ? [
-            `Charge for the cycle ${cycleDates(pack.cycle)} (charged ${fmtDate(pack.cycle.capturedAt)}).`
+            `Charge for an extra session the family confirmed and authorised in the app (charged ${fmtDate(pack.payment?.capturedAt ?? null)}).`
           ]
-        : []),
+        : pack.cycle
+          ? [
+              `Charge for the cycle ${cycleDates(pack.cycle)} (charged ${fmtDate(pack.cycle.capturedAt)}).`
+            ]
+          : []),
       ...sessionLines
     ].join('\n'),
     customer_name: pack.family.name,

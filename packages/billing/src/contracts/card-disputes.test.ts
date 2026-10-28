@@ -233,6 +233,11 @@ describe('dispute webhooks: one idempotent sync for every lifecycle event', () =
     expect(w.cardDisputes.state.sessions.map((row) => [row.sessionId, row.disputedCents])).toEqual([
       [wed.id, 6602]
     ]);
+    // The evidence describes an extra session's own charge, not the cycle's.
+    const pack = await w.provide(assembleEvidencePack(w.dispute().id));
+    const text = buildEvidence(pack, 'Summary').text.product_description!;
+    expect(text).toContain('an extra session');
+    expect(text).not.toContain('Charge for the cycle');
   });
 
   it('a partial dispute is attributed across the sessions, cents exact', async () => {

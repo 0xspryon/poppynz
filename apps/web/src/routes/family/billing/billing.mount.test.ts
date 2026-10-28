@@ -222,4 +222,60 @@ describe('family billing page', () => {
 		expect(text).toContain('Not charged');
 		expect(text).not.toContain('Failed');
 	});
+
+	it('lists a charge’s session refunds with their status and a receipt link (Tier 3)', async () => {
+		getBilling.mockResolvedValue(
+			billing({
+				payments: [
+					{
+						id: 'payment-3',
+						createdAt: '2026-11-02T12:00:00.000Z',
+						description: 'Care with Sam T. · Mon, Nov 2 – Wed, Nov 4',
+						totalCents: 13206,
+						currency: 'CAD',
+						taxLines: [],
+						status: 'paid',
+						receiptUrl: null,
+						refunds: [
+							{
+								id: 'refund-1',
+								status: 'succeeded',
+								totalCents: 5039,
+								createdAt: '2026-11-03T12:00:00.000Z',
+								refundedAt: '2026-11-03T12:05:00.000Z',
+								sessionDate: '2026-11-03',
+								serviceName: 'Childcare'
+							},
+							{
+								id: 'refund-2',
+								status: 'failed',
+								totalCents: 1200,
+								createdAt: '2026-11-04T12:00:00.000Z',
+								refundedAt: null,
+								sessionDate: '2026-11-04',
+								serviceName: 'Childcare'
+							}
+						]
+					}
+				]
+			})
+		);
+		const app = mount(BillingPage, { target: document.body });
+		await settle();
+		const rows = [...document.querySelectorAll('[data-testid="payment-refund"]')].map(
+			(row) => row.textContent?.replace(/\s+/g, ' ') ?? ''
+		);
+		const receipts = [...document.querySelectorAll('[data-testid="payment-refund"] a')].map((a) =>
+			a.getAttribute('href')
+		);
+		unmount(app);
+
+		expect(rows).toHaveLength(2);
+		expect(rows[0]).toContain('Refund · Tue, Nov 3, 2026 · Childcare');
+		expect(rows[0]).toContain('$50.39');
+		expect(rows[0]).toContain('Issued');
+		expect(rows[1]).toContain('Failed');
+		expect(rows[1]).toContain('Our team will contact you.');
+		expect(receipts).toEqual(['/family/billing/refunds/refund-1']);
+	});
 });

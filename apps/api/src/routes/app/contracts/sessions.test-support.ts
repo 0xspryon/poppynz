@@ -29,12 +29,14 @@ import type { HonoContext, HonoEnv } from '@/api/app-env';
 import { makeAuthServiceTest } from '@/api/lib/effect-auth';
 
 /** A Hono context with route params and a JSON body. */
-export const makeContext = (options: { params?: Record<string, string>; body?: unknown } = {}) =>
+export const makeContext = (
+  options: { params?: Record<string, string>; body?: unknown; query?: Record<string, string> } = {}
+) =>
   ({
     req: {
       json: async () => options.body,
       param: (key: string) => options.params?.[key],
-      query: () => undefined
+      query: (key: string) => options.query?.[key]
     },
     get: () => 'en'
   }) as unknown as HonoContext<HonoEnv>;

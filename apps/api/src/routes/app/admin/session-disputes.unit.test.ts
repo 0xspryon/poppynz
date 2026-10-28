@@ -150,6 +150,28 @@ describe('GET /admin/session-disputes/:id', () => {
   });
 });
 
+describe('admin names', () => {
+  it('names the deciding admin, never by their user id', async () => {
+    const world = adminWorld();
+    await decide(world, { decision: 'as_scheduled', reason: 'Seen on camera.' });
+    const result = await Effect.runPromise(
+      getSessionDisputeRouteProgram(
+        makeContext({ params: { id: DISPUTE_ID } }),
+        new Headers()
+      ).pipe(Effect.provide(world.layer))
+    );
+    expect(result.dispute.decidedByName).toBe('Ada Tester');
+    expect(result.dispute.history.at(-1)?.actorName).toBe('Ada Tester');
+    const decided = await Effect.runPromise(
+      listSessionDisputesRouteProgram(
+        makeContext({ query: { status: 'decided' } }),
+        new Headers()
+      ).pipe(Effect.provide(world.layer))
+    );
+    expect(decided.disputes[0]?.decidedByName).toBe('Ada Tester');
+  });
+});
+
 describe('POST /admin/session-disputes/:id/decide', () => {
   it('decides the dispute, audits who, when, before and after, and tells both parties', async () => {
     const world = adminWorld();

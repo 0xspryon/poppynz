@@ -105,8 +105,9 @@ const fullName = (userId: string) =>
     return user?.name ?? 'Poppynz member';
   });
 
-/** The resolution with its contract, billing and session. */
-const loadDispute = (resolution: SessionResolution) =>
+/** The resolution with its contract, billing and session. `otherUserIds`:
+ * anyone else to name (the deciding admin, audit actors). */
+const loadDispute = (resolution: SessionResolution, otherUserIds: ReadonlyArray<string> = []) =>
   Effect.gen(function* () {
     const contract = yield* ContractRepo.pipe(
       Effect.flatMap((repo) => repo.findById(resolution.contractId)),
@@ -124,6 +125,12 @@ const loadDispute = (resolution: SessionResolution) =>
     }
     const family = yield* fullName(contract.familyUserId);
     const helper = yield* fullName(contract.providerUserId);
+    const others = new Map<string, string>();
+    for (const userId of new Set([resolution.decidedByUserId, ...otherUserIds])) {
+      if (userId === null || userId === contract.familyUserId) continue;
+      if (userId === contract.providerUserId) continue;
+      others.set(userId, yield* fullName(userId));
+    }
     const nameOf = (userId: string | null) =>
       userId === null
         ? null
@@ -131,7 +138,7 @@ const loadDispute = (resolution: SessionResolution) =>
           ? family
           : userId === contract.providerUserId
             ? helper
-            : `Poppynz (${userId})`;
+            : (others.get(userId) ?? 'Poppynz');
     return { contract, billing, session, family, helper, nameOf };
   });
 
@@ -210,7 +217,11 @@ export const getSessionDisputeProgram = (id: string) =>
     const repo = yield* SessionResolutionRepo;
     const resolution = yield* repo.findById(id).pipe((errors) => mapRepoError(errors));
     if (!resolution) return yield* Effect.fail(new SessionDisputeNotFoundError());
-    const { contract, billing, session, family, helper, nameOf } = yield* loadDispute(resolution);
+    const events = yield* repo.listEvents(id).pipe((errors) => mapRepoError(errors));
+    const { contract, billing, session, family, helper, nameOf } = yield* loadDispute(
+      resolution,
+      events.flatMap((event) => (event.actorUserId === null ? [] : [event.actorUserId]))
+    );
     const messages = yield* repo
       .listMessagesBetween(
         contract.conversationId,
@@ -224,7 +235,6 @@ export const getSessionDisputeProgram = (id: string) =>
     )).filter(
       (row) => row.voidedAt === null && row.contractVersionId === billing.acceptedVersionId
     );
-    const events = yield* repo.listEvents(id).pipe((errors) => mapRepoError(errors));
     return {
       dispute: {
         ...resolutionSummary(resolution, nameOf),

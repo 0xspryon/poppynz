@@ -799,6 +799,22 @@ describe('the evidence pack and its submission', () => {
       service_date: '2026-11-02 to 2026-11-04'
     });
     expect(evidence.text.cancellation_policy_disclosure).toContain('a'.repeat(64));
+    // Both parties signed the same text: it is quoted once, not twice.
+    const twice = buildEvidence(
+      {
+        ...pack,
+        agreement: [
+          { ...pack.agreement[0]!, side: 'family' },
+          { ...pack.agreement[0]!, side: 'helper' }
+        ]
+      },
+      'Summary'
+    );
+    expect(
+      twice.documentation.filter((section) =>
+        section.heading.startsWith('Signed service agreement')
+      )
+    ).toHaveLength(1);
     // The notice period is the configured one, never a hard-coded figure.
     expect(evidence.text.cancellation_policy_disclosure).toContain('at least 24 hours');
     expect(

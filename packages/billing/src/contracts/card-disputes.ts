@@ -764,10 +764,15 @@ export const buildEvidence = (pack: EvidencePack, summary: string) => {
       ])
     },
     { heading: 'Refunds', lines: refunds },
-    ...pack.agreement.map((row) => ({
-      heading: `Signed service agreement — ${row.side} (${fmtDate(row.signedAt)}, SHA-256 ${row.sha256})`,
-      lines: row.content.split('\n')
-    }))
+    // Both parties sign the same text: quote each distinct text once, naming
+    // who signed it.
+    ...[...new Set(pack.agreement.map((row) => row.sha256))].map((sha256) => {
+      const signed = pack.agreement.filter((row) => row.sha256 === sha256);
+      return {
+        heading: `Signed service agreement — ${signed.map((row) => `${row.side} ${fmtDate(row.signedAt)}`).join(', ')} (SHA-256 ${sha256})`,
+        lines: signed[0]!.content.split('\n')
+      };
+    })
   ];
   const communication: Array<PdfSection> =
     pack.messages.length === 0

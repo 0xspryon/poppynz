@@ -84,19 +84,24 @@ const instant = (at: Date, zone: string, locale: MailLocale) =>
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
-    timeZone: zone
+    timeZone: zone,
+    // "EST" / "HNE": the reader may live in another zone than the contract.
+    timeZoneName: 'short'
   }).format(at);
 
 const hours = (minutes: number, locale: MailLocale) =>
   new Intl.NumberFormat(intlLocale(locale), { maximumFractionDigits: 2 }).format(minutes / 60);
 
+/** Ends a sentence once: "… 5:30 p.m." already carries its full stop. */
+const stop = (text: string) => (text.endsWith('.') ? text : `${text}.`);
+
 /** The kind as a phrase inside a sentence. */
 const kindPhrase: Record<MailLocale, Record<SessionResolutionKind | 'as_scheduled', string>> = {
   en: {
-    family_cancelled_early: 'an early cancellation by the family',
+    family_cancelled_early: 'an on-time cancellation by the family',
     family_cancelled_late: 'a late cancellation by the family',
     family_no_show: 'a family no-show',
-    family_reduced_hours: 'reduced hours (an early dismissal)',
+    family_reduced_hours: 'reduced hours',
     helper_cancelled: 'a cancellation by the helper',
     helper_no_show: 'a helper no-show',
     day_off_agreed: 'an agreed day off',
@@ -107,7 +112,7 @@ const kindPhrase: Record<MailLocale, Record<SessionResolutionKind | 'as_schedule
     family_cancelled_early: 'une annulation dans les délais par la famille',
     family_cancelled_late: 'une annulation tardive par la famille',
     family_no_show: 'une absence de la famille',
-    family_reduced_hours: 'des heures réduites (fin hâtive)',
+    family_reduced_hours: 'des heures réduites',
     helper_cancelled: 'une annulation par l’aidant(e)',
     helper_no_show: 'une absence de l’aidant(e)',
     day_off_agreed: 'un congé convenu',
@@ -141,7 +146,7 @@ const copy: Record<
             ? {
                 subject: `You cancelled ${v.day}`,
                 paragraphs: [
-                  `You cancelled ${v.session}. ${v.counterpart} has been told.`,
+                  `You cancelled ${stop(v.session)} ${v.counterpart} has been told.`,
                   'If you change your mind, talk to them in your conversation.'
                 ]
               }
@@ -157,20 +162,20 @@ const copy: Record<
         if (isCancellation(r.kind)) {
           const timing =
             r.kind === 'family_cancelled_early'
-              ? `It counts as an early cancellation: it was recorded at least ${v.noticeHours} hours before the session.`
+              ? `It counts as an on-time cancellation: it was recorded at least ${v.noticeHours} hours before the session.`
               : `It counts as a late cancellation: it was recorded less than ${v.noticeHours} hours before the session.`;
           return mine
             ? {
                 subject: `You cancelled ${v.day}`,
                 paragraphs: [
-                  `You cancelled ${v.session}. ${timing}`,
+                  `You cancelled ${stop(v.session)} ${timing}`,
                   `${v.counterpart} has been told.`
                 ]
               }
             : {
                 subject: `${who} cancelled ${v.day}`,
                 paragraphs: [
-                  `${who} cancelled ${v.session}. ${timing}`,
+                  `${who} cancelled ${stop(v.session)} ${timing}`,
                   "You don't need to work this session."
                 ]
               };
@@ -180,15 +185,15 @@ const copy: Record<
             ? {
                 subject: `You asked for a day off on ${v.day}`,
                 paragraphs: [
-                  `You asked ${v.counterpart} for a day off on ${v.session}.`,
+                  `You asked ${v.counterpart} for a day off on ${stop(v.session)}`,
                   `It only takes effect once they confirm. Without an answer by ${v.deadline} the request lapses and the session goes ahead.`
                 ]
               }
             : {
                 subject: `${who} asked for a day off on ${v.day}`,
                 paragraphs: [
-                  `${who} asked for a day off on ${v.session}.`,
-                  `Please confirm or decline it by ${v.deadline}. Without an answer the request lapses and the session goes ahead.`
+                  `${who} asked for a day off on ${stop(v.session)}`,
+                  `Please confirm or decline it by ${stop(v.deadline)} Without an answer the request lapses and the session goes ahead.`
                 ]
               };
         }
@@ -207,15 +212,15 @@ const copy: Record<
           ? {
               subject: `You reported ${what} for ${v.day}`,
               paragraphs: [
-                `You reported ${what}${v.worked ? ` (${v.worked} worked)` : ''} for ${v.session}.`,
+                `You reported ${what}${v.worked ? ` (${v.worked} worked)` : ''} for ${stop(v.session)}`,
                 `${v.counterpart} has until ${v.deadline} to accept or contest it. Without an answer it counts as accepted.`
               ]
             }
           : {
               subject: `${who} reported ${what} for ${v.day}`,
               paragraphs: [
-                `${who} reported ${what}${v.worked ? ` (${v.worked} worked)` : ''} for ${v.session}.`,
-                `If you disagree, contest it by ${v.deadline}. Without an answer it counts as accepted.`
+                `${who} reported ${what}${v.worked ? ` (${v.worked} worked)` : ''} for ${stop(v.session)}`,
+                `If you disagree, contest it by ${stop(v.deadline)} Without an answer it counts as accepted.`
               ]
             };
       case 'confirmed':
@@ -231,8 +236,8 @@ const copy: Record<
             r.respondedByUserId === null
               ? `The report of ${what} for ${v.session} is confirmed: no answer came within ${v.responseHours} hours.`
               : mine
-                ? `You accepted the report of ${what} for ${v.session}.`
-                : `${who} accepted the report of ${what} for ${v.session}.`
+                ? `You accepted the report of ${what} for ${stop(v.session)}`
+                : `${who} accepted the report of ${what} for ${stop(v.session)}`
           ]
         };
       case 'contested':
@@ -240,8 +245,8 @@ const copy: Record<
           subject: `${v.day} is disputed`,
           paragraphs: [
             mine
-              ? `You disputed ${what} for ${v.session}.`
-              : `${who} disputed ${what} for ${v.session}.`,
+              ? `You disputed ${what} for ${stop(v.session)}`
+              : `${who} disputed ${what} for ${stop(v.session)}`,
             ...(v.note ? [`Statement: “${v.note}”`] : []),
             'A Poppynz admin will review it and let you both know the outcome.'
           ]
@@ -251,8 +256,8 @@ const copy: Record<
           subject: `Day off declined for ${v.day}`,
           paragraphs: [
             mine
-              ? `You declined the day off on ${v.session}. The session goes ahead as agreed.`
-              : `${who} declined the day off on ${v.session}. The session goes ahead as agreed.`
+              ? `You declined the day off on ${stop(v.session)} The session goes ahead as agreed.`
+              : `${who} declined the day off on ${stop(v.session)} The session goes ahead as agreed.`
           ]
         };
       case 'lapsed':
@@ -266,7 +271,7 @@ const copy: Record<
         return {
           subject: `Dispute decided for ${v.day}`,
           paragraphs: [
-            `A Poppynz admin reviewed the dispute about ${v.session}. Outcome: ${v.decision}.`,
+            `A Poppynz admin reviewed the dispute about ${stop(v.session)} Outcome: ${v.decision}.`,
             `Reason: ${v.decisionReason}`
           ]
         };

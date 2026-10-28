@@ -520,4 +520,51 @@ describe('resolution notices', () => {
     expect(toFamily.paragraphs[0]).toContain('annulation tardive');
     expect(toFamily.paragraphs[1]).toBe('Maria T. a été avisé(e).');
   });
+
+  it('reads cleanly: one full stop after "p.m.", one pair of brackets, a labelled deadline', () => {
+    const contract = {
+      ...dummyContract,
+      id: 'contract-1',
+      familyUserId: 'family-1',
+      providerUserId: 'helper-1'
+    };
+    const names = { family: 'Priya T.', helper: 'Maria T.' };
+    const early = dummySessionResolution({
+      kind: 'family_cancelled_early',
+      reportedByUserId: 'family-1',
+      reportedBySide: 'family',
+      status: 'confirmed'
+    });
+    const base = { contract, session: session(), zone: TORONTO, policy: POLICY };
+    const cancelled = resolutionCopyFor(
+      'recorded',
+      'helper',
+      { ...base, resolution: early },
+      names,
+      'en'
+    );
+    expect(cancelled.paragraphs.join(' ')).not.toContain('..');
+    // The same words as the cycle page ("on time").
+    expect(cancelled.paragraphs[0]).toContain('on-time cancellation');
+    const reduced = dummySessionResolution({
+      kind: 'family_reduced_hours',
+      reportedByUserId: 'family-1',
+      reportedBySide: 'family',
+      minutesWorked: 60,
+      status: 'proposed',
+      respondBy: new Date('2026-11-05T21:00:00.000Z')
+    });
+    const report = resolutionCopyFor(
+      'recorded',
+      'helper',
+      { ...base, resolution: reduced },
+      names,
+      'en'
+    );
+    const text = [report.subject, ...report.paragraphs].join(' ');
+    expect(text).not.toContain('..');
+    expect(text).not.toMatch(/\)\s*\(/);
+    // The deadline says which zone it is in.
+    expect(report.paragraphs[1]).toContain('EST');
+  });
 });

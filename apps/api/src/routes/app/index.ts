@@ -40,6 +40,7 @@ import { meTcsRoute } from './me/tcs';
 import { adminTcsRoute } from './admin/tcs';
 import { adminSessionDisputesRoute } from './admin/session-disputes';
 import { adminMoneyRoute } from './admin/money';
+import { accountantRoute } from './accountant/accountant';
 
 export const appRoutes = new Hono<HonoEnv>()
   .route('/auth', signupRoute)
@@ -76,6 +77,7 @@ export const appRoutes = new Hono<HonoEnv>()
   .route('/admin/money', adminMoneyRoute)
   .route('/payouts', payoutsRoute)
   .route('/tax', taxRoute)
+  .route('/accountant', accountantRoute)
   .route('/conversations', conversationsRoute)
   .route('/notifications', notificationsRoute)
   .route('/providers', providersRoute)

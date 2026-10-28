@@ -207,6 +207,7 @@ describe('GET /billing', () => {
       refundedAt: new Date('2026-11-06T10:00:00.000Z'),
       resolvedByUserId: null,
       resolvedNote: null,
+      handledAt: null,
       createdAt: new Date('2026-11-06T10:00:00.000Z'),
       updatedAt: new Date('2026-11-06T10:00:00.000Z')
     });

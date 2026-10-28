@@ -1,4 +1,6 @@
 import {
+  AccountingRepoDefault,
+  ReconciliationRepoDefault,
   ApprovalRepoDefault,
   ApprovalRequestRepoDefault,
   BillingCustomerRepoDefault,
@@ -37,7 +39,7 @@ import {
   UserSearchRepoDefault,
   VouchRepoDefault
 } from '@repo/db';
-import { CycleSettlementLive } from '@repo/billing';
+import { CardDisputeLedgerNone, CycleSettlementLive } from '@repo/billing';
 import { CredibledDefault } from '@repo/credibled';
 import { GooglePlacesLive } from '@repo/google';
 import { NotificationHubLive } from '@repo/notify';
@@ -96,6 +98,11 @@ const BaseLive = Layer.mergeAll(
   SessionMoneyRepoDefault,
   // Tier 3 step 3: extra sessions.
   ExtraSessionRepoDefault,
+  // Tier 3 step 5: the accountant's ledger and the reconciliation; card
+  // disputes plug in through the step-4 adapter.
+  AccountingRepoDefault,
+  ReconciliationRepoDefault,
+  CardDisputeLedgerNone,
   NotificationHubLive,
   GooglePlacesLive,
   MailerLive,

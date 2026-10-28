@@ -117,6 +117,24 @@ export type NotificationPayloads = {
     resolutionId: string;
     event: 'recorded' | 'confirmed' | 'contested' | 'declined' | 'withdrawn' | 'lapsed' | 'decided';
   };
+  /** Something happened to one of the contract's extra sessions (Tier 3
+   * step 3): proposed, answered, withdrawn, lapsed, cancelled, or its charge
+   * moved. Thin on purpose: an open contract or cycle page refetches. */
+  'contract.extra_session': {
+    contractId: string;
+    extraSessionId: string;
+    cycleId: string | null;
+    event:
+      | 'proposed'
+      | 'withdrawn'
+      | 'declined'
+      | 'lapsed'
+      | 'agreed'
+      | 'cancelled'
+      | 'in_cycle'
+      | 'charged'
+      | 'charge_failed';
+  };
   /** Someone asked the viewer to vouch for them. */
   'vouch.requested': {
     vouchId: string;

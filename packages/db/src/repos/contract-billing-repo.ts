@@ -23,7 +23,8 @@ import {
   contractBilling,
   contractCycle,
   contractSession,
-  contractSessionCharge
+  contractSessionCharge,
+  type ContractSessionChargeRoute
 } from '../schema';
 
 /**
@@ -82,6 +83,9 @@ export type SessionFilter = {
   endedBy?: Date;
   /** Only sessions dated strictly after this day. */
   dateAfter?: string;
+  /** Only sessions charged this way (Tier 3 step 3: an extra session in its
+   * delay or charged on its own payment is never suspended with its cycle). */
+  routes?: ReadonlyArray<ContractSessionChargeRoute>;
 };
 
 /** Billing rows the tick still has work on. */
@@ -184,7 +188,8 @@ const sessionWhere = (filter: SessionFilter) =>
     inArray(contractSession.status, [...filter.from]),
     filter.startsAfter ? gt(contractSession.startsAt, filter.startsAfter) : undefined,
     filter.endedBy ? lte(contractSession.endsAt, filter.endedBy) : undefined,
-    filter.dateAfter ? gt(contractSession.date, filter.dateAfter) : undefined
+    filter.dateAfter ? gt(contractSession.date, filter.dateAfter) : undefined,
+    filter.routes ? inArray(contractSession.chargeRoute, [...filter.routes]) : undefined
   );
 
 export const ContractBillingRepoLive = Layer.effect(
@@ -441,7 +446,8 @@ export const makeInMemoryContractBillingRepo = (
     filter.from.includes(row.status) &&
     (!filter.startsAfter || row.startsAt > filter.startsAfter) &&
     (!filter.endedBy || row.endsAt <= filter.endedBy) &&
-    (!filter.dateAfter || row.date > filter.dateAfter);
+    (!filter.dateAfter || row.date > filter.dateAfter) &&
+    (!filter.routes || filter.routes.includes(row.chargeRoute));
 
   const service: Context.Tag.Service<ContractBillingRepo> = {
     findBilling: (contractId) => Effect.sync(() => state.billing.get(contractId) ?? null),
@@ -537,6 +543,8 @@ export const makeInMemoryContractBillingRepo = (
             id: `session-${++memoryId}`,
             status: row.status ?? 'scheduled',
             compensationCents: row.compensationCents ?? 0,
+            origin: row.origin ?? 'scheduled',
+            chargeRoute: row.chargeRoute ?? 'cycle',
             createdAt: now(),
             updatedAt: now()
           });

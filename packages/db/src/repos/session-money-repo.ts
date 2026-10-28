@@ -9,6 +9,7 @@ import {
   inArray,
   isNull,
   lte,
+  or,
   sql,
   type InferInsertModel,
   type InferSelectModel
@@ -20,6 +21,7 @@ import {
   billingLedgerEntry,
   contract,
   contractCycle,
+  contractSessionCharge,
   helperRecovery,
   helperTransfer,
   helperTransferItem,
@@ -185,7 +187,8 @@ export class SessionMoneyRepo extends Context.Tag('@repo/db/SessionMoneyRepo')<
       statuses?: ReadonlyArray<HelperRecovery['status']>;
     }) => Effect.Effect<Array<HelperRecovery>, SqlError>;
 
-    /** Captured cycles whose transfer time has passed and that have no
+    /** Captured cycles (or, Tier 3 step 3, cycles with an extra session
+     * charged on its own payment) whose transfer time has passed and that have no
      * first transfer yet. */
     listCyclesDueForTransfer: (now: Date) => Effect.Effect<Array<TransferableCycle>, SqlError>;
     /** Inserts unless (cycle, sequence) exists; resolves the row on file. */
@@ -455,7 +458,13 @@ export const SessionMoneyRepoLive = Layer.effect(
           )
           .where(
             and(
-              eq(contractCycle.status, 'captured'),
+              // Tier 3 step 3: a cycle that was never captured (nothing to
+              // bill, carried…) still transfers an extra session charged on
+              // its own payment.
+              or(
+                eq(contractCycle.status, 'captured'),
+                sql`exists (select 1 from ${contractSessionCharge} where ${contractSessionCharge.cycleId} = ${contractCycle.id})`
+              ),
               lte(contractCycle.transferAt, now),
               isNull(helperTransfer.id)
             )
@@ -886,7 +895,8 @@ export const makeInMemorySessionMoneyRepo = (
         billing.cycles
           .filter(
             (cycle) =>
-              cycle.status === 'captured' &&
+              (cycle.status === 'captured' ||
+                billing.charges.some((row) => row.cycleId === cycle.id)) &&
               cycle.transferAt <= at &&
               !state.transfers.some((row) => row.cycleId === cycle.id && row.sequence === 1)
           )

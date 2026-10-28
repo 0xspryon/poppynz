@@ -4,6 +4,7 @@
  *   POST /contracts/:id/sessions/:sessionId/actions   cancel, day off, report, dispute
  *   POST /contracts/:id/sessions/:sessionId/respond   accept / contest / decline
  *   GET  /contracts/:id/sessions/pending              what awaits the viewer's answer
+ *   POST /contracts/:id/sessions/:sessionId/preview   the money an action would move (step 2)
  */
 import type { SessionActionRefusal } from '@repo/billing';
 import { Cause, Effect, Exit, Option } from 'effect';
@@ -16,11 +17,13 @@ import {
   respondToSessionRouteProgram,
   type SessionActionRefusedError
 } from './sessions';
+import { previewSessionActionRouteProgram } from './session-money';
 
 type SessionRouteError =
   | Effect.Effect.Error<ReturnType<typeof recordSessionActionRouteProgram>>
   | Effect.Effect.Error<ReturnType<typeof respondToSessionRouteProgram>>
-  | Effect.Effect.Error<ReturnType<typeof listPendingSessionResponsesRouteProgram>>;
+  | Effect.Effect.Error<ReturnType<typeof listPendingSessionResponsesRouteProgram>>
+  | Effect.Effect.Error<ReturnType<typeof previewSessionActionRouteProgram>>;
 
 const refusalToResponse = (c: HonoContext<HonoEnv>, error: SessionActionRefusedError) => {
   const reason: SessionActionRefusal = error.reason;
@@ -160,7 +163,7 @@ const refusalToResponse = (c: HonoContext<HonoEnv>, error: SessionActionRefusedE
   }
 };
 
-const sessionRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: SessionRouteError) => {
+export const sessionRouteErrorToResponse = (c: HonoContext<HonoEnv>, error: SessionRouteError) => {
   switch (error._tag) {
     case 'UnauthorizedError':
     case 'ForbiddenError':
@@ -222,5 +225,13 @@ export async function listPendingSessionResponsesHandler(c: HonoContext<HonoEnv>
   const exit = await c
     .get('runtime')
     .runPromiseExit(listPendingSessionResponsesRouteProgram(c, c.req.raw.headers));
+  return exitToResponse(c, exit);
+}
+
+// Tier 3 step 2: the money preview before confirming an action.
+export async function previewSessionActionHandler(c: HonoContext<HonoEnv>) {
+  const exit = await c
+    .get('runtime')
+    .runPromiseExit(previewSessionActionRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }

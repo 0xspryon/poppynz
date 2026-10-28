@@ -68,6 +68,7 @@ import { parseJsonBody, requestValidationErrorToResponse } from '@/api/lib/schem
 import { hasReadyPayoutAccount } from '@/api/lib/payouts';
 import { agreementErrorToResponse, agreementSignature, type AgreementAssent } from './agreement';
 import { cycleSessionResolutions, sessionWindowView } from './sessions';
+import { cycleMoneyView, cycleTransfersView } from './session-money';
 import {
   contractAcceptJsonError,
   validateContractAcceptInput,
@@ -184,16 +185,20 @@ export class PaymentMethodRequiredError extends Data.TaggedError(
 
 /** The billing cycle doesn't exist on this contract (or the contract has no
  * billing yet) — the same 404 an outsider gets for the contract. */
-export class ContractCycleNotFoundError extends Data.TaggedError('ContractCycleNotFoundError')<{}> {}
+export class ContractCycleNotFoundError extends Data.TaggedError(
+  'ContractCycleNotFoundError'
+)<{}> {}
 
 /** "Retry payment" with nothing to retry: no declined hold in its grace
  * period and no card suspension (already funded, or not the card's fault). */
-export class PaymentRetryNotNeededError extends Data.TaggedError('PaymentRetryNotNeededError')<{}> {}
+export class PaymentRetryNotNeededError extends Data.TaggedError(
+  'PaymentRetryNotNeededError'
+)<{}> {}
 
 /** "Retry payment" is limited to once a minute per contract. */
-export class PaymentRetryRateLimitedError extends Data.TaggedError(
-  'PaymentRetryRateLimitedError'
-)<{ retryAfterSeconds: number }> {}
+export class PaymentRetryRateLimitedError extends Data.TaggedError('PaymentRetryRateLimitedError')<{
+  retryAfterSeconds: number;
+}> {}
 
 /** The payment provider could not be reached while retrying. Nothing was
  * lost: the attempt is retried under the same key by the billing tick. */
@@ -1952,6 +1957,18 @@ export const getContractCycleProgram = (
       )
     );
 
+    // Tier 3 step 2: each session's refund / transfer status, and (for the
+    // helper) the cycle's transfers.
+    const money = yield* cycleMoneyView(
+      contractId,
+      sessions.map((session) => session.id),
+      side
+    ).pipe((errors) => mapContractRepoError(errors));
+    const transfers =
+      side === 'provider'
+        ? yield* cycleTransfersView(cycle.id).pipe((errors) => mapContractRepoError(errors))
+        : [];
+
     const quoted = cycle.serviceCents !== null;
     const amounts = !quoted
       ? null
@@ -1965,7 +1982,9 @@ export const getContractCycleProgram = (
             feeTaxLines: supplyLines(cycle.taxLines, 'family_service_fee'),
             totalCents: cycle.familyTotalCents ?? 0,
             // A reduced capture charged less than the quote.
-            chargedCents: cycle.capturedCents
+            chargedCents: cycle.capturedCents,
+            // Late cancellations before the charge: compensation only.
+            compensationCents: cycle.compensationCents
           }
         : {
             side: 'provider' as const,
@@ -1974,7 +1993,8 @@ export const getContractCycleProgram = (
             commissionBps: cycle.providerCommissionBps ?? billing.providerCommissionBps,
             commissionCents: cycle.providerCommissionCents ?? 0,
             commissionTaxLines: supplyLines(cycle.taxLines, 'provider_commission'),
-            shareCents: cycle.providerShareCents ?? 0
+            shareCents: cycle.providerShareCents ?? 0,
+            compensationCents: cycle.compensationCents
           };
 
     return {
@@ -2020,8 +2040,10 @@ export const getContractCycleProgram = (
             responses: [],
             cancelOutcome: null,
             cutoffAt: null
-          })
+          }),
+          money: money.get(session.id) ?? null
         })),
+        transfers,
         sessionWindow: resolutions.sessionWindow,
         canRetryPayment: side === 'family' && familyRetryEligible(billing, cycles, now)
       }
@@ -2717,9 +2739,7 @@ export async function renewContractHandler(c: HonoContext<HonoEnv>) {
 
 export async function retryContractPaymentHandler(c: HonoContext<HonoEnv>) {
   const runtime = c.get('runtime');
-  const exit = await runtime.runPromiseExit(
-    retryContractPaymentRouteProgram(c, c.req.raw.headers)
-  );
+  const exit = await runtime.runPromiseExit(retryContractPaymentRouteProgram(c, c.req.raw.headers));
   return exitToResponse(c, exit);
 }
 

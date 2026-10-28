@@ -5,10 +5,10 @@
  * session that exists (the materialisation window) and only while the rules
  * in `@repo/billing` allow it. Every refusal is typed (one error code each).
  *
- * Step 1 records only: nothing here changes what billing holds, charges or
- * pays, and `contract_sessions.status` is left alone (the engine charges
- * every scheduled/completed session; see the spec §1). The outcome is shown
- * from the resolution.
+ * Step 2 (money): after each change the session's money is reconciled at
+ * once (`reconcileSession`: left out of the plan, a reduced capture, a
+ * session refund, a recovery) — best-effort, the tick applies it otherwise.
+ * What an action would do to the money is previewed by `./session-money`.
  */
 import type { SqlError } from '@effect/sql/SqlError';
 import {
@@ -19,6 +19,7 @@ import {
   dayOffClassification,
   noticeFor,
   plannedResolution,
+  reconcileSession,
   sessionResolutionPolicy,
   type PartySide,
   type ResolutionPolicy,
@@ -237,7 +238,7 @@ export const cycleSessionResolutions = (input: {
 // ---------------------------------------------------------------------------
 // Loading
 
-const loadSessionContext = (viewerUserId: string, contractId: string, sessionId: string) =>
+export const loadSessionContext = (viewerUserId: string, contractId: string, sessionId: string) =>
   Effect.gen(function* () {
     const contract = yield* ContractRepo.pipe(
       Effect.flatMap((repo) => repo.findById(contractId)),
@@ -340,6 +341,9 @@ export const recordSessionActionProgram = (
         .pipe((errors) => mapSessionRepoError(errors));
       if (!moved) return yield* refuse('not_disputable');
       yield* noticeFor(moved, 'contested');
+      // Tier 3 step 2: the session's money follows at once (best-effort;
+      // the tick applies it otherwise).
+      yield* reconcileSession(contractId, ctx.session.id, now);
       return { resolution: resolutionView(moved, viewer.id, ctx.session, ctx.zone, ctx.policy) };
     }
 
@@ -380,6 +384,8 @@ export const recordSessionActionProgram = (
     // Lost the one-active-resolution race (a double click, two tabs).
     if (!row) return yield* refuse('already_resolved');
     yield* noticeFor(row, 'recorded');
+    // Tier 3 step 2: the session's money follows at once (best-effort).
+    yield* reconcileSession(contractId, ctx.session.id, now);
     return { resolution: resolutionView(row, viewer.id, ctx.session, ctx.zone, ctx.policy) };
   });
 
@@ -435,6 +441,8 @@ export const respondToSessionProgram = (
     // The worker confirmed or lapsed it a moment ago.
     if (!moved) return yield* refuse('response_window_closed');
     yield* noticeFor(moved, outcome.event);
+    // Tier 3 step 2: the session's money follows at once (best-effort).
+    yield* reconcileSession(contractId, ctx.session.id, now);
     return { resolution: resolutionView(moved, viewer.id, ctx.session, ctx.zone, ctx.policy) };
   });
 

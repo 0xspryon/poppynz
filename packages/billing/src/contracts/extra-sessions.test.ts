@@ -590,6 +590,30 @@ describe('the charge, by the cycle’s state', () => {
     expect(transfer.sourceReference).toBe(`mock_ch_mock_pi_extra-${extra.id}-1`);
   });
 
+  it('never charges more than the family authorised: held for an admin, not folded nor charged', async () => {
+    for (const captureFirst of [false, true]) {
+      const w = world();
+      let now = OCT_25;
+      if (captureFirst) {
+        await captured(w);
+        now = new Date('2026-11-05T14:00:00.000Z');
+      }
+      await w.tick(now);
+      const extra = await w.agreed('helper', TUESDAY, now);
+      // The price rose since the family authorised it (a tax change).
+      const index = w.extras.state.extras.findIndex((row) => row.id === extra.id);
+      w.extras.state.extras[index] = {
+        ...w.extras.state.extras[index]!,
+        familyAuthorisedCents: extra.quotedTotalCents - 1
+      };
+      await w.tick(at(now, 65));
+      expect(w.extra(extra.id)).toMatchObject({ status: 'charge_failed', nextRetryAt: null });
+      expect(w.sessionOf(extra).chargeRoute).toBe('separate');
+      expect(w.paymentsOf(extra)).toEqual([]);
+      expect(w.alerts).toContain(`Extra session ${extra.id} was not charged`);
+    }
+  });
+
   it('waits while the cycle’s money is in flight', async () => {
     const w = world();
     await w.tick(OCT_25);

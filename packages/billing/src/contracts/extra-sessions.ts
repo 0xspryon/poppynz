@@ -844,6 +844,17 @@ export const processDueExtraSession = (
         fold = false;
     }
     if (fold) {
+      // Folded only at a price the family authorised: a price that rose
+      // since (a tax change) goes to `startCharge`, which holds it for an
+      // admin rather than charge more than authorised.
+      const accepted = (yield* (yield* ContractRepo).listVersions(extra.contractId)).find(
+        (version) => version.id === billing.acceptedVersionId
+      );
+      const price = accepted ? yield* priceExtraSession(billing, accepted, extra) : null;
+      const authorised = extra.familyAuthorisedCents ?? extra.quotedTotalCents;
+      fold = price !== null && price.amounts.familyTotalCents <= authorised;
+    }
+    if (fold) {
       const folded = yield* repo.route(
         extra.id,
         { from: ['agreed'], set: { status: 'in_cycle' }, route: 'cycle' },

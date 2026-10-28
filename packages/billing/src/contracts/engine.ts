@@ -5,6 +5,7 @@ import {
   EmptyUserProfileRepoTest,
   makeInMemoryBillingCustomerRepo,
   makeInMemoryContractBillingRepo,
+  makeInMemoryExtraSessionRepo,
   makeInMemoryPaymentRepo,
   makeInMemoryPayoutAccountRepo,
   makeInMemorySessionMoneyRepo,
@@ -44,7 +45,6 @@ import {
   type ProviderPayment
 } from '@repo/payments';
 import { Effect, Either, Layer } from 'effect';
-import { CycleSettlement } from '../settle';
 import { toCard } from '../cards';
 import { paymentReadiness } from '../payouts';
 import {
@@ -298,21 +298,40 @@ const quoteColumns = (amounts: ContractAmounts, charged?: ReadonlyArray<ChargedS
   taxLines: allTaxLines(amounts).map((line) => ({ ...line }))
 });
 
+/** Tier 3 step 3: whether the cycle's charge takes this session's money —
+ * not an extra session still in its charge delay (`pending`) or charged on
+ * its own payment (`separate`). */
+export const chargedWithCycle = (session: Pick<SessionRecord, 'chargeRoute'>) =>
+  (session.chargeRoute ?? 'cycle') === 'cycle';
+
 /** Sessions charged at their value. Tier 3 step 2: a `disputed` session is
  * still charged (its money is held back from the helper, not the family's
  * charge); a `cancelled` one is not (a late one before the capture is
  * charged its compensation instead — `compensatedSessions`). */
-const billedSessions = (sessions: ReadonlyArray<SessionRecord>) =>
+export const billedSessions = (sessions: ReadonlyArray<SessionRecord>) =>
   sessions.filter(
     (session) =>
-      session.status === 'scheduled' ||
-      session.status === 'completed' ||
-      session.status === 'disputed'
+      chargedWithCycle(session) &&
+      (session.status === 'scheduled' ||
+        session.status === 'completed' ||
+        session.status === 'disputed')
   );
 
 /** Sessions cancelled late before the capture: charged compensation only. */
-const compensatedSessions = (sessions: ReadonlyArray<SessionRecord>) =>
-  sessions.filter((session) => session.status === 'cancelled' && session.compensationCents > 0);
+export const compensatedSessions = (sessions: ReadonlyArray<SessionRecord>) =>
+  sessions.filter(
+    (session) =>
+      chargedWithCycle(session) && session.status === 'cancelled' && session.compensationCents > 0
+  );
+
+/** Tier 3 step 3: the quote a cycle would get now over `sessions` (charged
+ * at their value, late cancellations at their compensation) — what folding
+ * an extra session into a held cycle would capture. */
+export const quoteCycleSessions = (
+  billing: ContractBilling,
+  cycle: ContractCycle,
+  sessions: ReadonlyArray<SessionRecord>
+) => quoteFor(billing, cycle, billedSessions(sessions), compensatedSessions(sessions));
 
 const valueOf = (sessions: ReadonlyArray<SessionRecord>) =>
   sessions.reduce((total, session) => total + session.valueCents, 0);
@@ -452,8 +471,10 @@ const suspendCycle = (
       set: { status: 'suspended', suspendedAt: now, nextRetryAt: null, lastError }
     });
     if (!moved) return null;
+    // Tier 3 step 3: an extra session not charged with the cycle keeps its
+    // own charge (or its delay) — it is never suspended with the cycle.
     yield* repo.setSessionStatus(
-      { contractId: cycle.contractId, cycleId: cycle.id, from: ['scheduled'] },
+      { contractId: cycle.contractId, cycleId: cycle.id, from: ['scheduled'], routes: ['cycle'] },
       'suspended'
     );
     yield* repo.advanceBilling(cycle.contractId, {
@@ -1848,16 +1869,20 @@ export const cycleSplitCharges = (
   };
 };
 
-/** The split of a cycle captured without one (before this step shipped, or
- * after a mismatch was fixed): written once, idempotently. */
+/** Every frozen session charge of a cycle: its own capture's split (written
+ * once, idempotently, when it was captured without one — before step 2
+ * shipped, or after a mismatch was fixed) and, Tier 3 step 3, the extra
+ * sessions charged on their own payments (whatever the cycle's state). */
 export const ensureCycleSplit = (cycle: ContractCycle) =>
   Effect.gen(function* () {
-    if (cycle.status !== 'captured' || cycle.paymentId === null) return [];
     const repo = yield* ContractBillingRepo;
     const existing = yield* repo.listSessionCharges(cycle.contractId, cycle.id);
-    if (existing.length > 0) return existing;
+    if (cycle.status !== 'captured' || cycle.paymentId === null) {
+      return existing.filter((row) => row.paymentId !== cycle.paymentId);
+    }
+    if (existing.some((row) => row.paymentId === cycle.paymentId)) return existing;
     const payment = yield* findPayment(cycle.paymentId);
-    if (payment === null || payment.status !== 'captured') return [];
+    if (payment === null || payment.status !== 'captured') return existing;
     const split = cycleSplitCharges(
       cycle,
       payment,
@@ -1865,7 +1890,7 @@ export const ensureCycleSplit = (cycle: ContractCycle) =>
     );
     if (!split.ok) {
       yield* recordSplitMismatch(cycle, split.reason);
-      return [];
+      return existing;
     }
     yield* repo.insertSessionCharges(split.charges);
     return yield* repo.listSessionCharges(cycle.contractId, cycle.id);
@@ -1881,18 +1906,18 @@ export const provisionalCycleSplit = (cycle: ContractCycle) =>
     const repo = yield* ContractBillingRepo;
     if (cycle.status === 'captured') {
       const frozen = yield* ensureCycleSplit(cycle);
-      return { charged: true as const, charges: frozen };
+      return { charged: true as const, charges: frozen, ownCharged: [] as Array<string> };
     }
     const billing = yield* repo.findBilling(cycle.contractId);
     const sessions = yield* repo.listSessions(cycle.contractId, cycle.id);
-    if (!billing) return { charged: false as const, charges: [] };
+    if (!billing) return { charged: false as const, charges: [], ownCharged: [] as Array<string> };
     const quote = yield* quoteFor(
       billing,
       cycle,
       billedSessions(sessions),
       compensatedSessions(sessions)
     );
-    if (!quote.ok) return { charged: false as const, charges: [] };
+    if (!quote.ok) return { charged: false as const, charges: [], ownCharged: [] as Array<string> };
     const quoted = { ...cycle, ...quoteColumns(quote.amounts, quote.charged) };
     const split = cycleSplitCharges(
       quoted,
@@ -1903,9 +1928,18 @@ export const provisionalCycleSplit = (cycle: ContractCycle) =>
       },
       sessions
     );
+    // Tier 3 step 3: extra sessions already charged on their own payments.
+    const own = (yield* repo.listSessionCharges(cycle.contractId, cycle.id)).filter(
+      (row) => row.paymentId !== cycle.paymentId
+    );
     return {
       charged: false as const,
-      charges: split.ok ? split.charges.map((row) => ({ ...row, createdAt: new Date(0) })) : []
+      charges: [
+        ...(split.ok ? split.charges.map((row) => ({ ...row, createdAt: new Date(0) })) : []),
+        ...own
+      ],
+      /** Sessions charged on their own payment: their money is taken. */
+      ownCharged: own.map((row) => row.sessionId)
     };
   });
 
@@ -2591,33 +2625,6 @@ export const runContractBillingTick = (now: Date, options: { contractId?: string
     return summary;
   });
 
-/** Provides the cycle branch of `settlePayment` from contract billing's own
- * dependencies, so every caller of the one settle path (browser confirm,
- * webhook, recovery job, tick) lands contract payments the same way. */
-export const CycleSettlementLive = Layer.effect(
-  CycleSettlement,
-  Effect.gen(function* () {
-    const context = yield* Effect.context<
-      | ContractBillingRepo
-      | ContractRepo
-      | PaymentRepo
-      | Payments
-      | BillingCustomerRepo
-      | PayoutAccountRepo
-      | TaxConfigRepo
-      | UserRepo
-      | UserProfileRepo
-      | Mailer
-      | NotificationHub
-    >();
-    return {
-      settle: (row: Payment, now: Date) => settleCycleRow(row, now).pipe(Effect.provide(context)),
-      adopt: (row: Payment, fetched: ProviderPayment, now: Date) =>
-        adoptProviderPayment(row, fetched, now).pipe(Effect.provide(context))
-    };
-  })
-);
-
 /** TEST HELPER: every contract-billing dependency as an empty, inert stand-in
  * (no contracts, no users, mail and notifications dropped), for suites whose
  * code path can reach contract billing without being about it. Merge it
@@ -2632,6 +2639,7 @@ export const makeIdleContractBillingLayer = () =>
     makeInMemoryPayoutAccountRepo().layer,
     makeInMemorySessionResolutionRepo().layer,
     makeInMemorySessionMoneyRepo().layer,
+    makeInMemoryExtraSessionRepo().layer,
     makeUserRepoTest({
       findById: (id) => Effect.fail(new DBNotFoundErrorClass({ entity: 'user', value: id })),
       findByEmail: (email) =>

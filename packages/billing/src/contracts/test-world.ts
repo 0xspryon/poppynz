@@ -13,6 +13,7 @@ import {
   dummyPayoutAccount,
   makeInMemoryBillingCustomerRepo,
   makeInMemoryContractBillingRepo,
+  makeInMemoryExtraSessionRepo,
   makeInMemoryPaymentRepo,
   makeInMemoryPayoutAccountRepo,
   makeInMemorySessionMoneyRepo,
@@ -175,6 +176,13 @@ export const makeWorld = (options: WorldOptions = {}) => {
     clock: () => clock
   });
 
+  // Tier 3 step 3: extra sessions share the billing state (sessions,
+  // charges, ledger), as the database does.
+  const extraRepo = makeInMemoryExtraSessionRepo({
+    billing: billingRepo.state,
+    clock: () => clock
+  });
+
   const layer = Layer.mergeAll(
     billingRepo.layer,
     options.paymentRepo
@@ -216,7 +224,8 @@ export const makeWorld = (options: WorldOptions = {}) => {
     }),
     NoopNotificationHubTest,
     resolutionRepo.layer,
-    moneyRepo.layer
+    moneyRepo.layer,
+    extraRepo.layer
   );
 
   const run = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect);
@@ -269,6 +278,8 @@ export const makeWorld = (options: WorldOptions = {}) => {
     payouts,
     resolutions: resolutionRepo,
     money: moneyRepo,
+    extras: extraRepo,
+    customers,
     setClock: (now: Date) => {
       clock = now;
     }

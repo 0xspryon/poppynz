@@ -14,3 +14,5 @@ export * from './contracts/resolution-notices';
 export * from './contracts/session-money';
 export * from './contracts/money';
 export * from './contracts/money-notices';
+export * from './contracts/extra-sessions';
+export * from './contracts/extra-session-notices';

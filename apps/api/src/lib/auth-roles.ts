@@ -15,6 +15,13 @@ export const appAc = createAccessControl({
   // The card on file and payment history. Only families keep a card (it
   // funds contract billing); helpers pay one-off and never hold this.
   billing: ['read', 'write'],
+  // Tier 3 step 4: card disputes (chargebacks). `read` lists them, `finance`
+  // shows what Poppynz bears (the debit, the fee, what came back) — admins
+  // and the accountant; `review` opens one with its evidence pack (the
+  // signed agreement, messages), `respond` drafts and submits the evidence,
+  // `decide` suspends or resumes a family's contracts and allocates a lost
+  // dispute — admins only. Every action is audited.
+  cardDispute: ['read', 'review', 'respond', 'decide', 'finance'],
   // `review` is the admin-only capability over someone else's contracts —
   // reading any contract's signed service agreement. Members keep read/write,
   // and ownership of their own contracts is enforced at the route.
@@ -111,6 +118,7 @@ export const adminRole = appAc.newRole({
   ...adminAc.statements,
   approval: ['write'],
   approvalRequest: ['read', 'write', 'review'],
+  cardDispute: ['read', 'review', 'respond', 'decide', 'finance'],
   contract: ['read', 'write', 'review'],
   conversation: ['read', 'write'],
   familySearch: ['read', 'reindex'],
@@ -137,6 +145,8 @@ export const adminRole = appAc.newRole({
  * correct, every change audited) and the tax-collected reports — and the
  * failed session refunds. */
 export const accountantRole = appAc.newRole({
+  // Card disputes: the list and what Poppynz bears, read-only (step 4).
+  cardDispute: ['read', 'finance'],
   // Failed session refunds land with the accountant too (Tier 3 step 2).
   refundQueue: ['read', 'write'],
   tax: ['read', 'write'],

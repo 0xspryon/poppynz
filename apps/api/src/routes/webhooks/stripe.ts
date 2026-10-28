@@ -5,7 +5,8 @@ import {
   mismatchReason,
   retryFamilyBilling,
   settlePaymentByReference,
-  settleSessionRefundByReference
+  settleSessionRefundByReference,
+  syncCardDispute
 } from '@repo/billing';
 import { PaymentRepo, SessionMoneyRepo, StripeWebhookEventRepo } from '@repo/db';
 import { Payments, type PaymentWebhookEvent } from '@repo/payments';
@@ -98,22 +99,6 @@ const recordRefund = (event: PaymentWebhookEvent) =>
     return refunded === null ? 'already refunded' : 'refunded';
   });
 
-/** A card dispute opened. Flagged on the payment for an administrator;
- * handling disputes is piece 4. */
-const flagDispute = (event: PaymentWebhookEvent) =>
-  Effect.gen(function* () {
-    if (event.paymentReference === null) return 'no payment intent on the dispute';
-    const paymentRepo = yield* PaymentRepo;
-    const payments = yield* Payments;
-    const row = yield* paymentRepo.findByProviderReference(
-      payments.provider,
-      event.paymentReference
-    );
-    if (row === null) return 'unknown payment';
-    yield* paymentRepo.update(row.id, { lastError: 'card dispute opened' });
-    return 'dispute flagged';
-  });
-
 /** Applies one verified event. Returns a short note for the log. */
 export const processStripeEvent = (event: PaymentWebhookEvent) =>
   Effect.gen(function* () {
@@ -157,8 +142,15 @@ export const processStripeEvent = (event: PaymentWebhookEvent) =>
         ]);
         return 'transfer reversed: admins alerted';
       }
+      // Tier 3 step 4: a card dispute's lifecycle. Every event re-fetches the
+      // dispute and brings its record in step (created once; the debit, the
+      // reinstatement and the fee in the ledger; the payment's refund flag).
       case 'charge.dispute.created':
-        return yield* flagDispute(event);
+      case 'charge.dispute.updated':
+      case 'charge.dispute.closed':
+      case 'charge.dispute.funds_withdrawn':
+      case 'charge.dispute.funds_reinstated':
+        return `card dispute: ${yield* syncCardDispute(event.objectId, new Date())}`;
       case 'account.updated': {
         // Connect (piece 2b): a helper's payout account changed. A wake-up
         // signal only — the account is re-fetched and stored; an account we

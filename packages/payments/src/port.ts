@@ -280,6 +280,11 @@ export class PaymentProviderError extends Data.TaggedError('PaymentProviderError
    * accepted again for this request); `in_flight` — the first request under
    * the key is still being processed. Neither says whether money moved. */
   idempotency?: 'mismatch' | 'in_flight';
+  /** Set when the provider answered and REFUSED the request for a business
+   * reason (e.g. a refund on a disputed or already refunded charge): the
+   * same request under the same key will be refused again, so it is not an
+   * outage to retry. Only `createRefund` sets it. */
+  refusal?: string;
 }> {}
 
 export class PaymentWebhookSignatureError extends Data.TaggedError('PaymentWebhookSignatureError')<{

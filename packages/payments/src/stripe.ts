@@ -163,6 +163,14 @@ const isTransferRefusal = (cause: unknown) =>
   cause instanceof Stripe.errors.StripeInvalidRequestError ||
   cause instanceof Stripe.errors.StripePermissionError;
 
+/** A refund Stripe refuses for a business reason (verified in test mode:
+ * `Refund amount ($20.00) is greater than unrefunded amount on charge`,
+ * `charge_already_refunded`, a disputed charge): an invalid request that is
+ * not about the idempotency key. */
+const isRefundRefusal = (cause: unknown) =>
+  cause instanceof Stripe.errors.StripeInvalidRequestError &&
+  !(cause instanceof Stripe.errors.StripeIdempotencyError);
+
 /** `payment_method_details.card.capture_before` — the real deadline of a
  * hold (umbrella §11), in seconds. */
 const captureBeforeOf = (charge: Stripe.Charge | null): Date | null => {
@@ -432,17 +440,28 @@ export const makeStripePayments = (options: {
     // Tier 3 step 2: partial refunds of a cycle's charge, keyed by our
     // refund id exactly (spec §7), with its metadata.
     createRefund: ({ paymentReference, amountCents, idempotencyKey, metadata }) =>
-      call('createRefund', () =>
-        client.refunds.create(
-          {
-            payment_intent: paymentReference,
-            amount: amountCents,
-            reason: 'requested_by_customer',
-            metadata
-          },
-          { idempotencyKey }
-        )
-      ).pipe(Effect.map(normaliseRefund)),
+      Effect.tryPromise({
+        try: () =>
+          client.refunds.create(
+            {
+              payment_intent: paymentReference,
+              amount: amountCents,
+              reason: 'requested_by_customer',
+              metadata
+            },
+            { idempotencyKey }
+          ),
+        // Stripe answers a refund it won't make (above what is left on the
+        // charge, a disputed or already refunded charge) with an invalid
+        // request, replayed under the same key: a refusal, not an outage.
+        catch: (cause) =>
+          new PaymentProviderError({
+            operation: 'createRefund',
+            cause,
+            ...idempotencyOf(cause),
+            ...(isRefundRefusal(cause) ? { refusal: (cause as Error).message } : {})
+          })
+      }).pipe(Effect.map(normaliseRefund)),
 
     getRefund: (reference) =>
       call('getRefund', () => client.refunds.retrieve(reference)).pipe(Effect.map(normaliseRefund)),

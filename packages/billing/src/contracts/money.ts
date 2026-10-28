@@ -610,6 +610,16 @@ export const sendRefund = (refund: SessionRefund, now: Date) =>
         }
       })
       .pipe(Effect.either);
+    if (Either.isLeft(result) && result.left.refusal !== undefined) {
+      // Refused (not an outage): the same key would be refused again, so it
+      // goes to the refund-failure list for an admin.
+      const failed = yield* moneyRepo.advanceRefund(refund.id, {
+        from: ['pending'],
+        set: { status: 'failed', failureReason: result.left.refusal }
+      });
+      if (failed) yield* refundFailed(failed);
+      return failed ?? attempted;
+    }
     if (Either.isLeft(result)) {
       yield* Effect.logWarning(`[money] refund ${refund.id} not sent; retrying`, result.left);
       const { refundAlertAfterAttempts } = yield* sessionMoneyPolicy;
@@ -654,22 +664,27 @@ export const settleRefund = (refund: SessionRefund, provider: ProviderRefund, no
       yield* refundNotice(issued, 'refund_issued');
       return issued;
     }
+    // A refund can fail after it succeeded (verified in test mode with the
+    // refundFail card: `succeeded`, then `failed` a minute or two later).
     const failed = yield* moneyRepo.advanceRefund(refund.id, {
-      from: ['pending'],
+      from: ['pending', 'succeeded'],
       set: {
         status: 'failed',
         providerReference: provider.reference,
         failureReason: provider.failureReason ?? `refund ${provider.status} by the provider`
       }
     });
-    if (failed) {
-      yield* refundNotice(failed, 'refund_failed');
-      yield* alertAdmins(`A session refund failed (contract ${failed.contractId})`, [
-        `Refund ${failed.id} of ${dollars(failed.totalCents)}: ${failed.failureReason}.`,
-        'It is in the admin refund-failure list: retry it, or settle it another way and mark it handled.'
-      ]);
-    }
+    if (failed) yield* refundFailed(failed);
     return failed ?? refund;
+  });
+
+const refundFailed = (failed: SessionRefund) =>
+  Effect.gen(function* () {
+    yield* refundNotice(failed, 'refund_failed');
+    yield* alertAdmins(`A session refund failed (contract ${failed.contractId})`, [
+      `Refund ${failed.id} of ${dollars(failed.totalCents)}: ${failed.failureReason}.`,
+      'It is in the admin refund-failure list: retry it, or settle it another way and mark it handled.'
+    ]);
   });
 
 /** A provider refund event (webhook): re-fetched, matched by its reference

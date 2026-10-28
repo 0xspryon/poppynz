@@ -769,6 +769,39 @@ describe('partial refunds (Tier 3 step 2)', () => {
     });
   });
 
+  it('reports a refund Stripe refuses as a refusal, an outage as an outage', async () => {
+    const refusing = fakeStripe({
+      refundCreate: () => {
+        throw new Stripe.errors.StripeInvalidRequestError({
+          message: 'Refund amount ($20.00) is greater than unrefunded amount on charge ($15.65)'
+        } as never);
+      }
+    });
+    const input = {
+      paymentReference: 'pi_123',
+      amountCents: 2000,
+      idempotencyKey: 'refund-1',
+      metadata: {}
+    };
+    const refused = await Effect.runPromise(
+      makeStripePayments({ client: refusing.client, webhookSecret: WEBHOOK_SECRET })
+        .createRefund(input)
+        .pipe(Effect.flip)
+    );
+    expect(refused.refusal).toContain('greater than unrefunded amount');
+    const down = fakeStripe({
+      refundCreate: () => {
+        throw new Stripe.errors.StripeConnectionError({ message: 'down' } as never);
+      }
+    });
+    const outage = await Effect.runPromise(
+      makeStripePayments({ client: down.client, webhookSecret: WEBHOOK_SECRET })
+        .createRefund(input)
+        .pipe(Effect.flip)
+    );
+    expect(outage.refusal).toBeUndefined();
+  });
+
   it('reports a failed refund with its reason on re-fetch', async () => {
     const { client } = fakeStripe({
       refundRetrieve: () =>

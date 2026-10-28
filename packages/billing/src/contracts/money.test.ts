@@ -247,6 +247,45 @@ describe('idempotency', () => {
     expect(w.mailTo('family')).toContain("Your refund of $50.39 didn't go through");
   });
 
+  it('a refund that succeeded and later fails at the provider moves to failed', async () => {
+    // Stripe's refundFail test card: the refund is created `succeeded`, then
+    // turns `failed` a minute or two later (charge.refund.updated).
+    const w = world();
+    await w.step(BEFORE);
+    await w.step(at(CYCLE_1.holdAt, 5));
+    await w.step(AFTER_CAPTURE);
+    const recordedAt = new Date('2026-11-04T08:00:00.000Z');
+    w.resolve('2026-11-04', { ...lateCancel, recordedAt });
+    await w.reconcile('2026-11-04', recordedAt);
+    expect(w.money.state.refunds[0]!.status).toBe('succeeded');
+    const reference = w.mock.refunds()[0]!.reference;
+    w.mock.settleRefund(reference, 'failed', 'expired_or_canceled_card');
+    await w.run(
+      settleSessionRefundByReference(reference, at(recordedAt, 3)).pipe(Effect.provide(w.layer))
+    );
+    expect(w.money.state.refunds[0]).toMatchObject({
+      status: 'failed',
+      failureReason: 'expired_or_canceled_card'
+    });
+    expect(w.alerts.some((subject) => subject.startsWith('A session refund failed'))).toBe(true);
+    expect(w.mailTo('family')).toContain("Your refund of $50.39 didn't go through");
+  });
+
+  it('a refund the provider refuses goes to the failure list instead of retrying forever', async () => {
+    const w = world({ mock: { refundRefusal: () => 'Charge ch_1 has been disputed.' } });
+    await w.step(BEFORE);
+    await w.step(at(CYCLE_1.holdAt, 5));
+    await w.step(AFTER_CAPTURE);
+    const recordedAt = new Date('2026-11-04T08:00:00.000Z');
+    w.resolve('2026-11-04', { ...lateCancel, recordedAt });
+    await w.reconcile('2026-11-04', recordedAt);
+    expect(w.money.state.refunds[0]).toMatchObject({
+      status: 'failed',
+      failureReason: 'Charge ch_1 has been disputed.'
+    });
+    expect(w.alerts.some((subject) => subject.startsWith('A session refund failed'))).toBe(true);
+  });
+
   it('a refund waits while a card dispute is open on the charge', async () => {
     const w = world();
     await w.step(BEFORE);

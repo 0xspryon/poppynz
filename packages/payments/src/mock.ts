@@ -77,6 +77,8 @@ export const makeMockPayments = (
     searchLagMs?: number;
     /** The state a new partial refund is created in (default succeeded). */
     refundOutcome?: (input: CreateRefundInput) => ProviderRefundStatus;
+    /** A refund the provider refuses (the reason), or null to accept. */
+    refundRefusal?: (input: CreateRefundInput) => string | null;
     /** A transfer the provider refuses (the reason), or null to accept. */
     transferRefusal?: (input: CreateTransferInput) => string | null;
     /** Refunds and transfers fail as if the provider were down. */
@@ -340,6 +342,12 @@ export const makeMockPayments = (
         }
         const known = refundKeys.get(input.idempotencyKey);
         if (known) return Effect.succeed(partialRefunds.get(known)!);
+        const refusal = options.refundRefusal?.(input) ?? null;
+        if (refusal) {
+          return Effect.fail(
+            new PaymentProviderError({ operation: 'createRefund', cause: refusal, refusal })
+          );
+        }
         const payment = byReference.get(input.paymentReference);
         if (!payment) return unknown('createRefund', input.paymentReference);
         const refunded = [...partialRefunds.values()]
@@ -351,11 +359,9 @@ export const makeMockPayments = (
           )
           .reduce((t, r) => t + r.amountCents, 0);
         if (refunded + input.amountCents > payment.receivedCents) {
+          const reason = `mock: refund of ${input.amountCents} exceeds what is left on ${input.paymentReference}`;
           return Effect.fail(
-            new PaymentProviderError({
-              operation: 'createRefund',
-              cause: `mock: refund of ${input.amountCents} exceeds what is left on ${input.paymentReference}`
-            })
+            new PaymentProviderError({ operation: 'createRefund', cause: reason, refusal: reason })
           );
         }
         const status = options.refundOutcome?.(input) ?? 'succeeded';

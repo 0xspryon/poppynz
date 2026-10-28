@@ -325,6 +325,50 @@ recoveries per session.
 - Dev billing clock: `--as-of` covers transfers, response windows and the
   extra-session delay.
 
+### 11.1 Stripe facts (confirmed in test mode, 2026-10-28, API 2026-09-30.endive)
+
+- **Several partial refunds per PaymentIntent** work, up to the captured
+  amount exactly (5039 + 6602 + 1565 of 13206 → `refunded: true`). Above
+  what is left Stripe answers `StripeInvalidRequestError` "Refund amount
+  ($20.00) is greater than unrefunded amount on charge ($15.65)", and on a
+  fully refunded charge `charge_already_refunded`. Under the same
+  idempotency key the error is replayed, so it is a **refusal** (the refund
+  goes to the failure list), not an outage to retry. The same key with other
+  parameters is a `StripeIdempotencyError`. Metadata (`refund_id`,
+  `session_id`, `cycle_id`, …) is kept on the refund.
+- **Refund lifecycle:** card refunds come back `succeeded` at once. With the
+  refund-failure test card (`pm_card_refundFail`) the refund is created
+  `succeeded` and turns `failed` (`expired_or_canceled_card`) a minute or
+  two later, announced by `charge.refund.updated` / `refund.failed`: a
+  refund can go **succeeded → failed**, and the settle step accepts that.
+- **`source_transaction` transfers** are capped at the charge's amount minus
+  its refunds minus the transfers already made from it ("Transfers using
+  this transaction as a source must not exceed the source amount of $72.06.
+  (Source available amount change could be linked to partial/complete
+  refunds of the charge …)"). A refund made after a transfer is not blocked
+  (it comes out of the platform balance). So a transfer that no longer fits
+  under its charge (a follow-up paying a session whose full refund was
+  absorbed) is sent from the platform balance instead; the choice is stored
+  on the transfer before the call so a retry repeats the same request.
+- With **pending funds** (4242) a `source_transaction` transfer is accepted
+  at once (the charge's balance transaction is `pending`); the money becomes
+  available on the connected account when the charge's funds do. With
+  `pm_card_bypassPending` (4000 0000 0000 0077) the funds are available at
+  once. Without `source_transaction` a transfer needs available platform
+  balance (`balance_insufficient` otherwise).
+- **`source_transaction` must be the charge (`ch_…`)**: a PaymentIntent id
+  fails with `resource_missing`. `latest_charge` on the captured intent is
+  that charge.
+- **Transfer refusals** are `StripeInvalidRequestError`s: a destination
+  without the transfers capability → `insufficient_capabilities_for_transfer`;
+  an unknown destination → `resource_missing`; no balance →
+  `balance_insufficient`; above the source → no code (message above).
+  Readiness is checked first, so a not-ready account pauses the transfer
+  rather than reaching Stripe.
+- **`payout.*` events** of a connected account arrive through
+  `stripe listen --forward-connect-to` with `event.account` set (`connect
+  payout.created / updated / paid`), signed with the same `whsec_…` locally.
+
 ## 12. Open decisions
 
 1. ~~Time off for dates beyond the window~~ — decided: no; act within the 14-day

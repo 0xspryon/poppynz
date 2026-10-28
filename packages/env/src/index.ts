@@ -321,9 +321,39 @@ export const sessionResolutionConfig = Config.all({
   reportResponseHours: wholeHours('CONTRACT_REPORT_RESPONSE_HOURS', 48, 1, 336),
   // How long after a session ends a report or dispute may still be filed.
   reportWindowHours: wholeHours('CONTRACT_REPORT_WINDOW_HOURS', 48, 1, 336),
-  // Step 2 (money effects): the share of a late-cancelled session's care
-  // value paid to the helper as compensation. Defined now, unused until then.
+  // The share of a late-cancelled session's cancelled care value paid to the
+  // helper as compensation (rounded half up for the helper; spec §6).
   lateCancellationHelperBps: basisPoints('CONTRACT_LATE_CANCELLATION_HELPER_BPS', 2500)
+});
+
+// Session money and helper transfers (Tier 3 step 2, spec 2026-10-28 §7–§8).
+// Same posture: a malformed value is a ConfigError, never a silent default.
+export const sessionMoneyConfig = Config.all({
+  // Each cycle's transfer to the helper is made this long after the cycle
+  // ends (00:00 after its last day, contract zone), once every session is
+  // past its report window. Read when a cycle is planned: cycles already
+  // planned keep the transfer_at they were stored with.
+  transferDelayHours: wholeHours('CONTRACT_TRANSFER_DELAY_HOURS', 48, 0, 336),
+  // A payable that could not be transferred (the helper's payout account is
+  // restricted or not ready) moves to the admins' manual payout queue this
+  // many days after its transfer was due.
+  manualPayoutAfterDays: Config.integer('CONTRACT_MANUAL_PAYOUT_AFTER_DAYS').pipe(
+    Config.withDefault(60),
+    Config.validate({
+      message: 'CONTRACT_MANUAL_PAYOUT_AFTER_DAYS must be a whole number of days between 1 and 365',
+      validation: (value) => value >= 1 && value <= 365
+    })
+  ),
+  // How many times a refund the provider could not be reached for is
+  // retried (one try per tick) before the admins and accountant are alerted.
+  // It keeps being retried after that; the alert is sent once.
+  refundAlertAfterAttempts: Config.integer('CONTRACT_REFUND_ALERT_AFTER_ATTEMPTS').pipe(
+    Config.withDefault(8),
+    Config.validate({
+      message: 'CONTRACT_REFUND_ALERT_AFTER_ATTEMPTS must be a whole number between 1 and 1000',
+      validation: (value) => value >= 1 && value <= 1000
+    })
+  )
 });
 
 // Helper payout accounts (Stripe Connect, piece 2b).

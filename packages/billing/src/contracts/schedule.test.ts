@@ -87,6 +87,15 @@ describe('planCycle', () => {
     );
   });
 
+  it('transfers CONTRACT_TRANSFER_DELAY_HOURS (real hours, default 48) after the cycle ends', () => {
+    expect(planCycle(terms({ transferDelayHours: 72 }), 0)!.transferAt.toISOString()).toBe(
+      '2026-11-06T05:00:00.000Z'
+    );
+    expect(planCycle(terms({ transferDelayHours: 0 }), 0)!.transferAt.toISOString()).toBe(
+      '2026-11-03T05:00:00.000Z'
+    );
+  });
+
   it('captures an hour before an early first session', () => {
     const early = planCycle(terms({ startsOn: '2026-11-01' }), 0)!;
     // Sunday 01:00 EDT − 1 h = 00:00 EDT, earlier than 07:00 EST.

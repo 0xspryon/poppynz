@@ -32,7 +32,7 @@ import {
 } from '@repo/db';
 import { Mailer, makeMailerTest } from '@repo/mail';
 import { NoopNotificationHubTest, NotificationHub } from '@repo/notify';
-import { contractBillingConfig } from '@repo/env';
+import { contractBillingConfig, sessionMoneyConfig } from '@repo/env';
 import type { SqlError } from '@effect/sql/SqlError';
 import {
   Payments,
@@ -106,6 +106,15 @@ export const contractBillingPolicy = contractBillingConfig.pipe(
   Effect.orDie
 );
 
+/** The transfer and refund settings (Tier 3 step 2). Malformed values fail
+ * loudly, like the commissions. */
+export const sessionMoneyPolicy = sessionMoneyConfig.pipe(
+  Effect.tapError((error) =>
+    Effect.logError('[billing] session money settings are invalid', error)
+  ),
+  Effect.orDie
+);
+
 /** How many declined recovery charges are tried after a system failure
  * before it is left to an admin (the incident is already open). */
 const MAX_RECOVERY_DECLINES = 3;
@@ -172,6 +181,7 @@ const loadContext = (billing: ContractBilling) =>
     if (!accepted) return null;
     const end = effectiveEnd(contract, accepted);
     const { holdLeadHours, sessionWindowDays } = yield* contractBillingPolicy;
+    const { transferDelayHours } = yield* sessionMoneyPolicy;
     const terms: ScheduleTerms = {
       services: accepted.services.map((service) => ({
         serviceId: service.serviceId,
@@ -186,7 +196,9 @@ const loadContext = (billing: ContractBilling) =>
       // Only cycles planned from now on use it: a stored hold_at is never
       // recomputed (insertCycles keeps the row on file).
       holdLeadHours,
-      sessionWindowDays
+      sessionWindowDays,
+      // Likewise: stored transfer_at values are kept.
+      transferDelayHours
     };
     return { contract, accepted, terms } satisfies BillingContext;
   });

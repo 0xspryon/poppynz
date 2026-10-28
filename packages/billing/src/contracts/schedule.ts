@@ -22,6 +22,9 @@ export const CYCLE_DAYS = 3;
 export const DEFAULT_SESSION_WINDOW_DAYS = 14;
 /** `CONTRACT_HOLD_LEAD_HOURS`' default (UAT round 2: 1 day, was 2). */
 export const DEFAULT_HOLD_LEAD_HOURS = 24;
+/** `CONTRACT_TRANSFER_DELAY_HOURS`' default: a cycle's transfer is made this
+ * long after it ends (umbrella §8). */
+export const DEFAULT_TRANSFER_DELAY_HOURS = 48;
 
 const HOUR_MS = 60 * 60 * 1000;
 
@@ -45,6 +48,9 @@ export type ScheduleTerms = {
   /** How many days ahead dated sessions exist (`CONTRACT_SESSION_WINDOW_DAYS`);
    * defaults to `DEFAULT_SESSION_WINDOW_DAYS`. */
   readonly sessionWindowDays?: number;
+  /** How long after the cycle ends its transfer is made
+   * (`CONTRACT_TRANSFER_DELAY_HOURS`); defaults to `DEFAULT_TRANSFER_DELAY_HOURS`. */
+  readonly transferDelayHours?: number;
 };
 
 export type PlannedSession = {
@@ -149,9 +155,11 @@ export const planCycle = (terms: ScheduleTerms, index: number): PlannedCycle | n
       startsAt.getTime() - (terms.holdLeadHours ?? DEFAULT_HOLD_LEAD_HOURS) * HOUR_MS
     ),
     captureAt: beforeFirst !== null && beforeFirst < sevenAm ? beforeFirst : sevenAm,
-    // 48 h after the cycle ends, once every session is past its report
-    // window (piece 4 transfers on it).
-    transferAt: new Date(endsAt.getTime() + 48 * HOUR_MS)
+    // `CONTRACT_TRANSFER_DELAY_HOURS` (48 h) after the cycle ends, once every
+    // session is past its report window (Tier 3 step 2 transfers on it).
+    transferAt: new Date(
+      endsAt.getTime() + (terms.transferDelayHours ?? DEFAULT_TRANSFER_DELAY_HOURS) * HOUR_MS
+    )
   };
 };
 

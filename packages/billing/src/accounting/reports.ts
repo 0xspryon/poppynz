@@ -2,7 +2,7 @@ import { unpaidExtraSessionStatuses, type AccountingSources } from '@repo/db';
 import type { ProviderBalanceTransactionRow } from '@repo/db';
 import { isCardDisputeEntryKey, type BorneCardDispute } from './card-dispute-adapter';
 import { csv, dollars, monthEnd, monthOf } from './books';
-import type { AbsorbedCause } from './obligations';
+import { fundedIncidentRecoveredAt, oneOffPaymentRefunds, type AbsorbedCause } from './obligations';
 
 /**
  * The accountant's reports (Tier 3 step 5, spec §16), each per Toronto
@@ -181,7 +181,7 @@ export const refundsByMonth = (
     row.taxReturnedCents += lineTax(refund.careTaxLines) + lineTax(refund.feeTaxLines);
     row.commissionTaxReversedCents += lineTax(refund.commissionTaxLines);
   }
-  for (const paid of sources.paymentRefunds) {
+  for (const paid of oneOffPaymentRefunds(sources)) {
     if (paid.refundedAt === null) continue;
     const row = rows.get(monthOf(paid.refundedAt));
     if (!row) continue;
@@ -253,8 +253,10 @@ export const absorbedByMonth = (
   for (const dispute of disputes) add(dispute.occurredAt, dispute.cause, dispute.amountCents);
   const cycles = new Map(sources.cycles.map((row) => [row.id, row]));
   for (const incident of sources.fundedIncidents) {
-    const share = incident.cycleId ? (cycles.get(incident.cycleId)?.providerShareCents ?? 0) : 0;
-    add(incident.createdAt, 'system_failure', share);
+    const cycle = incident.cycleId ? cycles.get(incident.cycleId) : undefined;
+    // Recovered from the family after all: not a cost Poppynz bore.
+    if (fundedIncidentRecoveredAt(incident, cycle)) continue;
+    add(incident.createdAt, 'system_failure', cycle?.providerShareCents ?? 0);
   }
   for (const recovery of sources.recoveries) {
     if (recovery.status !== 'waived') continue;

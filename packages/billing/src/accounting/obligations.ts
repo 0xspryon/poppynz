@@ -131,6 +131,16 @@ export type Obligation = {
 
 const keyOf = (type: ObligationType, id: string) => `${type}:${id}`;
 
+/** Payments refunded in full that are NOT already counted through their
+ * session refunds. A cycle payment whose session refunds add up to all of
+ * it is marked `refunded` too (the `charge.refunded` webhook), so counting
+ * it again would double the refund; a one-off charge (a background check)
+ * or an orphaned charge refunded whole has no session refunds. */
+export const oneOffPaymentRefunds = (sources: AccountingSources) => {
+  const withSessionRefunds = new Set(sources.refunds.map((refund) => refund.paymentId));
+  return sources.paymentRefunds.filter((paid) => !withSessionRefunds.has(paid.id));
+};
+
 /** The latest reconciled/unreconciled mark per key, and the note counts. */
 const marksByKey = (marks: ReadonlyArray<BillingAuditEvent>, names: Map<string, string>) => {
   const reconciled = new Map<string, ReconciledMark | null>();
@@ -156,6 +166,21 @@ const absorbedCauseOf = (entryKey: string, kind: string): AbsorbedCause =>
     : entryKey.endsWith(':resume_absorbed')
       ? 'resume_absorbed'
       : 'carry_write_off';
+
+/** When Poppynz got back the helper pay it funded after a system failure
+ * (`capture_failed`): the incident's own resolution, or the recovery charge
+ * on the family's card — the cycle is `captured` again. Null while Poppynz
+ * still carries it. */
+export const fundedIncidentRecoveredAt = (
+  incident: AccountingSources['fundedIncidents'][number],
+  cycle: AccountingSources['cycles'][number] | undefined
+): Date | null => {
+  if (incident.resolvedAt) return incident.resolvedAt;
+  if (cycle?.status === 'captured' && cycle.capturedAt && cycle.capturedAt >= incident.createdAt) {
+    return cycle.capturedAt;
+  }
+  return null;
+};
 
 /** Every obligation, newest first. */
 export const buildObligations = (
@@ -271,7 +296,7 @@ export const buildObligations = (
   }
 
   // One-off charges (background checks) refunded in full.
-  for (const paid of sources.paymentRefunds) {
+  for (const paid of oneOffPaymentRefunds(sources)) {
     items.push(
       item('family_refund', paid.id, {
         direction: 'payable',
@@ -294,14 +319,15 @@ export const buildObligations = (
   for (const incident of sources.fundedIncidents) {
     const cycle = incident.cycleId ? cycles.get(incident.cycleId) : undefined;
     const amount = cycle?.providerShareCents ?? 0;
+    const recoveredAt = fundedIncidentRecoveredAt(incident, cycle);
     items.push(
       item('poppynz_helper_pay', incident.id, {
         direction: 'cost',
-        baseStatus: incident.resolvedAt ? 'recovered' : 'outstanding',
+        baseStatus: recoveredAt ? 'recovered' : 'outstanding',
         amountCents: amount,
-        outstandingCents: incident.resolvedAt ? 0 : amount,
+        outstandingCents: recoveredAt ? 0 : amount,
         occurredAt: incident.createdAt,
-        settledAt: incident.resolvedAt,
+        settledAt: recoveredAt,
         providerObject: null,
         cause: 'system_failure',
         detail: incident.detail,

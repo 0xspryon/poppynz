@@ -282,4 +282,39 @@ describe('provider fees per month', () => {
     expect(gaps).toEqual(['2026-12']);
     expect(feesCsv(rows).split('\n')[2]).toBe('2026-12,0,0.00,0.00,0.00,0.00,no');
   });
+
+  it('counts neither a cycle payment refunded through its sessions twice nor a recovered system failure', () => {
+    const refundedAt = new Date('2026-11-21T05:00:00Z');
+    const sources = accountingSources({
+      refunds: [refundRow({ totalCents: 13206, refundedAt })],
+      paymentRefunds: [
+        {
+          id: ACCOUNTING_IDS.payment,
+          userId: ACCOUNTING_IDS.family,
+          kind: 'contract_cycle',
+          provider: 'stripe',
+          providerReference: 'pi_1',
+          refundReference: null,
+          status: 'refunded',
+          totalCents: 13206,
+          capturedCents: 13206,
+          taxCents: 0,
+          taxLines: [],
+          capturedAt: new Date('2026-11-04T05:00:00Z'),
+          refundedAt
+        }
+      ],
+      fundedIncidents: [incidentRow()],
+      cycles: [
+        {
+          ...accountingSources().cycles[0]!,
+          status: 'captured',
+          capturedAt: new Date('2026-11-08T05:00:00Z')
+        }
+      ]
+    });
+    const [november] = refundsByMonth(sources, ['2026-11']);
+    expect(november).toMatchObject({ count: 1, refundedCents: 13206 });
+    expect(absorbedByMonth(sources, [], ['2026-11'])).toEqual([]);
+  });
 });

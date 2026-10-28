@@ -232,7 +232,9 @@ export const accountingSources = (
       startsOn: '2026-11-05',
       endsOn: '2026-11-07',
       paymentId: ACCOUNTING_IDS.payment,
-      providerShareCents: 10531
+      providerShareCents: 10531,
+      status: 'captured',
+      capturedAt: T('2026-11-04T05:00:00.000Z')
     }
   ],
   contracts: [

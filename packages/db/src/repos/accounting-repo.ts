@@ -72,6 +72,10 @@ export type AccountingCycle = {
   endsOn: string;
   paymentId: string | null;
   providerShareCents: number | null;
+  /** The cycle's billing status: a `capture_failed` cycle whose recovery
+   * charge succeeded is `captured` again (its `capturedAt` then). */
+  status: string;
+  capturedAt: Date | null;
 };
 
 export type AccountingContract = { id: string; familyUserId: string; providerUserId: string };
@@ -289,7 +293,9 @@ export const AccountingRepoLive = Layer.effect(
                     startsOn: contractCycle.startsOn,
                     endsOn: contractCycle.endsOn,
                     paymentId: contractCycle.paymentId,
-                    providerShareCents: contractCycle.providerShareCents
+                    providerShareCents: contractCycle.providerShareCents,
+                    status: contractCycle.status,
+                    capturedAt: contractCycle.capturedAt
                   })
                   .from(contractCycle)
                   .where(inArray(contractCycle.id, cycleIds))

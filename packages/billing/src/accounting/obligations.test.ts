@@ -361,4 +361,62 @@ describe('the obligations ledger', () => {
     );
     expect(obligationsCsv(items)).toContain('"Paid ""by hand"", cheque 12"');
   });
+
+  it('does not count a cycle payment refunded through its session refunds a second time', () => {
+    const fullyRefunded = {
+      id: ACCOUNTING_IDS.payment,
+      userId: ACCOUNTING_IDS.family,
+      kind: 'contract_cycle',
+      provider: 'stripe',
+      providerReference: 'pi_1',
+      refundReference: null,
+      status: 'refunded',
+      totalCents: 13206,
+      capturedCents: 13206,
+      taxCents: 0,
+      taxLines: [],
+      capturedAt: new Date('2026-11-04T05:00:00Z'),
+      refundedAt: new Date('2026-11-21T05:00:00Z')
+    };
+    const items = buildObligations(
+      accountingSources({
+        refunds: [refundRow({ id: 'r-ok', totalCents: 13206 })],
+        paymentRefunds: [
+          fullyRefunded,
+          { ...fullyRefunded, id: 'check-1', kind: 'credibled_order', refundReference: 're_c' }
+        ]
+      })
+    );
+    expect(items.filter((item) => item.type === 'family_refund').map((item) => item.id)).toEqual(
+      expect.arrayContaining(['r-ok', 'check-1'])
+    );
+    expect(items.filter((item) => item.type === 'family_refund')).toHaveLength(2);
+    expect(totalObligations(items).payableCents).toBe(13206 * 2);
+  });
+
+  it('treats Poppynz-funded helper pay as recovered once the recovery charge captured the cycle', () => {
+    const recovered = buildObligations(
+      accountingSources({
+        fundedIncidents: [incidentRow()],
+        cycles: [
+          {
+            ...accountingSources().cycles[0]!,
+            status: 'captured',
+            capturedAt: new Date('2026-11-08T05:00:00Z')
+          }
+        ]
+      })
+    );
+    const pay = one(recovered, 'poppynz_helper_pay:0198b000-0000-7000-8000-000000000b06');
+    expect(pay.baseStatus).toBe('recovered');
+    expect(pay.outstandingCents).toBe(0);
+    expect(pay.settledAt).toEqual(new Date('2026-11-08T05:00:00Z'));
+    const failed = buildObligations(
+      accountingSources({
+        fundedIncidents: [incidentRow()],
+        cycles: [{ ...accountingSources().cycles[0]!, status: 'capture_failed' }]
+      })
+    );
+    expect(one(failed, pay.key).baseStatus).toBe('outstanding');
+  });
 });

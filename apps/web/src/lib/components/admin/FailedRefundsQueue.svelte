@@ -49,7 +49,10 @@
 		busy = true;
 		const result = await retryRefund(refund.id);
 		busy = false;
-		if (result.ok) {
+		if (result.ok && result.data.refund.status === 'failed') {
+			// Stripe answered at once and refused it again (it stays listed).
+			toast.error(m.admin_money_refund_refused_again());
+		} else if (result.ok) {
 			toast.success(m.admin_money_refund_retried());
 		} else {
 			toast.error(adminMoneyErrorMessage(result.error));

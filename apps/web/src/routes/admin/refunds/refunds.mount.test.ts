@@ -54,7 +54,10 @@ afterEach(() => {
 describe('admin failed refunds', () => {
 	it('lists failed refunds and retries one', async () => {
 		listFailedRefunds.mockResolvedValue({ ok: true, data: { refunds: [refund] } });
-		retryRefund.mockResolvedValue({ ok: true, data: {} });
+		retryRefund.mockResolvedValue({
+			ok: true,
+			data: { refund: { id: 'refund-1', status: 'succeeded' } }
+		});
 		const app = mount(RefundsQueuePage, { target: document.body });
 		await settle();
 		const listed = text();
@@ -67,6 +70,24 @@ describe('admin failed refunds', () => {
 		expect(listed).toContain('Reason: charge_disputed');
 		expect(retryRefund).toHaveBeenCalledWith('refund-1');
 		expect(toastSuccess).toHaveBeenCalledWith('Refund sent to Stripe again.');
+	});
+
+	it('toasts an error when Stripe refuses the retried refund again', async () => {
+		listFailedRefunds.mockResolvedValue({ ok: true, data: { refunds: [refund] } });
+		retryRefund.mockResolvedValue({
+			ok: true,
+			data: { refund: { id: 'refund-1', status: 'failed' } }
+		});
+		const app = mount(RefundsQueuePage, { target: document.body });
+		await settle();
+		click('[data-testid="refund-retry"]');
+		await settle();
+		unmount(app);
+
+		expect(toastSuccess).not.toHaveBeenCalled();
+		expect(toastError).toHaveBeenCalledWith(
+			'Stripe refused the refund again. Check the reason, or mark it handled once the family is refunded another way.'
+		);
 	});
 
 	it('marks a refund handled with a note, and toasts a refusal', async () => {

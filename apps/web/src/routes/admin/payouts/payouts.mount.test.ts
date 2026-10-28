@@ -207,7 +207,10 @@ describe('admin manual payout queue', () => {
 			ok: true,
 			data: { transfers: [item({ status: 'failed', failureReason: 'account_closed' })] }
 		});
-		retryTransfer.mockResolvedValue({ ok: true, data: {} });
+		retryTransfer.mockResolvedValue({
+			ok: true,
+			data: { transfer: { id: 'transfer-1', status: 'sent' } }
+		});
 		const app = mount(PayoutsQueuePage, { target: document.body });
 		await settle();
 		const listed = text();
@@ -219,5 +222,26 @@ describe('admin manual payout queue', () => {
 		expect(listed).toContain('Reason: account_closed');
 		expect(retryTransfer).toHaveBeenCalledWith('transfer-1');
 		expect(toastSuccess).toHaveBeenCalledWith('Transfer sent to Stripe again.');
+	});
+
+	it('toasts an error when Stripe refuses the retried transfer again', async () => {
+		listPayoutQueue.mockResolvedValue({
+			ok: true,
+			data: { transfers: [item({ status: 'failed', failureReason: 'account_closed' })] }
+		});
+		retryTransfer.mockResolvedValue({
+			ok: true,
+			data: { transfer: { id: 'transfer-1', status: 'failed' } }
+		});
+		const app = mount(PayoutsQueuePage, { target: document.body });
+		await settle();
+		click('[data-testid="transfer-retry"]');
+		await settle();
+		unmount(app);
+
+		expect(toastSuccess).not.toHaveBeenCalled();
+		expect(toastError).toHaveBeenCalledWith(
+			'Stripe refused the transfer again. Check the reason, or record a manual payout.'
+		);
 	});
 });

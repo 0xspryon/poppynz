@@ -173,7 +173,10 @@
 		busy = true;
 		const result = await retryTransfer(item.id);
 		busy = false;
-		if (result.ok) {
+		if (result.ok && result.data.transfer.status === 'failed') {
+			// Stripe answered at once and refused it again (it stays listed).
+			toast.error(m.admin_money_transfer_refused_again());
+		} else if (result.ok) {
 			toast.success(m.admin_money_transfer_retried());
 		} else {
 			toast.error(adminMoneyErrorMessage(result.error));

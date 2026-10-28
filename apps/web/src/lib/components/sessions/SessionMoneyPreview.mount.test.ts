@@ -77,7 +77,7 @@ describe('SessionMoneyPreview', () => {
 		const shown = text();
 		unmount(app);
 
-		expect(shown).toBe('Maria receives $15.63; $50.39 of the hold won’t be charged.');
+		expect(shown).toBe('Maria receives $15.63; you won’t be charged $50.39 for this session.');
 	});
 
 	it('tells the helper what they receive and what the family gets back', async () => {

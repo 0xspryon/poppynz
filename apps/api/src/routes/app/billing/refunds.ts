@@ -66,7 +66,8 @@ export const refundsByPayment = (paymentIds: ReadonlyArray<string>) =>
         ...(byPayment.get(refund.paymentId) ?? []),
         {
           id: refund.id,
-          // A handled failure was settled outside Stripe: shown as failed.
+          // A handled failure (`cancelled`) was settled outside Stripe; the
+          // web labels it "Settled by our team".
           status: refund.status,
           totalCents: refund.totalCents,
           createdAt: refund.createdAt.toISOString(),

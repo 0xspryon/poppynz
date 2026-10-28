@@ -2457,7 +2457,7 @@
 	"refunds_receipt_tax_line": "{tax} remboursée (sur {base})",
 	"refunds_receipt_title": "Reçu de remboursement (note de crédit)",
 	"refunds_receipt_total": "Total remboursé",
-	"refunds_status_cancelled": "Annulé",
+	"refunds_status_cancelled": "Réglé par notre équipe",
 	"refunds_status_failed": "Échoué",
 	"refunds_status_pending": "En cours",
 	"refunds_status_succeeded": "Effectué",

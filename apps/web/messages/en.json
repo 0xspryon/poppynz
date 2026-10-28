@@ -2457,7 +2457,7 @@
 	"refunds_receipt_tax_line": "{tax} returned (on {base})",
 	"refunds_receipt_title": "Refund receipt (credit note)",
 	"refunds_receipt_total": "Total refunded",
-	"refunds_status_cancelled": "Cancelled",
+	"refunds_status_cancelled": "Settled by our team",
 	"refunds_status_failed": "Failed",
 	"refunds_status_pending": "Pending",
 	"refunds_status_succeeded": "Issued",

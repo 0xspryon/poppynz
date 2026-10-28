@@ -17,6 +17,7 @@ vi.mock('$lib/toast.svelte', () => ({
 	toast: { success: toastSuccess, error: toastError, info: vi.fn() }
 }));
 
+import AccountantRefundsPage from '../../accountant/refunds/+page.svelte';
 import RefundsQueuePage from './+page.svelte';
 
 const text = () => document.body.textContent?.replace(/\s+/g, ' ') ?? '';
@@ -89,5 +90,16 @@ describe('admin failed refunds', () => {
 
 		expect(markRefundHandled).toHaveBeenCalledWith('refund-1', 'Refunded by Interac e-Transfer');
 		expect(toastError).toHaveBeenCalledWith('Only a failed item can be retried or handled.');
+	});
+
+	it('is in the accountant area too (the accountant holds refundQueue)', async () => {
+		listFailedRefunds.mockResolvedValue({ ok: true, data: { refunds: [refund] } });
+		const app = mount(AccountantRefundsPage, { target: document.body });
+		await settle();
+		const listed = text();
+		unmount(app);
+
+		expect(listed).toContain('$50.39');
+		expect(listed).toContain('Reason: charge_disputed');
 	});
 });

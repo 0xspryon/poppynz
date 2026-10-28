@@ -85,6 +85,9 @@
 					}
 				]
 			: []),
+		// Failed session refunds land with the accountant too (permission
+		// `refundQueue`, held by accountants and admins).
+		{ href: resolve('/accountant/refunds'), label: m.nav_admin_refunds(), icon: 'la-undo-alt' },
 		...(isAdmin
 			? [{ href: resolve('/admin'), label: m.nav_admin_console(), icon: 'la-arrow-left' }]
 			: [])

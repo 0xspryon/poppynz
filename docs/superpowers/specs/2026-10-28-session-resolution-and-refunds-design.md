@@ -15,6 +15,13 @@ built in this order, each step its own branch, reviewed and browser-tested:
 
 1. **Session events and actions** (no money): days off, cancellations, reports,
    disputes, the other side's response, the admin dispute queue. UAT item 11b.
+1b. **Replacement from a template**: from a helper's cancellation, the family
+   picks another helper (search filtered by the cancelled service) and gets a
+   short draft contract pre-filled from the current contract's terms for the
+   affected dates. Builds on "start a new contract from this one" (UAT item 7b),
+   which already copies terms for the *same* helper; the new parts are choosing a
+   different helper, re-pricing to that helper's rates (floored at base rates)
+   and limiting the draft to the affected dates.
 2. **Money effects + helper transfers**: the frozen per-session split, the
    cancellation-policy function, session-linked refunds, session-based transfers,
    held-back pay for disputed sessions, restricted-account handling and the manual
@@ -66,6 +73,33 @@ page, the contract's billing panel and the session actions:
 A long-holiday planner (date ranges recorded ahead and applied as sessions are
 created) can be added later without changing anything above; it was considered
 and deferred.
+
+## 3a. Responses, days off and notices ✅
+
+Decided 2026-10-28:
+
+- **Response window: 48 hours.** A one-sided report (e.g. "helper didn't
+  show", "family cancelled late") is `proposed`; the other side has 48 hours from
+  `recorded_at` to accept or contest it. **Silence counts as acceptance**: a worker
+  step confirms unanswered reports when the window closes. A contested report
+  goes to the admin dispute queue.
+- **Days off need the other side's confirmation.** A day off is proposed by
+  either side and only takes effect when the other side confirms; an unconfirmed
+  proposal does not change the session. (The 48-hour silence rule does not apply
+  to day-off proposals; they lapse at the session's 24-hour cutoff.)
+- **A family's day off is a family cancellation** (free if recorded at least
+  24 h before the session; helper $0) and **a helper's day off is a helper
+  cancellation** (helper $0; family owed the full session) — with the agreed
+  label and reason shown.
+- **Both parties are always emailed** (EN/FR, each in their own language) when a
+  report, day off or cancellation is recorded, confirmed, contested, lapses, or is
+  decided by an admin.
+- **Helper-initiated cancellation email to the family** carries a call to action
+  to find a replacement quickly: search for another helper offering the same
+  service, and start a short contract pre-filled from the current contract
+  ("templated contract"). For step 1 only the **copy** ships; the link points to
+  Find help filtered by the session's service until the replacement flow exists
+  (§1, step 1b).
 
 ## 4. Data model (steps 1–2)
 
@@ -288,11 +322,10 @@ recoveries per session.
 
 1. ~~Time off for dates beyond the window~~ — decided: no; act within the 14-day
    window, explained in the UI (§3).
-2. **Response window** for one-sided reports (e.g. 48 h) and whether silence
-   counts as acceptance.
-3. **Days off:** is a family's day off a family cancellation (helper $0 if ≥ 24 h)
-   and a helper's day off a helper cancellation? Does an *agreed* day off need
-   the other side's confirmation?
+2. ~~Response window~~ — decided: 48 h, silence counts as acceptance (§3a).
+3. ~~Days off~~ — decided: need the other side's confirmation; family day off =
+   family cancellation, helper day off = helper cancellation; both always
+   emailed (§3a).
 4. **Past extra sessions:** how far back (e.g. 7 days) and who may start one.
 5. **Re-signing:** must existing contracts re-sign the agreement version that
    adds extra-session consent?

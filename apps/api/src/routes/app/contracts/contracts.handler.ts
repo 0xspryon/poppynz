@@ -26,6 +26,7 @@ import {
   ContractAgreementRepo,
   ContractBillingRepo,
   ContractRepo,
+  ContractReplacementRepo,
   ConversationRepo,
   ServiceOfferedRepo,
   offerFloorCents,
@@ -1548,6 +1549,17 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
       .findById(row.conversationId)
       .pipe((errors) => mapContractRepoError(errors));
 
+    // Tier 3 step 1b: a replacement started from a helper's cancellation —
+    // the family sees which contract it replaces (the new helper is not a
+    // party to that one). Optional, so suites without the repo still run.
+    const replacementRepo = yield* Effect.serviceOption(ContractReplacementRepo);
+    const replacementLink =
+      viewerSide === 'family' && Option.isSome(replacementRepo)
+        ? yield* replacementRepo.value
+            .findForContract(row.id)
+            .pipe((errors) => mapContractRepoError(errors))
+        : null;
+
     // The composer's privacy promise: contact details stay hidden until the
     // contract is active (and stay visible through ending/ended).
     let counterpartContact: { email: string; phone: string | null } | null = null;
@@ -1689,6 +1701,12 @@ export const getContractProgram = (userAndSession: UserAndSession, contractId: s
         hasPaymentMethod,
         payoutsReady,
         billing,
+        replaces: replacementLink
+          ? {
+              contractId: replacementLink.replacesContractId,
+              sessionCount: replacementLink.sessionIds.length
+            }
+          : null,
         endedByMe: row.endedByUserId === viewer.id,
         endNote: row.endNote,
         endNoticedAt: row.endNoticedAt?.toISOString() ?? null,

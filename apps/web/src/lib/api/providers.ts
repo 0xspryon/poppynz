@@ -19,6 +19,8 @@ export interface ProviderSearchParams {
 	sort?: ProviderSearchSort;
 	page?: number;
 	perPage?: number;
+	/** Leave this helper out (Find a replacement: the one who cancelled). */
+	excludeUserId?: string;
 }
 
 export type ProviderSearchData = Extract<
@@ -43,6 +45,7 @@ export async function searchProviders(params: ProviderSearchParams) {
 	if (params.sort) query.sort = params.sort;
 	if (params.page !== undefined) query.page = String(params.page);
 	if (params.perPage !== undefined) query.perPage = String(params.perPage);
+	if (params.excludeUserId) query.excludeUserId = params.excludeUserId;
 
 	// The API reads search params via c.req.query (no hono validator), so the
 	// RPC input type omits `query` — the client still serializes it at runtime.

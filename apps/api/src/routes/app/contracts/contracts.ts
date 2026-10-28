@@ -20,6 +20,7 @@ import {
   withdrawContractHandler
 } from './contracts.handler';
 import { getAgreementToSignHandler, getSignedAgreementHandler } from './agreement.handler';
+import { createReplacementHandler, replacementContextHandler } from './replacement.handler';
 import {
   listPendingSessionResponsesHandler,
   recordSessionActionHandler,
@@ -42,6 +43,9 @@ export const contractsRoute = new Hono<HonoEnv>()
   .post('/:id/sessions/:sessionId/respond', (c) => respondToSessionHandler(c))
   .post('/:id/billing/retry', (c) => retryContractPaymentHandler(c))
   .post('/:id/renew', (c) => renewContractHandler(c))
+  // Tier 3 step 1b: replace sessions the helper cancelled with another helper.
+  .get('/:id/replacement', (c) => replacementContextHandler(c))
+  .post('/:id/replacement', (c) => createReplacementHandler(c))
   .get('/:id/agreement', (c) => getAgreementToSignHandler(c))
   .get('/:id/agreement/signed', (c) => getSignedAgreementHandler(c))
   .put('/:id/terms', (c) => saveTermsHandler(c))

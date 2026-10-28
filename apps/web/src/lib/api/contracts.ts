@@ -26,6 +26,8 @@ const landingEndpoint = apiClient.contracts.me.landing.$get;
 const sessionActionEndpoint = apiClient.contracts[':id'].sessions[':sessionId'].actions.$post;
 const sessionRespondEndpoint = apiClient.contracts[':id'].sessions[':sessionId'].respond.$post;
 const pendingSessionsEndpoint = apiClient.contracts[':id'].sessions.pending.$get;
+const replacementContextEndpoint = apiClient.contracts[':id'].replacement.$get;
+const startReplacementEndpoint = apiClient.contracts[':id'].replacement.$post;
 
 export type ContractListData = Extract<
 	Awaited<ReturnType<typeof listContracts>>,
@@ -82,6 +84,13 @@ export type ContractTermsInput = {
 	endsOn?: string | null;
 	endsAtMinutes?: number | null;
 };
+/** Tier 3 step 1b: what a "Find a replacement" is replacing. */
+export type ReplacementContext = Extract<
+	Awaited<ReturnType<typeof getReplacementContext>>,
+	{ ok: true }
+>['data']['replacement'];
+export type ReplacementContextError = ErrorsOf<typeof replacementContextEndpoint>;
+export type StartReplacementError = ErrorsOf<typeof startReplacementEndpoint>;
 export type SaveTermsError = ErrorsOf<typeof termsEndpoint>;
 export type SendContractError = ErrorsOf<typeof sendEndpoint>;
 export type CreateContractError = ErrorsOf<typeof createEndpoint>;
@@ -206,6 +215,29 @@ export async function respondToSession(
 /** Tier 3: what on this contract waits for the viewer's answer. */
 export async function listPendingSessionResponses(id: string) {
 	return call(pendingSessionsEndpoint({ param: { id } }));
+}
+
+/** Tier 3 step 1b: the sessions the helper cancelled that the family can
+ * still replace (the named ones, or all of them) and the helper to leave
+ * out of the search. */
+export async function getReplacementContext(id: string, sessionIds?: ReadonlyArray<string>) {
+	const query: Record<string, string> = {};
+	if (sessionIds && sessionIds.length > 0) query.sessions = sessionIds.join(',');
+	const args = { param: { id }, query } as unknown as Parameters<
+		typeof replacementContextEndpoint
+	>[0];
+	return call(replacementContextEndpoint(args));
+}
+
+/** Tier 3 step 1b: "Use this contract as a template" with another helper. */
+export async function startReplacement(
+	id: string,
+	input: { providerUserId: string; sessionIds: ReadonlyArray<string> }
+) {
+	const args = { param: { id }, json: input } as unknown as Parameters<
+		typeof startReplacementEndpoint
+	>[0];
+	return call(startReplacementEndpoint(args));
 }
 
 /** UAT round 2 #5: the viewer's running contracts, for the landing. */

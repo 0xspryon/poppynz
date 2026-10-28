@@ -109,7 +109,7 @@ export type NotificationPayloads = {
     cycleId: string;
     sessionId: string;
     resolutionId: string;
-    event: 'recorded' | 'confirmed' | 'contested' | 'declined' | 'lapsed' | 'decided';
+    event: 'recorded' | 'confirmed' | 'contested' | 'declined' | 'withdrawn' | 'lapsed' | 'decided';
   };
   /** Someone asked the viewer to vouch for them. */
   'vouch.requested': {

@@ -146,6 +146,8 @@ export const searchProvidersRouteProgram = (
 
     const verified: Array<ProviderSearchDocument & { distanceKm?: number }> = [];
     const staleUserIds: Array<string> = [];
+    // Find a replacement leaves the helper who cancelled out of the results.
+    let excludedHits = 0;
     let indexTotal = 0;
     let exhausted = false;
 
@@ -181,6 +183,10 @@ export const searchProvidersRouteProgram = (
       );
 
       for (const hit of result.providers) {
+        if (input.excludeUserId !== undefined && hit.userId === input.excludeUserId) {
+          excludedHits += 1;
+          continue;
+        }
         const candidate = candidateByUserId.get(hit.userId);
         const document = candidate ? buildProviderSearchDocument(candidate) : null;
         if (document) verified.push({ ...document, distanceKm: hit.distanceKm });
@@ -200,7 +206,7 @@ export const searchProvidersRouteProgram = (
     const pageOfProviders = verified.slice(pageStart, pageStart + input.perPage);
     const total = exhausted
       ? verified.length
-      : Math.max(indexTotal - staleUserIds.length, verified.length);
+      : Math.max(indexTotal - staleUserIds.length - excludedHits, verified.length);
 
     const providers = yield* Effect.forEach(
       pageOfProviders,
@@ -348,6 +354,7 @@ export async function searchProvidersHandler(c: HonoContext<HonoEnv>) {
       q: c.req.query('q'),
       city: c.req.query('city'),
       service: c.req.query('service'),
+      excludeUserId: c.req.query('excludeUserId'),
       radiusKm: c.req.query('radiusKm'),
       minHourlyRateCents: c.req.query('minHourlyRateCents'),
       maxHourlyRateCents: c.req.query('maxHourlyRateCents'),

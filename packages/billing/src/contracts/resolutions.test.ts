@@ -225,6 +225,32 @@ describe('checkSessionAction', () => {
     const silent = { ...accepted, response: null, respondedByUserId: null };
     expect(checkSessionAction('dispute', ctx({ active: silent }))).toBeNull();
   });
+
+  it('lets the proposer withdraw a pending day off until it is answered or lapses', () => {
+    const cutoff = cancellationCutoff(session(), TORONTO, 24);
+    const mine = dummySessionResolution({
+      kind: 'day_off_agreed',
+      status: 'proposed',
+      reportedBySide: 'family',
+      respondBy: cutoff
+    });
+    expect(checkSessionAction('withdraw_day_off', ctx({ active: mine }))).toBeNull();
+    expect(availableSessionActions(ctx({ active: mine })).actions).toEqual(['withdraw_day_off']);
+    expect(checkSessionAction('withdraw_day_off', ctx({ active: mine, side: 'helper' }))).toBe(
+      'wrong_side'
+    );
+    expect(checkSessionAction('withdraw_day_off', ctx({ active: mine, now: cutoff }))).toBe(
+      'response_window_closed'
+    );
+    expect(
+      checkSessionAction('withdraw_day_off', ctx({ active: { ...mine, status: 'confirmed' } }))
+    ).toBe('nothing_to_withdraw');
+    const report = { ...mine, kind: 'helper_no_show' as const };
+    expect(checkSessionAction('withdraw_day_off', ctx({ active: report }))).toBe(
+      'nothing_to_withdraw'
+    );
+    expect(checkSessionAction('withdraw_day_off', ctx())).toBe('nothing_to_withdraw');
+  });
 });
 
 describe('checkResponse', () => {
@@ -456,7 +482,14 @@ describe('resolution notices', () => {
     const family = world.mails.find((mail) => mail.email.startsWith('family-1'))!;
     expect(family.subject).toBe('Maria T. cancelled Tue, Nov 3');
     expect(family.secondaryLink?.label).toBe('Find a replacement');
-    expect(family.secondaryLink?.href).toContain('/family/find?service=Childcare');
+    // Step 1b: Find help in "Find a replacement" mode for this session.
+    const href = new URL(family.secondaryLink!.href);
+    expect(href.pathname).toBe('/family/find');
+    expect(Object.fromEntries(href.searchParams)).toEqual({
+      service: 'Childcare',
+      replace: 'contract-1',
+      sessions: session().id
+    });
     expect(family.secondaryLink?.intro).toContain('offering Childcare');
     expect(family.link).toContain('/family/contracts/contract-1/cycles/cycle-1');
     const helper = world.mails.find((mail) => mail.email.startsWith('helper-1'))!;

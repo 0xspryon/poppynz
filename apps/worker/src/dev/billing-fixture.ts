@@ -32,6 +32,21 @@
  * status from Stripe on first use. Without the flag payout accounts are left
  * alone. Never creates cards, billing customers, contracts or payments.
  *
+ * `--replacement-helpers` (Tier 3 step 1b, "Find a replacement") also creates
+ * three more approved helpers in Toronto for the family to try as a
+ * replacement for Hana:
+ *
+ *   - replacement-helper@example.test   Robin, Childcare at $30/h, NO
+ *     conversation (the reach-out-first path);
+ *   - replacement-tutor@example.test    Theo, Tutoring only, with an ACTIVE
+ *     conversation (REPLACEMENT_SERVICE_NOT_OFFERED);
+ *   - replacement-pending@example.test  Paula, Pet Minding plus a custom
+ *     "Childcare" still pending review, with an ACTIVE conversation
+ *     (REPLACEMENT_SERVICE_NOT_AVAILABLE).
+ *
+ * Restart the worker afterwards (it rebuilds the search index on boot) so
+ * they appear in Find help.
+ *
  * Sign-in is by magic link only: request one on the sign-in page; the link is
  * printed in the api logs (`docker logs api 2>&1 | grep 'Magic link for'`).
  */
@@ -47,6 +62,7 @@ const argument = (name: string) => {
 };
 
 const payoutAccountReference = argument('payout-account');
+const withReplacementHelpers = process.argv.includes('--replacement-helpers');
 if (process.argv.includes('--payout-account') && !/^acct_\w+$/.test(payoutAccountReference ?? '')) {
   console.error(
     '[dev-billing] --payout-account expects a Stripe account id (acct_…). Nothing was done.'
@@ -56,7 +72,7 @@ if (process.argv.includes('--payout-account') && !/^acct_\w+$/.test(payoutAccoun
 
 // Imported only after the guards so nothing touches the database before them.
 const { db } = await import('@repo/db');
-const { and, asc, desc, eq, gt, inArray, isNotNull, isNull, notInArray, or } =
+const { and, asc, desc, eq, gt, inArray, isNotNull, isNull, notInArray } =
   await import('drizzle-orm');
 const schema = await import('@repo/db/schema');
 
@@ -118,6 +134,80 @@ const HELPER: FixtureUser = {
     shortBio: 'Dev billing fixture helper.'
   }
 };
+
+type ExtraService = {
+  name: string;
+  /** The catalogue item it lists, by name; null for a custom service. */
+  catalogueName: string | null;
+  rateCents: number;
+  reviewStatus: 'approved' | 'pending';
+};
+
+const torontoProfile = (firstName: string, lastName: string, phone: string, address: string) => ({
+  firstName,
+  lastName,
+  phoneNumber: phone,
+  address,
+  city: 'Toronto',
+  postalCode: 'M5V 2T6',
+  stateProvince: 'ON',
+  latitude: 43.6426,
+  longitude: -79.3871,
+  shortBio: `Dev replacement fixture helper (${firstName}).`
+});
+
+/** `--replacement-helpers`: other helpers the family can try instead of Hana. */
+const REPLACEMENT_HELPERS: Array<{
+  user: FixtureUser;
+  services: Array<ExtraService>;
+  conversation: boolean;
+}> = [
+  {
+    user: {
+      id: 'dev-replacement-helper',
+      email: 'replacement-helper@example.test',
+      name: 'Robin Replacement',
+      role: 'service-provider',
+      profile: torontoProfile('Robin', 'Replacement', '+14165550103', '290 Bremner Blvd')
+    },
+    services: [
+      { name: 'Childcare', catalogueName: 'Childcare', rateCents: 3000, reviewStatus: 'approved' }
+    ],
+    conversation: false
+  },
+  {
+    user: {
+      id: 'dev-replacement-tutor',
+      email: 'replacement-tutor@example.test',
+      name: 'Theo Tutor',
+      role: 'service-provider',
+      profile: torontoProfile('Theo', 'Tutor', '+14165550104', '1 Blue Jays Way')
+    },
+    services: [
+      { name: 'Tutoring', catalogueName: 'Tutoring', rateCents: 2800, reviewStatus: 'approved' }
+    ],
+    conversation: true
+  },
+  {
+    user: {
+      id: 'dev-replacement-pending',
+      email: 'replacement-pending@example.test',
+      name: 'Paula Pending',
+      role: 'service-provider',
+      profile: torontoProfile('Paula', 'Pending', '+14165550105', '40 Bay St')
+    },
+    services: [
+      {
+        name: 'Pet Minding',
+        catalogueName: 'Pet Minding',
+        rateCents: 2000,
+        reviewStatus: 'approved'
+      },
+      { name: 'Childcare', catalogueName: null, rateCents: 2600, reviewStatus: 'pending' }
+    ],
+    conversation: true
+  }
+];
 
 const SERVICE_NAME = 'Childcare';
 const HOURLY_RATE_CENTS = 2500;
@@ -306,6 +396,38 @@ const ensureServiceOffered = async (userId: string, catalogueServiceId: string |
   return created.id;
 };
 
+const ensureExtraService = async (userId: string, service: ExtraService) => {
+  const catalogueServiceId = service.catalogueName
+    ? await findCatalogueItemId(service.catalogueName)
+    : null;
+  const [existing] = await db
+    .select({ id: schema.serviceOffered.id })
+    .from(schema.serviceOffered)
+    .where(
+      and(
+        eq(schema.serviceOffered.userId, userId),
+        eq(schema.serviceOffered.name, service.name),
+        isNull(schema.serviceOffered.deletedAt)
+      )
+    )
+    .limit(1);
+  if (existing) return existing.id;
+  const [created] = await db
+    .insert(schema.serviceOffered)
+    .values({
+      userId,
+      catalogueServiceId,
+      name: service.name,
+      description: `${service.name} (dev replacement fixture).`,
+      hourlyRateCents: service.rateCents,
+      currency: 'CAD',
+      reviewStatus: service.reviewStatus
+    })
+    .returning({ id: schema.serviceOffered.id });
+  if (!created) throw new Error(`could not create service ${service.name}`);
+  return created.id;
+};
+
 const ensureServiceNeeded = async (userId: string, catalogueServiceId: string | null) => {
   const [existing] = await db
     .select({ id: schema.serviceNeeded.id })
@@ -336,7 +458,8 @@ const ensureServiceNeeded = async (userId: string, catalogueServiceId: string | 
 const ensureActiveConversation = async (
   familyUserId: string,
   providerUserId: string,
-  serviceOfferedId: string
+  serviceOfferedId: string,
+  service: { name: string; firstName: string } = { name: SERVICE_NAME, firstName: 'Hana' }
 ) => {
   const [existing] = await db
     .select()
@@ -367,8 +490,8 @@ const ensureActiveConversation = async (
       providerUserId,
       initiatorUserId: familyUserId,
       status: 'active',
-      reachoutMessage: 'Hi Hana, we are looking for after-school childcare. (dev billing fixture)',
-      reachoutServices: [{ serviceId: serviceOfferedId, name: SERVICE_NAME }],
+      reachoutMessage: `Hi ${service.firstName}, we are looking for some help. (dev billing fixture)`,
+      reachoutServices: [{ serviceId: serviceOfferedId, name: service.name }],
       respondedAt: now
     })
     .returning({ id: schema.conversation.id });
@@ -409,9 +532,15 @@ try {
   const existing = await db
     .select({ email: schema.user.email, role: schema.user.role })
     .from(schema.user)
-    .where(or(eq(schema.user.email, FAMILY.email), eq(schema.user.email, HELPER.email)));
+    .where(
+      inArray(schema.user.email, [
+        FAMILY.email,
+        HELPER.email,
+        ...(withReplacementHelpers ? REPLACEMENT_HELPERS.map((extra) => extra.user.email) : [])
+      ])
+    );
   for (const row of existing) {
-    const expected = row.email === FAMILY.email ? FAMILY.role : HELPER.role;
+    const expected = row.email === FAMILY.email ? FAMILY.role : 'service-provider';
     if (row.role !== null && row.role !== expected) {
       throw new Error(`${row.email} already exists with role ${row.role}; expected ${expected}`);
     }
@@ -442,6 +571,31 @@ try {
     await upsertPayoutAccount(helperId, payoutAccountReference);
   }
 
+  const extras: Array<string> = [];
+  if (withReplacementHelpers) {
+    for (const extra of REPLACEMENT_HELPERS) {
+      const extraId = await upsertUser(extra.user);
+      await ensureApproval(extraId, admin.id);
+      await ensureSafetyVerification(extraId, extra.user.role, admin.id);
+      await acceptPublishedTcs(extraId, extra.user.role);
+      const serviceIds: Array<string> = [];
+      for (const service of extra.services) {
+        serviceIds.push(await ensureExtraService(extraId, service));
+      }
+      const conversation = extra.conversation
+        ? await ensureActiveConversation(familyId, extraId, serviceIds[0]!, {
+            name: extra.services[0]!.name,
+            firstName: extra.user.profile.firstName
+          })
+        : null;
+      extras.push(
+        `  ${extra.user.email}  id=${extraId}  services=[${extra.services
+          .map((service) => `${service.name} ${service.rateCents} ${service.reviewStatus}`)
+          .join(', ')}]  conversation=${conversation ?? 'none'}`
+      );
+    }
+  }
+
   console.log('[dev-billing] fixture ready');
   console.log(`  family  ${FAMILY.email}  id=${familyId}`);
   console.log(`  helper  ${HELPER.email}  id=${helperId}`);
@@ -459,6 +613,10 @@ try {
       ? '  helper payout account  upserted (onboarding, refreshed on first use)'
       : '  helper payout account  untouched (pass --payout-account acct_… to set one)'
   );
+  if (extras.length > 0) {
+    console.log('  replacement helpers (restart the worker to index them):');
+    for (const line of extras) console.log(line);
+  }
   console.log(
     "  sign in: request a magic link on the sign-in page; the link is printed in the api logs: docker logs api 2>&1 | grep 'Magic link for'"
   );

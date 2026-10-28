@@ -99,7 +99,9 @@ describe('POST /contracts/:id/sessions/:sessionId/actions — cancel', () => {
     expect(resolutionOf(await act(world, { action: 'cancel' })).kind).toBe('helper_cancelled');
     const family = world.mails.find((mail) => mail.email.startsWith('family-1'))!;
     expect(family.secondaryLink?.label).toBe('Find a replacement');
-    expect(family.secondaryLink?.href).toContain('/family/find?service=Childcare');
+    expect(family.secondaryLink?.href).toContain(
+      `/family/find?service=Childcare&replace=${CONTRACT_ID}&sessions=${SESSION_ID}`
+    );
   });
 
   it('falls back to the published Terms of Service without a signed policy', async () => {
@@ -205,6 +207,86 @@ describe('days off', () => {
     expect(resolutionOf(await respond(helper, { response: 'decline' }, BEFORE))).toMatchObject({
       status: 'reversed',
       response: 'declined'
+    });
+  });
+
+  describe('withdrawing your own request', () => {
+    const familyDayOff = () =>
+      dummySessionResolution({
+        id: 'day-off-1',
+        sessionId: SESSION_ID,
+        contractId: CONTRACT_ID,
+        cycleId: CYCLE_ID,
+        kind: 'day_off_agreed',
+        reportedByUserId: 'family-1',
+        reportedBySide: 'family',
+        status: 'proposed',
+        recordedAt: BEFORE,
+        respondBy: CUTOFF
+      });
+
+    it('reverses it, audits it, tells both sides and frees the session for the other side', async () => {
+      const family = makeSessionWorld({ resolutions: [familyDayOff()] });
+      // While it waits, the helper can only answer it — not cancel.
+      const helperBefore = makeSessionWorld({ viewer: HELPER, resolutions: [familyDayOff()] });
+      expect(failureOf(await act(helperBefore, { action: 'cancel' }))?.reason).toBe(
+        'already_resolved'
+      );
+
+      const withdrawn = resolutionOf(
+        await act(family, { action: 'withdraw_day_off', note: 'Plans changed' })
+      );
+      expect(withdrawn).toMatchObject({
+        kind: 'day_off_agreed',
+        status: 'reversed',
+        response: null
+      });
+      expect(
+        family.resolutions.state.events.map((event) => [
+          event.action,
+          event.actorSide,
+          event.fromStatus,
+          event.toStatus,
+          event.note
+        ])
+      ).toEqual([['withdrawn', 'family', 'proposed', 'reversed', 'Plans changed']]);
+      expect(family.mails.map((mail) => [mail.email, mail.subject])).toEqual([
+        ['family-1@example.test', 'You withdrew your day-off request for Tue, Nov 3'],
+        ['helper-1@example.test', 'Priya T. a retiré sa demande de congé (mar. 3 nov.)']
+      ]);
+      expect(family.published.map((row) => row.input.payload)).toEqual([
+        expect.objectContaining({ event: 'withdrawn' }),
+        expect.objectContaining({ event: 'withdrawn' })
+      ]);
+
+      // Nothing waits for the helper any more, and they can cancel.
+      const helper = makeSessionWorld({
+        viewer: HELPER,
+        resolutions: [...family.resolutions.state.resolutions]
+      });
+      expect((await pending(helper, BEFORE)).items).toEqual([]);
+      expect(resolutionOf(await act(helper, { action: 'cancel' })).kind).toBe('helper_cancelled');
+    });
+
+    it("refuses the other side's request, an answered one and one past its cutoff", async () => {
+      const helper = makeSessionWorld({ viewer: HELPER, resolutions: [familyDayOff()] });
+      expect(failureOf(await act(helper, { action: 'withdraw_day_off' }))?.reason).toBe(
+        'wrong_side'
+      );
+      const answered = makeSessionWorld({
+        resolutions: [{ ...familyDayOff(), status: 'confirmed', response: 'accepted' }]
+      });
+      expect(failureOf(await act(answered, { action: 'withdraw_day_off' }))?.reason).toBe(
+        'nothing_to_withdraw'
+      );
+      const late = makeSessionWorld({ resolutions: [familyDayOff()] });
+      expect(failureOf(await act(late, { action: 'withdraw_day_off' }, CUTOFF))?.reason).toBe(
+        'response_window_closed'
+      );
+      const none = makeSessionWorld();
+      expect(failureOf(await act(none, { action: 'withdraw_day_off' }))?.reason).toBe(
+        'nothing_to_withdraw'
+      );
     });
   });
 
@@ -428,8 +510,55 @@ describe('cycleSessionResolutions (the cycle page)', () => {
       actions: ['cancel', 'propose_day_off'],
       responses: [],
       cancelOutcome: 'family_cancelled_early',
-      cutoffAt: CUTOFF.toISOString()
+      cutoffAt: CUTOFF.toISOString(),
+      canFindReplacement: false
     });
+  });
+
+  it('offers the family (only) a replacement for a session the helper cancelled, until it starts', async () => {
+    const world = makeSessionWorld({
+      resolutions: [
+        dummySessionResolution({
+          sessionId: SESSION_ID,
+          contractId: CONTRACT_ID,
+          kind: 'helper_cancelled',
+          reportedByUserId: 'helper-1',
+          reportedBySide: 'helper',
+          status: 'confirmed'
+        })
+      ]
+    });
+    expect((await views(world, 'family-1', true)).perSession.get(SESSION_ID)).toMatchObject({
+      canFindReplacement: true
+    });
+    expect((await views(world, 'helper-1', true)).perSession.get(SESSION_ID)).toMatchObject({
+      canFindReplacement: false
+    });
+    expect((await views(world, 'family-1', true, DURING)).perSession.get(SESSION_ID)).toMatchObject(
+      { canFindReplacement: false }
+    );
+  });
+
+  it('offers the proposer to withdraw their pending day off; the other side only answers', async () => {
+    const world = makeSessionWorld({
+      resolutions: [
+        dummySessionResolution({
+          sessionId: SESSION_ID,
+          contractId: CONTRACT_ID,
+          kind: 'day_off_agreed',
+          reportedByUserId: 'family-1',
+          reportedBySide: 'family',
+          status: 'proposed',
+          recordedAt: BEFORE,
+          respondBy: CUTOFF
+        })
+      ]
+    });
+    const mine = (await views(world, 'family-1', true)).perSession.get(SESSION_ID);
+    expect(mine?.actions).toEqual(['withdraw_day_off']);
+    const theirs = (await views(world, 'helper-1', true)).perSession.get(SESSION_ID);
+    expect(theirs?.actions).toEqual([]);
+    expect(theirs?.responses).toEqual(['accept', 'decline']);
   });
 
   it('offers nothing without the permission, but still shows the resolution', async () => {

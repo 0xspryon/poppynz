@@ -24,6 +24,30 @@ const intent = (overrides: Record<string, unknown> = {}) => ({
   ...overrides
 });
 
+const refundObject = (overrides: Record<string, unknown> = {}) => ({
+  id: 're_2',
+  object: 'refund',
+  amount: 5039,
+  status: 'succeeded',
+  payment_intent: 'pi_123',
+  metadata: { refund_id: 'refund-1' },
+  failure_reason: null,
+  created: 1_790_000_000,
+  ...overrides
+});
+
+const transferObject = (overrides: Record<string, unknown> = {}) => ({
+  id: 'tr_1',
+  object: 'transfer',
+  amount: 10531,
+  destination: 'acct_1',
+  source_transaction: 'ch_1',
+  metadata: { cycle_id: 'cycle-1' },
+  amount_reversed: 0,
+  created: 1_790_000_000,
+  ...overrides
+});
+
 const card = {
   id: 'pm_card',
   object: 'payment_method',
@@ -41,6 +65,9 @@ const fakeStripe = (
     search?: () => unknown;
     setupCreate?: () => unknown;
     setupRetrieve?: () => unknown;
+    refundCreate?: () => unknown;
+    refundRetrieve?: () => unknown;
+    transferCreate?: () => unknown;
   } = {}
 ) => {
   const calls: Array<Recorded> = [];
@@ -79,7 +106,31 @@ const fakeStripe = (
     },
     customers: { create: record('customers.create', () => ({ id: 'cus_new' })) },
     paymentMethods: { detach: record('paymentMethods.detach', () => card) },
-    refunds: { create: record('refunds.create', () => ({ id: 're_1', created: 1_790_000_000 })) },
+    refunds: {
+      create: record(
+        'refunds.create',
+        answers.refundCreate ?? (() => ({ id: 're_1', created: 1_790_000_000 }))
+      ),
+      retrieve: record('refunds.retrieve', answers.refundRetrieve ?? (() => refundObject()))
+    },
+    transfers: {
+      create: record('transfers.create', answers.transferCreate ?? (() => transferObject())),
+      retrieve: record('transfers.retrieve', () => transferObject())
+    },
+    payouts: {
+      retrieve: (first: unknown, second: unknown, third: unknown) => {
+        calls.push({ method: 'payouts.retrieve', params: [first, [second, third]] });
+        return Promise.resolve({
+          id: 'po_1',
+          status: 'paid',
+          amount: 5000,
+          arrival_date: 1_790_100_000,
+          created: 1_790_000_000,
+          failure_message: null,
+          failure_code: null
+        } as never);
+      }
+    },
     // The real verifier: signatures are what this suite is about.
     webhooks: Stripe.webhooks
   } as unknown as StripeApi;
@@ -255,7 +306,8 @@ describe('getPayment', () => {
       },
       capturableCents: 0,
       receivedCents: 0,
-      captureBefore: null
+      captureBefore: null,
+      chargeReference: expect.anything()
     });
     expect(calls[0]!.params).toEqual(['pi_123', { expand: ['latest_charge', 'payment_method'] }]);
   });
@@ -680,5 +732,141 @@ describe('findPaymentByRowId', () => {
     const { client } = fakeStripe();
     const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
     expect(await Effect.runPromise(payments.findPaymentByRowId('payment-9'))).toBeNull();
+  });
+});
+
+describe('partial refunds (Tier 3 step 2)', () => {
+  it('refunds part of the intent under our refund id, with its metadata', async () => {
+    const { client, calls } = fakeStripe({
+      refundCreate: () => refundObject({ status: 'pending' })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const refund = await Effect.runPromise(
+      payments.createRefund({
+        paymentReference: 'pi_123',
+        amountCents: 5039,
+        idempotencyKey: 'refund-1',
+        metadata: { refund_id: 'refund-1', session_id: 's-1', cycle_id: 'c-1' }
+      })
+    );
+    expect(refund).toMatchObject({
+      reference: 're_2',
+      status: 'pending',
+      amountCents: 5039,
+      paymentReference: 'pi_123'
+    });
+    expect(calls[0]).toEqual({
+      method: 'refunds.create',
+      params: [
+        {
+          payment_intent: 'pi_123',
+          amount: 5039,
+          reason: 'requested_by_customer',
+          metadata: { refund_id: 'refund-1', session_id: 's-1', cycle_id: 'c-1' }
+        },
+        { idempotencyKey: 'refund-1' }
+      ]
+    });
+  });
+
+  it('reports a failed refund with its reason on re-fetch', async () => {
+    const { client } = fakeStripe({
+      refundRetrieve: () =>
+        refundObject({ status: 'failed', failure_reason: 'expired_or_canceled_card' })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const refund = await Effect.runPromise(payments.getRefund('re_2'));
+    expect(refund).toMatchObject({ status: 'failed', failureReason: 'expired_or_canceled_card' });
+  });
+});
+
+describe('transfers and payouts (Tier 3 step 2)', () => {
+  it('transfers to the connected account from the cycle charge, keyed by the caller', async () => {
+    const { client, calls } = fakeStripe();
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const result = await Effect.runPromise(
+      payments.createTransfer({
+        amountCents: 10531,
+        currency: 'CAD',
+        destination: 'acct_1',
+        sourceTransaction: 'ch_1',
+        idempotencyKey: 'transfer-cycle-1',
+        metadata: { cycle_id: 'cycle-1' }
+      })
+    );
+    expect(result).toMatchObject({
+      status: 'created',
+      transfer: { reference: 'tr_1', sourceTransaction: 'ch_1' }
+    });
+    expect(calls[0]).toEqual({
+      method: 'transfers.create',
+      params: [
+        {
+          amount: 10531,
+          currency: 'cad',
+          destination: 'acct_1',
+          source_transaction: 'ch_1',
+          metadata: { cycle_id: 'cycle-1' }
+        },
+        { idempotencyKey: 'transfer-cycle-1' }
+      ]
+    });
+  });
+
+  it('a transfer Stripe refuses is data; a connection failure is an error', async () => {
+    const refused = makeStripePayments({
+      client: fakeStripe({
+        transferCreate: () => {
+          throw new Stripe.errors.StripeInvalidRequestError({
+            message: 'Insufficient funds in Stripe account.',
+            type: 'invalid_request_error'
+          } as never);
+        }
+      }).client,
+      webhookSecret: WEBHOOK_SECRET
+    });
+    const input = {
+      amountCents: 100,
+      currency: 'CAD' as const,
+      destination: 'acct_1',
+      sourceTransaction: null,
+      idempotencyKey: 'k',
+      metadata: {}
+    };
+    expect(await Effect.runPromise(refused.createTransfer(input))).toEqual({
+      status: 'refused',
+      reason: 'Insufficient funds in Stripe account.'
+    });
+    const down = makeStripePayments({
+      client: fakeStripe({
+        transferCreate: () => {
+          throw new Stripe.errors.StripeConnectionError({ message: 'down' } as never);
+        }
+      }).client,
+      webhookSecret: WEBHOOK_SECRET
+    });
+    const exit = await Effect.runPromiseExit(down.createTransfer(input));
+    expect(Exit.isFailure(exit)).toBe(true);
+  });
+
+  it('re-fetches a payout on the connected account', async () => {
+    const { client, calls } = fakeStripe();
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    const payout = await Effect.runPromise(
+      payments.getPayout({ account: 'acct_1', reference: 'po_1' })
+    );
+    expect(payout).toMatchObject({ status: 'paid', amountCents: 5000 });
+    expect(calls[0]).toEqual({
+      method: 'payouts.retrieve',
+      params: ['po_1', [{}, { stripeAccount: 'acct_1' }]]
+    });
+  });
+
+  it('exposes the charge of an intent (the transfer source)', async () => {
+    const { client } = fakeStripe({
+      retrieve: () => intent({ status: 'succeeded', latest_charge: 'ch_9' })
+    });
+    const payments = makeStripePayments({ client, webhookSecret: WEBHOOK_SECRET });
+    expect((await Effect.runPromise(payments.getPayment('pi_123'))).chargeReference).toBe('ch_9');
   });
 });

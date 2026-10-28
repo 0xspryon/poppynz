@@ -163,9 +163,9 @@ describe('mock off-session billing', () => {
     const held = await Effect.runPromise(payments.chargeSavedCard(input));
     expect(await Effect.runPromise(payments.findPaymentByRowId('payment-1'))).toEqual(held);
     const down = makeMockPayments({ providerDown: true });
-    expect(
-      Exit.isFailure(await Effect.runPromiseExit(down.findPaymentByRowId('payment-1')))
-    ).toBe(true);
+    expect(Exit.isFailure(await Effect.runPromiseExit(down.findPaymentByRowId('payment-1')))).toBe(
+      true
+    );
   });
 });
 
@@ -221,5 +221,92 @@ describe('mock provider trouble (R3, R4)', () => {
     expect(await Effect.runPromise(payments.findPaymentByRowId('payment-1'))).toBeNull();
     clock = new Date(clock.getTime() + 60_000);
     expect(await Effect.runPromise(payments.findPaymentByRowId('payment-1'))).not.toBeNull();
+  });
+});
+
+describe('mock partial refunds and transfers (Tier 3 step 2)', () => {
+  const held = async (payments: ReturnType<typeof makeMockPayments>) => {
+    const charged = await Effect.runPromise(
+      payments.chargeSavedCard({
+        amountCents: 13206,
+        currency: 'CAD',
+        customer: 'cus_1',
+        card: 'pm_1',
+        capture: 'automatic',
+        idempotencyKey: 'cycle-1-1',
+        metadata: { payment_id: 'p-1' }
+      })
+    );
+    return charged.reference;
+  };
+
+  it('refunds part of a charge several times, never above what it received, once per key', async () => {
+    const payments = makeMockPayments();
+    const reference = await held(payments);
+    const input = (key: string, amountCents: number) => ({
+      paymentReference: reference,
+      amountCents,
+      idempotencyKey: key,
+      metadata: { refund_id: key }
+    });
+    const first = await Effect.runPromise(payments.createRefund(input('r-1', 5039)));
+    const again = await Effect.runPromise(payments.createRefund(input('r-1', 5039)));
+    expect(again.reference).toBe(first.reference);
+    await Effect.runPromise(payments.createRefund(input('r-2', 6602)));
+    const over = await Effect.runPromiseExit(payments.createRefund(input('r-3', 1566)));
+    expect(over._tag).toBe('Failure');
+    expect((await Effect.runPromise(payments.getPayment(reference))).refundedCents).toBe(11641);
+  });
+
+  it('reaches the failure paths: a refund that fails later, a refused transfer, an outage', async () => {
+    const payments = makeMockPayments({
+      refundOutcome: () => 'pending',
+      transferRefusal: (input) =>
+        input.destination === 'acct_restricted' ? 'account restricted' : null
+    });
+    const reference = await held(payments);
+    const refund = await Effect.runPromise(
+      payments.createRefund({
+        paymentReference: reference,
+        amountCents: 100,
+        idempotencyKey: 'r',
+        metadata: {}
+      })
+    );
+    expect(refund.status).toBe('pending');
+    payments.settleRefund(refund.reference, 'failed', 'card closed');
+    expect(await Effect.runPromise(payments.getRefund(refund.reference))).toMatchObject({
+      status: 'failed',
+      failureReason: 'card closed'
+    });
+    const transfer = (destination: string) =>
+      Effect.runPromise(
+        payments.createTransfer({
+          amountCents: 500,
+          currency: 'CAD',
+          destination,
+          sourceTransaction: 'mock_ch_1',
+          idempotencyKey: `t-${destination}`,
+          metadata: {}
+        })
+      );
+    expect(await transfer('acct_restricted')).toEqual({
+      status: 'refused',
+      reason: 'account restricted'
+    });
+    expect((await transfer('acct_ok')).status).toBe('created');
+    expect(payments.transfers()).toHaveLength(1);
+    const down = makeMockPayments({ moneyDown: () => true });
+    const exit = await Effect.runPromiseExit(
+      down.createTransfer({
+        amountCents: 1,
+        currency: 'CAD',
+        destination: 'a',
+        sourceTransaction: null,
+        idempotencyKey: 'x',
+        metadata: {}
+      })
+    );
+    expect(exit._tag).toBe('Failure');
   });
 });

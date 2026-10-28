@@ -304,9 +304,9 @@ const covered = (from: Date, to: Date, ranges: ReadonlyArray<{ from: Date; to: D
 
 /** The provider's fees per month, from the PLATFORM's imported balance
  * transactions. A month is a gap — its fees may be incomplete — when the
- * successful imports (`coverage`: their periods) don't span all of it (up
- * to `now` for the month in progress); without `coverage`, when it has no
- * imported transaction. */
+ * successful imports (`coverage`: their periods) don't span all of it —
+ * the month in progress up to its latest import; without `coverage`, when
+ * it has no imported transaction. */
 export const feesByMonth = (
   transactions: ReadonlyArray<ProviderBalanceTransactionRow>,
   months: ReadonlyArray<string>,
@@ -348,7 +348,11 @@ export const feesByMonth = (
     const start = monthStart(row.month);
     if (start >= coverage.now) return false;
     const end = monthEnd(row.month);
-    return !covered(start, end < coverage.now ? end : coverage.now, coverage.ranges);
+    if (end <= coverage.now) return !covered(start, end, coverage.ranges);
+    // The month in progress: complete up to the latest import, without a hole.
+    const latest = Math.max(0, ...coverage.ranges.map((range) => range.to.getTime()));
+    if (latest <= start.getTime()) return true;
+    return !covered(start, new Date(Math.min(latest, coverage.now.getTime())), coverage.ranges);
   };
   return { rows: list, gaps: list.filter(isGap).map((row) => row.month) };
 };

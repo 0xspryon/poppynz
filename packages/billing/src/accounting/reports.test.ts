@@ -294,7 +294,7 @@ describe('provider fees per month', () => {
       ranges: [
         { from: at('2026-10-20T04:00:00Z'), to: at('2026-11-10T05:00:00Z') },
         { from: at('2026-11-09T05:00:00Z'), to: at('2026-12-01T05:00:00Z') },
-        { from: at('2026-12-01T05:00:00Z'), to: now }
+        { from: at('2026-12-01T05:00:00Z'), to: at('2026-12-14T17:00:00Z') }
       ]
     });
     expect(gaps).toEqual(['2026-10']);

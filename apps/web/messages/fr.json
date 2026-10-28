@@ -3300,7 +3300,7 @@
 	"books_col_dispute_fees": "Frais de contestation",
 	"books_col_other_fees": "Autres frais",
 	"books_col_total_fees": "Total des frais",
-	"books_fees_gap": "Aucune donnée Stripe importée pour : {months}. Lancez un rapprochement pour ces mois afin de combler le manque.",
+	"books_fees_gap": "Les données Stripe n’ont pas été importées en entier pour : {months}; leurs frais peuvent donc être incomplets. Importez ces mois depuis la page Rapprochement pour combler le manque.",
 	"books_fees_mock": "Les paiements passent par le fournisseur fictif : aucun frais n’est enregistré.",
 	"books_recon_page_title": "Rapprochement · Poppynz",
 	"books_recon_heading": "Rapprochement avec Stripe",

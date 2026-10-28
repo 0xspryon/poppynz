@@ -18,6 +18,7 @@
 	import { intlLocale } from '$lib/locale';
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
+	import { getCardDisputeFlags, type CardDisputeFlag } from '$lib/api/card-disputes';
 
 	/** better-auth words its failures in English; show a localized message for
 	 * the operation instead (network vs. server). */
@@ -41,8 +42,20 @@
 	let unbanTarget = $state<AdminUser | null>(null);
 	let unbanning = $state(false);
 
+	/** Families with an open card dispute or contracts an admin holds (Tier
+	 * 3 step 4): flagged here for review. Best-effort: no banner on failure. */
+	let disputeFlags = $state<Record<string, CardDisputeFlag>>({});
+
+	async function loadDisputeFlags() {
+		const result = await getCardDisputeFlags();
+		if (result.ok) {
+			disputeFlags = Object.fromEntries(result.data.families.map((row) => [row.userId, row]));
+		}
+	}
+
 	async function load() {
 		errorMessage = '';
+		void loadDisputeFlags();
 		const result = await listAdminUsers();
 		if (result.ok) {
 			data = result.data;
@@ -261,6 +274,18 @@
 						<div class="min-w-0">
 							<div class="truncate text-[13.5px] font-semibold text-base-content">{user.name}</div>
 							<div class="truncate text-[11.5px] text-outline">{user.email}</div>
+							{#if disputeFlags[user.id]}
+								<a
+									class="mt-1 inline-block rounded-[5px] bg-warning-content px-2 py-0.5 text-[11px]
+										font-semibold text-warning"
+									href={resolve('/admin/card-disputes')}
+									data-testid="user-card-dispute"
+								>
+									{disputeFlags[user.id]?.suspended
+										? m.admin_users_contracts_on_hold()
+										: m.admin_users_card_dispute()}
+								</a>
+							{/if}
 						</div>
 					</div>
 					<div class="mt-2 lg:mt-0">

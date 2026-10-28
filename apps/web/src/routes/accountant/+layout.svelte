@@ -88,6 +88,13 @@
 		// Failed session refunds land with the accountant too (permission
 		// `refundQueue`, held by accountants and admins).
 		{ href: resolve('/accountant/refunds'), label: m.nav_admin_refunds(), icon: 'la-undo-alt' },
+		// Card disputes and what Poppynz bears, read-only (permission
+		// `cardDispute: read, finance`).
+		{
+			href: resolve('/accountant/card-disputes'),
+			label: m.nav_admin_card_disputes(),
+			icon: 'la-exclamation-triangle'
+		},
 		...(isAdmin
 			? [{ href: resolve('/admin'), label: m.nav_admin_console(), icon: 'la-arrow-left' }]
 			: [])

@@ -433,9 +433,9 @@
 	{/if}
 
 	{#if paymentMethodMissing}
-		<p class="mt-3 rounded-lg bg-base-300 px-4 py-3 text-[12.5px] text-neutral" role="alert">
+		<p class="mt-3 rounded-lg bg-warning-content px-4 py-3 text-[12.5px] text-warning" role="alert">
 			{#if billingHref}
-				<a class="font-semibold text-secondary hover:underline" href={billingHref}
+				<a class="font-semibold underline hover:no-underline" href={billingHref}
 					>{m.contracts_editor_card_link()}</a
 				>
 			{:else}

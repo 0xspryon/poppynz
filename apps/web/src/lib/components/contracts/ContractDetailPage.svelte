@@ -541,7 +541,9 @@
 			case 'helper_not_ready':
 				return m.contracts_suspended_helper_payouts();
 			case 'provider_unavailable':
-				return m.contracts_suspended_helper_unavailable();
+				return m.contracts_suspended_provider_unavailable();
+			case 'admin_review':
+				return m.contracts_suspended_admin_review();
 			default:
 				return m.contracts_suspended();
 		}

@@ -100,6 +100,14 @@
 								link: { href: payoutsHref, label: m.contracts_billing_fix_payouts() }
 							};
 				}
+				if (billing.suspendedReason === 'admin_review') {
+					return {
+						tone: 'error',
+						text: isFamily
+							? m.contracts_billing_admin_review_family()
+							: m.contracts_billing_admin_review_provider()
+					};
+				}
 				return {
 					tone: 'warning',
 					text: m.contracts_billing_processor_outage()

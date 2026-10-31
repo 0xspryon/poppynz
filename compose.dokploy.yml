@@ -10,6 +10,15 @@
 #   ORIGIN, TRUSTED_ORIGINS, BETTER_AUTH_URL
 #                         https://$APP_HOST — adapter-node CSRF / absolute URLs
 #                         and better-auth magic-link callback origins
+# Staging UAT only (docs/staging-uat.md; never set them on production —
+# they are refused there anyway, and need ENVIRONMENT set explicitly to
+# staging):
+#   UAT_FIXTURES          enabled: the seeds job creates/reuses the UAT accounts
+#                         (Fiona, Hana, Robin, Theo, Paula, an accountant)
+#   UAT_EMAIL_BASE        e.g. kay@poppynz.com → kay+fiona@poppynz.com, …
+#   UAT_HELPER_PAYOUT_ACCOUNT  Stripe TEST acct_… linked to Hana
+#   BILLING_TIME_TRAVEL   enabled: Admin › Billing clock (needs sk_test_ keys)
+#   BILLING_TIME_TRAVEL_MAX_DAYS  how far ahead an admin may run (default 60)
 # The `:?` interpolation makes a missing host fail the deploy instead of
 # silently routing nothing.
 name: ${DEPLOY_NAME:?DEPLOY_NAME is required}

@@ -17,6 +17,7 @@
 	import { formatMoney } from '$lib/money';
 	import ApproveRequestDialog from '$lib/components/admin/ApproveRequestDialog.svelte';
 	import DocumentViewerDialog from '$lib/components/admin/DocumentViewerDialog.svelte';
+	import DocumentViewerFrame from '$lib/components/admin/DocumentViewerFrame.svelte';
 	import RejectRequestDialog from '$lib/components/admin/RejectRequestDialog.svelte';
 	import RevokeApprovalDialog from '$lib/components/admin/RevokeApprovalDialog.svelte';
 	import VouchesCard from '$lib/components/admin/VouchesCard.svelte';
@@ -102,8 +103,8 @@
 	const warningText = $derived.by(() => {
 		if (!detail) return '';
 		const parts = [
-			...detail.warnings.missingRequiredDocuments.map(
-				(doc) => m.admin_requests_warning_required_doc({ name: doc.name.toLowerCase() })
+			...detail.warnings.missingRequiredDocuments.map((doc) =>
+				m.admin_requests_warning_required_doc({ name: doc.name.toLowerCase() })
 			),
 			...(detail.warnings.missingServicesOffered ? [m.admin_requests_warning_no_services()] : [])
 		];
@@ -207,7 +208,9 @@
 			);
 			await load();
 		} else {
-			toast.error(approveErrorText(result.error), { title: m.admin_requests_toast_approve_failed() });
+			toast.error(approveErrorText(result.error), {
+				title: m.admin_requests_toast_approve_failed()
+			});
 		}
 		approving = false;
 	}
@@ -285,12 +288,28 @@
 		reviewingIds.delete(doc.id);
 	}
 
-	/** The safety-gate document lives on the verification record; it opens
-	 * in a new tab from a short-lived link (UAT #29). */
-	async function openSafetyDocument(verificationId: string) {
+	/** The safety-gate document lives on the verification record; it opens in
+	 * the same viewer from a short-lived link (UAT #29), read-only — its dates
+	 * are decided with the verification. */
+	type SafetyDocView = {
+		name: string;
+		status: ChipStatus;
+		url: string;
+		filename: string;
+		expiryDate: string | null;
+	};
+	let safetyDoc = $state<SafetyDocView | null>(null);
+	let safetyDocLoading = $state(false);
+
+	async function openSafetyDocument(
+		verificationId: string,
+		doc: { name: string; status: ChipStatus; expiryDate: string | null }
+	) {
+		safetyDocLoading = true;
 		const result = await getSafetyDocumentFileUrl(verificationId);
+		safetyDocLoading = false;
 		if (result.ok) {
-			window.open(result.data.url, '_blank', 'noopener');
+			safetyDoc = { ...doc, url: result.data.url, filename: result.data.filename ?? '' };
 		} else {
 			toast.error(RETRY_MESSAGE, { title: m.admin_requests_toast_open_failed() });
 		}
@@ -487,11 +506,15 @@
 						<span class="text-outline">{m.admin_requests_field_location()}</span>
 						<span class="font-medium text-base-content">{location ?? '—'}</span>
 						<span class="text-outline">{m.admin_requests_field_language()}</span>
-						<span class="font-medium text-base-content">{languageLabel(detail.profile.language)}</span>
+						<span class="font-medium text-base-content"
+							>{languageLabel(detail.profile.language)}</span
+						>
 					</div>
 					{#if detail.profile.shortBio}
 						<div class="mt-3.5 border-t border-base-300 pt-3.5">
-							<span class="mb-1 block text-[11.5px] text-outline">{m.admin_requests_field_short_bio()}</span>
+							<span class="mb-1 block text-[11.5px] text-outline"
+								>{m.admin_requests_field_short_bio()}</span
+							>
 							<span class="text-[13px] leading-relaxed text-base-content">
 								{detail.profile.shortBio}
 							</span>
@@ -545,7 +568,8 @@
 									</div>
 									<span class="shrink-0 font-display text-sm font-bold text-secondary">
 										{formatMoney(service.hourlyRateCents)}<span
-											class="text-[11px] font-normal text-outline">{m.admin_requests_rate_unit()}</span
+											class="text-[11px] font-normal text-outline"
+											>{m.admin_requests_rate_unit()}</span
 										>
 									</span>
 								</div>
@@ -577,103 +601,121 @@
 				</div>
 				<div class="flex flex-col gap-2.5">
 					{#each [...requiredDocs, ...optionalDocs] as doc (doc.documentTypeId)}
+						{@const canOpen = !!doc.document && doc.document.source !== 'credibled'}
+						{@const canDecide = !!doc.document && doc.status === 'submitted'}
+						{@const canRevoke =
+							!!doc.document &&
+							!doc.isSafetyGate &&
+							(doc.status === 'approved' || doc.status === 'expired')}
 						<div
-							class="flex flex-wrap items-center gap-3 rounded-[10px] border p-3.5
+							class="flex flex-col gap-3 rounded-[10px] border p-3.5
 								{doc.status === 'missing'
 								? 'border-dashed border-warning-border bg-warning-content/30'
 								: 'border-card-border bg-base-100'}"
 						>
-							<span
-								class="flex size-9.5 shrink-0 items-center justify-center rounded-lg
+							<div class="flex items-start gap-3">
+								<span
+									class="flex size-9.5 shrink-0 items-center justify-center rounded-lg
 									{doc.status === 'missing' ? 'bg-warning-content' : 'bg-info-content'}"
-							>
-								<i
-									class="las la-file-alt text-lg
+								>
+									<i
+										class="las la-file-alt text-lg
 										{doc.status === 'missing' ? 'text-warning' : 'text-info'}"
-									aria-hidden="true"
-								></i>
-							</span>
-							<div class="min-w-0 flex-1">
-								<div
-									class="text-[13.5px] font-semibold
+										aria-hidden="true"
+									></i>
+								</span>
+								<div class="min-w-0 flex-1">
+									<div
+										class="text-[13.5px] font-semibold
 										{doc.status === 'missing' ? 'text-warning' : 'text-base-content'}"
-								>
-									{doc.name}
-									{#if doc.isOptional}
-										<span class="ml-1 text-[10.5px] font-medium text-outline"
-											>{m.admin_requests_doc_optional()}</span
-										>
-									{/if}
-								</div>
-								<div
-									class="truncate text-[11.5px]
+									>
+										{doc.name}
+										{#if doc.isOptional}
+											<span class="ml-1 text-[10.5px] font-medium text-outline"
+												>{m.admin_requests_doc_optional()}</span
+											>
+										{/if}
+									</div>
+									<div
+										class="truncate text-[11.5px]
 										{doc.status === 'missing' ? 'text-warning' : 'text-base-content-muted'}"
-								>
-									{#if doc.document}
-										{#if doc.document.source === 'credibled'}
-											{m.admin_requests_doc_credibled()}
+									>
+										{#if doc.document}
+											{#if doc.document.source === 'credibled'}
+												{m.admin_requests_doc_credibled()}
+											{:else}
+												{doc.document.filename}
+											{/if}
+											{#if doc.document.expiryDate}
+												{m.admin_requests_doc_expires({
+													date: formatCalendarDate(doc.document.expiryDate)
+												})}
+											{/if}
 										{:else}
-											{doc.document.filename}
+											{m.admin_requests_doc_not_submitted()}
 										{/if}
-										{#if doc.document.expiryDate}
-											{m.admin_requests_doc_expires({ date: formatCalendarDate(doc.document.expiryDate) })}
+									</div>
+								</div>
+								<StatusChip status={docChip(doc.status)} />
+							</div>
+							{#if canOpen || canDecide || canRevoke}
+								<div class="flex flex-wrap items-center justify-end gap-2">
+									<!-- A fetched document has no file of ours to open. -->
+									{#if canOpen && doc.document}
+										<button
+											type="button"
+											class="btn btn-outline btn-xs"
+											onclick={() =>
+												void (doc.isSafetyGate
+													? openSafetyDocument(doc.document!.id, {
+															name: doc.name,
+															status: docChip(doc.status),
+															expiryDate: doc.document!.expiryDate
+														})
+													: openViewer(doc.document!.id))}
+										>
+											{m.admin_requests_view_file()}
+										</button>
+									{/if}
+									{#if doc.document && doc.status === 'submitted'}
+										{#if doc.isSafetyGate}
+											<!-- The gate's verdict is decided with the verification itself. -->
+											<a href={resolve('/admin/safety-verifications')} class="btn btn-ghost btn-xs">
+												{m.admin_requests_decide_in_safety()}
+											</a>
+										{:else}
+											{@const ref = { id: doc.document.id, name: doc.name }}
+											<button
+												type="button"
+												class="btn btn-primary btn-xs"
+												disabled={reviewingIds.has(ref.id)}
+												onclick={() => void reviewDocument(ref, 'approve')}
+											>
+												{m.admin_requests_doc_approve()}
+											</button>
+											<button
+												type="button"
+												class="btn btn-outline btn-error btn-xs"
+												disabled={reviewingIds.has(ref.id)}
+												onclick={() => (rejectingDoc = ref)}
+											>
+												{m.admin_requests_doc_reject()}
+											</button>
 										{/if}
-									{:else}
-										{m.admin_requests_doc_not_submitted()}
+									{:else if doc.document && !doc.isSafetyGate && (doc.status === 'approved' || doc.status === 'expired')}
+										<!-- An approved document can still be withdrawn (R9): the same
+								     rejection with a reason the applicant sees. -->
+										{@const ref = { id: doc.document.id, name: doc.name }}
+										<button
+											type="button"
+											class="btn btn-outline btn-error btn-xs"
+											disabled={reviewingIds.has(ref.id)}
+											onclick={() => (rejectingDoc = ref)}
+										>
+											{m.admin_requests_doc_revoke()}
+										</button>
 									{/if}
 								</div>
-							</div>
-							<StatusChip status={docChip(doc.status)} />
-							<!-- A fetched document has no file of ours to open. -->
-							{#if doc.document && doc.document.source !== 'credibled'}
-								<button
-									type="button"
-									class="btn btn-outline btn-xs"
-									onclick={() =>
-										void (doc.isSafetyGate
-											? openSafetyDocument(doc.document!.id)
-											: openViewer(doc.document!.id))}
-								>
-									{m.admin_requests_view_file()}
-								</button>
-							{/if}
-							{#if doc.document && doc.status === 'submitted'}
-								{#if doc.isSafetyGate}
-									<!-- The gate's verdict is decided with the verification itself. -->
-									<a href={resolve('/admin/safety-verifications')} class="btn btn-ghost btn-xs">
-										{m.admin_requests_decide_in_safety()}
-									</a>
-								{:else}
-									{@const ref = { id: doc.document.id, name: doc.name }}
-									<button
-										type="button"
-										class="btn btn-primary btn-xs"
-										disabled={reviewingIds.has(ref.id)}
-										onclick={() => void reviewDocument(ref, 'approve')}
-									>
-										{m.admin_requests_doc_approve()}
-									</button>
-									<button
-										type="button"
-										class="btn btn-outline btn-error btn-xs"
-										disabled={reviewingIds.has(ref.id)}
-										onclick={() => (rejectingDoc = ref)}
-									>
-										{m.admin_requests_doc_reject()}
-									</button>
-								{/if}
-							{:else if doc.document && !doc.isSafetyGate && (doc.status === 'approved' || doc.status === 'expired')}
-								<!-- An approved document can still be withdrawn (R9): the same
-								     rejection with a reason the applicant sees. -->
-								{@const ref = { id: doc.document.id, name: doc.name }}
-								<button
-									type="button"
-									class="btn btn-outline btn-error btn-xs"
-									disabled={reviewingIds.has(ref.id)}
-									onclick={() => (rejectingDoc = ref)}
-								>
-									{m.admin_requests_doc_revoke()}
-								</button>
 							{/if}
 						</div>
 					{/each}
@@ -715,6 +757,33 @@
 	oncancel={() => (revokeOpen = false)}
 />
 
+<DocumentViewerFrame
+	url={safetyDoc?.url ?? null}
+	title={safetyDoc?.name ?? ''}
+	filename={safetyDoc?.filename ?? ''}
+	status={safetyDoc ? { status: safetyDoc.status } : undefined}
+	loading={safetyDocLoading}
+	onclose={() => (safetyDoc = null)}
+>
+	{#snippet sidebar()}
+		{#if safetyDoc}
+			<div class="mb-3.5 text-[10.5px] font-semibold tracking-[0.1em] text-neutral uppercase">
+				{m.admin_requests_viewer_details()}
+			</div>
+			<div class="grid grid-cols-[90px_1fr] gap-x-2.5 gap-y-2 text-[12.5px]">
+				<span class="text-outline">{m.admin_requests_viewer_type()}</span>
+				<span class="font-medium text-base-content">{safetyDoc.name}</span>
+				<span class="text-outline">{m.admin_requests_viewer_file()}</span>
+				<span class="truncate font-medium text-base-content">{safetyDoc.filename}</span>
+				<span class="text-outline">{m.admin_safety_viewer_valid_until()}</span>
+				<span class="font-medium text-base-content">
+					{safetyDoc.expiryDate ? formatCalendarDate(safetyDoc.expiryDate) : '—'}
+				</span>
+			</div>
+		{/if}
+	{/snippet}
+</DocumentViewerFrame>
+
 <DocumentViewerDialog
 	{viewer}
 	loading={viewerLoading}
@@ -723,7 +792,12 @@
 />
 
 {#if rejectingDoc}
-	<div class="modal modal-open" role="dialog" aria-modal="true" aria-label={m.admin_requests_reject_doc_aria()}>
+	<div
+		class="modal modal-open"
+		role="dialog"
+		aria-modal="true"
+		aria-label={m.admin_requests_reject_doc_aria()}
+	>
 		<div class="modal-box max-w-lg border border-card-border">
 			<h3 class="font-display text-xl font-bold text-base-content">
 				{m.admin_requests_reject_doc_title({ name: rejectingDoc.name })}

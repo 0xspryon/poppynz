@@ -48,9 +48,7 @@
 			errorMessage = null;
 		} else {
 			errorMessage =
-				result.error.code === 'FORBIDDEN'
-					? m.admin_safety_error_forbidden()
-					: RETRY_MESSAGE;
+				result.error.code === 'FORBIDDEN' ? m.admin_safety_error_forbidden() : RETRY_MESSAGE;
 		}
 		loading = false;
 	}
@@ -63,9 +61,12 @@
 		item.applicant.name ?? item.applicant.email ?? m.admin_safety_unnamed_applicant();
 
 	// The uploaded file opens in the same in-browser viewer as approval requests.
-	let viewing = $state<{ item: AdminSafetyVerification; url: string; filename: string } | null>(
-		null
-	);
+	let viewing = $state<{
+		item: AdminSafetyVerification;
+		url: string;
+		filename: string;
+		report?: boolean;
+	} | null>(null);
 	let viewerLoading = $state(false);
 
 	async function openFile(item: AdminSafetyVerification) {
@@ -138,8 +139,8 @@
 					<StatusChip
 						status={item.route === 'credibled' ? 'in-progress' : 'submitted'}
 						label={item.route === 'credibled'
-						? m.admin_safety_route_credibled()
-						: m.admin_safety_route_document()}
+							? m.admin_safety_route_credibled()
+							: m.admin_safety_route_document()}
 					/>
 					<span class="text-sm font-semibold text-base-content">{personLabel(item)}</span>
 					<span class="text-xs text-base-content-muted">
@@ -168,16 +169,28 @@
 
 				<dl class="mt-2 grid gap-x-6 gap-y-1 text-xs text-base-content-muted sm:grid-cols-2">
 					{#if item.issuingAuthority}
-						<div><dt class="inline font-medium">{m.admin_safety_issuer()}</dt> <dd class="inline">{item.issuingAuthority}</dd></div>
+						<div>
+							<dt class="inline font-medium">{m.admin_safety_issuer()}</dt>
+							<dd class="inline">{item.issuingAuthority}</dd>
+						</div>
 					{/if}
 					{#if item.documentNumber}
-						<div><dt class="inline font-medium">{m.admin_safety_number()}</dt> <dd class="inline">{item.documentNumber}</dd></div>
+						<div>
+							<dt class="inline font-medium">{m.admin_safety_number()}</dt>
+							<dd class="inline">{item.documentNumber}</dd>
+						</div>
 					{/if}
 					{#if item.issuedOn}
-						<div><dt class="inline font-medium">{m.admin_safety_issued()}</dt> <dd class="inline">{formatCalendarDate(item.issuedOn)}</dd></div>
+						<div>
+							<dt class="inline font-medium">{m.admin_safety_issued()}</dt>
+							<dd class="inline">{formatCalendarDate(item.issuedOn)}</dd>
+						</div>
 					{/if}
 					{#if item.expiresOn}
-						<div><dt class="inline font-medium">{m.admin_safety_valid_until()}</dt> <dd class="inline">{formatCalendarDate(item.expiresOn)}</dd></div>
+						<div>
+							<dt class="inline font-medium">{m.admin_safety_valid_until()}</dt>
+							<dd class="inline">{formatCalendarDate(item.expiresOn)}</dd>
+						</div>
 					{/if}
 					{#if item.consentAt}
 						<div>
@@ -194,19 +207,28 @@
 
 				<div class="mt-3 flex flex-wrap gap-2">
 					{#if item.hasFile}
-						<button type="button" class="btn btn-outline btn-sm" onclick={() => void openFile(item)}>
+						<button
+							type="button"
+							class="btn btn-outline btn-sm"
+							onclick={() => void openFile(item)}
+						>
 							{m.admin_safety_view_file()}
 						</button>
 					{/if}
 					{#if item.hasCredibledCheck}
-						<a
+						<button
+							type="button"
 							class="btn btn-outline btn-sm"
-							href={safetyVerificationReportUrl(item.id)}
-							target="_blank"
-							rel="external noopener"
+							onclick={() =>
+								(viewing = {
+									item,
+									url: safetyVerificationReportUrl(item.id),
+									filename: `safety-verification-${item.id}.pdf`,
+									report: true
+								})}
 						>
 							{m.admin_safety_open_report()}
-						</a>
+						</button>
 					{/if}
 					<button
 						type="button"
@@ -294,6 +316,7 @@
 	url={viewing?.url ?? null}
 	title={viewing?.item.documentTypeName ?? ''}
 	filename={viewing?.filename ?? ''}
+	pdf={viewing?.report ?? false}
 	status={{ status: 'submitted' }}
 	loading={viewerLoading}
 	onclose={() => (viewing = null)}

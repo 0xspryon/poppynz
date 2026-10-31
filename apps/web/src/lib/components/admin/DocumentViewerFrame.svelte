@@ -13,14 +13,25 @@
 		title: string;
 		filename: string;
 		status?: { status: ChipStatus; label?: string };
+		/** Force the PDF preview when the filename doesn't say (e.g. a streamed report). */
+		pdf?: boolean;
 		loading?: boolean;
 		onclose: () => void;
 		sidebar: Snippet;
 	}
 
-	let { url, title, filename, status, loading = false, onclose, sidebar }: Props = $props();
+	let {
+		url,
+		title,
+		filename,
+		status,
+		pdf = false,
+		loading = false,
+		onclose,
+		sidebar
+	}: Props = $props();
 
-	const isPdf = $derived(filename.toLowerCase().endsWith('.pdf'));
+	const isPdf = $derived(pdf || filename.toLowerCase().endsWith('.pdf'));
 </script>
 
 {#if loading}

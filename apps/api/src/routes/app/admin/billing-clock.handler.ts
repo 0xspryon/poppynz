@@ -134,15 +134,26 @@ const eventView = (event: BillingClockEvent, now: Date, maxDays: number) => ({
 const runsView = (runs: ReadonlyArray<BillingClockRun>) =>
   Effect.gen(function* () {
     const names = new Map<string, string>();
+    // Each run's instant reads in its contract's time zone.
+    const zones = new Map<string, string | null>();
+    const billingRepo = yield* ContractBillingRepo;
     for (const run of runs) {
       if (!names.has(run.actorUserId)) names.set(run.actorUserId, yield* fullName(run.actorUserId));
+      if (!zones.has(run.contractId)) {
+        const billing = yield* billingRepo.findBilling(run.contractId);
+        zones.set(run.contractId, billing?.timeZone ?? null);
+      }
     }
     return runs.map((run) => ({
       id: run.id,
       contractId: run.contractId,
+      timeZone: zones.get(run.contractId) ?? null,
       actorName: names.get(run.actorUserId)!,
       targetAt: run.targetAt.toISOString(),
+      // The web names the event from these, in the reader's language.
       eventKind: run.eventKind,
+      eventCycleNumber: run.eventCycleNumber,
+      eventDate: run.eventDate,
       eventLabel: run.eventLabel,
       status: run.status,
       billingStatusBefore: run.billingStatusBefore,
@@ -177,6 +188,7 @@ export const listBillingClockContractsProgram = (now: Date, maxDays: number) =>
         ...(yield* partiesOf(billing.contractId)),
         status: billing.status,
         suspendedReason: billing.suspendedReason,
+        timeZone: billing.timeZone,
         startsOn: billing.startsOn,
         nextEvent: events[0] ? eventView(events[0], now, maxDays) : null
       });
@@ -259,8 +271,8 @@ export const getBillingClockContractRouteProgram = (
 ) =>
   Effect.gen(function* () {
     yield* requireEnabled(env);
-    const contractId = yield* contractIdOf(c.req.param('id'));
     yield* gate(headers);
+    const contractId = yield* contractIdOf(c.req.param('id'));
     return yield* getBillingClockContractProgram(contractId, now, yield* maxDaysOf);
   });
 
@@ -272,9 +284,9 @@ export const runBillingClockRouteProgram = (
 ) =>
   Effect.gen(function* () {
     yield* requireEnabled(env);
+    const admin = yield* gate(headers);
     const contractId = yield* contractIdOf(c.req.param('id'));
     const input = yield* validateRun(yield* parseJsonBody(c, runValidationError));
-    const admin = yield* gate(headers);
     const run = yield* runBillingClock({
       contractId,
       until: new Date(input.until),

@@ -3,7 +3,12 @@
 	 * when, for which event, and what came of it. */
 	import type { BillingClockRun } from '$lib/api/billing-clock';
 	import StatusChip from '$lib/components/StatusChip.svelte';
-	import { billingStatusLabel, runChip } from '$lib/billing-clock';
+	import {
+		billingClockInstant,
+		billingClockRunLabel,
+		billingStatusLabel,
+		runChip
+	} from '$lib/billing-clock';
 	import { formatDateTime } from '$lib/date';
 	import { m } from '$lib/paraglide/messages';
 
@@ -28,14 +33,11 @@
 				data-testid="billing-clock-run"
 			>
 				<div class="min-w-0 flex-1">
-					<!-- The event as recorded in the audit trail (English, verbatim). -->
-					<p class="font-semibold text-base-content">
-						{run.eventLabel ?? m.admin_billing_clock_run_custom()}
-					</p>
+					<p class="font-semibold text-base-content">{billingClockRunLabel(run)}</p>
 					<p class="text-base-content-muted">
 						{m.admin_billing_clock_run_line({
 							actor: run.actorName,
-							when: formatDateTime(run.targetAt)
+							when: billingClockInstant(run.targetAt, run.timeZone)
 						})}
 						· {m.admin_billing_clock_run_status_change({
 							before: billingStatusLabel(run.billingStatusBefore),

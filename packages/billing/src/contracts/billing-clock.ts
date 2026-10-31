@@ -21,23 +21,28 @@ import {
   BillingClockRunRepo,
   CardDisputeRepo,
   ContractBillingRepo,
+  ContractRepo,
   ExtraSessionRepo,
   SessionMoneyRepo,
   SessionResolutionRepo,
   type BillingClockRun,
   type CardDispute,
+  type ContractBillingStatus,
   type ContractCycle,
   type ExtraSession,
   type HelperTransfer,
   type SessionResolution
 } from '@repo/db';
 import { Cause, Clock, Data, Effect } from 'effect';
+import { hasReadyPayoutAccount } from '../payouts';
 import { cardDisputePolicy } from './card-disputes';
 import { failedTickItems, runBillingTickSteps } from './tick-steps';
 
 export type BillingClockEventKind =
   | 'cycle_hold'
   | 'cycle_hold_retry'
+  | 'cycle_starts_suspended'
+  | 'readiness_cancellation'
   | 'cycle_suspension'
   | 'cycle_capture'
   | 'cycle_capture_retry'
@@ -67,6 +72,12 @@ export type BillingClockEvent = {
 };
 
 export type BillingClockSources = {
+  /** The contract's billing status: what the tick does with a scheduled
+   * cycle depends on it. */
+  billingStatus: ContractBillingStatus;
+  /** Awaiting the helper's payouts: whether their payout account is ready
+   * on file (the tick then starts billing as usual). */
+  helperReady: boolean;
   cycles: ReadonlyArray<ContractCycle>;
   transfers: ReadonlyArray<HelperTransfer>;
   resolutions: ReadonlyArray<SessionResolution>;
@@ -82,9 +93,14 @@ const HOUR_MS = 3_600_000;
  * Every instant at which the tick will next act on the contract, after
  * `now`, earliest first:
  *
- *   cycles     scheduled → holdAt; grace → nextRetryAt and startsAt (the
- *              suspension); authorised → captureAt; capture_failed →
- *              nextRetryAt; captured without a transfer → transferAt
+ *   cycles     scheduled → holdAt, or startsAt while the contract is
+ *              suspended (the cycle is suspended too, never held); grace →
+ *              nextRetryAt and startsAt (the suspension); authorised →
+ *              captureAt; capture_failed → nextRetryAt; captured without a
+ *              transfer → transferAt
+ *   awaiting   while the helper's payouts are not ready nothing is held:
+ *              the only event is the cancellation at the first cycle's
+ *              captureAt (when the helper is still not ready then)
  *   transfers  due → dueAt
  *   sessions   a proposed resolution → respondBy
  *   extras     proposed → respondBy; agreed → chargeAt; charge_failed →
@@ -117,10 +133,36 @@ export const billingClockEvents = (
     });
   };
 
-  for (const cycle of sources.cycles) {
+  // Awaiting the helper's payouts, the tick holds nothing: it only cancels
+  // the contract once the first cycle's capture time passes (spec: billing
+  // never starts without a payable helper). Listing holds would offer
+  // events that cannot happen.
+  const blocked = sources.billingStatus === 'awaiting_payment_readiness' && !sources.helperReady;
+  if (blocked) {
+    const first = sources.cycles.find((cycle) => cycle.index === 0) ?? sources.cycles[0];
+    if (first) {
+      cycleEvent(
+        first,
+        'readiness_cancellation',
+        first.captureAt,
+        'contract cancelled if the helper still cannot be paid'
+      );
+    }
+  }
+
+  for (const cycle of blocked ? [] : sources.cycles) {
     switch (cycle.status) {
       case 'scheduled':
-        cycleEvent(cycle, 'cycle_hold', cycle.holdAt, 'card hold');
+        if (sources.billingStatus === 'suspended') {
+          cycleEvent(
+            cycle,
+            'cycle_starts_suspended',
+            cycle.startsAt,
+            'starts suspended (no charge)'
+          );
+        } else {
+          cycleEvent(cycle, 'cycle_hold', cycle.holdAt, 'card hold');
+        }
         break;
       case 'grace':
         cycleEvent(cycle, 'cycle_hold_retry', cycle.nextRetryAt, 'retry the declined hold');
@@ -228,6 +270,19 @@ export const billingClockEvents = (
 export const loadBillingClockEvents = (contractId: string, now: Date) =>
   Effect.gen(function* () {
     const { evidenceReminderHours } = yield* cardDisputePolicy;
+    const billing = yield* (yield* ContractBillingRepo).findBilling(contractId);
+    if (!billing) return [];
+    // The stored snapshot only (no provider call): cheap for every row.
+    const helperReady =
+      billing.status === 'awaiting_payment_readiness'
+        ? yield* (yield* ContractRepo)
+            .findById(contractId)
+            .pipe(
+              Effect.flatMap((contract) =>
+                contract ? hasReadyPayoutAccount(contract.providerUserId) : Effect.succeed(false)
+              )
+            )
+        : true;
     const cycles = yield* (yield* ContractBillingRepo).listCycles(contractId);
     const transfers = yield* (yield* SessionMoneyRepo).listTransfers({ contractId });
     const resolutions = yield* (yield* SessionResolutionRepo).listForContract(contractId);
@@ -237,7 +292,16 @@ export const loadBillingClockEvents = (contractId: string, now: Date) =>
       triage: ['needs_response']
     })).filter((dispute) => dispute.contractId === contractId);
     return billingClockEvents(
-      { cycles, transfers, resolutions, extras, disputes, evidenceReminderHours },
+      {
+        billingStatus: billing.status,
+        helperReady,
+        cycles,
+        transfers,
+        resolutions,
+        extras,
+        disputes,
+        evidenceReminderHours
+      },
       now
     );
   });
@@ -302,6 +366,8 @@ export const runBillingClock = (input: BillingClockRunInput) =>
       targetAt: input.until,
       eventKind: event?.kind ?? null,
       eventLabel: event?.label ?? null,
+      eventCycleNumber: event?.cycleNumber ?? null,
+      eventDate: event?.date ?? null,
       billingStatusBefore: before.status,
       startedAt: input.now,
       staleBefore: new Date(input.now.getTime() - BILLING_CLOCK_STALE_AFTER_MS)

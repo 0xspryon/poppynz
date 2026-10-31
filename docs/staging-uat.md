@@ -123,6 +123,28 @@ dispute reminders. Each event has **Run up to here**:
 - Stripe test-mode calls (holds, captures, transfers) are made now, for real;
 - nothing can be undone — the contract's cycles stay where the run left them.
 
+Event times are shown in the contract's time zone. Running up to an event
+also runs everything due before it (running straight to **capture** also
+places the hold). Only events the tick can act on are listed: while the
+helper's payouts are not set up, no card hold is offered — the only event is
+the contract's cancellation at the first cycle's capture time if the helper
+still cannot be paid; once Hana's payout account is ready the holds appear.
+A suspended contract's cycles show as "starts while suspended (no charge)".
+
+Things to keep in mind while testing:
+
+- The real clock keeps going. The worker's own tick still runs every 15
+  minutes at the real time; it simply finds the fast-forwarded cycles already
+  done (every step is safe twice). Sessions up to the chosen instant are
+  marked completed, although they are in the future.
+- A Stripe card hold expires about 7 days after it is placed. Fast-forward a
+  cycle's hold and its capture in the same sitting; a hold left for its real
+  capture time weeks later will have expired (the cycle then becomes
+  "capture failed" and the admins are alerted).
+- If the API restarts mid-run, the run stays "Running" and blocks that
+  contract for 15 minutes; the next run after that marks it failed
+  ("abandoned").
+
 The instant must be after the real time and at most
 `BILLING_TIME_TRAVEL_MAX_DAYS` ahead; only one run per contract at a time.
 Every run is audited (`billing_clock_runs`: who, which contract, which

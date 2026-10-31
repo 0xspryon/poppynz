@@ -11,9 +11,9 @@
 	import {
 		billingClockErrorMessage,
 		billingClockEventLabel,
+		billingClockInstant,
 		billingStatusChip
 	} from '$lib/billing-clock';
-	import { formatDateTime } from '$lib/date';
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
 
@@ -81,7 +81,10 @@
 						<p class="text-[12.5px] text-base-content-muted">
 							<span class="font-semibold">{m.admin_billing_clock_col_next()}:</span>
 							{#if row.nextEvent}
-								{billingClockEventLabel(row.nextEvent)} · {formatDateTime(row.nextEvent.at)}
+								{billingClockEventLabel(row.nextEvent)} · {billingClockInstant(
+									row.nextEvent.at,
+									row.timeZone
+								)}
 							{:else}
 								{m.admin_billing_clock_no_event()}
 							{/if}

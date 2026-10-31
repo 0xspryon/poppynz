@@ -41,8 +41,11 @@ const refusal = (exit: Exit.Exit<unknown, unknown>) => {
 
 /** The test world's contract-1, plus a second live contract that must never
  * move when contract-1 is fast-forwarded. */
-const twoContracts = (runs: ReadonlyArray<BillingClockRun> = []) => {
-  const world = makeWorld();
+const twoContracts = (
+  runs: ReadonlyArray<BillingClockRun> = [],
+  options: Parameters<typeof makeWorld>[0] = {}
+) => {
+  const world = makeWorld(options);
   world.billingState.billing.set(
     'contract-2',
     dummyContractBilling({
@@ -117,6 +120,8 @@ describe('the billing fast-forward', () => {
       error: null
     });
     expect(runs[0]!.eventLabel).toContain('Cycle 1');
+    // Structured, so the web names it in the admin's language.
+    expect(runs[0]).toMatchObject({ eventCycleNumber: 1, eventDate: '2026-11-02' });
     expect(runs[0]!.finishedAt).not.toBeNull();
   });
 
@@ -126,6 +131,10 @@ describe('the billing fast-forward', () => {
       runBillingTickSteps(BEFORE).pipe(Effect.provide(t.layer))
     );
     expect(summary.billing.contracts).toBe(2);
+    // The unscoped tick does bill contract 2 — so "contract 2 never moved"
+    // above is evidence of the scoping, not of an inert second contract.
+    await Effect.runPromise(runBillingTickSteps(CYCLE_1.holdAt).pipe(Effect.provide(t.layer)));
+    expect(t.contract2Cycles().length).toBeGreaterThan(0);
     const scoped = await Effect.runPromise(
       runBillingTickSteps(BEFORE, { contractId: 'contract-1' }).pipe(Effect.provide(t.layer))
     );
@@ -149,6 +158,8 @@ describe('the billing fast-forward', () => {
         targetAt: CYCLE_1.holdAt,
         eventKind: null,
         eventLabel: null,
+        eventCycleNumber: null,
+        eventDate: null,
         status: 'running',
         billingStatusBefore: 'scheduled',
         billingStatusAfter: null,
@@ -240,6 +251,8 @@ describe('the upcoming events', () => {
   it('lists what the tick acts on next, from each source, earliest first', () => {
     const events = billingClockEvents(
       {
+        billingStatus: 'active',
+        helperReady: true,
         cycles: [
           cycle({
             id: 'c0',
@@ -371,6 +384,8 @@ describe('the upcoming events', () => {
   it('drops a captured cycle’s transfer once its transfer exists', () => {
     const events = billingClockEvents(
       {
+        billingStatus: 'active',
+        helperReady: true,
         cycles: [cycle({ id: 'c0', status: 'captured' })],
         transfers: [
           {
@@ -389,5 +404,69 @@ describe('the upcoming events', () => {
       NOW
     );
     expect(events).toEqual([]);
+  });
+});
+
+describe('the upcoming events, by billing status', () => {
+  const NOW = new Date('2026-11-01T00:00:00.000Z');
+  const cycle = dummyContractCycle;
+  const sources = (billingStatus: 'awaiting_payment_readiness' | 'suspended', ready: boolean) => ({
+    billingStatus,
+    helperReady: ready,
+    cycles: [
+      cycle({
+        id: 'c0',
+        index: 0,
+        status: 'scheduled',
+        holdAt: new Date('2026-11-02T05:00:00.000Z'),
+        startsAt: new Date('2026-11-03T05:00:00.000Z'),
+        captureAt: new Date('2026-11-03T12:00:00.000Z')
+      }),
+      cycle({
+        id: 'c1',
+        index: 1,
+        status: 'scheduled',
+        holdAt: new Date('2026-11-09T05:00:00.000Z'),
+        startsAt: new Date('2026-11-10T05:00:00.000Z'),
+        captureAt: new Date('2026-11-10T12:00:00.000Z')
+      })
+    ],
+    transfers: [],
+    resolutions: [],
+    extras: [],
+    disputes: [],
+    evidenceReminderHours: 72
+  });
+
+  it('offers no card hold while the helper cannot be paid: only the cancellation', () => {
+    const events = billingClockEvents(sources('awaiting_payment_readiness', false), NOW);
+    expect(events.map((event) => [event.kind, event.at.toISOString(), event.subjectId])).toEqual([
+      ['readiness_cancellation', '2026-11-03T12:00:00.000Z', 'c0']
+    ]);
+  });
+
+  it('offers the holds once the helper is ready (the tick starts billing then)', () => {
+    const events = billingClockEvents(sources('awaiting_payment_readiness', true), NOW);
+    expect(events.map((event) => event.kind)).toEqual(['cycle_hold', 'cycle_hold']);
+  });
+
+  it('a suspended contract’s scheduled cycles start suspended, never held', () => {
+    const events = billingClockEvents(sources('suspended', true), NOW);
+    expect(events.map((event) => [event.kind, event.at.toISOString()])).toEqual([
+      ['cycle_starts_suspended', '2026-11-03T05:00:00.000Z'],
+      ['cycle_starts_suspended', '2026-11-10T05:00:00.000Z']
+    ]);
+  });
+
+  it('reads the helper’s payout account for a contract awaiting it', async () => {
+    const t = twoContracts([], {
+      helperReady: false,
+      billing: { status: 'awaiting_payment_readiness' }
+    });
+    await t.world.step(BEFORE);
+    expect(t.world.billing().status).toBe('awaiting_payment_readiness');
+    const events = await t.events(BEFORE);
+    expect(events.map((event) => event.kind)).toEqual(['readiness_cancellation']);
+    expect(events[0]!.at).toEqual(CYCLE_1.captureAt);
   });
 });

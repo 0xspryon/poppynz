@@ -18,10 +18,12 @@
 	import {
 		billingClockErrorMessage,
 		billingClockEventLabel,
-		billingStatusChip
+		billingClockInstant,
+		billingStatusChip,
+		billingStatusLabel
 	} from '$lib/billing-clock';
 	import { cycleChip } from '$lib/contract-cycle-status';
-	import { formatDate, formatDateTime } from '$lib/date';
+	import { formatDate } from '$lib/date';
 	import { formatMoney } from '$lib/money';
 	import { m } from '$lib/paraglide/messages';
 	import { toast } from '$lib/toast.svelte';
@@ -51,21 +53,31 @@
 		if (id) void load(id);
 	});
 
+	/** An instant as the contract's billing reads it (its time zone). */
+	const instant = (value: string) => billingClockInstant(value, detail?.contract.timeZone);
+
 	async function runUpTo() {
 		if (!confirming || busy) return;
 		const event = confirming;
 		busy = true;
 		const result = await runBillingClock(id, event.at);
-		busy = false;
 		confirming = null;
+		const when = instant(event.at);
 		if (result.ok && result.data.run.status === 'succeeded') {
-			toast.success(m.admin_billing_clock_ran({ when: formatDateTime(event.at) }));
+			toast.success(
+				m.admin_billing_clock_ran({
+					when,
+					status: billingStatusLabel(result.data.run.billingStatusAfter)
+				})
+			);
 		} else if (result.ok) {
-			toast.error(m.admin_billing_clock_ran_failed({ when: formatDateTime(event.at) }));
+			toast.error(m.admin_billing_clock_ran_failed({ when }));
 		} else {
 			toast.error(billingClockErrorMessage(result.error));
 		}
+		// Every button stays disabled until the refreshed state is shown.
 		await load(id);
+		busy = false;
 	}
 
 	const cycleDates = (startsOn: string, endsOn: string) =>
@@ -116,9 +128,12 @@
 		</span>
 	</div>
 
-	<h2 class="mb-3 font-display text-lg font-bold text-base-content">
+	<h2 class="mb-1 font-display text-lg font-bold text-base-content">
 		{m.admin_billing_clock_events_heading()}
 	</h2>
+	<p class="mb-3 text-[12.5px] text-base-content-muted">
+		{m.admin_billing_clock_events_hint({ zone: detail.contract.timeZone })}
+	</p>
 	{#if detail.events.length === 0}
 		<div class="rounded-xl border border-card-border bg-base-100 p-8 text-center">
 			<p class="text-sm text-base-content-muted">{m.admin_billing_clock_events_empty()}</p>
@@ -132,7 +147,7 @@
 				>
 					<div class="min-w-0 flex-1">
 						<p class="font-semibold text-base-content">{billingClockEventLabel(event)}</p>
-						<p class="text-[12.5px] text-base-content-muted">{formatDateTime(event.at)}</p>
+						<p class="text-[12.5px] text-base-content-muted">{instant(event.at)}</p>
 						{#if !event.withinLimit}
 							<p class="text-[12px] text-outline">
 								{m.admin_billing_clock_beyond_limit({ days: String(detail.maxDays) })}
@@ -192,7 +207,7 @@
 	<ConfirmDialog
 		open={confirming !== null}
 		title={m.admin_billing_clock_confirm_title()}
-		body={m.admin_billing_clock_confirm_body({ when: formatDateTime(confirming.at) })}
+		body={m.admin_billing_clock_confirm_body({ when: instant(confirming.at) })}
 		confirmLabel={m.admin_billing_clock_confirm()}
 		cancelLabel={m.common_cancel()}
 		confirmClass="btn-warning"

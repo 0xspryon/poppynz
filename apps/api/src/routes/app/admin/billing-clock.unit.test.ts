@@ -177,6 +177,13 @@ describe('the billing clock routes', () => {
     ]) {
       expect(failure(exit)?._tag).toBe('ForbiddenError');
     }
+    // Checked before the request is read: a malformed request tells a
+    // non-admin nothing either.
+    const malformed = await world.run(
+      runBillingClockRouteProgram(context({ id: 'nope' }, { until: 'x' }), headers, ON, NOW),
+      OTHER_ADMIN_TOOLS
+    );
+    expect(failure(malformed)?._tag).toBe('ForbiddenError');
     expect(world.runs.state.runs).toEqual([]);
   });
 
@@ -194,7 +201,11 @@ describe('the billing clock routes', () => {
       status: 'succeeded',
       billingStatusBefore: 'ended',
       billingStatusAfter: 'ended',
-      eventKind: null
+      eventKind: null,
+      eventCycleNumber: null,
+      eventDate: null,
+      // The contract's zone, so the web reads the instant as billing does.
+      timeZone: 'America/Toronto'
     });
     expect(world.runs.state.runs).toHaveLength(1);
 
@@ -264,6 +275,8 @@ describe('the billing clock routes', () => {
           targetAt: new Date(later(5)),
           eventKind: null,
           eventLabel: null,
+          eventCycleNumber: null,
+          eventDate: null,
           status: 'running',
           billingStatusBefore: 'active',
           billingStatusAfter: null,

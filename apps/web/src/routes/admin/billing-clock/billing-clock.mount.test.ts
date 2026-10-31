@@ -57,10 +57,14 @@ const event = (overrides: Record<string, unknown> = {}) => ({
 const run = (overrides: Record<string, unknown> = {}) => ({
 	id: 'run-1',
 	contractId: 'contract-1',
+	timeZone: 'America/Toronto',
 	actorName: 'Springfield Admin',
 	targetAt: '2026-11-01T05:00:00.000Z',
-	eventKind: 'cycle_hold',
-	eventLabel: 'Cycle 1 (2026-11-02 – 2026-11-04): card hold',
+	eventKind: 'cycle_capture',
+	eventCycleNumber: 2,
+	eventDate: '2026-11-09',
+	// The English audit text: never shown, the label comes from the kind.
+	eventLabel: 'AUDIT TEXT',
 	status: 'succeeded',
 	billingStatusBefore: 'scheduled',
 	billingStatusAfter: 'scheduled',
@@ -123,6 +127,7 @@ describe('the billing clock', () => {
 						helperName: 'Hana Helper',
 						status: 'active',
 						suspendedReason: null,
+						timeZone: 'America/Toronto',
 						startsOn: '2026-11-02',
 						nextEvent: event({ kind: 'cycle_capture', at: '2026-11-02T12:00:00.000Z' })
 					}
@@ -137,6 +142,11 @@ describe('the billing clock', () => {
 		expect(text()).toContain('Cycle 1: capture');
 		expect(document.querySelectorAll('[data-testid="billing-clock-run"]')).toHaveLength(1);
 		expect(text()).toContain('Springfield Admin ran up to');
+		// The run is named from its kind and cycle number (localized).
+		expect(text()).toContain('Cycle 2: capture');
+		expect(text()).not.toContain('AUDIT TEXT');
+		// 12:00 UTC is 7:00 a.m. in the contract's zone (Toronto, EST).
+		expect(text()).toMatch(/Cycle 1: capture · Nov 2, 2026, 7:00/);
 	});
 
 	it('says so when the clock is unavailable', async () => {
@@ -157,7 +167,10 @@ describe('one contract on the billing clock', () => {
 		getBillingClockContract.mockResolvedValueOnce(
 			detail({ runs: [run()], events: [event({ kind: 'cycle_capture' })] })
 		);
-		runBillingClock.mockResolvedValue({ ok: true, data: { run: run() } });
+		runBillingClock.mockResolvedValue({
+			ok: true,
+			data: { run: run({ billingStatusAfter: 'active' }) }
+		});
 		component = mount(BillingClockContractPage, { target: document.body });
 		await settle();
 		expect(text()).toContain('Fiona Family and Hana Helper');
@@ -173,8 +186,29 @@ describe('one contract on the billing clock', () => {
 		await settle();
 		expect(runBillingClock).toHaveBeenCalledWith('contract-1', '2026-11-01T05:00:00.000Z');
 		expect(toastSuccess).toHaveBeenCalledTimes(1);
+		expect(toastSuccess.mock.calls[0]![0]).toContain('Billing is now: Active');
 		expect(getBillingClockContract).toHaveBeenCalledTimes(2);
 		expect(document.querySelectorAll('[data-testid="billing-clock-run"]')).toHaveLength(1);
+	});
+
+	it('disables every event while a run is in progress', async () => {
+		getBillingClockContract.mockResolvedValue(detail());
+		let finish: (value: unknown) => void = () => {};
+		runBillingClock.mockReturnValue(new Promise((resolve) => (finish = resolve)));
+		component = mount(BillingClockContractPage, { target: document.body });
+		await settle();
+		expect(text()).toContain('Times are in the contract’s time zone (America/Toronto)');
+		document.querySelector<HTMLButtonElement>('[data-testid="billing-clock-run-here"]')!.click();
+		flushSync();
+		dialogButton('Run billing')!.click();
+		await settle();
+		const buttons = [
+			...document.querySelectorAll<HTMLButtonElement>('[data-testid="billing-clock-run-here"]')
+		];
+		expect(buttons.every((button) => button.disabled)).toBe(true);
+		finish({ ok: true, data: { run: run() } });
+		await settle();
+		expect(buttons.every((button) => !button.disabled)).toBe(true);
 	});
 
 	it('cancelling the dialog runs nothing', async () => {

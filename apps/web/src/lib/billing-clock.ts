@@ -1,6 +1,6 @@
 /** Staging UAT — the admin billing fast-forward's labels and messages. */
 import type { BillingClockError } from '$lib/api/billing-clock';
-import { formatDate } from '$lib/date';
+import { formatDate, formatDateTime, formatDateTimeIn } from '$lib/date';
 import { m } from '$lib/paraglide/messages';
 
 type EventLike = { kind: string; cycleNumber: number | null; date: string | null };
@@ -14,6 +14,10 @@ export const billingClockEventLabel = (event: EventLike): string => {
 			return m.admin_billing_clock_event_cycle_hold({ number });
 		case 'cycle_hold_retry':
 			return m.admin_billing_clock_event_cycle_hold_retry({ number });
+		case 'cycle_starts_suspended':
+			return m.admin_billing_clock_event_cycle_starts_suspended({ number });
+		case 'readiness_cancellation':
+			return m.admin_billing_clock_event_readiness_cancellation();
 		case 'cycle_suspension':
 			return m.admin_billing_clock_event_cycle_suspension({ number });
 		case 'cycle_capture':
@@ -38,6 +42,34 @@ export const billingClockEventLabel = (event: EventLike): string => {
 			return m.admin_billing_clock_event_dispute_evidence_reminder();
 		default:
 			return m.admin_billing_clock_run_custom();
+	}
+};
+
+/** A run's event, named in the reader's language from what the API stored
+ * (its kind, cycle number and date); a run up to an instant matching no
+ * event reads "Chosen instant". */
+export const billingClockRunLabel = (run: {
+	eventKind: string | null;
+	eventCycleNumber: number | null;
+	eventDate: string | null;
+}): string =>
+	run.eventKind === null
+		? m.admin_billing_clock_run_custom()
+		: billingClockEventLabel({
+				kind: run.eventKind,
+				cycleNumber: run.eventCycleNumber,
+				date: run.eventDate
+			});
+
+/** An instant in the contract's time zone ("2 Nov 2026 at 7:00 a.m."), as
+ * the billing engine reads it; the browser's zone when the contract's is
+ * unknown. */
+export const billingClockInstant = (value: string, timeZone: string | null | undefined) => {
+	if (!timeZone) return formatDateTime(value);
+	try {
+		return formatDateTimeIn(value, timeZone);
+	} catch {
+		return formatDateTime(value);
 	}
 };
 

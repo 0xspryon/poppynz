@@ -20,6 +20,8 @@ export type BillingClockRunStart = {
   targetAt: Date;
   eventKind: string | null;
   eventLabel: string | null;
+  eventCycleNumber: number | null;
+  eventDate: string | null;
   billingStatusBefore: string;
   startedAt: Date;
   staleBefore: Date;
@@ -80,6 +82,8 @@ export const BillingClockRunRepoLive = Layer.effect(
               targetAt: input.targetAt,
               eventKind: input.eventKind,
               eventLabel: input.eventLabel,
+              eventCycleNumber: input.eventCycleNumber,
+              eventDate: input.eventDate,
               billingStatusBefore: input.billingStatusBefore,
               startedAt: input.startedAt,
               status: 'running'
@@ -141,6 +145,8 @@ export const makeInMemoryBillingClockRunRepo = (initial: ReadonlyArray<BillingCl
           targetAt: input.targetAt,
           eventKind: input.eventKind,
           eventLabel: input.eventLabel,
+          eventCycleNumber: input.eventCycleNumber,
+          eventDate: input.eventDate,
           status: 'running',
           billingStatusBefore: input.billingStatusBefore,
           billingStatusAfter: null,

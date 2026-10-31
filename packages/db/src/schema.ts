@@ -3013,6 +3013,10 @@ export const billingClockRun = appDb.table(
     // The upcoming event chosen (null for an instant matching none).
     eventKind: text('event_kind'),
     eventLabel: text('event_label'),
+    // The event's cycle number and date, so the web can name it in the
+    // admin's language (the label above is English, for the audit).
+    eventCycleNumber: integer('event_cycle_number'),
+    eventDate: date('event_date'),
     status: text('status').$type<BillingClockRunStatus>().notNull().default('running'),
     billingStatusBefore: text('billing_status_before').notNull(),
     billingStatusAfter: text('billing_status_after'),

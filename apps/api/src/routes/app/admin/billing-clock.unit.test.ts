@@ -122,7 +122,9 @@ describe('the billing clock switch', () => {
     const off = { ...ON, BILLING_TIME_TRAVEL: 'disabled' };
     for (const exit of [
       await world.run(listBillingClockContractsRouteProgram(headers, off, NOW)),
-      await world.run(getBillingClockContractRouteProgram(context({ id: CONTRACT }), headers, off, NOW)),
+      await world.run(
+        getBillingClockContractRouteProgram(context({ id: CONTRACT }), headers, off, NOW)
+      ),
       await world.run(
         runBillingClockRouteProgram(
           context({ id: CONTRACT }, { until: later(2) }),
@@ -140,7 +142,9 @@ describe('the billing clock switch', () => {
   it('tells the admin nav whether the billing clock is on for this user', async () => {
     const world = makeWorld();
     const on = await world.run(billingClockCapabilitiesRouteProgram(headers, ON));
-    expect(Exit.isSuccess(on) && on.value).toEqual({ billingClock: { enabled: true, maxDays: 60 } });
+    expect(Exit.isSuccess(on) && on.value).toEqual({
+      billingClock: { enabled: true, maxDays: 60 }
+    });
     const off = await world.run(billingClockCapabilitiesRouteProgram(headers, {}));
     expect(Exit.isSuccess(off) && off.value).toEqual({
       billingClock: { enabled: false, maxDays: null }
@@ -162,7 +166,12 @@ describe('the billing clock routes', () => {
         OTHER_ADMIN_TOOLS
       ),
       await world.run(
-        runBillingClockRouteProgram(context({ id: CONTRACT }, { until: later(2) }), headers, ON, NOW),
+        runBillingClockRouteProgram(
+          context({ id: CONTRACT }, { until: later(2) }),
+          headers,
+          ON,
+          NOW
+        ),
         OTHER_ADMIN_TOOLS
       )
     ]) {
@@ -283,9 +292,16 @@ describe('the billing clock routes', () => {
     });
     for (const exit of [
       await world.run(listBillingClockContractsRouteProgram(headers, ON, NOW)),
-      await world.run(getBillingClockContractRouteProgram(context({ id: CONTRACT }), headers, ON, NOW)),
       await world.run(
-        runBillingClockRouteProgram(context({ id: CONTRACT }, { until: later(2) }), headers, ON, NOW)
+        getBillingClockContractRouteProgram(context({ id: CONTRACT }), headers, ON, NOW)
+      ),
+      await world.run(
+        runBillingClockRouteProgram(
+          context({ id: CONTRACT }, { until: later(2) }),
+          headers,
+          ON,
+          NOW
+        )
       )
     ]) {
       expect(failure(exit)?._tag).toBe('BillingClockRepoError');

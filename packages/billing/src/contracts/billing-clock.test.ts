@@ -226,9 +226,7 @@ describe('scoped tick steps', () => {
       }).pipe(Effect.provide(layer))
     );
     expect(summary.confirmed).toBe(1);
-    expect(
-      resolutions.state.resolutions.map((row) => [row.id, row.status]).sort()
-    ).toEqual([
+    expect(resolutions.state.resolutions.map((row) => [row.id, row.status]).sort()).toEqual([
       ['mine', 'confirmed'],
       ['other', 'proposed']
     ]);
@@ -243,7 +241,12 @@ describe('the upcoming events', () => {
     const events = billingClockEvents(
       {
         cycles: [
-          cycle({ id: 'c0', index: 0, status: 'captured', transferAt: new Date('2026-11-07T05:00:00.000Z') }),
+          cycle({
+            id: 'c0',
+            index: 0,
+            status: 'captured',
+            transferAt: new Date('2026-11-07T05:00:00.000Z')
+          }),
           cycle({
             id: 'c1',
             index: 1,
@@ -259,7 +262,12 @@ describe('the upcoming events', () => {
             nextRetryAt: new Date('2026-11-07T12:00:00.000Z'),
             startsAt: new Date('2026-11-08T05:00:00.000Z')
           }),
-          cycle({ id: 'c3', index: 3, status: 'scheduled', holdAt: new Date('2026-11-10T05:00:00.000Z') }),
+          cycle({
+            id: 'c3',
+            index: 3,
+            status: 'scheduled',
+            holdAt: new Date('2026-11-10T05:00:00.000Z')
+          }),
           cycle({
             id: 'c4',
             index: 4,
@@ -270,7 +278,12 @@ describe('the upcoming events', () => {
           cycle({ id: 'c5', index: 5, status: 'authorising' }),
           cycle({ id: 'c6', index: 6, status: 'cancelled' }),
           // Already in the past.
-          cycle({ id: 'c7', index: 7, status: 'scheduled', holdAt: new Date('2026-10-30T00:00:00.000Z') })
+          cycle({
+            id: 'c7',
+            index: 7,
+            status: 'scheduled',
+            holdAt: new Date('2026-10-30T00:00:00.000Z')
+          })
         ],
         transfers: [
           {

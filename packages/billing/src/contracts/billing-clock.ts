@@ -195,7 +195,8 @@ export const billingClockEvents = (
         subjectId: extra.id
       });
     };
-    if (extra.status === 'proposed') extraEvent('extra_response_deadline', extra.respondBy, 'lapses unanswered');
+    if (extra.status === 'proposed')
+      extraEvent('extra_response_deadline', extra.respondBy, 'lapses unanswered');
     if (extra.status === 'agreed') extraEvent('extra_charge', extra.chargeAt, 'charge');
     if (extra.status === 'charge_failed') {
       extraEvent('extra_charge_retry', extra.nextRetryAt, 'retry the charge');

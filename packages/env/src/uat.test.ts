@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'bun:test';
 import { ConfigProvider, Effect, Either } from 'effect';
-import { billingTimeTravelConfig, checkBillingTimeTravel, checkUatFixtures, uatEmail } from './index';
+import {
+  billingTimeTravelConfig,
+  checkBillingTimeTravel,
+  checkUatFixtures,
+  uatEmail
+} from './index';
 
 const read = <A>(config: Effect.Effect<A, unknown>, env: Record<string, string>) =>
   Effect.runSync(
@@ -17,8 +22,11 @@ describe('the UAT accounts switch', () => {
     expect(checkUatFixtures({ ENVIRONMENT: 'dev', UAT_FIXTURES: 'enabled' }).enabled).toBe(true);
     // A production image (NODE_ENV=production) is how staging runs.
     expect(
-      checkUatFixtures({ ENVIRONMENT: ' Staging ', UAT_FIXTURES: 'ENABLED', NODE_ENV: 'production' })
-        .enabled
+      checkUatFixtures({
+        ENVIRONMENT: ' Staging ',
+        UAT_FIXTURES: 'ENABLED',
+        NODE_ENV: 'production'
+      }).enabled
     ).toBe(true);
   });
 
@@ -71,9 +79,9 @@ describe('the billing fast-forward switch', () => {
     expect(read(billingTimeTravelConfig, { BILLING_TIME_TRAVEL_MAX_DAYS: '14' })).toEqual(
       Either.right({ maxDays: 14 })
     );
-    expect(Either.isLeft(read(billingTimeTravelConfig, { BILLING_TIME_TRAVEL_MAX_DAYS: '0' }))).toBe(
-      true
-    );
+    expect(
+      Either.isLeft(read(billingTimeTravelConfig, { BILLING_TIME_TRAVEL_MAX_DAYS: '0' }))
+    ).toBe(true);
     expect(
       Either.isLeft(read(billingTimeTravelConfig, { BILLING_TIME_TRAVEL_MAX_DAYS: 'lots' }))
     ).toBe(true);

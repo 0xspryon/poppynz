@@ -350,10 +350,7 @@ const errorToResponse = (c: HonoContext<HonoEnv>, error: BillingClockRouteError)
     case 'RequestValidationError':
       return requestValidationErrorToResponse(c, error);
     case 'BillingClockDisabledError':
-      return c.json(
-        { error: { code: 'NOT_FOUND' as const, message: 'Not found.' } },
-        404
-      );
+      return c.json({ error: { code: 'NOT_FOUND' as const, message: 'Not found.' } }, 404);
     case 'BillingClockError':
       return refusalToResponse(c, error);
     case 'BillingClockRepoError':
@@ -393,17 +390,13 @@ export async function billingClockCapabilitiesHandler(c: HonoContext<HonoEnv>) {
 export async function listBillingClockContractsHandler(c: HonoContext<HonoEnv>) {
   return exitToResponse(
     c,
-    await c
-      .get('runtime')
-      .runPromiseExit(listBillingClockContractsRouteProgram(c.req.raw.headers))
+    await c.get('runtime').runPromiseExit(listBillingClockContractsRouteProgram(c.req.raw.headers))
   );
 }
 export async function getBillingClockContractHandler(c: HonoContext<HonoEnv>) {
   return exitToResponse(
     c,
-    await c
-      .get('runtime')
-      .runPromiseExit(getBillingClockContractRouteProgram(c, c.req.raw.headers))
+    await c.get('runtime').runPromiseExit(getBillingClockContractRouteProgram(c, c.req.raw.headers))
   );
 }
 export async function runBillingClockHandler(c: HonoContext<HonoEnv>) {

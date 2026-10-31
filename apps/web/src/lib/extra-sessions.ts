@@ -38,13 +38,33 @@ export const extraSessionChip = (
 		case 'charged':
 			return { status: 'complete', label: m.extra_sessions_chip_charged() };
 		case 'cancelled':
-			return { status: 'empty', label: m.extra_sessions_chip_cancelled() };
+			return { status: 'rejected', label: m.extra_sessions_chip_cancelled() };
 		case 'withdrawn':
-			return { status: 'empty', label: m.extra_sessions_chip_withdrawn() };
+			return { status: 'rejected', label: m.extra_sessions_chip_withdrawn() };
 		case 'declined':
-			return { status: 'empty', label: m.extra_sessions_chip_declined() };
+			return { status: 'rejected', label: m.extra_sessions_chip_declined() };
 		case 'lapsed':
-			return { status: 'empty', label: m.extra_sessions_chip_lapsed() };
+			return { status: 'rejected', label: m.extra_sessions_chip_lapsed() };
+	}
+};
+
+/** The state line's tone: green once the session is billed, red once it
+ * failed or won't happen, neutral while it is still in progress. */
+export const extraSessionTone = (
+	row: Pick<ExtraSession, 'status'>
+): 'success' | 'error' | 'neutral' => {
+	switch (row.status) {
+		case 'in_cycle':
+		case 'charged':
+			return 'success';
+		case 'charge_failed':
+		case 'cancelled':
+		case 'withdrawn':
+		case 'declined':
+		case 'lapsed':
+			return 'error';
+		default:
+			return 'neutral';
 	}
 };
 

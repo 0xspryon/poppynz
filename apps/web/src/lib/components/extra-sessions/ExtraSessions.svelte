@@ -20,6 +20,7 @@
 	import {
 		delayText,
 		extraSessionChip,
+		extraSessionTone,
 		extraSessionErrorMessage,
 		extraSessionLabel,
 		extraSessionStateText,
@@ -249,6 +250,7 @@
 			<ul class="divide-y divide-base-300">
 				{#each rows as row (row.id)}
 					{@const chip = extraSessionChip(row)}
+					{@const tone = extraSessionTone(row)}
 					<li class="flex flex-col gap-1.5 py-2.5 text-[13px]" data-testid="extra-session-row">
 						<div class="flex flex-wrap items-center gap-x-2.5 gap-y-1">
 							<span class="min-w-0 flex-1 font-medium text-base-content">
@@ -267,7 +269,14 @@
 							{/if}
 						</p>
 						<p
-							class="text-[12.5px] leading-relaxed text-base-content-muted"
+							class={[
+								'text-[12.5px] leading-relaxed',
+								tone === 'success'
+									? 'font-medium text-success'
+									: tone === 'error'
+										? 'font-medium text-error'
+										: 'text-base-content-muted'
+							]}
 							data-testid="extra-session-state"
 						>
 							{extraSessionStateText(row, side, counterpartName)}

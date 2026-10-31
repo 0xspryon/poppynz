@@ -144,7 +144,7 @@
 	"admin_billing_clock_confirm_title": "Exécuter la facturation jusqu’à cet événement?",
 	"admin_billing_clock_confirm_body": "La facturation de ce contrat s’exécutera comme s’il était {when}, et les appels Stripe en mode test (préautorisations, encaissements, virements) sont faits maintenant, pour vrai. Rien ne peut être annulé. Les autres contrats ne sont pas touchés.",
 	"admin_billing_clock_confirm": "Exécuter la facturation",
-	"admin_billing_clock_ran": "Facturation exécutée jusqu’au {when}. Statut de la facturation : {status}.",
+	"admin_billing_clock_ran": "Statut de la facturation : {status} (exécutée jusqu’au {when})",
 	"admin_billing_clock_ran_failed": "Facturation exécutée jusqu’au {when}, mais une étape a échoué. Voir l’exécution ci-dessous.",
 	"admin_billing_clock_runs_heading": "Exécutions récentes",
 	"admin_billing_clock_runs_empty": "Aucune exécution pour l’instant.",

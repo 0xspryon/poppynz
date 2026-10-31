@@ -144,7 +144,7 @@
 	"admin_billing_clock_confirm_title": "Run billing up to this event?",
 	"admin_billing_clock_confirm_body": "Billing for this contract will run as if it were {when}, and Stripe test-mode calls (holds, captures, transfers) are made now, for real. Nothing can be undone. Other contracts are not affected.",
 	"admin_billing_clock_confirm": "Run billing",
-	"admin_billing_clock_ran": "Billing ran up to {when}. Billing is now: {status}.",
+	"admin_billing_clock_ran": "Billing is now: {status} (ran up to {when})",
 	"admin_billing_clock_ran_failed": "Billing ran up to {when}, but a step failed. See the run below.",
 	"admin_billing_clock_runs_heading": "Recent runs",
 	"admin_billing_clock_runs_empty": "No runs yet.",

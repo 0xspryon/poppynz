@@ -5,6 +5,7 @@
 	import { syncLocaleWithProfile } from '$lib/locale-sync';
 	import { fetchSession, getSession } from '$lib/api/profile';
 	import { getAccountantAccess } from '$lib/api/accountant';
+	import { getAdminCapabilities } from '$lib/api/billing-clock';
 	import BrandMark from '$lib/components/BrandMark.svelte';
 	import MobileNavDrawer from '$lib/components/MobileNavDrawer.svelte';
 	import SidebarNav, { type SidebarItem } from '$lib/components/SidebarNav.svelte';
@@ -24,6 +25,8 @@
 	let drawerOpen = $state(false);
 	/** The accountant area (tax, books) is shown by permission, not by role. */
 	let taxAccess = $state(false);
+	/** Staging UAT: the billing clock, only where the API switched it on. */
+	let billingClock = $state(false);
 
 	onMount(() => {
 		void fetchSession().then((session) => {
@@ -37,6 +40,9 @@
 							result.data.taxReport ||
 							result.data.reimbursementsRead ||
 							result.data.reconciliationRead);
+				});
+				void getAdminCapabilities().then((result) => {
+					billingClock = result.ok && result.data.billingClock.enabled;
 				});
 			} else if (
 				session?.role === 'family' ||
@@ -106,14 +112,21 @@
 			icon: 'la-exclamation-triangle'
 		}
 	];
-	const items = $derived<Array<SidebarItem>>(
-		taxAccess
+	const items = $derived<Array<SidebarItem>>([
+		...baseItems,
+		...(billingClock
 			? [
-					...baseItems,
-					{ href: resolve('/accountant'), label: m.nav_accountant(), icon: 'la-calculator' }
+					{
+						href: resolve('/admin/billing-clock'),
+						label: m.nav_admin_billing_clock(),
+						icon: 'la-forward'
+					}
 				]
-			: baseItems
-	);
+			: []),
+		...(taxAccess
+			? [{ href: resolve('/accountant'), label: m.nav_accountant(), icon: 'la-calculator' }]
+			: [])
+	]);
 </script>
 
 <svelte:head>

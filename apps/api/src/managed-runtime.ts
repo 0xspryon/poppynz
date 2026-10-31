@@ -1,6 +1,8 @@
 import {
   AccountingRepoDefault,
   ReconciliationRepoDefault,
+  // Staging UAT: the audit of the admin billing fast-forward.
+  BillingClockRunRepoDefault,
   ApprovalRepoDefault,
   ApprovalRequestRepoDefault,
   BillingCustomerRepoDefault,
@@ -105,6 +107,8 @@ const BaseLive = Layer.mergeAll(
   // disputes through the step-4 adapter, provided on top below).
   AccountingRepoDefault,
   ReconciliationRepoDefault,
+  // Staging UAT: the audit of the admin billing fast-forward.
+  BillingClockRunRepoDefault,
   NotificationHubLive,
   GooglePlacesLive,
   MailerLive,

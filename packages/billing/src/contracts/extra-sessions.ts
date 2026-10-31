@@ -1464,12 +1464,21 @@ export type ExtraSessionTickSummary = {
  * proposals lapse, agreed ones past their delay are folded or charged,
  * charges in flight are settled, declined ones retried on schedule (or
  * abandoned when their session no longer takes place), long-unpaid ones
- * alerted, and charged ones paid out. Each item is isolated.
+ * alerted, and charged ones paid out. Each item is isolated. `contractId`
+ * limits it to one contract (the admin billing fast-forward).
  */
-export const runExtraSessionTick = (now: Date) =>
+export const runExtraSessionTick = (now: Date, options: { contractId?: string } = {}) =>
   Effect.gen(function* () {
     const repo = yield* ExtraSessionRepo;
     const policy = yield* extraSessionPolicy;
+    const scoped = (statuses: Parameters<typeof repo.listByStatus>[0]) =>
+      repo
+        .listByStatus(statuses)
+        .pipe(
+          Effect.map((rows) =>
+            rows.filter((row) => !options.contractId || row.contractId === options.contractId)
+          )
+        );
     const summary: ExtraSessionTickSummary = {
       lapsed: 0,
       folded: 0,
@@ -1497,7 +1506,7 @@ export const runExtraSessionTick = (now: Date) =>
       if (extra.status === 'charge_failed') summary.declined += 1;
     };
 
-    for (const extra of yield* repo.listByStatus(['proposed'])) {
+    for (const extra of yield* scoped(['proposed'])) {
       if (now < extra.respondBy) continue;
       yield* isolate(
         extra.id,
@@ -1514,12 +1523,12 @@ export const runExtraSessionTick = (now: Date) =>
         })
       );
     }
-    for (const extra of yield* repo.listByStatus(['agreed'])) {
+    for (const extra of yield* scoped(['agreed'])) {
       if (extra.chargeAt === null || now < extra.chargeAt) continue;
       const exit = yield* isolate(extra.id, processDueExtraSession(extra, now));
       if (exit._tag === 'Success') count(exit.value);
     }
-    for (const extra of yield* repo.listByStatus(['charging'])) {
+    for (const extra of yield* scoped(['charging'])) {
       yield* isolate(extra.id, resolveCharging(extra, now));
       const after = yield* repo.find(extra.id);
       count(after);
@@ -1527,7 +1536,7 @@ export const runExtraSessionTick = (now: Date) =>
         yield* isolate(extra.id, unpaidAlert(after, now));
       }
     }
-    for (const extra of yield* repo.listByStatus(['charge_failed'])) {
+    for (const extra of yield* scoped(['charge_failed'])) {
       const exit = yield* isolate(
         extra.id,
         Effect.gen(function* () {
@@ -1548,7 +1557,7 @@ export const runExtraSessionTick = (now: Date) =>
         yield* isolate(extra.id, unpaidAlert(after, now));
       }
     }
-    for (const extra of yield* repo.listByStatus(['charged'])) {
+    for (const extra of yield* scoped(['charged'])) {
       if (extra.noticesSent.includes('paid_out')) continue;
       yield* isolate(extra.id, ensurePaidOut(extra, now));
     }

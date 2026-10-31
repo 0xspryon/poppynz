@@ -1,13 +1,9 @@
 import {
-  runContractBillingTick,
-  runExtraSessionTick,
-  runSessionMoneyTick,
-  runSessionResolutionTick,
+  runBillingTickSteps,
   type ContractBillingTickSummary,
   type ExtraSessionTickSummary,
   type MoneyTickSummary,
-  type ResolutionTickSummary,
-  runCardDisputeTick
+  type ResolutionTickSummary
 } from '@repo/billing';
 import { Effect } from 'effect';
 
@@ -33,18 +29,18 @@ import { Effect } from 'effect';
  */
 export const processContractBillingTick = (now: Date) =>
   Effect.gen(function* () {
+    // Every step, unscoped, in the one shared order (@repo/billing
+    // runBillingTickSteps) — the dev clock and the admin billing
+    // fast-forward run the same steps for one contract.
+    const { disputes, billing, resolutions, extraSessions, money } =
+      yield* runBillingTickSteps(now);
     // Tier 3 step 4: the admins are reminded before a card dispute's
     // evidence is due (CONTRACT_DISPUTE_EVIDENCE_REMINDER_HOURS), once.
-    const disputes = yield* runCardDisputeTick(now);
     if (disputes.reminded + disputes.failed > 0) {
       yield* Effect.logInfo(
         `[card-dispute] ${disputes.reminded} evidence reminder(s) sent, ${disputes.failed} failed`
       );
     }
-    const billing = yield* runContractBillingTick(now);
-    const resolutions = yield* runSessionResolutionTick(now);
-    const extraSessions = yield* runExtraSessionTick(now);
-    const money = yield* runSessionMoneyTick(now);
     return { ...billing, resolutions, extraSessions, money };
   });
 

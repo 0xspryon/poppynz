@@ -1272,12 +1272,15 @@ export type CardDisputeTickSummary = { reminded: number; failed: number };
 
 /** Reminds the admins once, `CONTRACT_DISPUTE_EVIDENCE_REMINDER_HOURS`
  * before a dispute's evidence is due, while none was submitted. */
-export const runCardDisputeTick = (now: Date) =>
+export const runCardDisputeTick = (now: Date, options: { contractId?: string } = {}) =>
   Effect.gen(function* () {
     const summary: CardDisputeTickSummary = { reminded: 0, failed: 0 };
     const { evidenceReminderHours } = yield* cardDisputePolicy;
     const repo = yield* CardDisputeRepo;
-    const open = yield* repo.list({ open: true, triage: ['needs_response'] });
+    // `contractId`: one contract's disputes only (the admin fast-forward).
+    const open = (yield* repo.list({ open: true, triage: ['needs_response'] })).filter(
+      (dispute) => !options.contractId || dispute.contractId === options.contractId
+    );
     for (const dispute of open) {
       const due = dispute.evidenceDueBy;
       if (due === null || now >= due) continue;

@@ -31,13 +31,7 @@ import {
   SessionMoneyRepo,
   SessionResolutionRepo
 } from '@repo/db';
-import {
-  runContractBillingTick,
-  runExtraSessionTick,
-  runSessionMoneyTick,
-  runSessionResolutionTick,
-  runCardDisputeTick
-} from '@repo/billing';
+import { runBillingTickSteps } from '@repo/billing';
 import { Effect, ManagedRuntime } from 'effect';
 import { ContractBillingBaseLive, withCycleSettlement } from '../billing-layer';
 import { requireDevClock, requireLocalDatabase } from './guard';
@@ -136,31 +130,33 @@ const main = Effect.gen(function* () {
     console.log(
       `[dev-billing] tick as of ${asOf.toISOString()}${contractId ? ` for ${contractId}` : ''}`
     );
-    const summary = yield* runContractBillingTick(asOf, contractId ? { contractId } : {});
-    console.log(
-      `[dev-billing] ${summary.ran} ran, ${summary.failed} failed of ${summary.contracts}`
+    // Exactly the worker's steps in its order (disputes, billing,
+    // resolutions, extra sessions, money) — with --contract, every step is
+    // limited to that contract, not just the billing one.
+    const { disputes, billing, resolutions, extraSessions, money } = yield* runBillingTickSteps(
+      asOf,
+      contractId ? { contractId } : {}
     );
-    // The same tick's session-resolution step: silence confirms reports whose
-    // response window closed, unconfirmed days off lapse at their cutoff.
-    const resolutions = yield* runSessionResolutionTick(asOf);
+    // Tier 3 step 4: card dispute evidence reminders due by --as-of.
+    console.log(
+      `[dev-billing] card disputes: ${disputes.reminded} evidence reminder(s), ${disputes.failed} failed`
+    );
+    console.log(
+      `[dev-billing] ${billing.ran} ran, ${billing.failed} failed of ${billing.contracts}`
+    );
+    // The session-resolution step: silence confirms reports whose response
+    // window closed, unconfirmed days off lapse at their cutoff.
     console.log(
       `[dev-billing] session resolutions: ${resolutions.confirmed} confirmed, ${resolutions.lapsed} lapsed, ${resolutions.failed} failed`
     );
     // The extra-session step: lapses, the delayed charge, retries, alerts.
-    const extras = yield* runExtraSessionTick(asOf);
     console.log(
-      `[dev-billing] extra sessions: ${extras.lapsed} lapsed, ${extras.folded} folded, ${extras.charged} charged, ${extras.declined} declined, ${extras.failed} failed`
+      `[dev-billing] extra sessions: ${extraSessions.lapsed} lapsed, ${extraSessions.folded} folded, ${extraSessions.charged} charged, ${extraSessions.declined} declined, ${extraSessions.failed} failed`
     );
     // The money step: resolutions applied, refunds sent, transfers due by
     // --as-of made (paused, or queued for a manual payout).
-    const money = yield* runSessionMoneyTick(asOf);
     console.log(
       `[dev-billing] money: ${money.reconciled} sessions applied, ${money.refundsSent} refunds sent, ${money.transfers} transfers processed, ${money.failed} failed`
-    );
-    // Tier 3 step 4: card dispute evidence reminders due by --as-of.
-    const disputes = yield* runCardDisputeTick(asOf);
-    console.log(
-      `[dev-billing] card disputes: ${disputes.reminded} evidence reminder(s), ${disputes.failed} failed`
     );
   }
   yield* show;

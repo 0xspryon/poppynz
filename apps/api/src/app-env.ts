@@ -1,6 +1,7 @@
 import type {
   AccountingRepo,
   ReconciliationRepo,
+  BillingClockRunRepo,
   ApprovalRepo,
   ApprovalRequestRepo,
   BillingCustomerRepo,
@@ -99,6 +100,7 @@ export type AppServices =
   // Tier 3 step 5: the accountant's ledger, reports and reconciliation.
   | AccountingRepo
   | ReconciliationRepo
+  | BillingClockRunRepo
   | CardDisputeLedger
   | CycleSettlement
   | NotificationHub

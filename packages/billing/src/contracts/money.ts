@@ -1156,12 +1156,16 @@ export type MoneyTickSummary = {
 
 /** The tick's money step (worker and dev clock): every session with a
  * resolution is reconciled, pending refunds are (re)sent, transfers that
- * are due are created and processed. Each item is isolated. */
-export const runSessionMoneyTick = (now: Date) =>
+ * are due are created and processed. Each item is isolated. `contractId`
+ * limits it to one contract (the admin billing fast-forward). */
+export const runSessionMoneyTick = (now: Date, options: { contractId?: string } = {}) =>
   Effect.gen(function* () {
     const summary: MoneyTickSummary = { reconciled: 0, refundsSent: 0, transfers: 0, failed: 0 };
     const resolutionRepo = yield* SessionResolutionRepo;
     const moneyRepo = yield* SessionMoneyRepo;
+    const inScope = (contractId: string | null) =>
+      !options.contractId || contractId === options.contractId;
+    const contractFilter = options.contractId ? { contractId: options.contractId } : {};
     const all = yield* resolutionRepo.listByStatus([
       'proposed',
       'confirmed',
@@ -1170,17 +1174,25 @@ export const runSessionMoneyTick = (now: Date) =>
       'lapsed',
       'reversed'
     ]);
-    const sessions = new Map(all.map((row) => [row.sessionId, row.contractId]));
+    const sessions = new Map(
+      all.filter((row) => inScope(row.contractId)).map((row) => [row.sessionId, row.contractId])
+    );
     for (const [sessionId, contractId] of sessions) {
       const result = yield* reconcileSession(contractId, sessionId, now);
       if (result !== 'none' && result !== 'no_billing') summary.reconciled += 1;
     }
-    for (const refund of yield* moneyRepo.listRefunds({ statuses: ['pending'] })) {
+    for (const refund of yield* moneyRepo.listRefunds({
+      statuses: ['pending'],
+      ...contractFilter
+    })) {
       const exit = yield* sendRefund(refund, now).pipe(Effect.exit);
       if (exit._tag === 'Failure') summary.failed += 1;
       else summary.refundsSent += 1;
     }
-    for (const due of yield* moneyRepo.listCyclesDueForTransfer(now)) {
+    const dueForTransfer = (yield* moneyRepo.listCyclesDueForTransfer(now)).filter((due) =>
+      inScope(due.cycle.contractId)
+    );
+    for (const due of dueForTransfer) {
       yield* moneyRepo.ensureTransfer({
         cycleId: due.cycle.id,
         contractId: due.cycle.contractId,
@@ -1191,7 +1203,8 @@ export const runSessionMoneyTick = (now: Date) =>
       });
     }
     for (const transfer of yield* moneyRepo.listTransfers({
-      statuses: ['due', 'paused', 'sending']
+      statuses: ['due', 'paused', 'sending'],
+      ...contractFilter
     })) {
       const exit = yield* processTransfer(transfer, now).pipe(Effect.exit);
       if (exit._tag === 'Failure') {

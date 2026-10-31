@@ -42,6 +42,7 @@ import { adminSessionDisputesRoute } from './admin/session-disputes';
 import { adminMoneyRoute } from './admin/money';
 import { accountantRoute } from './accountant/accountant';
 import { adminCardDisputesRoute } from './admin/card-disputes';
+import { adminCapabilitiesRoute, mountedBillingClockRoute } from './admin/billing-clock';
 
 export const appRoutes = new Hono<HonoEnv>()
   .route('/auth', signupRoute)
@@ -77,6 +78,9 @@ export const appRoutes = new Hono<HonoEnv>()
   .route('/admin/session-disputes', adminSessionDisputesRoute)
   .route('/admin/money', adminMoneyRoute)
   .route('/admin/card-disputes', adminCardDisputesRoute)
+  // Staging UAT: the billing fast-forward (mounted only when switched on).
+  .route('/admin/capabilities', adminCapabilitiesRoute)
+  .route('/admin/billing-clock', mountedBillingClockRoute())
   .route('/payouts', payoutsRoute)
   .route('/tax', taxRoute)
   .route('/accountant', accountantRoute)

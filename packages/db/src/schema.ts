@@ -2988,6 +2988,55 @@ export const providerBalanceTransaction = appDb.table(
   ]
 );
 
+export type BillingClockRunStatus = 'running' | 'succeeded' | 'failed';
+
+/**
+ * Staging UAT (docs/staging-uat.md): every admin "run up to here" of the
+ * billing fast-forward — who ran which contract's billing as of which
+ * instant, for which upcoming event, and what came of it. At most one run
+ * per contract is `running` at a time (partial unique index).
+ */
+export const billingClockRun = appDb.table(
+  'billing_clock_runs',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .default(sql`uuidv7()`),
+    contractId: uuid('contract_id')
+      .notNull()
+      .references(() => contract.id, { onDelete: 'restrict' }),
+    actorUserId: text('actor_user_id')
+      .notNull()
+      .references(() => user.id, { onDelete: 'restrict' }),
+    // The instant billing ran "as of".
+    targetAt: timestamp('target_at').notNull(),
+    // The upcoming event chosen (null for an instant matching none).
+    eventKind: text('event_kind'),
+    eventLabel: text('event_label'),
+    status: text('status').$type<BillingClockRunStatus>().notNull().default('running'),
+    billingStatusBefore: text('billing_status_before').notNull(),
+    billingStatusAfter: text('billing_status_after'),
+    // What each tick step did (counts), once finished.
+    summary: jsonb('summary').$type<Record<string, unknown>>(),
+    error: text('error'),
+    startedAt: timestamp('started_at').notNull(),
+    finishedAt: timestamp('finished_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull()
+  },
+  (table) => [
+    index('billing_clock_runs_contract_idx').on(table.contractId, table.startedAt),
+    index('billing_clock_runs_started_at_idx').on(table.startedAt),
+    uniqueIndex('billing_clock_runs_one_running_uidx')
+      .on(table.contractId)
+      .where(sql`${table.status} = 'running'`),
+    check(
+      'billing_clock_runs_status_check',
+      sql`${table.status} in ('running', 'succeeded', 'failed')`
+    ),
+    check('billing_clock_runs_target_check', sql`${table.targetAt} > ${table.startedAt}`)
+  ]
+);
+
 export const session = appDb.table(
   'session',
   {

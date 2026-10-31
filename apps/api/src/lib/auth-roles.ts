@@ -15,6 +15,11 @@ export const appAc = createAccessControl({
   // The card on file and payment history. Only families keep a card (it
   // funds contract billing); helpers pay one-off and never hold this.
   billing: ['read', 'write'],
+  // Staging UAT: the billing fast-forward — reading a contract's upcoming
+  // billing events and running its billing as of a later instant. Admins
+  // only, and only where the switch is on (BILLING_TIME_TRAVEL, staging or
+  // dev, Stripe test keys); every run is audited (billing_clock_runs).
+  billingClock: ['advance'],
   // Tier 3 step 4: card disputes (chargebacks). `read` lists them, `finance`
   // shows what Poppynz bears (the debit, the fee, what came back) — admins
   // and the accountant; `review` opens one with its evidence pack (the
@@ -135,6 +140,7 @@ export const adminRole = appAc.newRole({
   ...adminAc.statements,
   approval: ['write'],
   approvalRequest: ['read', 'write', 'review'],
+  billingClock: ['advance'],
   cardDispute: ['read', 'review', 'respond', 'decide', 'finance'],
   contract: ['read', 'write', 'review'],
   conversation: ['read', 'write'],

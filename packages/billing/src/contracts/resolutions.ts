@@ -312,12 +312,16 @@ export type ResolutionTickSummary = { confirmed: number; lapsed: number; failed:
  * (a report nobody contested) or lapses (a day off nobody confirmed by the
  * cutoff). Compare-and-set, so a late answer and the tick can't both win;
  * each resolution is isolated — one failure never stops the others.
+ * `contractId` limits it to one contract (the admin billing fast-forward).
  */
-export const runSessionResolutionTick = (now: Date) =>
+export const runSessionResolutionTick = (now: Date, options: { contractId?: string } = {}) =>
   Effect.gen(function* () {
     const repo = yield* SessionResolutionRepo;
     const summary: ResolutionTickSummary = { confirmed: 0, lapsed: 0, failed: 0 };
-    for (const due of yield* repo.listDue(now)) {
+    const dueRows = (yield* repo.listDue(now)).filter(
+      (row) => !options.contractId || row.contractId === options.contractId
+    );
+    for (const due of dueRows) {
       const exit = yield* settleUnanswered(due, now).pipe(Effect.exit);
       if (exit._tag === 'Failure') {
         summary.failed += 1;

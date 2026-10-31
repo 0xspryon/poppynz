@@ -10,6 +10,7 @@
 	} from '$lib/api/safety-verification';
 	import { getSafetyDocumentFileUrl } from '$lib/api/admin-approvals';
 	import ConfirmDialog from '$lib/components/admin/ConfirmDialog.svelte';
+	import DocumentViewerFrame from '$lib/components/admin/DocumentViewerFrame.svelte';
 	import StatusChip, { type ChipStatus } from '$lib/components/StatusChip.svelte';
 	import { formatCalendarDate, formatDateTime } from '$lib/date';
 	import { m } from '$lib/paraglide/messages';
@@ -61,10 +62,18 @@
 	const personLabel = (item: AdminSafetyVerification) =>
 		item.applicant.name ?? item.applicant.email ?? m.admin_safety_unnamed_applicant();
 
+	// The uploaded file opens in the same in-browser viewer as approval requests.
+	let viewing = $state<{ item: AdminSafetyVerification; url: string; filename: string } | null>(
+		null
+	);
+	let viewerLoading = $state(false);
+
 	async function openFile(item: AdminSafetyVerification) {
+		viewerLoading = true;
 		const result = await getSafetyDocumentFileUrl(item.id);
+		viewerLoading = false;
 		if (result.ok) {
-			window.open(result.data.url, '_blank', 'noopener');
+			viewing = { item, url: result.data.url, filename: result.data.filename ?? '' };
 		} else {
 			toast.error(RETRY_MESSAGE, { title: m.admin_safety_toast_open_failed() });
 		}
@@ -280,3 +289,45 @@
 	onconfirm={() => approving && void approve(approving)}
 	oncancel={() => (approving = null)}
 />
+
+<DocumentViewerFrame
+	url={viewing?.url ?? null}
+	title={viewing?.item.documentTypeName ?? ''}
+	filename={viewing?.filename ?? ''}
+	status={{ status: 'submitted' }}
+	loading={viewerLoading}
+	onclose={() => (viewing = null)}
+>
+	{#snippet sidebar()}
+		{#if viewing}
+			{@const item = viewing.item}
+			<div class="mb-3.5 text-[10.5px] font-semibold tracking-[0.1em] text-neutral uppercase">
+				{m.admin_requests_viewer_details()}
+			</div>
+			<div class="grid grid-cols-[90px_1fr] gap-x-2.5 gap-y-2 text-[12.5px]">
+				<span class="text-outline">{m.admin_safety_viewer_person()}</span>
+				<span class="font-medium text-base-content">{personLabel(item)}</span>
+				<span class="text-outline">{m.admin_requests_viewer_type()}</span>
+				<span class="font-medium text-base-content">{item.documentTypeName}</span>
+				<span class="text-outline">{m.admin_requests_viewer_file()}</span>
+				<span class="truncate font-medium text-base-content">{viewing.filename}</span>
+				{#if item.issuingAuthority}
+					<span class="text-outline">{m.admin_safety_viewer_issuer()}</span>
+					<span class="font-medium text-base-content">{item.issuingAuthority}</span>
+				{/if}
+				{#if item.documentNumber}
+					<span class="text-outline">{m.admin_safety_viewer_number()}</span>
+					<span class="font-medium text-base-content">{item.documentNumber}</span>
+				{/if}
+				<span class="text-outline">{m.admin_requests_viewer_issued()}</span>
+				<span class="font-medium text-base-content">
+					{item.issuedOn ? formatCalendarDate(item.issuedOn) : '—'}
+				</span>
+				<span class="text-outline">{m.admin_safety_viewer_valid_until()}</span>
+				<span class="font-medium text-base-content">
+					{item.expiresOn ? formatCalendarDate(item.expiresOn) : '—'}
+				</span>
+			</div>
+		{/if}
+	{/snippet}
+</DocumentViewerFrame>

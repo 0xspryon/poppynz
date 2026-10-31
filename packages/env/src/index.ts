@@ -480,3 +480,6 @@ export const payoutsConfig = Config.all({
     Config.withDefault(60)
   )
 });
+
+// Staging UAT: the ready-made accounts and the admin billing fast-forward.
+export * from './uat';

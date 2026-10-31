@@ -3,8 +3,12 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "exports": {
+    "./uat/fixtures": "./src/uat/fixtures.ts"
+  },
   "scripts": {
     "seed:run": "bun ./src/run.ts",
+    "uat:fixtures": "bun ./src/uat/run.ts",
     "seed:status": "bun ./src/status.ts",
     "seed:new": "bun ./src/new.ts",
     "test": "bun test src"

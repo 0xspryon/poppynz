@@ -35,4 +35,7 @@ RUN bun install --frozen-lockfile
 FROM deps AS seeds
 COPY . .
 ENV NODE_ENV=production
+# Like the api and worker images: `date` and `timestamp` columns carry no
+# zone, so the seeds (and the staging UAT accounts) must run in UTC.
+ENV TZ=UTC
 CMD ["sh", "scripts/run-seeds.sh"]

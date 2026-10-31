@@ -17,6 +17,7 @@
     "@repo/objs": "*",
     "@repo/payments": "*",
     "@repo/queue": "*",
+    "@repo/seeder": "*",
     "@repo/typesense": "*",
     "bullmq": "^5.66.0",
     "drizzle-orm": "^0.45.2",

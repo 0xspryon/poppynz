@@ -7,7 +7,12 @@ attempt=1
 
 run_seeds() {
 	printf 'Running app_db seeds\n'
-	bun --filter @repo/seeder seed:run
+	bun --filter @repo/seeder seed:run || return 1
+	# Staging UAT accounts (docs/staging-uat.md): untracked and idempotent, so
+	# they come back after a data reset and follow a changed UAT_EMAIL_BASE.
+	# A no-op unless ENVIRONMENT is explicitly staging|dev and
+	# UAT_FIXTURES=enabled; never for production.
+	TZ=UTC bun --filter @repo/seeder uat:fixtures || return 1
 }
 
 while [ "$attempt" -le "$max_attempts" ]; do

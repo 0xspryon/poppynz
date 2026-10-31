@@ -910,7 +910,10 @@
 						locationMissing={contract.timeZone === null}
 						profileHref={resolve('/family/profile')}
 						paymentMethodMissing={contract.hasPaymentMethod === false}
-						billingHref={resolve('/family/billing')}
+						billingHref={withQuery(
+							resolve('/family/billing'),
+							`returnTo=${encodeURIComponent(resolve('/family/contracts/[id]', { id: contractId }))}`
+						)}
 						pricing={contract.pendingVersion?.status === 'draft'
 							? contract.pendingVersion.pricing
 							: null}

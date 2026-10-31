@@ -3,6 +3,10 @@
 	 * billing, so it can be replaced but not simply removed. Receipts are
 	 * Stripe's; invoices and tax receipts wait for the accountant's sign-off. */
 	import { onMount } from 'svelte';
+	import { goto } from '$app/navigation';
+	import { resolve } from '$app/paths';
+	import { page } from '$app/state';
+	import type { ResolvedPathname } from '$app/types';
 	import {
 		confirmCardSetup,
 		getBilling,
@@ -23,6 +27,17 @@
 	import { localizeTaxLabel } from '$lib/tax-label';
 
 	const RETRY_MESSAGE = m.family_billing_retry();
+
+	/** Where a saved card returns the family to — the draft contract that sent
+	 * them here to add one. Only the family's own contract pages are honoured,
+	 * so the link can't redirect anywhere else. */
+	const returnTo = $derived.by(() => {
+		const target = page.url.searchParams.get('returnTo');
+		const contracts = `${resolve('/family/contracts')}/`;
+		return target && target.startsWith(contracts) && !target.includes('//')
+			? (target as ResolvedPathname)
+			: null;
+	});
 
 	let billing = $state<BillingData | null>(null);
 	let loading = $state(true);
@@ -79,6 +94,10 @@
 			toast.success(m.family_billing_card_saved_body({ card: cardLabel(result.data.card) }), {
 				title: m.family_billing_card_saved_title()
 			});
+			if (returnTo) {
+				await goto(returnTo);
+				return;
+			}
 			await load();
 		} else {
 			toast.error(
